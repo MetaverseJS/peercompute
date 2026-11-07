@@ -1161,3 +1161,18 @@ journaling across reloads is deferred; original interface-change cause is unknow
   validate the final manifest. Partial-file HTTP checkpoints across page reload
   remain separate future work. Use synthetic native-browser tests and update
   internal previews; preserve user GPU capacity and existing model storage.
+
+### November 7 — multimodal console and reusable specialist routing
+
+- User confirms storage recovery works. Backport managed voice to the dedicated
+  console and allow multiple simultaneous residents, including same-engine
+  models. Loading another model must not silently evict an existing resident.
+- Default Mixed uses a capable local resident first, then eligible peers when
+  local capability/queue admission is absent. Preserve Local only and explicit
+  targets. Generate image is explicit; attachments select vision understanding.
+- Add per-model unload, meaningful route labels, explicit Talk/Stop and optional
+  spoken replies. Share registry/routing/audio orchestration with agent/world
+  consumers and extend peer hosting to multiple models plus bounded audio.
+- Preserve16GiB GPU/12GiB CPU admission envelopes, model retention/recovery,
+  cancellation and exact-CID provenance. No learned-router or motor-training
+  claim. Detailed design: ../demos/inference/multimodal-console.md.

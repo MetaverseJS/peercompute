@@ -9,7 +9,7 @@ import { yamux } from '@libp2p/yamux';
 import { identify } from '@libp2p/identify';
 import { multiaddr } from '@multiformats/multiaddr';
 import { NetworkManager } from '../../src/peercompute/networkManager/NetworkManager.js';
-import { PEER_INFERENCE_PROTOCOL, LEGACY_MAX_NEW_TOKENS, encryptedConnection, channel, descriptor, localState, generation, resultData } from '../../src/peercompute/networkManager/inference/protocol.js';
+import { PEER_INFERENCE_PROTOCOL, PEER_INFERENCE_PROTOCOL_V2, LEGACY_MAX_NEW_TOKENS, encryptedConnection, channel, descriptor, localState, generation, resultData } from '../../src/peercompute/networkManager/inference/protocol.js';
 import { imageDigest } from '../../src/peercompute/networkManager/inference/imageResult.js';
 import { MODEL_POLICY } from '../../src/peercompute/inference/modelManifest.js';
 
@@ -588,7 +588,8 @@ test('real plaintext connections cannot discover hosts or invoke inference strea
 });
 
 test('v2 image capabilities reject ambiguous tasks and over-budget image metadata', () => {
-  assert.equal(PEER_INFERENCE_PROTOCOL, '/peercompute/inference/2.0.0');
+  assert.equal(PEER_INFERENCE_PROTOCOL, '/peercompute/inference/3.0.0');
+  assert.equal(PEER_INFERENCE_PROTOCOL_V2, '/peercompute/inference/2.0.0');
   assert.deepEqual(descriptor(imageModel).outputModalities, ['image']);
   assert.deepEqual(descriptor(model).outputModalities, ['text']);
   assert.throws(() => descriptor({ ...imageModel, outputModalities: ['text'] }), /modalities/);

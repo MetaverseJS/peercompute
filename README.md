@@ -70,9 +70,9 @@ now have selectable world inhabitants with persistent identities,
 private visitor conversations and optional managed speech. The model console is
 secondary configuration; see the [architecture and acceptance plan](plan/demos/inference/inhabited-agents.md).
 To speak with a world agent, select its body (or open Agents), enable voice, and
-use Talk followed by Stop. Speak replies enables local speech synthesis. These
-controls belong to the world conversation; the standalone Agents console runs
-typed/image tasks. Speech packages are managed together through Enable voice.
+use Talk followed by Stop. Speak replies enables local speech synthesis. World
+speech packages are managed together through Enable voice. The dedicated model
+console also has Talk and Speak replies, with local or peer speech specialists.
 
 The exact Tsotchke-Corporation/Qwen3.8-27B-GeoRefine-D14-abl-GGUF is catalogued for
 storage and hosting. All 11 files (14.20 GB total) are verified and pinned;
@@ -291,11 +291,12 @@ separate modal with links to Tsotchke's Hugging Face organization,
 [tsotchke.org](https://tsotchke.org/) and [tsotchke.net](https://tsotchke.net/).
 **Share with peers** and **Host inference** start checked and are independent:
 sharing serves retained model files; hosting executes requests on the
-currently loaded model. Both require an active connected browser. These checkboxes
+loaded models. Both require an active connected browser. These checkboxes
 live in the **Config** modal alongside GGUF GPU layers, connection and unload
 controls. **Stored Models** opens a separate window listing local model packages,
-sizes and loaded/shared status. **Load** switches the local worker to a complete
-stored package without downloading it again; loading can be stopped in the dialog.
+sizes and loaded/shared status. **Load** adds an independent managed worker for a
+complete stored package without downloading it again; loading can be stopped in
+the dialog. **Unload** releases that model's worker while keeping its saved files.
 Retained packages left incomplete by an interrupted verification stay listed as
 **Needs local verification**. Choose **Verify locally** to check their existing
 CID blocks and file hashes, with byte progress and cancellation, then **Load**.
@@ -327,6 +328,12 @@ worker cleanup, rather than relying on a browser heartbeat timer. Background
 timer throttling cannot expire a loaded model's reservation. Explicit revocation,
 quarantine or loss of its assigned worker still makes the model unavailable and
 requires cleanup before capacity is reused.
+The standalone console permits up to eight resident models, including multiple
+models using the same backend. Workers start on demand; the shared admission
+budget remains 12 GiB CPU memory and 16 GiB GPU memory. These are application
+ceilings, not measurements of free hardware memory. A failed additional load
+leaves existing residents loaded. Startup restores one conversational model;
+it does not load every saved package.
 Diffusion also checks WebGPU allocation, validation and internal errors during
 loading and generation. A failed GPU operation invalidates the model instead of
 returning a corrupt image. GPU memory estimates describe the model budget, not
@@ -407,13 +414,31 @@ Model options wrap within the window in browsers supporting native customizable
 selects; other browsers retain their native picker. Applicable browser setup help
 starts with the launch command, followed by verification and driver/browser updates.
 
-Choose an image-generation target and describe the image in the same prompt box.
+**Mixed** is the default inference provider: a capable loaded local model takes
+precedence, including its bounded queue; otherwise the request uses a capable
+peer. **Local only** prohibits remote dispatch, and individual local/peer model
+targets remain selectable. Capability and queue state determine the route;
+this is a deterministic policy, not a learned quality estimate. Responses show
+the chosen model/provider. The same registry and router support agent requests.
+
+Use **Talk**, then **Stop recording**, for speech recognition followed by a chat
+reply. **Speak replies** adds speech synthesis and sequential playback. Load
+Moonshine Tiny and Supertonic through Browse models, or use peers hosting those
+tasks. The voice controls do not download models automatically. Input is limited
+to20 seconds; long spoken responses are split into256-codepoint chunks. Stop
+cancels the entire turn, including owned microphone tracks and playback.
+Explicit local model selection keeps speech local; choosing a specific peer
+conversation model still allows mixed speech routing.
+
+Check **Generate image** and describe the image in the same prompt box.
 The result appears in the conversation; image targets use only the current
-prompt and disable image attachments. Generated previews are bounded and local,
-not automatically published. Private protocol2 carries generated RGBA in64KiB
-credited frames and verifies its digest. Both peers need the current application;
-reload an older host to update from protocol1. Chat/vision tasks keep their text
-output behavior, and hosted image models use the same per-model routing policy.
+prompt; conflicting image attachments require an explicit choice. Generated
+previews are local and are not automatically published. Private protocol3 adds
+multiple hosted models and bounded, digest-verified PCM speech transfer while
+retaining protocol2 text/vision/image interoperability. Audio and prompts use
+encrypted inference streams, not shared artifact metadata. Both peers need the
+new build for speech. See the [multimodal architecture](plan/demos/inference/multimodal-console.md)
+for lifecycle contracts and the relationship to Humunculus.
 
 Actual independent-browser acceptance passes text and image inference on a
 ComputeManager WebGPU worker over encrypted WebRTC, streaming, cancellation,

@@ -1,5 +1,7 @@
 import { StateManager } from '../../../peercompute/src/peercompute/stateManager/StateManager.js';
 import { ComputeManager } from '../../../peercompute/src/peercompute/computeManager/ComputeManager.js';
+import { ResidentModelRegistry } from '../../../peercompute/src/peercompute/inference/ResidentModelRegistry.js';
+import { SPEECH_MODEL_CATALOG, speechModelFileUrl } from '../../../peercompute/src/peercompute/inference/speech/speechCatalog.js';
 import { MODEL_CATALOG as INFERENCE_CATALOG, modelFileUrl } from '../../../peercompute/src/peercompute/inference/modelCatalog.js';
 import { MODEL_ARTIFACT_CATALOG, modelArtifactFileUrl } from '../../../peercompute/src/peercompute/artifacts/modelArtifactCatalog.js';
 import { GGUF_MODEL_CATALOG, ggufModelFileUrl } from '../../../peercompute/src/peercompute/artifacts/ggufModelCatalog.js';
@@ -25,7 +27,7 @@ import ggufWasmUrl from '@wllama/wllama/esm/wasm/wllama.wasm?url';
 import diffusionWasmUrl from 'peercompute-diffusion-ort/ort-wasm-simd-threaded.jsep.wasm?url';
 import diffusionFactoryUrl from 'peercompute-diffusion-ort/ort-wasm-simd-threaded.jsep.mjs?url';
 
-export const MODEL_CATALOG = Object.freeze({ ...INFERENCE_CATALOG, ...MODEL_ARTIFACT_CATALOG, ...GGUF_MODEL_CATALOG, ...DIFFUSION_MODEL_CATALOG });
+export const MODEL_CATALOG = Object.freeze({ ...INFERENCE_CATALOG, ...MODEL_ARTIFACT_CATALOG, ...GGUF_MODEL_CATALOG, ...DIFFUSION_MODEL_CATALOG, ...SPEECH_MODEL_CATALOG });
 
 export function trustedRuntimeAssets(runtimeBaseUrl) {
   if (runtimeBaseUrl) {
@@ -52,11 +54,11 @@ export async function checkGgufCapabilities() {
 /** Reusable app facade; storage and execution remain owned by PeerCompute managers. */
 export async function createInferenceRuntime({ stateManager, computeManager, networkManager,
   storeName = 'inference-models', runtimeBaseUrl, collectGpuEvidence = false,
-  memoryBudgets, preferenceStorage, residentModelSlots = 1, probeDeviceCapabilities = collectModelDeviceCapabilities,
+  memoryBudgets, preferenceStorage, residentModelSlots = 8, probeDeviceCapabilities = collectModelDeviceCapabilities,
   ggufRuntimeOptions = { n_ctx: 2048, n_batch: 64, n_gpu_layers: 99999, n_threads: 1 } } = {}) {
   let localMemoryBudgets = normalizeModelMemoryBudgets(memoryBudgets);
-  if (!Number.isInteger(residentModelSlots) || residentModelSlots < 1 || residentModelSlots > 3) {
-    throw new Error('Managed model slots must be between one and three');
+  if (!Number.isInteger(residentModelSlots) || residentModelSlots < 1 || residentModelSlots > 8) {
+    throw new Error('Managed model slots must be between one and eight');
   }
   let deviceCapabilities = null, deviceCheck;
   const ownsState = !stateManager;
@@ -65,7 +67,7 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
     enablePersistence: false, disableNetworkProvider: true, disableBroadcast: true,
   });
   const compute = computeManager ?? new ComputeManager({ requireWorkers: true, enableWorkers: true,
-    enableWebGPU: true, minWorkers: 1, targetWorkers: residentModelSlots, maxWorkers: residentModelSlots, autoScaleWorkers: false,
+    enableWebGPU: true, minWorkers: 1, targetWorkers: 1, maxWorkers: residentModelSlots, autoScaleWorkers: false,
     workerBootstrapTimeoutMs: 60_000 });
   const existingTransport = networkManager?.getArtifactTransport?.();
   const existingStore = existingTransport?.store ?? state.getArtifactStore(storeName);
@@ -75,6 +77,23 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
   let ggufService;
   let diffusionService;
   let activeService;
+  let residents;
+  const createdServices = new Set();
+  const claimedServices = new Set();
+  const trackedServices = new WeakSet();
+  function trackService(candidate) {
+    createdServices.add(candidate);
+    if (!trackedServices.has(candidate)) {
+      trackedServices.add(candidate);
+      const dispose = candidate.dispose.bind(candidate);
+      candidate.dispose = async () => {
+        const result = await dispose();
+        createdServices.delete(candidate); claimedServices.delete(candidate);
+        return result;
+      };
+    }
+    return candidate;
+  }
   let agents, agentsStarting, disposingAgents = false;
   const auxiliaryServices = new Map();
   const networkConnection = createModelNetworkConnection({ store, manager: networkManager,
@@ -97,6 +116,29 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
       resourceEstimate: modelMemoryEstimate,
       loadTimeoutMs: 300_000, generationTimeoutMs: 300_000 });
     activeService = service;
+    for (const candidate of [service, ggufService, diffusionService]) trackService(candidate);
+    residents = new ResidentModelRegistry({ artifactStore: store, maximumResidents: residentModelSlots,
+      async createService({ manifest, runtimeOptions }) {
+        const kind = manifest.model?.runtime;
+        if (kind === 'llama.cpp') await checkGgufCapabilities();
+        const available = (candidate) => candidate && !claimedServices.has(candidate) && !candidate.closed && candidate.getStatus().status === 'idle';
+        let candidate = kind === 'llama.cpp' ? ggufService : kind === 'onnx-diffusion' ? diffusionService
+          : kind === 'transformers.js' ? service : null;
+        if (!available(candidate) || (kind === 'llama.cpp' && runtimeOptions.ggufGpuLayers !== undefined)) {
+          const assets = kind === 'llama.cpp' ? trustedGgufRuntimeAssets()
+            : kind === 'onnx-diffusion' ? trustedDiffusionRuntimeAssets() : trustedRuntimeAssets(runtimeBaseUrl);
+          candidate = await compute.createModelInferenceService({ artifactStore: store, runtime: kind,
+            runtimeAssets: assets, resourceEstimate: modelMemoryEstimate, collectGpuEvidence,
+            ...(kind === 'llama.cpp' ? { runtimeOptions: { ...ggufRuntimeOptions,
+              ...(runtimeOptions.ggufGpuLayers !== undefined ? { n_gpu_layers: runtimeOptions.ggufGpuLayers } : {}) }, loadTimeoutMs: 30 * 60_000 }
+              : { loadTimeoutMs: 300_000 }), generationTimeoutMs: 300_000 });
+          trackService(candidate);
+          if (kind === 'transformers.js' && !available(service) && service.closed) service = candidate;
+          if (kind === 'llama.cpp' && ggufService.closed) ggufService = candidate;
+          if (kind === 'onnx-diffusion' && diffusionService.closed) diffusionService = candidate;
+        }
+        claimedServices.add(candidate); return candidate;
+      } });
     if (networkConnection.networkReady) networkConnection.startArtifacts();
   } catch (error) {
     await diffusionService?.dispose().catch(() => {});
@@ -134,7 +176,30 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
       return agentsStarting;
     },
     get service() { return activeService; },
-    get services() { return { onnx: service, gguf: ggufService, diffusion: diffusionService, ...Object.fromEntries(auxiliaryServices) }; },
+    get services() {
+      const result = { onnx: service, gguf: ggufService, diffusion: diffusionService, ...Object.fromEntries(auxiliaryServices) };
+      for (const entry of residents.list()) {
+        const candidate = residents.getService(entry.manifestCid);
+        if (candidate && !Object.values(result).includes(candidate)) result[entry.manifestCid] = candidate;
+      }
+      return result;
+    },
+    managesArtifactUses: true,
+    getServiceForModel(cid) { return residents.getService(cid)
+      ?? [...auxiliaryServices.values()].find((candidate) => candidate.getStatus().manifestCid === cid) ?? null; },
+    getResidentModelStates: () => residents.list(),
+    selectResidentModel(cid) {
+      const candidate = residents.getService(cid);
+      if (candidate?.getStatus().status !== 'ready') throw new Error('The selected model is not ready');
+      activeService = candidate;
+    },
+    async unloadResidentModel(cid) {
+      const result = await residents.unload(cid);
+      if (cid === undefined || activeService.getStatus().manifestCid === cid || ['idle', 'closed'].includes(activeService.getStatus().status)) {
+        activeService = residents.list().map((entry) => residents.getService(entry.manifestCid)).find((candidate) => candidate?.getStatus().status === 'ready') ?? service;
+      }
+      return result;
+    },
     runtimeAssets: trustedRuntimeAssets(runtimeBaseUrl),
     registerAuxiliaryService(id, auxiliary) {
       if (disposingAgents || !/^[a-z][a-z0-9-]{0,63}$/.test(id) || ['onnx', 'gguf', 'diffusion'].includes(id)
@@ -168,8 +233,8 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
       return { ...localMemoryBudgets };
     },
     getModelCompatibility(entry) {
-      // Pool totals are configured admission limits. Existing model reservations
-      // are released during replacement and are not hardware capacity readings.
+      // Configured aggregate capacity, not free physical VRAM. Admission checks
+      // the remaining pool without evicting an existing resident.
       const pools = compute.resourceBroker?.reportPressure().pools;
       const budgets = { ...localMemoryBudgets };
       for (const [key, kind] of [['cpuBytes', 'cpu'], ['gpuBytes', 'gpu']]) {
@@ -220,7 +285,8 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
       if (!entry) throw new Error('Unknown approved model');
       const sourceUrl = INFERENCE_CATALOG[modelId] ? modelFileUrl
         : GGUF_MODEL_CATALOG[modelId] ? ggufModelFileUrl
-          : DIFFUSION_MODEL_CATALOG[modelId] ? diffusionModelFileUrl : modelArtifactFileUrl;
+          : DIFFUSION_MODEL_CATALOG[modelId] ? diffusionModelFileUrl
+            : SPEECH_MODEL_CATALOG[modelId] ? (id, path) => speechModelFileUrl(SPEECH_MODEL_CATALOG[id], SPEECH_MODEL_CATALOG[id].files.find((file) => file.path === path)) : modelArtifactFileUrl;
       return importModelPackage(store, { schema: 'peercompute.artifact.manifest.v1', name: entry.name,
         files: entry.files, model: entry.model, provenance: { ...entry.provenance, license: entry.license } },
       (path) => sourceUrl(modelId, path), options);
@@ -245,26 +311,20 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
       const manifest = await store.getManifest(cid, { signal: options.signal });
       const isGguf = manifest.model?.runtime === 'llama.cpp';
       const isDiffusion = manifest.model?.runtime === 'onnx-diffusion';
-      if (!isGguf && !isDiffusion && manifest.model?.runtime !== 'transformers.js') {
+      if (!isGguf && !isDiffusion && !['transformers.js', 'transformers-speech'].includes(manifest.model?.runtime)) {
         throw new Error('This package can be stored and hosted, but its model runtime is unavailable in this browser demo');
       }
-      if ([service, ggufService, diffusionService].some((candidate) => candidate.getStatus().status !== 'idle')) {
-        throw new Error('Unload the resident model before loading another package');
-      }
       if (isGguf) {
-        await checkGgufCapabilities();
         if (ggufGpuLayers !== undefined) {
           if (!Number.isSafeInteger(ggufGpuLayers) || ggufGpuLayers < 1 || ggufGpuLayers > 99999) {
             throw new Error('GGUF GPU layers must be between 1 and 99999 (all layers)');
           }
-          const replacement = await createGgufService({ ...ggufRuntimeOptions, n_gpu_layers: ggufGpuLayers });
-          try { await ggufService.dispose(); }
-          catch (error) { await replacement.dispose(); throw error; }
-          ggufService = replacement;
         }
       }
-      activeService = isGguf ? ggufService : isDiffusion ? diffusionService : service;
-      return activeService.loadModel({ manifestCid: cid, ...options });
+      const result = await residents.load(cid, { signal: options.signal, onProgress: options.onProgress,
+        runtimeOptions: ggufGpuLayers === undefined ? {} : { ggufGpuLayers } });
+      if (manifest.model.runtime !== 'transformers-speech' || activeService.getStatus().status !== 'ready') activeService = residents.getService(cid);
+      return result;
     },
     async ensure(cid, options = {}) {
       await networkConnection.requireArtifacts(options);
@@ -285,9 +345,10 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
       await agents?.dispose();
       for (const auxiliary of auxiliaryServices.values()) await auxiliary.dispose();
       auxiliaryServices.clear();
-      await diffusionService.dispose();
-      await ggufService.dispose();
-      await service.dispose();
+      await residents.dispose();
+      const disposed = await Promise.allSettled([...createdServices].map((candidate) => candidate.dispose()));
+      const failures = disposed.filter((result) => result.status === 'rejected').map((result) => result.reason);
+      if (failures.length) throw new AggregateError(failures, 'Some managed model services could not finish cleanup');
       await networkConnection.dispose();
       if (ownsCompute) await compute.destroy();
       if (ownsState) await state.destroy();

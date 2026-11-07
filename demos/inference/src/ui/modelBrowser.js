@@ -46,7 +46,7 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
     return input;
   }
   select('source', 'Source', [['all', 'All sources'], ['catalog', 'Catalog'], ['stored', 'Stored on this device'], ['peers', 'Peer files'], ['hub', 'Hugging Face search']]);
-  select('task', 'Task', [['all', 'All tasks'], ['text-generation', 'Text and code'], ['image-text-to-text', 'Image understanding'], ['text-to-image', 'Image generation']]);
+  select('task', 'Task', [['all', 'All tasks'], ['text-generation', 'Text and code'], ['image-text-to-text', 'Image understanding'], ['text-to-image', 'Image generation'], ['automatic-speech-recognition', 'Speech recognition'], ['text-to-speech', 'Speech synthesis']]);
   select('size', 'Package size', [['all', 'Any size'], [String(500 * 1024 ** 2), 'Up to 500 MiB'], [String(1024 ** 3), 'Up to 1 GiB'],
     [String(4 * 1024 ** 3), 'Up to 4 GiB'], [String(8 * 1024 ** 3), 'Up to 8 GiB'], ['large', '8 GiB and larger'], ['unknown', 'Unknown size']]);
   select('precision', 'Precision', [['all', 'All precisions']]);

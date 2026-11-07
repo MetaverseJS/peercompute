@@ -1,0 +1,119 @@
+# Multimodal resident model console
+
+## Purpose and Humunculus relationship
+
+The console is a reusable specialist execution surface: several independently
+managed models can stay loaded, and a task router selects a capable local or
+peer provider. Speech, vision, language and image generation share resource
+admission, artifact identity, cancellation and route evidence. This is a step
+toward the specialist workspace in [Humunculus](../humunculus/humunculus.pdf),
+not a claim of learned motor behavior or a trained routing policy.
+
+Agent identity and memory remain separate from the model provider. The same
+resident registry and capability policy are available to the console and the
+agent adapter. A future learned ranker can choose among eligible candidates;
+it cannot bypass task compatibility, locality policy or resource limits.
+
+```mermaid
+flowchart TD
+  UI[Console: text, attachment, Talk] --> Voice[VoiceSession: owned capture and playback]
+  UI --> Intent[Explicit task: text, vision, or Generate image]
+  Voice -->|bounded PCM| Router[Shared capability router]
+  Router -->|ASR transcript| Intent
+  Intent --> Router
+  Router --> Local[ResidentModelRegistry: exact CID and session]
+  Router --> Peer[Peer inference: versioned multi-model and audio protocol]
+  Local --> CM[ComputeManager workers and shared resource broker]
+  Local --> Store[StateManager ArtifactStore: verified retained packages]
+  CM --> Result[Text, RGBA image, or bounded PCM result]
+  Peer --> Result
+  Result --> UI
+  Result -->|optional spoken text| Voice
+```
+
+## User behavior
+
+- **Load** adds a resident model. Loading another model never silently unloads
+  existing models. Stored Models distinguishes saved files from loaded workers,
+  provides per-model Unload, and retains Verify locally and Delete.
+- **Mixed** is the default. A ready, capable local model with bounded queue
+  capacity takes precedence; otherwise a capable peer host is selected.
+  Local only prohibits remote dispatch. Explicit model targets remain available.
+  The actual selected model/provider is shown with the response.
+- An attachment selects image understanding. **Generate image** explicitly
+  selects text-to-image; unsupported attachment combinations are explained.
+  Image generation is not guessed from a sentence or mixed with chat history.
+- **Talk** explicitly opens the microphone; **Stop recording** ends the utterance
+  and routes ASR, then the conversation task. **Speak replies** routes short TTS
+  chunks and plays them sequentially. Voice is usable through loaded local or
+  hosted peer specialists. These controls do not silently download speech models.
+- Explicit local model selection keeps speech stages local-only. A specific
+  remote conversational model uses mixed speech routing because that model need
+  not support audio. Explicit locality modes apply to every speech stage.
+
+## Ownership and contracts
+
+Each resident binds an immutable manifest CID to a managed service, session ID,
+runtime options, descriptor, artifact-use lease and queue state. One service
+retains one worker/session. Multiple models using the same backend remain
+independent. A selected-model compatibility accessor must not determine which
+service receives cancellation after a request has already started.
+
+Aggregate CPU/GPU reservations remain enforced. Additional worker slots do not
+increase the configured memory envelope or prove hardware fit. Admission failure
+leaves existing residents usable; unload/delete affects only the selected model.
+Startup reuses the remembered compatible conversational model and preserves
+pending retained-package recovery. It does not automatically reload every saved
+model or make a speech model the default conversation model.
+
+The task contract covers text-generation, image-text-to-text, text-to-image,
+automatic-speech-recognition and text-to-speech. It retains exact model/session
+identity, request ID, cancellation signal and progress. Route evidence names
+the actual provider; a deterministic baseline is not model-quality ranking.
+No automatic fallback replays a request after execution has committed or emitted
+partial output. Disconnects cannot prove that a remote worker finished cleanup.
+
+Peer hosting advertises bounded per-model capabilities, busy/idle state and
+queue capacity. New protocol support carries bounded mono Float32 PCM with
+validated dimensions/sample rate, finite samples, chunk credits and digests.
+Legacy v2 peers remain usable for their existing text/vision/image tasks, but
+are never advertised as audio hosts. Current speech adapter limits remain
+16 kHz/20 seconds for input and 256 codepoints per TTS chunk, with bounded output.
+Audio and prompts travel over encrypted inference streams; they do not enter
+the shared artifact catalog or replicated world state.
+
+VoiceSession owns no model residency. One caller turn signal spans capture,
+ASR, language/vision generation and optional playback. Cancellation stops owned
+tracks/nodes and waits for cleanup; a late microphone grant is closed. World
+speech reuses the same registry where present, while older injected runtimes
+keep a compatibility path. Shared speech chunking prevents response truncation.
+
+## Implementation and acceptance
+
+1. Registry/runtime/controller: additive same-backend residents, per-CID loading,
+   dispatch, unload, deletion, resource rejection and artifact-use ownership.
+2. Shared router/agent adapter and interoperable multi-host/audio protocol:
+   local-first capability policy, bounded request/result validation, backpressure,
+   cancellation and no replay after commitment.
+3. Console controls: default Mixed, explicit image intent, per-model unload,
+   useful route labels and native microphone/speech controls.
+4. Shared VoiceSession and world-speech registry integration: cancellation and
+   cleanup across the entire voice turn without duplicate model loads.
+5. Acceptance: focused unit/native UI tests, private two-peer synthetic audio
+   transport, actual managed-model checks when resources permit, all affected
+   production builds and exact internal HTTPS desktop/mobile/SecretWorkshop
+   checks. Preserve the user's active27B session and cached data throughout.
+
+Implementation results, failed experiments and remaining limits are recorded in
+[the repository log](../../log.md). Learned selection, motor policies, training,
+cloning and migration retain their separate Humunculus/agent-layer gates.
+
+November7 acceptance passes with Gemma270M, SmolVLM256M, Moonshine Tiny and
+Supertonic on four independent ComputeManager GPU workers. Mixed selects Gemma
+for text and SmolVLM for an image; a separate browser with no local residents
+uses real peer ASR, text and TTS, including native microphone controls and
+completed playback. Unloading vision preserves the other three residents;
+final cleanup releases every CPU/GPU lease. The test uses owned profiles and
+separate browsers on one machine, not two physical devices. No27B or diffusion
+hardware rerun is claimed for this change. Exact internal console and world
+previews pass desktop/mobile and SecretWorkshop connection checks.

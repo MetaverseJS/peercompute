@@ -1,4 +1,4 @@
-const TASKS = new Set(['text-generation', 'image-text-to-text', 'text-to-image']);
+const TASKS = new Set(['text-generation', 'image-text-to-text', 'text-to-image', 'automatic-speech-recognition', 'text-to-speech']);
 export const knownBytes = (value) => Number.isSafeInteger(value) && value >= 0;
 export function modelBytes(value) {
   if (!knownBytes(value)) return 'Unknown size';

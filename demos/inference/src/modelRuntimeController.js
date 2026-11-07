@@ -4,6 +4,8 @@ import { PEER_INFERENCE_LIMITS } from '../../../peercompute/src/peercompute/netw
 import { findModelCatalogEntry, VOICE_MODEL_LOAD_HINT } from './modelDeviceCompatibility.js';
 import { validateHubPackage, matchesHubPackage, verifyStoredHubPackage } from './modelHubPackage.js';
 import { createModelPreferences, DEFAULT_MODEL_ID } from './modelPreferences.js';
+import { MODEL_POLICY } from '../../../peercompute/src/peercompute/inference/modelManifest.js';
+import { routeInferenceTask } from '../../../peercompute/src/peercompute/inference/InferenceRouter.js';
 
 function compareModelSizes(left, right) {
   const size = (value) => Number.isSafeInteger(value) && value >= 0 ? value : Infinity;
@@ -16,7 +18,7 @@ function compareModelSizes(left, right) {
 function capabilities(model = {}) {
   const modalities = [...(model.modalities ?? ['text'])];
   const task = model.task ?? (modalities.includes('image') ? 'image-text-to-text' : 'text-generation');
-  return { task, modalities, outputModalities: [...(model.outputModalities ?? [task === 'text-to-image' ? 'image' : 'text'])] };
+  return { task, modalities, outputModalities: [...(model.outputModalities ?? [task === 'text-to-image' ? 'image' : task === 'text-to-speech' ? 'audio' : 'text'])] };
 }
 const voiceManaged = (entry) => (entry?.model ?? entry)?.runtime === 'transformers-speech';
 
@@ -56,6 +58,9 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
   const deletions = new Map();
   const localGenerations = new Set();
   const modelUses = new Map();
+  const localStates = new Map();
+  const admittedResidents = new Map();
+  const unloadingResidents = new Set();
   let sharing = true, hostInference = true, closed = false;
   let peerService, peerStarting, refreshing, acquiring, backgroundSharing;
   let current = null, localRequests = 0, lastIdleAt = now();
@@ -82,13 +87,14 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
   }
   function assertChatLoadable(entry) {
     assertLocallyAvailable(entry);
-    if (voiceManaged(entry)) throw Object.assign(new Error(VOICE_MODEL_LOAD_HINT), { code: 'ERR_MODEL_VOICE_MANAGED' });
+    if (voiceManaged(entry) && !runtime.getServiceForModel) throw Object.assign(new Error(VOICE_MODEL_LOAD_HINT), { code: 'ERR_MODEL_VOICE_MANAGED' });
   }
   if (runtime.setMemoryBudgets) {
     const setBudgets = runtime.setMemoryBudgets.bind(runtime);
     runtime.setMemoryBudgets = (value) => {
       assertOpen();
-      if (acquiring || runtime.service.getStatus().status === 'loading') throw new Error('Wait for the model import/load to finish before changing memory budgets');
+      if (acquiring || runtime.service.getStatus().status === 'loading'
+          || runtime.getResidentModelStates?.().some((entry) => entry.status === 'loading')) throw new Error('Wait for the model import/load to finish before changing memory budgets');
       return setBudgets(value);
     };
   }
@@ -139,14 +145,31 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
       { code: 'ERR_MODEL_VERIFICATION_REQUIRED', manifestCid: record.cid });
   }
   async function rememberSuccessfulLoad(cid, signal) {
-    const model = resident();
-    if (signal?.aborted || model?.manifestCid !== cid) return;
+    const model = resident(cid);
+    if (signal?.aborted || model?.manifestCid !== cid || voiceManaged(model)) return;
     lastLoaded = await preferences.rememberLoaded({ manifestCid: cid, modelId: model.modelId }, { signal });
   }
-  function resident() {
-    const status = runtime.service.getStatus();
-    return current && !deleting.has(current.manifestCid) && !pendingVerification.has(current.manifestCid) && status.status === 'ready'
-      && status.manifestCid === current.manifestCid ? current : null;
+  const serviceFor = (cid) => runtime.getServiceForModel?.(cid)
+    ?? (runtime.service.getStatus().manifestCid === cid ? runtime.service : null);
+  function residents() {
+    const states = runtime.getResidentModelStates?.() ?? [runtime.service.getStatus()];
+    return states.map((state) => {
+      const model = retained.get(state.manifestCid) ?? (current?.manifestCid === state.manifestCid ? current : null);
+      if (!model || deleting.has(model.manifestCid) || pendingVerification.has(model.manifestCid)) return null;
+      const service = serviceFor(model.manifestCid);
+      const status = service?.getStatus() ?? state;
+      const admitted = admittedResidents.get(model.manifestCid);
+      const work = localStates.get(model.manifestCid) ?? { active: 0, lastIdleAt: 0 };
+      const busy = work.active > 0 || !!status.activeRequestId || status.queuedRequests > 0;
+      return { ...model, ...status, status: state.status === 'unloading' || unloadingResidents.has(model.manifestCid) ? 'unloading'
+        : status.status === 'ready' && (!admitted || admitted.service !== service || admitted.sessionId !== status.sessionId) ? 'loading' : status.status,
+        manifestCid: model.manifestCid, busy, queuedRequests: status.queuedRequests ?? 0,
+        queueCapacity: MODEL_POLICY.maxQueued, queueAvailable: !busy || (status.queuedRequests ?? 0) < MODEL_POLICY.maxQueued,
+        idleForMs: busy ? 0 : Math.max(0, now() - work.lastIdleAt), maxNewTokens: MODEL_POLICY.maxNewTokens };
+    }).filter(Boolean);
+  }
+  function resident(cid = runtime.service.getStatus().manifestCid) {
+    return residents().find((entry) => entry.manifestCid === cid && entry.status === 'ready') ?? null;
   }
   const remoteModels = () => (peerService?.listModels() ?? []).map((entry) => ({ ...entry, ...capabilities(entry),
     providers: entry.providers.filter((provider) => !provider.local) })).filter((entry) => entry.providers.length);
@@ -204,19 +227,23 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
     publication = publication.catch(() => {}).then(work);
     return publication;
   }
-  async function generateLocal(options) {
-    const model = resident();
+  async function generateLocal(options, cid) {
+    const model = resident(cid);
     if (!model) throw new Error('Import a model before using local inference');
     if (options.image && !model.modalities.includes('image')) throw new Error('This model accepts text only');
+    if (options.sessionId && options.sessionId !== model.sessionId) throw new Error('The selected local model session changed before dispatch');
+    const service = serviceFor(model.manifestCid);
+    const state = localStates.get(model.manifestCid) ?? { active: 0, lastIdleAt: now() };
+    localStates.set(model.manifestCid, state); state.active++;
     localRequests++;
     const abort = new AbortController();
     const signal = AbortSignal.any([combined(options.signal), abort.signal]);
-    const request = { manifestCid: model.manifestCid, abort };
+    const request = { manifestCid: model.manifestCid, abort, service };
     localGenerations.add(request);
     try {
-      request.promise = Promise.resolve(runtime.service.generate({ ...options, task: model.task, signal }));
+      request.promise = Promise.resolve(service.generate({ ...options, task: model.task, signal }));
       return await request.promise;
-    } finally { localGenerations.delete(request); if (--localRequests === 0) lastIdleAt = now(); }
+    } finally { localGenerations.delete(request); if (--localRequests === 0) lastIdleAt = now(); if (--state.active === 0) state.lastIdleAt = now(); }
   }
   async function ensurePeerService() {
     assertOpen();
@@ -235,18 +262,20 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
           const status = runtime.service.getStatus();
           const busy = localRequests > 0 || !!status.activeRequestId || status.queuedRequests > 0;
           const local = resident();
-          // The inference-directory protocol supports these tasks only. Speech
-          // packages remain in file storage/sharing without poisoning its schema.
+          // The peer service projects this full catalog to each negotiated
+          // protocol version; old peers cannot consume speech descriptors.
           const models = [...retained.values()].filter((model) => published.has(model.manifestCid) && !deleting.has(model.manifestCid)
-            && ['text-generation', 'image-text-to-text', 'text-to-image'].includes(model.task));
+            && ['text-generation', 'image-text-to-text', 'text-to-image', 'automatic-speech-recognition', 'text-to-speech'].includes(model.task));
           if (local) models.sort((left, right) => Number(right.manifestCid === local.manifestCid) - Number(left.manifestCid === local.manifestCid));
+          const legacy = resident();
           return { sharedModels: sharing ? models.slice(0, PEER_INFERENCE_LIMITS.maximumModels) : [],
-            hostedModel: hostInference && !closed ? resident() : null,
+            hostedModels: hostInference && !closed ? residents().filter((entry) => entry.status === 'ready') : [],
+            hostedModel: hostInference && !closed && ['text-generation', 'image-text-to-text', 'text-to-image'].includes(legacy?.task) ? legacy : null,
             busy, queuedRequests: status.queuedRequests ?? 0, idleForMs: busy ? 0 : Math.max(0, now() - lastIdleAt) };
         },
         generate: async ({ manifestCid, ...options }) => {
-          if (!hostInference || closed || resident()?.manifestCid !== manifestCid) throw new Error('Model is no longer hosted');
-          return generateLocal(options);
+          if (!hostInference || closed || !resident(manifestCid)) throw new Error('Model is no longer hosted');
+          return generateLocal(options, manifestCid);
         },
       }).then(async (service) => {
         if (closed) { await manager.releasePeerInferenceService(owner); throw new Error('Model console is closed'); }
@@ -279,7 +308,7 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
   async function loadModel(cid, options = {}) {
     if (deleting.has(cid)) throw new Error('This model is being deleted; retry deletion before loading it');
     assertChatLoadable(await runtime.store.getManifest(cid, { signal: options.signal }));
-    if (!modelUses.has(cid)) modelUses.set(cid, await runtime.store.acquireUse(cid, { signal: options.signal }));
+    if (!runtime.managesArtifactUses && !modelUses.has(cid)) modelUses.set(cid, await runtime.store.acquireUse(cid, { signal: options.signal }));
     const signal = options.signal;
     let preferenceReceipt;
     try {
@@ -289,24 +318,30 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
       signal?.throwIfAborted();
       await awaitLoadStep(ensurePeerService(), signal, 3000);
       signal?.throwIfAborted();
-      preferenceReceipt = await preferences.rememberLoadedWithReceipt({ manifestCid: cid, modelId: next.modelId }, { signal });
-      lastLoaded = preferenceReceipt.record;
+      if (!voiceManaged(next)) {
+        preferenceReceipt = await preferences.rememberLoadedWithReceipt({ manifestCid: cid, modelId: next.modelId }, { signal });
+        lastLoaded = preferenceReceipt.record;
+      }
       signal?.throwIfAborted();
-      current = next; lastIdleAt = now();
+      admittedResidents.set(cid, { service: serviceFor(cid), sessionId: serviceFor(cid)?.getStatus().sessionId });
+      if (!voiceManaged(next) || !resident()) current = next;
+      localStates.set(cid, { active: 0, lastIdleAt: now() }); lastIdleAt = now();
       return { ...result, manifestCid: cid };
     }
     catch (error) {
       const failures = [];
-      if (signal?.aborted && runtime.service.getStatus().manifestCid === cid) {
+      const loadedService = serviceFor(cid);
+      if (signal?.aborted && loadedService?.getStatus().manifestCid === cid) {
+        admittedResidents.delete(cid);
         // Cancellation may arrive after the managed loader returned ready.
         // Hide it from new peer requests, then await acknowledged worker cleanup.
         if (current?.manifestCid === cid) current = null;
-        try { await runtime.service.unloadModel(); }
+        try { if (runtime.unloadResidentModel) await runtime.unloadResidentModel(cid); else await loadedService.unloadModel(); }
         catch (cleanupError) { failures.push(cleanupError); }
       }
       // A failed load can retain a worker whose termination was not acknowledged.
       // Only a service with no matching session proves its file lease is releasable.
-      if (runtime.service.getStatus().manifestCid !== cid) await releaseModelUse(cid);
+      if (serviceFor(cid)?.getStatus().manifestCid !== cid) await releaseModelUse(cid);
       if (signal?.aborted && preferenceReceipt?.committed) {
         try { lastLoaded = await preferences.restoreLastLoaded(preferenceReceipt); }
         catch (restoreError) { failures.push(restoreError); }
@@ -315,12 +350,23 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
       throw error;
     }
   }
-  async function unloadModel() {
-    await peerService?.setHostingEnabled(false);
-    await runtime.service.unloadModel();
-    for (const cid of modelUses.keys()) await releaseModelUse(cid);
-    current = null;
-    await peerService?.setHostingEnabled(hostInference);
+  async function unloadModel(cid) {
+    if (!runtime.unloadResidentModel) {
+      await peerService?.setHostingEnabled(false);
+      await runtime.service.unloadModel();
+      for (const key of modelUses.keys()) await releaseModelUse(key);
+      current = null; await peerService?.setHostingEnabled(hostInference); return;
+    }
+    const affected = cid === undefined ? runtime.getResidentModelStates().map((entry) => entry.manifestCid) : [cid];
+    for (const key of affected) unloadingResidents.add(key);
+    await Promise.all(affected.map((key) => peerService?.cancelHostedModel?.(key)));
+    const active = [...localGenerations].filter((request) => affected.includes(request.manifestCid));
+    for (const request of active) request.abort.abort(new DOMException('Model is unloading', 'AbortError'));
+    await Promise.allSettled(active.map((request) => request.promise));
+    const result = await runtime.unloadResidentModel(cid);
+    for (const key of affected) { await releaseModelUse(key); localStates.delete(key); admittedResidents.delete(key); unloadingResidents.delete(key); }
+    current = retained.get(runtime.service.getStatus().manifestCid) ?? null;
+    return result;
   }
   async function releaseModelUse(cid) {
     const release = modelUses.get(cid);
@@ -331,13 +377,16 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
     // Validate persisted metadata before replacing a working local session.
     assertChatLoadable(record.manifest ?? await runtime.store.getManifest(record.cid, { signal }));
     signal.throwIfAborted();
-    if (resident()?.manifestCid === record.cid) {
+    if (resident(record.cid)) {
+      if (!voiceManaged(record.manifest)) { runtime.selectResidentModel?.(record.cid); current = retained.get(record.cid) ?? current; }
       await rememberSuccessfulLoad(record.cid, signal);
       shareAfterLoad(record.cid);
-      return { ...runtime.service.getStatus().evidence, manifestCid: record.cid };
+      return { ...serviceFor(record.cid).getStatus().evidence, manifestCid: record.cid };
     }
-    options.onProgress?.({ stage: 'unload' }); signal.throwIfAborted();
-    await unloadModel(); signal.throwIfAborted();
+    if (!runtime.unloadResidentModel) {
+      options.onProgress?.({ stage: 'unload' }); signal.throwIfAborted();
+      await unloadModel(); signal.throwIfAborted();
+    }
     options.onProgress?.({ stage: 'load' }); signal.throwIfAborted();
     const result = await loadModel(record.cid, { ...options, signal });
     shareAfterLoad(record.cid);
@@ -424,14 +473,27 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
           localAvailability: localAvailability(retainedManifests.get(entry.manifestCid) ?? entry) })),
       ...[...pendingVerification.values()].map(pendingModel).filter((entry) => !catalog[entry.modelId])
         .map((entry) => ({ ...entry, key: `stored:${entry.manifestCid}`, source: 'stored', stored: true }))]
-        .filter((entry) => !voiceManaged(entry)).sort(compareModelSizes);
+        .filter((entry) => runtime.getServiceForModel || !voiceManaged(entry)).sort(compareModelSizes);
     },
+    listResidentModels: () => residents(),
     listInferenceTargets() {
       const model = resident();
-      return [{ key: 'local', name: model?.name ?? 'No model loaded', local: true,
-        available: !!model, busy: localRequests > 0, ...capabilities(model ?? {}), providerCount: model ? 1 : 0 },
-      ...remoteHosts().map((entry) => ({ ...entry, key: `peer:${entry.manifestCid}`, local: false,
-        available: true, busy: entry.hosts.every((host) => host.busy), providerCount: entry.hosts.length }))];
+      const local = runtime.getServiceForModel ? residents().filter((entry) => entry.status === 'ready').map((entry) => ({ ...entry,
+        key: `local:${entry.manifestCid}`, local: true, available: true, providerCount: 1 }))
+        : [{ ...model, key: 'local', name: model?.name ?? 'No model loaded', local: true,
+          available: !!model, busy: localRequests > 0, ...capabilities(model ?? {}), providerCount: model ? 1 : 0 }];
+      return [...local,
+      ...remoteHosts().map((entry) => {
+        const eligible = entry.hosts.filter((host) => host.queueAvailable !== false
+          && (!host.busy || (host.queuedRequests ?? 0) < (host.queueCapacity ?? MODEL_POLICY.maxQueued)))
+          .sort((a, b) => Number(Boolean(a.busy)) - Number(Boolean(b.busy)) || (b.idleForMs ?? 0) - (a.idleForMs ?? 0));
+        const best = eligible[0];
+        return { ...entry, key: `peer:${entry.manifestCid}`, local: false, available: true,
+          busy: entry.hosts.every((host) => host.busy), providerCount: entry.hosts.length,
+          queueAvailable: eligible.length > 0, queueCapacity: best?.queueCapacity ?? MODEL_POLICY.maxQueued,
+          queuedRequests: best?.queuedRequests ?? (eligible.length ? 0 : MODEL_POLICY.maxQueued),
+          idleForMs: best?.busy ? 0 : best?.idleForMs ?? 0 };
+      })];
     },
     async refreshPeers({ signal } = {}) {
       assertOpen();
@@ -528,7 +590,16 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
         return activateRecord(record, options, signal);
       }, options.signal);
     },
-    unload() { return mutate(() => unloadModel()); },
+    unload(cid, { expectedService, expectedSessionId } = {}) {
+      const key = cid === undefined ? undefined : artifactCID(cid).toString();
+      return mutate(() => {
+        if (key !== undefined && ((expectedService !== undefined && serviceFor(key) !== expectedService)
+            || (expectedSessionId !== undefined && serviceFor(key)?.getStatus().sessionId !== expectedSessionId))) {
+          return { status: 'replaced', manifestCid: key };
+        }
+        return unloadModel(key);
+      });
+    },
     recoverStoredModel(input, { signal, onProgress } = {}) {
       const cid = artifactCID(input).toString();
       return mutate(async (activeSignal) => {
@@ -562,7 +633,7 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
         totalBytes: record.manifest.files.reduce((sum, file) => sum + file.size, 0),
         runtime: record.manifest.model.runtime,
         ...(record.status === 'partial' ? { needsVerification: true } : {}),
-        ...(voiceManaged(record.manifest) ? { loadMode: 'voice', loadHint: VOICE_MODEL_LOAD_HINT } : {}),
+        ...(voiceManaged(record.manifest) && !runtime.getServiceForModel ? { loadMode: 'voice', loadHint: VOICE_MODEL_LOAD_HINT } : {}),
         localAvailability: record.status === 'deleting' || deleting.has(record.cid)
           ? { status: 'unavailable', code: 'model_deleting', reason: 'Finish deleting this package before loading it.' }
           : record.status === 'partial' ? verificationAvailability
@@ -597,16 +668,18 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
           await publication.catch(() => {});
           if (runtime.networkManager?.getPublishedArtifactCids?.().includes(cid)) await runtime.withdraw(cid);
           published.delete(cid);
-          const status = runtime.service.getStatus();
-          const matching = current?.manifestCid === cid || status.manifestCid === cid;
+          const service = serviceFor(cid);
+          const matching = service?.getStatus().manifestCid === cid;
           if (matching) {
-            await peerService?.setHostingEnabled(false);
+            if (!runtime.unloadResidentModel) await peerService?.setHostingEnabled(false);
+            else await peerService?.cancelHostedModel?.(cid);
             const active = [...localGenerations].filter((request) => request.manifestCid === cid);
             for (const request of active) request.abort.abort(new DOMException('Stored model is being deleted', 'AbortError'));
             await Promise.allSettled(active.map((request) => request.promise));
-            await runtime.service.unloadModel();
+            if (runtime.unloadResidentModel) await runtime.unloadResidentModel(cid); else await service.unloadModel();
             await releaseModelUse(cid);
-            current = null; unloaded = true;
+            if (current?.manifestCid === cid) current = retained.get(runtime.service.getStatus().manifestCid) ?? null;
+            localStates.delete(cid); admittedResidents.delete(cid); unloaded = true;
           }
           activeSignal.throwIfAborted();
           unloaded = await runtime.unloadAuxiliaryModel?.(cid) || unloaded;
@@ -633,27 +706,58 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
       deletions.set(cid, deletion);
       return deletion;
     },
-    async generate(target, options = {}) {
+    async generate(target = 'mixed', options = {}) {
       assertOpen();
       const requestId = options.requestId ?? crypto.randomUUID();
       if (requests.has(requestId)) throw new Error('Duplicate inference request ID');
       const abort = new AbortController();
       const signal = AbortSignal.any([combined(options.signal), abort.signal]);
-      const request = { abort, remote: target !== 'local' }; requests.set(requestId, request);
+      const request = { abort, remote: false, service: null }; requests.set(requestId, request);
       try {
-        const input = { ...options, requestId, signal };
-        if (target === 'local') return await generateLocal(input);
-        const entry = remoteHosts().find((model) => `peer:${model.manifestCid}` === target);
-        if (!entry) throw new Error('No peer is currently hosting that model');
-        if (options.image && !entry.modalities.includes('image')) throw new Error('This model accepts text only');
-        return await peerService.generate(entry.manifestCid, { ...input, task: entry.task });
+        const automatic = { mixed: 'mixed', 'local-only': 'local', peers: 'peers', 'peers-only': 'peers' }[target];
+        let candidates;
+        if (automatic) {
+          candidates = runtime.listInferenceTargets();
+          let localReady = false;
+          if (automatic === 'mixed') {
+            try { routeInferenceTask({ task: options.task ?? (options.audio ? 'automatic-speech-recognition' : options.image ? 'image-text-to-text' : 'text-generation'),
+              mode: 'local', candidates }); localReady = true; }
+            catch (error) { if (error.code !== 'ERR_INFERENCE_NO_MODEL') throw error; }
+          }
+          if (automatic !== 'local' && !localReady) {
+            await runtime.refreshPeers({ signal }).catch(() => signal.throwIfAborted());
+            candidates = runtime.listInferenceTargets();
+          }
+        } else if (target === 'local') {
+          const entry = resident();
+          if (!entry) throw new Error('Import a model before using local inference');
+          candidates = [{ ...entry, key: 'local', local: true, available: true }];
+        } else {
+          candidates = runtime.listInferenceTargets().filter((entry) => entry.key === target);
+          if (!candidates.length) throw new Error('The selected model is no longer available');
+        }
+        const task = options.task ?? (options.audio ? 'automatic-speech-recognition' : options.image ? 'image-text-to-text'
+          : automatic ? 'text-generation' : candidates[0]?.task ?? 'text-generation');
+        if (!automatic && options.image && !candidates[0]?.modalities.includes('image')) throw new Error('This model accepts text only');
+        const { candidate, route } = routeInferenceTask({ task, mode: automatic ?? (candidates[0]?.local ? 'local' : 'peers'), candidates });
+        if (options.image && !candidate.modalities.includes('image')) throw new Error('This model accepts text only');
+        request.remote = !candidate.local; request.service = candidate.local ? serviceFor(candidate.manifestCid) : null;
+        const onProgress = (event) => {
+          if (event.peerId) route.peerId = event.peerId;
+          options.onProgress?.(['routing', 'accepted'].includes(event.type) ? { ...event, ...route, type: event.type, route: { ...route } } : event);
+        };
+        onProgress({ type: 'routing', requestId });
+        const input = { ...options, requestId, signal, onProgress };
+        const result = candidate.local ? await generateLocal(input, candidate.manifestCid)
+          : await peerService.generate(candidate.manifestCid, { ...input, task: candidate.task });
+        return { ...result, route: { ...route, ...(result.peerId ? { peerId: result.peerId } : {}) } };
       } finally { requests.delete(requestId); }
     },
     async cancel(requestId) {
       const request = requests.get(requestId); if (!request) return false;
       request.abort.abort('User cancelled');
       if (request.remote) await peerService?.cancel(requestId);
-      else await runtime.service.cancel(requestId);
+      else await request.service?.cancel(requestId);
       return true;
     },
   });

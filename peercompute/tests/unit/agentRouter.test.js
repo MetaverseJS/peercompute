@@ -8,9 +8,11 @@ const local = { key: 'local', manifestCid: 'local-cid', sessionId: 'session-1', 
 const remote = { ...local, key: 'peer:remote-cid', manifestCid: 'remote-cid', local: false, sessionId: undefined, name: 'Peer' };
 const image = { width: 1, height: 1, channels: 4, data: new Uint8Array([255, 0, 0, 255]) };
 
-test('baseline routing hard-filters policy and modalities before idle/local tie-breaking', () => {
+test('baseline routing hard-filters policy and modalities before local-first queue selection', () => {
   assert.equal(routeAgentTask({ task: 'text-generation', candidates: [remote, { ...local, busy: true }] }).candidate.local, true);
-  assert.equal(routeAgentTask({ task: 'text-generation', inferenceMode: 'network-assisted', candidates: [remote, { ...local, busy: true }] }).candidate.local, false);
+  assert.equal(routeAgentTask({ task: 'text-generation', inferenceMode: 'network-assisted', candidates: [remote, { ...local, busy: true }] }).candidate.local, true);
+  assert.equal(routeAgentTask({ task: 'text-generation', inferenceMode: 'network-assisted', candidates: [remote,
+    { ...local, busy: true, queuedRequests: 4, queueCapacity: 4 }] }).candidate.local, false);
   assert.throws(() => routeAgentTask({ task: 'image-text-to-text', candidates: [local] }), { code: 'ERR_AGENT_NO_MODEL' });
   assert.throws(() => routeAgentTask({ task: 'text-generation', inferenceMode: 'unexpected', candidates: [remote] }));
   const vision = { ...local, task: 'image-text-to-text', modalities: ['text', 'image'] };

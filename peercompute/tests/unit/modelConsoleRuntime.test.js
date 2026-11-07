@@ -13,7 +13,7 @@ const manifest = { name: 'Test vision model', model, files: [{ size: 100 }] };
 const catalog = { test: { id: 'test', name: manifest.name, model, totalBytes: 100 } };
 const descriptor = { manifestCid: cid, modelId: 'test', name: manifest.name, ...model, totalBytes: 100 };
 
-function fixture({ retained = false, retainedRecords = [], catalogInfo, connected = true, failRelease = false, hooks = {}, modelInfo = model, now, preferences } = {}) {
+function fixture({ retained = false, retainedRecords = [], catalogInfo, connected = true, failRelease = false, hooks = {}, modelInfo = model, now, preferences, multi = false } = {}) {
   const calls = [], records = new Map(), published = new Set();
   const localManifest = { ...manifest, model: modelInfo };
   const record = { cid, manifest: localManifest, kind: 'manifest', pinned: true, status: 'complete' };
@@ -80,6 +80,37 @@ function fixture({ retained = false, retainedRecords = [], catalogInfo, connecte
     async connect() { network.isConnected = true; }, async connectBackend() { network.isConnected = true; },
     async dispose() { calls.push('dispose'); },
   };
+  if (multi) {
+    const pool = new Map(); let selected = service;
+    Object.defineProperty(runtime, 'service', { get: () => selected });
+    Object.defineProperty(runtime, 'services', { get: () => Object.fromEntries(pool) });
+    runtime.getServiceForModel = (key) => pool.get(key) ?? null;
+    runtime.getResidentModelStates = () => [...pool.values()].map((candidate) => candidate.getStatus());
+    runtime.load = async (key) => {
+      calls.push(`load:${key}`);
+      let local = { status: 'ready', manifestCid: key, sessionId: `session-${key}` };
+      const candidate = {
+        getStatus: () => local,
+        async generate(options) {
+          calls.push(`local:${key}`);
+          return hooks.localGenerate?.(options, key) ?? { text: key, workerId: `worker-${key}` };
+        },
+        async unloadModel() { calls.push(`unload:${key}`); await hooks.unload?.(key); local = { status: 'idle' }; },
+        async cancel() { calls.push(`cancel-local:${key}`); },
+      };
+      pool.set(key, candidate);
+      await hooks.load?.((value) => { local = value; });
+      if (records.get(key)?.manifest.model.runtime !== 'transformers-speech' || selected.getStatus().status !== 'ready') selected = candidate;
+      return { workerId: `worker-${key}` };
+    };
+    runtime.unloadResidentModel = async (key) => {
+      for (const [cid, candidate] of [...pool]) if (key === undefined || key === cid) {
+        await candidate.unloadModel(); pool.delete(cid);
+      }
+      if (selected.getStatus().status !== 'ready') selected = [...pool.values()][0] ?? service;
+    };
+    runtime.dispose = async () => { await runtime.unloadResidentModel(); calls.push('dispose'); };
+  }
   const controller = attachModelRuntimeController(runtime, { catalog: catalogInfo ?? { test: { ...catalog.test, model: modelInfo } },
     ...(now ? { now } : {}), ...(preferences ? { preferences } : {}) });
   return { runtime, controller, calls, peer, published, records, get callbacks() { return callbacks; }, get released() { return released; } };
@@ -91,6 +122,135 @@ test('opening the console enables both preferences without fetching or loading w
   assert.equal(f.calls.includes('load'), false); assert.equal(f.calls.includes('import'), false);
   assert.equal((await f.callbacks.getLocalState()).hostedModel, null);
   assert.equal(f.runtime.listInferenceTargets()[0].available, false);
+  await f.runtime.dispose();
+});
+
+test('pooled loads are additive and expose separate same-runtime local targets and peer hosts', async () => {
+  const other = { cid: secondCid, kind: 'manifest', status: 'complete', pinned: true,
+    manifest: { ...manifest, name: 'Second model', model: { ...model, repository: 'test/second' } } };
+  const f = fixture({ multi: true, retained: true, retainedRecords: [other] });
+  await f.controller.initialize();
+  await f.runtime.loadStoredModel(cid); const first = f.runtime.getServiceForModel(cid);
+  await f.runtime.loadStoredModel(secondCid);
+  assert.equal(first.getStatus().status, 'ready');
+  assert.equal(f.runtime.listResidentModels().length, 2);
+  assert.deepEqual(f.runtime.listInferenceTargets().map((entry) => entry.key).sort(), [`local:${cid}`, `local:${secondCid}`].sort());
+  assert.equal((await f.callbacks.getLocalState()).hostedModels.length, 2);
+  const routed = await f.runtime.generate(`local:${cid}`, { prompt: 'Explain rain.' });
+  assert.equal(routed.text, cid); assert.equal(routed.route.manifestCid, cid);
+  await f.runtime.unload(secondCid);
+  assert.equal(first.getStatus().status, 'ready'); assert.equal(f.runtime.listResidentModels().length, 1);
+  await f.runtime.dispose();
+});
+
+test('mixed routes to a busy local queue before peers, while local-only never refreshes or dispatches peers', async () => {
+  const f = fixture({ multi: true, retained: true }); await f.controller.initialize(); await f.runtime.loadStoredModel(cid);
+  f.peer.hosts = [{ ...descriptor, hosts: [{ peerId: 'remote', local: false, busy: false }] }];
+  const service = f.runtime.getServiceForModel(cid), status = service.getStatus();
+  status.activeRequestId = 'other'; status.queuedRequests = 1;
+  const local = await f.runtime.generate('mixed', { prompt: 'Explain rain.' });
+  assert.equal(local.route.local, true);
+  status.queuedRequests = 4;
+  const peer = await f.runtime.generate('mixed', { prompt: 'Explain rain.' });
+  assert.equal(peer.route.local, false);
+  const before = f.calls.filter((call) => call === 'refresh' || call === 'remote').length;
+  await assert.rejects(f.runtime.generate('local-only', { prompt: 'Explain rain.' }), /No compatible local/);
+  assert.equal(f.calls.filter((call) => call === 'refresh' || call === 'remote').length, before);
+  status.activeRequestId = null; status.queuedRequests = 0;
+  await f.runtime.dispose();
+});
+
+test('automatic peer routing excludes models whose every advertised host queue is full', async () => {
+  const f = fixture({ multi: true }); await f.controller.initialize();
+  f.peer.hosts = [
+    { ...descriptor, hosts: [{ peerId: 'full', local: false, busy: true, queuedRequests: 4, queueCapacity: 4, queueAvailable: false }] },
+    { ...descriptor, manifestCid: secondCid, name: 'Ready remote', hosts: [{ peerId: 'ready', local: false, busy: false, queuedRequests: 0, queueCapacity: 4 }] },
+  ];
+  const targets = f.runtime.listInferenceTargets();
+  assert.equal(targets.find((entry) => entry.manifestCid === cid).queueAvailable, false);
+  const result = await f.runtime.generate('mixed', { prompt: 'Explain rain.' });
+  assert.equal(result.route.manifestCid, secondCid); assert.equal(result.route.local, false);
+  await f.runtime.dispose();
+});
+
+test('pooled cancellation and deletion address the original service after another model is selected', async () => {
+  const other = { cid: secondCid, kind: 'manifest', status: 'complete', pinned: true,
+    manifest: { ...manifest, model: { ...model, repository: 'test/second' } } };
+  const f = fixture({ multi: true, retained: true, retainedRecords: [other], hooks: {
+    localGenerate: (options) => new Promise((_resolve, reject) => options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true })),
+  } });
+  await f.controller.initialize(); await f.runtime.loadStoredModel(cid);
+  const running = f.runtime.generate(`local:${cid}`, { requestId: 'stable-target', prompt: 'Wait.' });
+  const rejected = assert.rejects(running);
+  await nextTurn(); await f.runtime.loadStoredModel(secondCid); await f.runtime.cancel('stable-target'); await rejected;
+  assert(f.calls.includes(`cancel-local:${cid}`)); assert(!f.calls.includes(`cancel-local:${secondCid}`));
+  f.calls.length = 0;
+  await f.runtime.deleteStoredModel(cid);
+  assert.equal(f.runtime.getServiceForModel(secondCid).getStatus().status, 'ready');
+  assert(!f.calls.includes('hosting:false'), 'deletion does not disable unrelated hosts');
+  assert.equal((await f.callbacks.getLocalState()).hostedModels[0].manifestCid, secondCid);
+  await f.runtime.dispose();
+});
+
+test('pooled speech loading preserves the chat selection and durable startup preference', async () => {
+  const entry = SPEECH_MODEL_CATALOG['moonshine-tiny-fp32'];
+  const speech = customStoredRecord({ manifest: { name: entry.name, model: entry.model, files: entry.files } });
+  const preferences = preferenceStore();
+  const f = fixture({ multi: true, retained: true, retainedRecords: [speech], preferences: preferences() });
+  await f.controller.initialize(); await f.runtime.loadStoredModel(cid);
+  await f.runtime.loadStoredModel(speech.cid);
+  assert.equal(f.runtime.service.getStatus().manifestCid, cid);
+  assert.equal(preferences().readLastLoaded().manifestCid, cid);
+  assert.equal(f.runtime.listResidentModels().length, 2);
+  assert.equal((await f.runtime.listStoredModels()).find((row) => row.manifestCid === speech.cid).loadMode, undefined);
+  await f.runtime.dispose();
+});
+
+test('pooled late load cancellation cleans its new resident without touching a previously ready model', async () => {
+  let block = false, entered, release;
+  const started = new Promise((resolve) => { entered = resolve; });
+  const held = new Promise((resolve) => { release = resolve; });
+  const other = customStoredRecord();
+  const f = fixture({ multi: true, retained: true, retainedRecords: [other], hooks: {
+    manifest: async (key) => { if (block && key === secondCid) { entered(); await held; } },
+    load: () => { if (block) return; },
+  } });
+  await f.controller.initialize(); await f.runtime.loadStoredModel(cid);
+  // Pause the post-load manifest/remember phase, after the second worker is ready.
+  const original = f.runtime.store.getManifest.bind(f.runtime.store); let reads = 0;
+  f.runtime.store.getManifest = (key, options) => {
+    if (key === secondCid && ++reads === 2) block = true;
+    return original(key, options);
+  };
+  const controller = new AbortController();
+  const loading = f.runtime.loadStoredModel(secondCid, { signal: controller.signal });
+  const rejected = assert.rejects(loading, { name: 'AbortError' });
+  await started;
+  assert(!f.runtime.listInferenceTargets().some((entry) => entry.manifestCid === secondCid), 'uncommitted ready worker is not routed');
+  controller.abort(); await rejected; release(); await nextTurn();
+  assert.equal(f.runtime.getServiceForModel(secondCid), null);
+  assert.equal(f.runtime.getServiceForModel(cid).getStatus().status, 'ready');
+  assert.equal(f.records.get(secondCid).status, 'complete');
+  await f.runtime.dispose();
+});
+
+test('guarded unload checks service identity inside the queue and preserves a user replacement of the same CID', async () => {
+  let entered, release, blocked = true;
+  const started = new Promise((resolve) => { entered = resolve; });
+  const held = new Promise((resolve) => { release = resolve; });
+  const f = fixture({ multi: true, retained: true, hooks: {
+    async unload() { if (blocked) { entered(); await held; } },
+  } });
+  await f.controller.initialize(); await f.runtime.loadStoredModel(cid);
+  const oldService = f.runtime.getServiceForModel(cid), oldSession = oldService.getStatus().sessionId;
+  const firstUnload = f.runtime.unload(cid); await started;
+  const replacement = f.runtime.loadStoredModel(cid);
+  const staleCleanup = f.runtime.unload(cid, { expectedService: oldService, expectedSessionId: oldSession });
+  blocked = false; release(); await firstUnload; await replacement;
+  const result = await staleCleanup;
+  assert.equal(result.status, 'replaced');
+  assert.notEqual(f.runtime.getServiceForModel(cid), oldService);
+  assert.equal(f.runtime.getServiceForModel(cid).getStatus().status, 'ready');
   await f.runtime.dispose();
 });
 
@@ -508,7 +668,7 @@ test('diffusion capabilities survive import hosting discovery and local or remot
   assert.equal(f.runtime.listModelSources()[1].task, 'text-to-image');
   for (const target of targets) {
     const output = await f.runtime.generate(target.key, { prompt: 'A lighthouse', seed: 42, steps: 1,
-      width: 512, height: 512, task: 'text-generation' });
+      width: 512, height: 512, task: 'text-to-image' });
     assert.equal(output.image, image);
     const input = inputs.at(-1);
     assert.equal(input.task, 'text-to-image'); assert.equal(input.prompt, 'A lighthouse');

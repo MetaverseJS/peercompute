@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { attachModelRuntimeController } from '../inference/src/modelRuntimeController.js';
+import { localState, PEER_INFERENCE_PROTOCOL_V2 } from '../../peercompute/src/peercompute/networkManager/inference/protocol.js';
+import { routeAgentTask } from '../../peercompute/src/peercompute/agents/AgentRouter.js';
 const cid = 'bafkreihbwk7mfabwdamnmxyntvhqc6oc6xyzhz42tjkkx4uh4syxcwp5ou';
 function fixture({ failUnload = false } = {}) {
   const calls = []; let callbacks, present = true, loaded = true;
@@ -21,10 +23,24 @@ function fixture({ failUnload = false } = {}) {
   const controller = attachModelRuntimeController(runtime, { catalog: {} });
   return { runtime, controller, calls, get callbacks() { return callbacks; }, get present() { return present; } };
 }
-test('stored speech is visible and deletable but does not poison the text/image inference directory', async () => {
+test('stored speech is discoverable by capable peers without becoming a text or vision agent target', async () => {
   const f = fixture(); await f.controller.initialize(); await f.runtime.refreshPeers();
   assert.equal((await f.runtime.listStoredModels())[0].loaded, true);
-  assert.deepEqual(f.callbacks.getLocalState().sharedModels, []);
+  const state = f.callbacks.getLocalState();
+  assert.equal(state.sharedModels.length, 1);
+  const speech = state.sharedModels[0];
+  assert.equal(speech.manifestCid, cid);
+  assert.equal(speech.task, 'automatic-speech-recognition');
+  assert.deepEqual(speech.modalities, ['audio']);
+  assert.deepEqual(speech.outputModalities, ['text']);
+  assert.equal(localState(state).sharedModels[0].manifestCid, cid);
+  assert.deepEqual(localState(state, true, { protocol: PEER_INFERENCE_PROTOCOL_V2 }).sharedModels, []);
+  assert.equal(state.hostedModel, null, 'a stored legacy auxiliary package is not automatically an inference host');
+  assert.deepEqual(state.hostedModels, []);
+  for (const task of ['text-generation', 'image-text-to-text']) {
+    assert.throws(() => routeAgentTask({ task, inferenceMode: 'network-assisted',
+      candidates: [{ ...speech, key: `peer:${cid}`, local: false, available: true }] }), { code: 'ERR_AGENT_NO_MODEL' });
+  }
   const result = await f.runtime.deleteStoredModel(cid);
   assert.equal(result.unloaded, true); assert.equal(f.present, false);
   assert(f.calls.indexOf('speech-unload') < f.calls.indexOf('remove')); await f.runtime.dispose();

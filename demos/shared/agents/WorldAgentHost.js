@@ -1,6 +1,8 @@
 import { createWorldAgentUi } from './worldAgentUi.js';
 import { AgentConversationService } from '../../../peercompute/src/peercompute/agents/AgentConversationService.js';
 import { normalizePublicAgent, WORLD_AGENT_LIMITS, worldAgentText } from '../../../peercompute/src/peercompute/agents/WorldAgentContracts.js';
+import { speechChunks } from '../../../peercompute/src/peercompute/inference/speech/chunks.js';
+export { speechChunks } from '../../../peercompute/src/peercompute/inference/speech/chunks.js';
 
 const encoder = new TextEncoder();
 const defaultRuntime = async (options) => (await import('../../inference/src/runtime.js')).createInferenceRuntime(options);
@@ -12,25 +14,6 @@ const statusOf = (head) => head.recoveryRequired || head.status === 'paused' ? '
 export async function worldConversationId(worldId, requester) {
   const digest = await crypto.subtle.digest('SHA-256', encoder.encode(`${worldId}\0${requester}`));
   return `world:${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
-}
-
-// Supertonic accepts bounded sentences. Preserve every character instead of
-// truncating a reply; long sentences are split at whitespace where possible.
-export function speechChunks(text, limit = 256) {
-  const chunks = [];
-  for (const sentence of String(text).match(/[^.!?]+[.!?]*\s*|[.!?]+/gu) ?? []) {
-    let characters = Array.from(sentence.trim());
-    while (characters.length) {
-      let count = Math.min(limit, characters.length);
-      if (count < characters.length) {
-        const space = characters.slice(0, count).lastIndexOf(' ');
-        if (space > limit / 2) count = space;
-      }
-      const chunk = characters.splice(0, count).join('').trim();
-      if (chunk) chunks.push(chunk);
-    }
-  }
-  return chunks;
 }
 
 /** Scene-owned bodies and conversations. Closing a window never owns the agent. */

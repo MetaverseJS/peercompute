@@ -126,7 +126,7 @@ export function createPanelView(container) {
   const sharingLabel = label('Share with peers', sharing); sharingLabel.prepend(sharing);
   sharingLabel.title = 'Share imported model files with connected peers while this browser stays online.';
   const hostingLabel = label('Host inference', hosting); hostingLabel.prepend(hosting);
-  hostingLabel.title = 'Allow connected peers to send requests to the model loaded on this device.';
+  hostingLabel.title = 'Allow connected peers to send requests to compatible models loaded on this device.';
   toggles.append(sharingLabel, hostingLabel); settings.body.append(toggles);
   const status = node('p', 'Opening model chat…', 'pc-inference-status'); status.setAttribute('role', 'status'); panel.append(status);
   const gpuLayers = node('input'); gpuLayers.type = 'number'; gpuLayers.min = '1'; gpuLayers.max = '99999'; gpuLayers.value = '99999';
@@ -145,10 +145,10 @@ export function createPanelView(container) {
   const connect = button('Connect'); const network = node('div', undefined, 'pc-config-row'); network.append(relay, connect); settings.body.append(network);
   const networkStatus = node('p', '', 'pc-inference-note'); settings.body.append(networkStatus);
   const file = node('input'); file.type = 'file'; file.setAttribute('aria-label', 'Pin a file locally'); settings.body.append(label('Pin a file locally', file));
-  const unload = button('Unload local model'); settings.body.append(unload);
+  const unload = button('Unload all local models'); settings.body.append(unload);
   const clearChat = button('Clear conversation'); settings.body.append(clearChat);
   settings.body.append(node('p', 'Clear chat history to start a new conversation while keeping the loaded model and stored files.', 'pc-inference-note'));
-  library.body.append(node('p', 'Load uses the files already on this device and replaces the current local model. Delete removes a model and unloads it if needed. Files used by other stored models or pinned separately are kept.', 'pc-inference-note'));
+  library.body.append(node('p', 'Load adds a model using saved files when memory is available. Unload releases that model’s memory and keeps its files. Delete also removes its stored package; shared files needed by other packages are kept.', 'pc-inference-note'));
   const storedList = node('ul', undefined, 'pc-stored-models'); storedList.setAttribute('aria-label', 'Stored model packages');
   const storedRefresh = button('Refresh'), storedCancel = button('Stop loading'); storedCancel.hidden = true;
   library.body.append(storedList, storedRefresh, storedCancel);
@@ -161,11 +161,18 @@ export function createPanelView(container) {
   const attachmentName = node('span'); const removeAttachment = button('×', 'Remove attached image');
   attachment.append(attachmentImage, attachmentName, removeAttachment); panel.append(attachment);
   const prompt = node('textarea'); prompt.rows = 2; prompt.maxLength = 16000; prompt.placeholder = 'Message…'; prompt.setAttribute('aria-label', 'Message'); panel.append(prompt);
+  const generateImage = node('input'), speakReplies = node('input');
+  generateImage.type = speakReplies.type = 'checkbox';
+  const conversationOptions = node('div', undefined, 'pc-model-preferences pc-conversation-options');
+  conversationOptions.append(label('Generate image', generateImage), label('Speak replies', speakReplies));
+  panel.append(conversationOptions);
+  const modeStatus = node('p', '', 'pc-inference-note pc-route-policy'); modeStatus.setAttribute('aria-live', 'polite'); panel.append(modeStatus);
   const target = node('select'); target.setAttribute('aria-label', 'Chat target');
   const attach = button('+', 'Attach image'); attach.title = 'Attach an image';
   const imageFile = node('input'); imageFile.type = 'file'; imageFile.accept = 'image/png,image/jpeg,image/webp,image/gif'; imageFile.hidden = true; imageFile.setAttribute('aria-label', 'Choose image attachment');
-  const send = button('Send'), cancel = button('Stop'); cancel.hidden = true;
-  const composer = node('div', undefined, 'pc-chat-controls'); composer.append(target, attach, imageFile, send, cancel); panel.append(composer);
+  const send = button('Send'), talk = button('Talk'), cancel = button('Stop'); cancel.hidden = true;
+  talk.title = 'Record a voice message, then press Stop recording to send. Load a speech-recognition model or use a compatible peer.';
+  const composer = node('div', undefined, 'pc-chat-controls'); composer.append(target, attach, imageFile, talk, send, cancel); panel.append(composer);
   panel.append(configuration, storedModels, compatibility, about, menuWindow, loading); container.append(panel);
   return { panel, browse, agents, currentModel, sourceStatus, sourceHelp, discoveryStatus, acquire, stored, configure, sharing, hosting, status, configuration,
     configurationStatus: settings.status, storedModels, storedList, storedRefresh, storedCancel, storedStatus: library.status, gpuLayers,
@@ -174,7 +181,7 @@ export function createPanelView(container) {
     compatibility, helpModel, helpReason, helpBrowser, helpOs, helpDetails, helpCommandGroup, helpCommand, helpCopy, helpConfig, helpStatus: help.status,
     cpuBudget, gpuBudget, memoryNote,
     relay, connect, networkStatus, file, unload, clearChat, transcript, empty, proposed, attachment, attachmentImage,
-    attachmentName, removeAttachment, prompt, target, attach, imageFile, send, cancel };
+    attachmentName, removeAttachment, prompt, target, attach, imageFile, send, cancel, talk, generateImage, speakReplies, modeStatus };
 }
 
 export function renderModelCompatibilityHelp(view, help) {
@@ -197,7 +204,7 @@ export function renderModelCompatibilityHelp(view, help) {
   view.helpStatus.textContent = '';
 }
 
-export function renderStoredModels(view, models, onDelete, onLoad, onRecover) {
+export function renderStoredModels(view, models, onDelete, onLoad, onRecover, onUnload) {
   view.storedList.replaceChildren();
   if (!models.length) view.storedList.append(node('li', 'No models stored on this device.', 'pc-stored-empty'));
   for (const model of sortModelPackages(models)) {
@@ -208,15 +215,15 @@ export function renderStoredModels(view, models, onDelete, onLoad, onRecover) {
     details.append(node('p', metadata.join(' · '), 'pc-inference-note'));
     if (model.shareError) details.append(node('p', `Sharing unavailable: ${String(model.shareError).slice(0, 256)}`, 'pc-inference-note'));
     const blocked = ['checking', 'unavailable'].includes(model.localAvailability?.status);
-    const voice = model.loadMode === 'voice';
-    if (voice) details.append(node('p', String(model.loadHint || 'Use Enable voice in the world-agent window to load speech models.').slice(0, 512), 'pc-inference-note'));
+    if (model.task === 'automatic-speech-recognition') details.append(node('p', 'Speech recognition · used by Talk.', 'pc-inference-note'));
+    if (model.task === 'text-to-speech') details.append(node('p', 'Speech synthesis · used by Speak replies.', 'pc-inference-note'));
     if (blocked) details.append(node('p', String(model.localAvailability.reason || 'This model is unavailable on this device.').slice(0, 512), 'pc-inference-note'));
-    const loadLabel = model.needsVerification ? 'Verify locally' : model.loaded ? 'Loaded' : voice ? 'Voice controls' : 'Load';
+    const loadLabel = model.needsVerification ? 'Verify locally' : model.loaded ? 'Unload' : 'Load';
     const load = button(loadLabel, `${loadLabel} ${model.name}`);
     load.dataset.inactive = String(model.needsVerification ? Boolean(model.cleanupPending || !onRecover)
-      : Boolean(voice || model.loaded || model.cleanupPending || blocked || !onLoad));
+      : model.loaded ? !onUnload : Boolean(model.cleanupPending || blocked || !onLoad));
     load.disabled = load.dataset.inactive === 'true';
-    load.onclick = () => { if (model.needsVerification) onRecover?.(model); else if (!voice) onLoad?.(model); };
+    load.onclick = () => { if (model.needsVerification) onRecover?.(model); else if (model.loaded) onUnload?.(model); else onLoad?.(model); };
     const removeLabel = model.cleanupPending ? 'Retry delete' : 'Delete';
     const remove = button(removeLabel, `${removeLabel} ${model.name}`); remove.className = 'pc-delete-model';
     const actions = node('div', undefined, 'pc-stored-actions'); actions.append(load, remove);

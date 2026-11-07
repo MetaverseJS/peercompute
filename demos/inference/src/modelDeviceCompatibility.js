@@ -14,7 +14,7 @@ const limitNames = ['maxBufferSize', 'maxStorageBufferBindingSize', 'maxComputeW
   'maxComputeInvocationsPerWorkgroup', 'maxComputeWorkgroupSizeX', 'maxComputeWorkgroupSizeY',
   'maxComputeWorkgroupSizeZ', 'maxComputeWorkgroupsPerDimension'];
 const runtimes = new Set(['transformers.js', 'llama.cpp', 'onnx-diffusion', 'transformers-speech']);
-export const VOICE_MODEL_LOAD_HINT = 'Managed by the world-agent voice controls. Use Enable voice in the agent window to load speech models.';
+export const VOICE_MODEL_LOAD_HINT = 'Load this speech model from Browse models, or use Enable voice in a world-agent window.';
 
 /** Resolve a catalog identity without choosing the first same-revision variant. */
 export function findModelCatalogEntry(entry, entries = catalogs) {

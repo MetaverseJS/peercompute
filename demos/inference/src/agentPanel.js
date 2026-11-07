@@ -5,12 +5,17 @@ import { readImageAttachment } from './ui/imageAttachment.js';
 import { createGeneratedImageRenderer } from './ui/generatedImages.js';
 import { createModelBrowser } from './ui/modelBrowser.js';
 import { createAgentConsole } from './agents/agentConsole.js';
+import { supportsTask as modelSupportsTask } from '../../../peercompute/src/peercompute/inference/InferenceRouter.js';
 import './panel.css';
+
+const defaultVoiceSession = async (options) => (await import('../../shared/inference/VoiceSession.js')).createVoiceSession(options);
+const defaultAudio = async () => (await import('../../shared/agents/speech/WorldAudio.js')).createWorldAudio();
 
 /** Shared chat surface; the facade owns storage, inference and networking. */
 export async function mountInferencePanel({ container = document.body, stateManager, computeManager,
   networkManager, getContext, actions, runtimeBaseUrl, onClose, autoConnect = false,
-  runtimeFactory = createInferenceRuntime, refreshIntervalMs = 5000, pwaInstallController } = {}) {
+  runtimeFactory = createInferenceRuntime, refreshIntervalMs = 5000, pwaInstallController,
+  voiceSessionFactory = defaultVoiceSession, audioFactory = defaultAudio } = {}) {
   const view = createPanelView(container);
   const generatedImages = createGeneratedImageRenderer(view.transcript);
   const encoder = new TextEncoder(), histories = new Map(), preferenceTasks = new Set();
@@ -24,6 +29,8 @@ export async function mountInferencePanel({ container = document.body, stateMana
   let loadingOperation;
   let unsubscribeInstall;
   let agentConsole, openingAgents;
+  let voiceSession, voiceStarting, voiceAudio;
+  let voiceState = { status: 'idle', active: false, recording: false };
   const alive = () => !disposed && !closing;
   const sourceBlocked = (source) => ['checking', 'unavailable'].includes(source?.localAvailability?.status);
   const sourceLabel = (source) => source.source === 'hf' ? 'Hugging Face'
@@ -35,7 +42,17 @@ export async function mountInferencePanel({ container = document.body, stateMana
       ? `${Number((bytes / 1024 ** 3).toFixed(1))} GiB` : 'unknown';
     return `est. RAM ${amount(source?.localAvailability?.cpuBytes)} / GPU ${amount(source?.localAvailability?.gpuBytes)}`;
   };
-  const selectedTarget = () => targets.find((target) => target.key === view.target.value);
+  const requestTask = () => view.generateImage.checked ? 'text-to-image' : attachment ? 'image-text-to-text' : 'text-generation';
+  const supportsTask = (target, task) => target?.available === true && modelSupportsTask(target, task);
+  const selectedTarget = (task = requestTask()) => {
+    const key = view.target.value || 'mixed';
+    if (['mixed', 'local-only'].includes(key)) return { key, automatic: true, task,
+      name: key === 'mixed' ? 'Mixed' : 'Local only', local: key === 'local-only',
+      available: targets.some((target) => (key === 'mixed' || target.local) && supportsTask(target, task)),
+      modalities: task === 'image-text-to-text' ? ['text', 'image'] : ['text'],
+      outputModalities: task === 'text-to-image' ? ['image'] : ['text'] };
+    return targets.find((target) => target.key === key);
+  };
   const invalidateActions = () => { actions?.invalidate?.(); view.proposed.replaceChildren(); };
   const showError = (error) => {
     if (!alive()) return;
@@ -53,15 +70,27 @@ export async function mountInferencePanel({ container = document.body, stateMana
   function updateControls() {
     const target = selectedTarget();
     const source = sources.find((entry) => entry.key === desiredSourceKey);
-    view.prompt.placeholder = target?.task === 'text-to-image' ? 'Describe an image…' : 'Message…';
+    view.prompt.placeholder = view.generateImage.checked ? 'Describe an image…' : 'Message…';
     view.acquire.disabled = !!operation || !source || sourceBlocked(source);
     view.browse.disabled = !!operation; modelBrowser?.setBusy(!!operation);
     view.agents.disabled = !!operation || !!openingAgents || !runtime?.getAgentController;
     view.sourceHelp.disabled = !!operation;
     view.cpuBudget.disabled = view.gpuBudget.disabled = !!operation || !runtime?.setMemoryBudgets;
-    view.send.disabled = !!operation || imageLoading || !target?.available || (!view.prompt.value.trim() && !attachment);
+    const attachmentConflict = view.generateImage.checked && !!attachment;
+    view.send.disabled = !!operation || imageLoading || attachmentConflict || !supportsTask(target, requestTask()) || (!view.prompt.value.trim() && !attachment);
     view.cancel.hidden = !operation || !!loadingOperation; view.target.disabled = !!operation;
-    view.attach.disabled = !!operation || !target?.modalities?.includes('image');
+    view.attach.disabled = !!operation || view.generateImage.checked || !supportsTask(selectedTarget('image-text-to-text'), 'image-text-to-text');
+    view.generateImage.disabled = view.speakReplies.disabled = !!operation;
+    const capturing = voiceState.recording || voiceState.status === 'requesting-microphone';
+    view.talk.textContent = capturing ? 'Stop recording' : 'Talk';
+    view.talk.disabled = !!loadingOperation || (!!operation && !capturing) || imageLoading || attachmentConflict;
+    view.modeStatus.textContent = attachmentConflict
+      ? 'Generate image uses a text prompt. Remove the attached image or uncheck Generate image.'
+      : target?.key === 'mixed' ? 'Mixed uses a compatible loaded local model first, then an online peer. Messages, images and voice may be sent to that peer.'
+        : target?.key === 'local-only' || target?.local ? 'Local execution only. Voice also uses compatible local speech models.'
+          : 'This target runs on another peer. Messages and attachments go to that host; voice uses available local or peer speech models.';
+    if (!attachmentConflict && target && !supportsTask(target, requestTask())) view.modeStatus.textContent +=
+      ` No compatible ${view.generateImage.checked ? 'image-generation' : attachment ? 'vision' : 'text'} model is available for this choice. Load one or choose another target.`;
     view.unload.disabled = !!operation;
     view.clearChat.disabled = !!operation;
     view.storedRefresh.disabled = !!operation || !!storedController;
@@ -105,7 +134,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     view.sourceHelp.hidden = !selected || !sourceBlocked(selected);
   }
   function renderLists() {
-    const selected = view.target.value || 'local';
+    const selected = view.target.value || 'mixed';
     const previousTarget = targets.find((entry) => entry.key === selected);
     const previousLabel = view.target.selectedOptions[0]?.textContent;
     sources = runtime.listModelSources();
@@ -113,7 +142,10 @@ export async function mountInferencePanel({ container = document.body, stateMana
     targets = runtime.listInferenceTargets();
     renderSources();
     view.target.replaceChildren();
-    for (const target of targets) {
+    for (const [key, label] of [['mixed', 'Mixed · local first, then peers'], ['local-only', 'Local only · automatic']]) {
+      const option = document.createElement('option'); option.value = key; option.textContent = label; view.target.append(option);
+    }
+    for (const target of targets.filter((entry) => !['automatic-speech-recognition', 'text-to-speech'].includes(entry.task))) {
       const option = document.createElement('option'); option.value = target.key;
       option.textContent = (target.local ? 'Local · ' : 'Peers · ') + String(target.name).slice(0, 140)
         + (target.task === 'text-to-image' ? ' · Image generation' : '')
@@ -121,12 +153,12 @@ export async function mountInferencePanel({ container = document.body, stateMana
       view.target.append(option);
     }
     // A vanished provider must not silently redirect a composed message.
-    if (!targets.some((entry) => entry.key === selected) && selected !== 'local' && previousLabel) {
+    if (!targets.some((entry) => entry.key === selected) && !['mixed', 'local-only'].includes(selected) && previousLabel) {
       const option = document.createElement('option'); option.value = selected; option.disabled = true;
       option.textContent = (previousTarget?.name ?? previousLabel.replace(/ \(unavailable\)$/, '')) + ' (unavailable)'; view.target.append(option);
     }
     view.target.value = selected;
-    if (!view.target.value && targets.some((target) => target.key === 'local')) view.target.value = 'local';
+    if (!view.target.value) view.target.value = 'mixed';
     updateControls();
   }
   function renderNetworkStatus(error) {
@@ -282,7 +314,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
         const models = await runtime.listStoredModels({ signal: controller.signal });
         if (alive()) {
           renderStoredModels(view, models, deleteStoredModel, runtime.loadStoredModel ? loadStoredModel : undefined,
-            runtime.recoverStoredModel ? recoverStoredModel : undefined);
+            runtime.recoverStoredModel ? recoverStoredModel : undefined, unloadStoredModel);
           view.storedStatus.textContent = `${models.length} model${models.length === 1 ? '' : 's'} stored.`;
         }
         return true;
@@ -297,12 +329,21 @@ export async function mountInferencePanel({ container = document.body, stateMana
       let result;
       try { result = await runtime.deleteStoredModel(model.manifestCid, { signal }); }
       catch (error) { await refreshStoredModels(); throw error; }
-      if (result.unloaded) { histories.delete('local'); invalidateActions(); }
+      if (result.unloaded) { histories.delete(`local:${model.manifestCid}`); invalidateActions(); }
       if (await refreshStoredModels()) {
         const message = result.deleted ? `Deleted ${model.name}.` : 'This model is no longer stored.';
         view.storedStatus.textContent = message + (result.freedBytes > 0 ? ` Freed ${formatModelBytes(result.freedBytes)}.` : '');
         view.status.textContent = message;
       }
+    });
+  }
+  async function unloadStoredModel(model) {
+    if (!alive() || operation || storedController || !model.loaded) return;
+    await run(async () => {
+      await runtime.unload(model.manifestCid);
+      histories.delete(`local:${model.manifestCid}`); invalidateActions();
+      await refreshStoredModels(); renderLists();
+      view.status.textContent = view.storedStatus.textContent = `Unloaded ${model.name}. Its files remain stored.`;
     });
   }
   async function recoverStoredModel(model) {
@@ -335,10 +376,9 @@ export async function mountInferencePanel({ container = document.body, stateMana
             onProgress: (event) => { if (!signal.aborted) progress(event); }, ggufGpuLayers: Number(view.gpuLayers.value) });
         } catch (error) { await refreshStoredModels(); throw error; }
         signal.throwIfAborted();
-        histories.delete('local');
         desiredSourceKey = runtime.getPreferredModelSourceKey?.() ?? desiredSourceKey;
-        renderLists(); view.target.value = 'local';
-        view.status.textContent = view.storedStatus.textContent = `Loaded ${model.name}. Send a message.`;
+        renderLists();
+        view.status.textContent = view.storedStatus.textContent = `Loaded ${model.name}. Compatible tasks can now use it.`;
         loaded = true;
       }, { modelName: model.name });
     } finally {
@@ -367,10 +407,13 @@ export async function mountInferencePanel({ container = document.body, stateMana
       onLoad: loadSelection,
       onUsePeer(key) {
         renderLists();
-        if (!targets.some((target) => target.key === key && target.available && !target.local)) {
+        const target = targets.find((target) => target.key === key && target.available && !target.local);
+        if (!target) {
           showError(new Error('This inference host is no longer available. Refresh the model browser.')); return;
         }
-        view.target.value = key; invalidateActions(); updateControls(); view.prompt.focus();
+        const speech = ['automatic-speech-recognition', 'text-to-speech'].includes(target.task);
+        view.target.value = speech ? 'mixed' : key; invalidateActions(); updateControls(); view.prompt.focus();
+        if (speech) view.status.textContent = 'Mixed routing can use compatible peer speech models. Use Talk or Speak replies.';
       },
       onSetup: showCompatibilityHelp,
     });
@@ -448,6 +491,8 @@ export async function mountInferencePanel({ container = document.body, stateMana
   };
   view.cpuBudget.onchange = view.gpuBudget.onchange = changeMemoryBudgets;
   view.target.onchange = () => { invalidateActions(); updateControls(); };
+  view.generateImage.onchange = () => { invalidateActions(); updateControls(); };
+  view.speakReplies.onchange = updateControls;
   view.prompt.oninput = updateControls;
   for (const [control, method] of [[view.sharing, 'setSharing'], [view.hosting, 'setHostInference']]) {
     control.onchange = () => {
@@ -487,14 +532,16 @@ export async function mountInferencePanel({ container = document.body, stateMana
       signal.throwIfAborted();
       desiredSourceKey = runtime.getPreferredModelSourceKey?.() ?? desiredSourceKey;
       hubSelection = null;
-      histories.delete('local'); renderLists(); view.target.value = 'local'; updateControls();
+      renderLists(); updateControls();
       view.status.textContent = runtime.getSharingErrors?.().length
         ? 'Model ready. Sharing is unavailable for some stored models; see Stored Models.' : 'Model ready. Send a message.';
     }, { modelName: selected.name });
   }
   view.acquire.onclick = () => loadSelection(desiredSourceKey);
   view.unload.onclick = () => run(async () => {
-    invalidateActions(); await runtime.unload(); histories.delete('local'); view.status.textContent = 'Local model unloaded.';
+    invalidateActions(); await runtime.unload();
+    for (const key of histories.keys()) if (key === 'local' || key.startsWith('local:')) histories.delete(key);
+    view.status.textContent = 'Local models unloaded. Stored files are kept.';
     view.configurationStatus.textContent = view.status.textContent;
   });
   view.clearChat.onclick = () => {
@@ -529,6 +576,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
   view.cancel.onclick = () => {
     if (loadingOperation) { cancelLoading(); return; }
     operation?.abort(new DOMException('User cancelled', 'AbortError'));
+    if (voiceState.active) void voiceSession?.cancel().catch(showError);
     if (loadingStoredModel) view.storedStatus.textContent = 'Cancelling verification… Waiting for cleanup.';
     updateControls();
     if (requestId) void runtime.cancel(requestId).catch(showError);
@@ -536,12 +584,41 @@ export async function mountInferencePanel({ container = document.body, stateMana
   view.loadingCancel.onclick = cancelLoading;
   view.loading.addEventListener('cancel', (event) => { event.preventDefault(); cancelLoading(); });
   view.storedCancel.onclick = () => view.cancel.click();
-  async function send() {
-    if (view.send.disabled) return;
-    await run(async (signal) => {
-      const target = selectedTarget(), targetKey = target.key;
-      const createsImage = target.task === 'text-to-image';
-      const text = view.prompt.value.trim(), selectedImage = attachment;
+  const routeLabel = (route) => route && typeof route.local === 'boolean'
+    ? `${route.local ? 'Local' : 'Peer'} · ${String(route.modelName ?? route.manifestCid ?? 'model').slice(0, 180)}` : null;
+  function showVoiceState(state, signal) {
+    voiceState = state;
+    if (!alive()) return;
+    if (!signal?.aborted && state.status !== 'idle' && state.status !== 'closed') {
+      view.status.textContent = ({ 'requesting-microphone': 'Waiting for microphone permission…', recording: 'Listening… press Stop recording to send.',
+        transcribing: 'Transcribing voice…', synthesizing: 'Preparing spoken reply…', playing: 'Speaking…' })[state.status] ?? state.status;
+    }
+    updateControls();
+  }
+  async function getVoiceSession(signal) {
+    if (!voiceSession && !voiceStarting) voiceStarting = (async () => {
+      voiceAudio = await audioFactory();
+      try {
+        voiceSession = await voiceSessionFactory({ audio: voiceAudio, execute: async (target, input) => {
+          const id = input.requestId ?? crypto.randomUUID(); requestId = id;
+          try { return await runtime.generate(target, { ...input, requestId: id }); }
+          finally { if (requestId === id) requestId = null; }
+        } });
+        return voiceSession;
+      } catch (error) { await voiceAudio?.dispose(); voiceAudio = null; throw error; }
+    })().finally(() => { voiceStarting = null; });
+    const session = voiceSession ?? await voiceStarting; signal?.throwIfAborted(); return session;
+  }
+  function voiceProgress(event) {
+    if (!alive() || operation?.signal.aborted) return;
+    const label = routeLabel(event.route ?? (event.type === 'routing' || event.type === 'route' ? event : null));
+    if (label) view.status.textContent = `${voiceState.status === 'transcribing' ? 'Speech recognition' : 'Speech'} · ${label}`;
+  }
+  async function submit(signal, { text = view.prompt.value.trim(), preserveDraft = false } = {}) {
+      const target = selectedTarget(), targetKey = target?.key ?? view.target.value;
+      const task = requestTask(), createsImage = task === 'text-to-image', selectedImage = attachment;
+      if (createsImage && selectedImage) throw new Error('Remove the attached image or uncheck Generate image.');
+      if (!supportsTask(target, task)) throw new Error('No compatible model is available. Load one in Browse models or choose another target.');
       if (selectedImage && !target.modalities?.includes('image')) throw new Error('This model accepts text only. Remove the image or choose an image model.');
       invalidateActions();
       const context = createsImage ? null : await getContext?.({ includeImage: false });
@@ -554,13 +631,20 @@ export async function mountInferencePanel({ container = document.body, stateMana
       const messages = createsImage ? undefined : [...(contextText || instructions ? [{ role: 'system', content: contextText + '\n' + instructions }] : []),
         ...history.slice(-6), { role: 'user', content: message }];
       appendMessage(view, 'user', text, { image: selectedImage?.preview });
-      const reply = appendMessage(view, 'assistant', '', { targetName: target.name });
-      view.prompt.value = ''; clearAttachment(); scrollTranscript();
-      requestId = crypto.randomUUID(); view.status.textContent = target.local ? (createsImage ? 'Generating image…' : 'Generating…') : 'Waiting for peer…';
+      const reply = appendMessage(view, 'assistant', '', { targetName: target.automatic ? 'Choosing model…' : target.name });
+      const showRoute = (route) => {
+        const label = routeLabel(route); if (!label || !alive() || signal.aborted) return;
+        reply.parentElement.querySelector('.pc-chat-speaker').textContent = label;
+        reply.parentElement.dataset.routeTarget = String(route.target ?? '').slice(0, 256);
+        view.status.textContent = `Using ${label}`;
+      };
+      if (!preserveDraft) view.prompt.value = ''; clearAttachment(); scrollTranscript();
+      requestId = crypto.randomUUID(); view.status.textContent = 'Choosing a compatible model…';
       try {
-        const result = await runtime.generate(targetKey, { requestId, signal,
+        const result = await runtime.generate(targetKey, { requestId, signal, task,
           ...(createsImage ? { prompt: text } : { messages, image: selectedImage?.image, maxNewTokens: 1024 }),
           onProgress(event) {
+            showRoute(event.route ?? (['route', 'routing', 'accepted'].includes(event.type) ? event : null));
             if (alive() && createsImage && Number.isSafeInteger(event.step) && Number.isSafeInteger(event.steps)
                 && event.step >= 0 && event.step <= event.steps && event.steps <= 100) {
               view.status.textContent = `Generating image: ${event.step}/${event.steps} steps…`;
@@ -568,6 +652,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
           },
           onToken(chunk) { if (alive() && !createsImage) { reply.textContent += chunk; scrollTranscript(); } } });
         if (signal.aborted) throw new DOMException('Generation cancelled', 'AbortError');
+        showRoute(result.route);
         if (createsImage) {
           if (!target.outputModalities?.includes('image')) throw new Error('This target did not advertise image output');
           await generatedImages.append(reply, result.image, { signal, prompt: text });
@@ -597,11 +682,48 @@ export async function mountInferencePanel({ container = document.body, stateMana
             view.proposed.append(button);
           }
         } catch { /* Plain chat remains usable when a response is not an action proposal. */ }
+        if (!createsImage && view.speakReplies.checked && result.text.trim()) {
+          try {
+            const session = await getVoiceSession(signal);
+            await session.speak(result.text, { target: targetKey, signal, onProgress: voiceProgress,
+              onState: (state) => showVoiceState(state, signal) });
+            signal.throwIfAborted(); view.status.textContent = 'Ready.';
+          } catch (error) {
+            signal.throwIfAborted();
+            view.status.textContent = `Text reply received. Voice: ${error.message}. Load a speech-synthesis model in Browse models or use a compatible peer.`;
+          }
+        }
+        return result;
       } catch (error) { if (!reply.textContent) reply.textContent = error.name === 'AbortError' ? 'Cancelled.' : 'Request failed.'; throw error; }
       finally { requestId = null; scrollTranscript(); }
-    });
+  }
+  async function send() {
+    if (view.send.disabled) return;
+    await run((signal) => submit(signal));
   }
   view.send.onclick = () => { void send(); };
+  view.talk.onclick = () => {
+    if (!alive() || view.talk.disabled) return;
+    if (voiceState.recording || voiceState.status === 'requesting-microphone') {
+      void Promise.resolve().then(() => voiceSession.stop()).catch(showError); return;
+    }
+    void run(async (signal) => {
+      const target = view.target.value || 'mixed';
+      const session = await getVoiceSession(signal);
+      let phase, result;
+      try {
+        result = await session.record({ target, signal, onProgress: voiceProgress,
+          onState: (state) => { if (state.status !== 'idle') phase = state.status; showVoiceState(state, signal); } });
+      } catch (error) {
+        signal.throwIfAborted();
+        if (phase === 'transcribing') throw new Error(`${error.message}. Load a speech-recognition model in Browse models or use a compatible peer.`, { cause: error });
+        throw error;
+      }
+      signal.throwIfAborted();
+      if (!result.text?.trim()) throw new Error('No speech recognized. Try again or type a message.');
+      await submit(signal, { text: result.text.trim(), preserveDraft: true });
+    });
+  };
   view.agents.onclick = () => {
     if (!alive() || view.agents.disabled) return;
     openingAgents = (async () => {
@@ -636,7 +758,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
         if (startup.manifestCid) await runtime.loadStoredModel(startup.manifestCid, options);
         else await runtime.acquireModel(startup.sourceKey, options);
         signal.throwIfAborted();
-        histories.delete('local'); renderLists();
+        renderLists();
         view.status.textContent = `Loaded ${startup.name}. Send a message.`;
       }, { modelName: startup.name });
     }
@@ -660,6 +782,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
       clearInterval(refreshTimer); operation?.abort('Chat closed'); imageController?.abort(); refreshController?.abort(); connectController?.abort(); storedController?.abort();
       invalidateActions(); await operationDone; await refreshPromise; await connectPromise; await storedPromise; await Promise.allSettled([...preferenceTasks]);
       await openingAgents; await agentConsole?.dispose();
+      await voiceStarting; await voiceSession?.dispose();
       await runtime.dispose(); disposed = true; histories.clear(); attachment = null; view.panel.remove(); onClose?.();
     })();
     try { await disposingPromise; } finally { disposingPromise = null; }

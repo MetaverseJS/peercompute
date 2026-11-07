@@ -14,6 +14,17 @@ The root node should exist on a domain secured with SSL enabling all executable 
 
 ## Project Goals:
 
+November7 multimodal console is implemented after user-confirmed model recovery:
+concurrent managed model residents, shared capability routing with Mixed
+local-first/peer fallback as the default, explicit image generation and reusable
+microphone/transcription/synthesis orchestration. Preserve aggregate admission,
+per-model lifecycle and storage recovery; extend peer hosting to multiple models
+and bounded audio while retaining legacy text/vision/image peers. This supplies
+Humunculus specialist execution, with learned routing and motor training still
+separate. Four actual GPU workers and private peer voice pass acceptance;
+internal console/CubeChat/Earth previews are updated. See
+[architecture and acceptance](demos/inference/multimodal-console.md).
+
 November7 model retention correction: preserve complete package metadata when
 background sharing or local verification is interrupted. Keep retained partial
 packages visible with explicit local-only verification, preserve startup

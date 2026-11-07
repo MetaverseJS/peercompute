@@ -1,4 +1,5 @@
 import { MODEL_POLICY } from '../inference/modelManifest.js';
+import { routeInferenceTask } from '../inference/InferenceRouter.js';
 
 export const AGENT_TASKS = Object.freeze(['text-generation', 'image-text-to-text', 'text-to-image']);
 export const AGENT_ROUTER_KIND = 'baseline';
@@ -45,24 +46,11 @@ export function routeAgentTask({ task, inferenceMode = 'local-only', candidates 
   if (!AGENT_TASKS.includes(task) || !['local-only', 'network-assisted'].includes(inferenceMode)) {
     throw new Error('Invalid agent routing policy');
   }
-  const eligible = candidates.filter((candidate) => candidate?.available === true
-    && typeof candidate.manifestCid === 'string' && candidate.manifestCid.length > 0
-    && typeof candidate.key === 'string' && typeof candidate.runtime === 'string'
-    && (candidate.local === true || (candidate.local === false && inferenceMode === 'network-assisted'))
-    && (candidate.task === task || (task === 'text-generation' && candidate.task === 'image-text-to-text'))
-    && candidate.modalities?.includes('text')
-    && (task !== 'image-text-to-text' || candidate.modalities.includes('image'))
-    && candidate.outputModalities?.includes(task === 'text-to-image' ? 'image' : 'text'));
-  eligible.sort((a, b) => Number(Boolean(a.busy)) - Number(Boolean(b.busy))
-    || Number(!a.local) - Number(!b.local) || a.manifestCid.localeCompare(b.manifestCid));
-  if (!eligible.length) throw Object.assign(new Error(inferenceMode === 'local-only'
-    ? 'No compatible local model is loaded. Load one in the model console first.'
-    : 'No compatible loaded local model or peer host is available.'), { code: 'ERR_AGENT_NO_MODEL' });
-  const candidate = structuredClone(eligible[0]);
-  return { candidate, route: { kind: AGENT_ROUTER_KIND, target: candidate.key,
-    manifestCid: candidate.manifestCid, runtime: candidate.runtime, modelName: candidate.name ?? candidate.manifestCid,
-    local: candidate.local, task, modelTask: candidate.task,
-    reason: `${candidate.busy ? 'Compatible busy model; bounded inference queue' : 'Compatible ready model'}; ${candidate.local ? 'local execution' : 'peer execution'}; baseline routing, not learned quality ranking` } };
+  try { return routeInferenceTask({ task, mode: inferenceMode === 'local-only' ? 'local' : 'mixed', candidates }); }
+  catch (error) {
+    if (error.code === 'ERR_INFERENCE_NO_MODEL') error.code = 'ERR_AGENT_NO_MODEL';
+    throw error;
+  }
 }
 
 /** Byte-bounded context; the managed worker applies actual tokenizer/image limits. */

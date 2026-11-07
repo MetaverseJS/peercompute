@@ -3776,3 +3776,46 @@ This matrix supersedes the preceding ground-primitive/`zIndex` assertions.
   pass with expected SecretWorkshop /noise connections and no page/console
   errors or model requests. User27B integrity remains unverified until they
   choose Verify locally. All owned browsers/servers closed; user previews remain.
+
+### November 7 — multimodal resident console acceptance
+
+- Registry/controller: multiple same-runtime residents, additive loading without
+  eviction, aggregate memory/slot rejection preserving existing models, exact
+  session dispatch/cancel, per-model unload/delete, partial cache recovery and
+  unchanged chat startup preference after loading speech.
+- Router/protocol: local-first even with a bounded local queue, strict local-only
+  dispatch, capability and modality mismatch rejection, multiple hosted models,
+  per-model busy state and v2 compatibility. Private actual encrypted peers must
+  transfer bounded PCM in both directions with credits/digest validation and
+  reject malformed/nonfinite/oversized/truncated audio. No post-commit replay.
+- VoiceSession: no mic before Talk, Stop during permission, auto duration limit,
+  ASR→conversation→TTS ownership, sequential bounded chunks without truncation,
+  cancellation during every stage, late-grant cleanup and no duplicate residents
+  between world and console voice. Controlled fixtures are not GPU evidence.
+- Native console UI: Mixed default, explicit image intent and attachment
+  conflicts, actual selected route label, per-model unload and truthful capacity
+  errors, retained Verify locally behavior, responsive keyboard/mobile controls.
+- Actual managed specialist runs are gated by available resources; preserve the
+  user's active27B model. Build affected demos externally, inspect exact internal
+  HTTPS desktop/mobile screenshots and console, and verify SecretWorkshop
+  connections. No public deployment unless separately requested. Results and
+  limitations belong in plan/log.md and multimodal-console.md.
+- Results: registry/controller/router/adapter96/96, model-service/storage68/68,
+  full retained library164/164, peer protocol/router64/64, panel/native voice75/75,
+  reviewed voice/lifecycle27/27, world-agent85/85, compatibility/help28/28 PASS;
+  counts overlap. Three production builds pass. The old world speech directory
+  exclusion assertion was updated for v3 sharing with v2/text eligibility checks.
+- `npm run test:multimodal:browser` passes with four actual managed workers:
+  Gemma270M, SmolVLM256M, Moonshine Tiny and Supertonic. Mixed routes text/vision
+  locally; an independent browser with no residents receives real ASR/text/TTS
+  over private encrypted WebRTC/v3, including native Talk/Stop and completed
+  sequential playback. Per-CID unload leaves three ready residents; final CPU/GPU
+  leases and reserved bytes are zero. No external model requests or page/console/
+  cleanup errors. Owned test profiles only. Corrected fixture store-name/RGBA-input
+  failures are retained separately. A repeat adds standalone mobile composer bounds.
+- Exact5189/5176/5187 desktop/mobile visual and SecretWorkshop/noise checks pass.
+  All owned browser/server/relay processes close; persistent user previews stay up.
+  This pass does not repeat large27B or diffusion numerical hardware qualification,
+  nor establish two-physical-device speech performance. Image intent/routes and
+  legacy image framing pass controlled/native protocol tests; prior image engine
+  qualification remains recorded above.

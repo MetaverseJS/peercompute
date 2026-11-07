@@ -72,6 +72,7 @@ async function fixture(t, scenario = {}) {
       stored: scenario.stored ?? [], rejectStoredList: !!scenario.rejectStoredList,
       rejectLoad: !!scenario.rejectLoad, rejectAcquire: !!scenario.rejectAcquire,
       loadedCid: scenario.loaded ? 'fixture-vision' : null, preferredSourceKey: scenario.preferredSourceKey, sources: scenario.sources,
+      residentCids: scenario.loaded ? ['fixture-vision'] : [],
       availability: scenario.availability ?? {}, memoryBudgets: scenario.memoryBudgets ?? { cpuBytes: null, gpuBytes: null } };
     const state = window.uiState;
     const delay = (ms, signal) => new Promise((resolve, reject) => {
@@ -108,7 +109,7 @@ async function fixture(t, scenario = {}) {
         .map((source) => ({ ...source, localAvailability: scenario.memoryPolicy && state.memoryBudgets.cpuBytes != null
           && state.memoryBudgets.cpuBytes < 4 * 1024 ** 3 ? { status: 'unavailable', reason: 'Needs 4 GiB RAM.' }
           : state.availability[source.key] ?? { status: 'unknown', cpuBytes: 4 * 1024 ** 3, gpuBytes: 8 * 1024 ** 3 } })),
-      listInferenceTargets: () => [{ key: 'local', name: state.loaded ? 'Fixture vision' : 'No model loaded', local: true,
+      listInferenceTargets: () => [{ key: 'local:fixture-vision', name: state.loaded ? 'Fixture vision' : 'No model loaded', local: true, manifestCid: 'fixture-vision',
         available: state.loaded, busy: false, modalities: scenario.diffusion ? ['text'] : ['text', 'image'],
         task: scenario.diffusion ? 'text-to-image' : 'image-text-to-text', outputModalities: scenario.diffusion ? ['image'] : ['text'] }, ...(state.remote ? [{ key: 'peer:fixture',
         name: 'Peer text model', local: false, available: true, busy: state.providers.every(Boolean),
@@ -130,7 +131,9 @@ async function fixture(t, scenario = {}) {
         }
         await modelDelay(scenario.acquireDelay ?? 5, options.signal);
         if (state.rejectAcquire) throw new Error('Model download failed');
-        state.loaded = true; state.loadedCid = 'fixture-vision'; calls.push({ type: 'loaded' }); },
+        state.loaded = true; state.loadedCid = 'fixture-vision';
+        if (!state.residentCids.includes(state.loadedCid)) state.residentCids.push(state.loadedCid);
+        calls.push({ type: 'loaded' }); },
       ...(scenario.startup ? { getStartupModel: () => ({ ...scenario.startup, localAvailability: state.availability[scenario.startup.sourceKey] ?? scenario.startup.localAvailability }) } : {}),
       ...(scenario.preferredSourceKey ? { getPreferredModelSourceKey: () => state.preferredSourceKey } : {}),
       async loadStoredModel(cid, options) {
@@ -139,6 +142,7 @@ async function fixture(t, scenario = {}) {
         await modelDelay(scenario.loadStoredDelay ?? 20, options.signal);
         if (state.rejectLoad) throw new Error('Stored model could not be loaded');
         state.loaded = true; state.loadedCid = cid;
+        if (!state.residentCids.includes(cid)) state.residentCids.push(cid);
         state.preferredSourceKey = (state.sources ?? []).find((source) => source.manifestCid === cid)?.key ?? 'hf:vision';
         return { manifestCid: cid };
       },
@@ -154,7 +158,11 @@ async function fixture(t, scenario = {}) {
       async setSharing(value) { if (state.rejectSharing) throw new Error('Sharing failed'); state.sharing = value; calls.push({ type: 'sharing', value }); },
       async setHostInference(value) { state.hostInference = value; calls.push({ type: 'hosting', value }); },
       async generate(target, options) {
-        calls.push({ type: 'generate', target, requestId: options.requestId, messages: options.messages,
+        const actualLocal = target.startsWith('local:') || target === 'local-only' || (target === 'mixed' && state.loaded);
+        const route = { local: actualLocal, modelName: actualLocal ? 'Fixture vision' : 'Peer text model',
+          target: actualLocal ? 'local:fixture-vision' : 'peer:fixture', manifestCid: actualLocal ? 'fixture-vision' : 'fixture', task: options.task };
+        options.onProgress?.({ type: 'routing', route });
+        calls.push({ type: 'generate', target, task: options.task, requestId: options.requestId, messages: options.messages,
           prompt: options.prompt, maxNewTokens: options.maxNewTokens,
           image: options.image ? { width: options.image.width, height: options.image.height, bytes: options.image.data.length } : null });
         if (scenario.capturePixels && options.image) {
@@ -169,25 +177,27 @@ async function fixture(t, scenario = {}) {
           options.onProgress?.({ type: 'diffusion-progress', stage: 'denoise', step: 1, steps: 1 });
           const data = new Uint8Array(512 * 512 * 4);
           for (let index = 0; index < data.length; index += 4) { data[index] = 220; data[index + 3] = 255; }
-          return { text: '', seed: 42, steps: 1, image: scenario.invalidImage
+          return { text: '', route, seed: 42, steps: 1, image: scenario.invalidImage
             ? { width: 2048, height: 2048, channels: 4, data } : { width: 512, height: 512, channels: 4, data } };
         }
         const text = scenario.longReply ? Array.from({ length: 70 }, (_, i) => 'Reply line ' + i).join('\n') : 'Reply to ' + options.messages.at(-1).content;
-        options.onToken?.(text); return { text, inputTokens: 4, outputTokens: scenario.outputTokens ?? 8,
+        options.onToken?.(text); return { text, route, inputTokens: 4, outputTokens: scenario.outputTokens ?? 8,
           finishReason: scenario.finishReason ?? 'stop', contextTruncated: !!scenario.contextTruncated };
       },
       async cancel(requestId) { calls.push({ type: 'cancel', requestId }); return true; },
-      async unload() { state.loaded = false; state.loadedCid = null; calls.push({ type: 'unload' }); },
+      async unload(cid) { state.residentCids = cid ? state.residentCids.filter((item) => item !== cid) : [];
+        state.loadedCid = state.residentCids.at(-1) ?? null; state.loaded = !!state.loadedCid; calls.push({ type: 'unload', ...(cid ? { cid } : {}) }); },
       async listStoredModels({ signal } = {}) {
         calls.push({ type: 'stored-list' }); await delay(10, signal);
         if (state.rejectStoredList) throw new Error('Storage is temporarily unavailable');
-        return state.stored.map((model) => ({ ...model, loaded: state.loaded && model.manifestCid === state.loadedCid }));
+        return state.stored.map((model) => ({ ...model, loaded: state.residentCids.includes(model.manifestCid) }));
       },
       async deleteStoredModel(cid, { signal } = {}) {
         calls.push({ type: 'delete', cid }); await delay(scenario.deleteDelay ?? 20, signal);
         if (state.rejectDelete) throw new Error('Model is still in use');
         const unloaded = state.loaded && cid === state.loadedCid;
-        if (unloaded) state.loaded = false;
+        state.residentCids = state.residentCids.filter((item) => item !== cid);
+        state.loadedCid = state.residentCids.at(-1) ?? null; state.loaded = !!state.loadedCid;
         if (state.cleanupFails) {
           state.stored.find((model) => model.manifestCid === cid).cleanupPending = true;
           throw new Error('Storage cleanup interrupted');
@@ -246,11 +256,11 @@ test('unloaded injected runtime defaults sharing and hosting on without Close, C
   assert.doesNotMatch(html + main, /<canvas|LOCAL MODEL LAB|getContext|square|circle/);
 });
 
-test('unified import selects either source and automatically makes local chat available', async (t) => {
+test('unified import adds local capability and preserves default Mixed routing', async (t) => {
   const page = await fixture(t);
   await browseChoice(page, 'peer:fixture', 'Load');
   await page.waitForFunction(() => calls.some((call) => call.type === 'loaded'));
-  assert.equal(await page.getByLabel('Chat target').inputValue(), 'local');
+  assert.equal(await page.getByLabel('Chat target').inputValue(), 'mixed');
   await page.getByLabel('Message', { exact: true }).fill('Hello');
   assert.equal(await page.getByRole('button', { name: 'Send', exact: true }).isEnabled(), true);
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'acquire')), [{ type: 'acquire', key: 'peer:fixture', gpuLayers: 99999 }]);
@@ -258,6 +268,46 @@ test('unified import selects either source and automatically makes local chat av
   await page.getByLabel('Share with peers', { exact: true }).uncheck();
   await page.getByLabel('Host inference', { exact: true }).uncheck();
   await page.waitForFunction(() => !uiState.sharing && !uiState.hostInference);
+});
+
+test('Mixed sends explicit text tasks and labels the actual route; Local only never substitutes the peer selector', async (t) => {
+  const page = await fixture(t, { interval: 40 });
+  assert.equal(await page.getByLabel('Chat target').inputValue(), 'mixed');
+  assert.match(await page.locator('.pc-route-policy').textContent(), /Messages, images and voice may be sent/);
+  await page.getByLabel('Message', { exact: true }).fill('First request');
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  await page.waitForFunction(() => calls.some((call) => call.type === 'generate'));
+  await page.getByText('Reply to First request', { exact: true }).waitFor();
+  assert.match(await page.locator('.pc-chat-message-assistant .pc-chat-speaker').last().textContent(), /Peer · Peer text model/);
+  await page.evaluate(() => { uiState.loaded = true; uiState.residentCids = ['fixture-vision']; });
+  await page.waitForFunction(() => document.querySelector('[aria-label="Chat target"] option[value="local:fixture-vision"]').textContent.includes('Fixture vision'));
+  await page.getByLabel('Message', { exact: true }).fill('Second request'); await page.getByRole('button', { name: 'Send', exact: true }).click();
+  await page.getByText('Reply to Second request', { exact: true }).waitFor();
+  assert.match(await page.locator('.pc-chat-message-assistant .pc-chat-speaker').last().textContent(), /Local · Fixture vision/);
+  assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'generate').map((call) => [call.target, call.task])),
+    [['mixed', 'text-generation'], ['mixed', 'text-generation']]);
+  await page.getByLabel('Chat target').selectOption('local-only');
+  await page.evaluate(() => { uiState.loaded = false; });
+  await page.getByLabel('Message', { exact: true }).fill('Keep local');
+  await page.waitForFunction(() => document.querySelector('.pc-route-policy').textContent.includes('No compatible text'));
+  assert.equal(await page.getByRole('button', { name: 'Send', exact: true }).isDisabled(), true);
+  assert.equal(await page.getByLabel('Chat target').inputValue(), 'local-only');
+});
+
+test('speech catalog choices remain visible and explicitly loadable through task filters', async (t) => {
+  const page = await fixture(t, { sources: [
+    { key: 'hf:asr', source: 'hf', name: 'Speech recognition fixture', modelId: 'asr', task: 'automatic-speech-recognition', runtime: 'transformers-speech', modalities: ['audio'], outputModalities: ['text'] },
+    { key: 'hf:tts', source: 'hf', name: 'Speech synthesis fixture', modelId: 'tts', task: 'text-to-speech', runtime: 'transformers-speech', modalities: ['text'], outputModalities: ['audio'] },
+  ] });
+  const modal = await browseChoice(page, 'hf:asr');
+  await modal.getByLabel('Task', { exact: true }).selectOption('automatic-speech-recognition');
+  assert.equal(await modal.locator('[data-model-key="hf:asr"]').count(), 1);
+  assert.equal(await modal.locator('[data-model-key="hf:tts"]').count(), 0);
+  assert.equal(await page.evaluate(() => calls.some((call) => call.type === 'acquire')), false);
+  await modal.getByRole('button', { name: 'Load', exact: true }).click();
+  await page.waitForFunction(() => calls.some((call) => call.type === 'loaded'));
+  assert.equal(await page.getByLabel('Chat target').inputValue(), 'mixed');
+  assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'acquire').map((call) => call.key)), ['hf:asr']);
 });
 
 test('modal filtering preserves selection and does not change the remote chat target during refresh', async (t) => {
@@ -368,7 +418,7 @@ test('Enter sends, Shift+Enter preserves a newline, optional embedded context st
 });
 
 test('local and peer replies retain their full text and visibly report generation limits', async (t) => {
-  for (const target of ['local', 'peer:fixture']) {
+  for (const target of ['local:fixture-vision', 'peer:fixture']) {
     const page = await fixture(t, { loaded: true, longReply: true, finishReason: 'length', outputTokens: 1024, contextTruncated: true });
     await page.getByLabel('Chat target').selectOption(target);
     await page.getByLabel('Message', { exact: true }).fill('Explain how rainbows form in detail.');
@@ -526,12 +576,13 @@ test('explicit file attachment is bounded and consumed by its request; standalon
   await page.getByAltText('Selected image', { exact: true }).waitFor({ state: 'visible' });
   await page.getByLabel('Chat target').selectOption('peer:fixture');
   await page.getByLabel('Message', { exact: true }).fill('Describe this.');
-  await page.getByRole('button', { name: 'Send', exact: true }).click();
-  await page.waitForFunction(() => document.querySelector('[role=status]').textContent.includes('This model accepts text only'));
+  assert.equal(await page.getByRole('button', { name: 'Send', exact: true }).isDisabled(), true);
+  assert.match(await page.locator('.pc-route-policy').textContent(), /No compatible vision/);
+  await page.getByLabel('Message', { exact: true }).press('Enter');
   assert.equal(await page.getByAltText('Selected image', { exact: true }).isVisible(), true);
   assert.equal(await page.getByLabel('Message', { exact: true }).inputValue(), 'Describe this.');
   assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'generate').length), 0);
-  await page.getByLabel('Chat target').selectOption('local');
+  await page.getByLabel('Chat target').selectOption('local:fixture-vision');
   await page.getByRole('button', { name: 'Send', exact: true }).click();
   await page.waitForFunction(() => calls.some((call) => call.type === 'generate'));
   const request = await page.evaluate(() => calls.find((call) => call.type === 'generate'));
@@ -558,6 +609,24 @@ async function patternedImage(page, phase) {
   return { ...result, sha256: createHash('sha256').update(Buffer.from(result.pixels)).digest('hex'),
     file: { name: 'same-name.png', mimeType: 'image/png', buffer: Buffer.from(result.png, 'base64') } };
 }
+
+test('Generate image requires an explicit choice and never discards a conflicting attached image', async (t) => {
+  const page = await fixture(t, { loaded: true });
+  const input = await patternedImage(page, 3);
+  await page.getByLabel('Choose image attachment').setInputFiles(input.file);
+  await page.getByAltText('Selected image', { exact: true }).waitFor({ state: 'visible' });
+  await page.getByLabel('Generate image', { exact: true }).check();
+  await page.getByLabel('Message', { exact: true }).fill('Describe my photo');
+  assert.match(await page.locator('.pc-route-policy').textContent(), /Remove the attached image or uncheck/);
+  assert.equal(await page.getByRole('button', { name: 'Send', exact: true }).isDisabled(), true);
+  await page.getByLabel('Message', { exact: true }).press('Enter');
+  assert.equal(await page.evaluate(() => calls.some((call) => call.type === 'generate')), false);
+  assert.equal(await page.getByAltText('Selected image', { exact: true }).isVisible(), true);
+  await page.getByLabel('Generate image', { exact: true }).uncheck();
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  await page.getByText('Reply to Describe my photo', { exact: true }).waitFor();
+  assert.equal(await page.evaluate(() => calls.find((call) => call.type === 'generate').task), 'image-text-to-text');
+});
 
 test('consecutive different images with the same filename send fresh complete pixels and unique requests', async (t) => {
   const page = await fixture(t, { loaded: true, capturePixels: true });
@@ -597,7 +666,7 @@ test('consecutive different images with the same filename send fresh complete pi
   ], 'Only the latest successful image exchange becomes text follow-up context');
 });
 
-for (const target of ['local', 'peer:fixture']) test(`new vision context on ${target} preserves system instructions and visible transcript`, async (t) => {
+for (const target of ['local:fixture-vision', 'peer:fixture']) test(`new vision context on ${target} preserves system instructions and visible transcript`, async (t) => {
   const page = await fixture(t, { loaded: true, peerVision: true, context: true });
   await page.getByLabel('Chat target').selectOption(target);
   const send = async (text, count, file) => {
@@ -790,7 +859,8 @@ test('stored models list offers explicit deletion and removes a loaded package w
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'delete')), [{ type: 'delete', cid: 'fixture-vision' }]);
   await page.keyboard.press('Escape');
   assert.equal(await page.getByLabel('Message', { exact: true }).inputValue(), 'Keep my draft');
-  assert.equal(await page.getByRole('button', { name: 'Send', exact: true }).isDisabled(), true);
+  assert.equal(await page.getByRole('button', { name: 'Send', exact: true }).isEnabled(), true, 'Mixed may still use the available peer after local deletion');
+  assert.equal(await page.getByLabel('Chat target').inputValue(), 'mixed');
   await openMenuAction(page, 'Stored Models');
   await modal.getByRole('button', { name: 'Delete Fixture text', exact: true }).click();
   await modal.getByText('No models stored on this device.', { exact: true }).waitFor();
@@ -935,10 +1005,12 @@ test('a sharing failure keeps the imported model usable and explains its library
 
 test('local and peer image targets turn each prompt into a bounded image without chat context or attachments', async (t) => {
   const page = await fixture(t, { loaded: true, diffusion: true, context: true });
+  assert.equal(await page.getByLabel('Generate image', { exact: true }).isChecked(), false);
+  await page.getByLabel('Generate image', { exact: true }).check();
   const prompt = page.getByLabel('Message', { exact: true });
   assert.equal(await prompt.getAttribute('placeholder'), 'Describe an image…');
   assert.equal(await page.getByRole('button', { name: 'Attach image', exact: true }).isDisabled(), true);
-  for (const [target, text] of [['local', 'A red circle'], ['peer:fixture', 'A blue square']]) {
+  for (const [target, text] of [['local:fixture-vision', 'A red circle'], ['peer:fixture', 'A blue square']]) {
     await page.getByLabel('Chat target').selectOption(target);
     await prompt.fill(text); await prompt.press('Enter');
     await page.getByAltText(`Generated image: ${text}`, { exact: true }).waitFor();
@@ -953,7 +1025,7 @@ test('local and peer image targets turn each prompt into a bounded image without
     actions: calls.filter((call) => call.type === 'action'), previews: previewUrls.created.length,
     writes: calls.filter((call) => ['pin', 'acquire', 'sharing'].includes(call.type)) }));
   assert.deepEqual(evidence.requests.map((call) => ({ target: call.target, prompt: call.prompt, messages: call.messages, image: call.image, maxNewTokens: call.maxNewTokens })),
-    [{ target: 'local', prompt: 'A red circle', messages: undefined, image: null, maxNewTokens: undefined },
+    [{ target: 'local:fixture-vision', prompt: 'A red circle', messages: undefined, image: null, maxNewTokens: undefined },
       { target: 'peer:fixture', prompt: 'A blue square', messages: undefined, image: null, maxNewTokens: undefined }]);
   assert.deepEqual(evidence.contextCalls, []); assert.deepEqual(evidence.actions, []); assert.deepEqual(evidence.writes, []);
   assert.equal(evidence.previews, 2);
@@ -962,6 +1034,7 @@ test('local and peer image targets turn each prompt into a bounded image without
 
 test('generated image previews have a bounded history and revoke every URL on disposal', async (t) => {
   const page = await fixture(t, { loaded: true, diffusion: true });
+  await page.getByLabel('Generate image', { exact: true }).check();
   for (let index = 0; index < 8; index++) {
     await page.getByLabel('Message', { exact: true }).fill('Image ' + index);
     await page.getByLabel('Message', { exact: true }).press('Enter');
@@ -976,10 +1049,12 @@ test('generated image previews have a bounded history and revoke every URL on di
 
 test('invalid pixels and late cancelled image results never become preview URLs', async (t) => {
   const invalid = await fixture(t, { loaded: true, diffusion: true, invalidImage: true });
+  await invalid.getByLabel('Generate image', { exact: true }).check();
   await invalid.getByLabel('Message', { exact: true }).fill('Invalid output'); await invalid.getByLabel('Message', { exact: true }).press('Enter');
   await invalid.waitForFunction(() => document.querySelector('[role=status]').textContent.includes('bounded RGBA'));
   assert.equal(await invalid.evaluate(() => previewUrls.created.length), 0);
   const cancelled = await fixture(t, { loaded: true, diffusion: true, generateDelay: 100, ignoreAbort: true });
+  await cancelled.getByLabel('Generate image', { exact: true }).check();
   await cancelled.getByLabel('Message', { exact: true }).fill('Cancel output'); await cancelled.getByLabel('Message', { exact: true }).press('Enter');
   await cancelled.waitForFunction(() => calls.some((call) => call.type === 'generate'));
   await cancelled.getByRole('button', { name: 'Stop', exact: true }).click();
@@ -1165,7 +1240,7 @@ test('an unavailable preferred model stays visible with setup help while browsin
   assert.deepEqual(await page.evaluate(() => calls), []);
 });
 
-test('Stored Models loads one local package atomically, selects local chat and remembers its source', async (t) => {
+test('Stored Models adds a package atomically, preserves the chosen target and remembers its source', async (t) => {
   const page = await fixture(t, { loaded: true, preferredSourceKey: 'hf:vision', loadStoredDelay: 100,
     stored: [{ manifestCid: 'fixture-vision', name: 'Fixture vision', totalBytes: 1024 ** 3 },
       { manifestCid: 'small', name: 'Small stored', totalBytes: 2 * 1024 ** 2 }],
@@ -1177,20 +1252,25 @@ test('Stored Models loads one local package atomically, selects local chat and r
   const modal = page.getByRole('dialog', { name: 'Stored Models', exact: true });
   const load = modal.getByRole('button', { name: 'Load Small stored', exact: true }); await load.waitFor();
   assert.deepEqual(await modal.locator('.pc-stored-model strong').allTextContents(), ['Small stored', 'Fixture vision']);
-  assert.equal(await modal.getByRole('button', { name: 'Loaded Fixture vision', exact: true }).isDisabled(), true);
+  assert.equal(await modal.getByRole('button', { name: 'Unload Fixture vision', exact: true }).isEnabled(), true);
   await load.click();
   assert.equal(await modal.getByRole('button', { name: 'Delete Fixture vision', exact: true }).isDisabled(), true);
   await load.evaluate((element) => element.onclick());
   await page.waitForFunction(() => uiState.loadedCid === 'small');
   await modal.waitFor({ state: 'hidden' });
   assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'stored-list').length), 1, 'Successful loading must not leave a cancellable metadata-refresh tail');
-  assert.equal(await page.getByLabel('Chat target').inputValue(), 'local');
+  assert.equal(await page.getByLabel('Chat target').inputValue(), 'peer:fixture');
   assert.equal(await currentModelKey(page), 'stored:small');
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => ['load-stored', 'acquire', 'unload', 'pin'].includes(call.type))),
     [{ type: 'load-stored', cid: 'small', gpuLayers: 99999 }]);
   await openMenuAction(page, 'Stored Models');
-  await modal.getByRole('button', { name: 'Loaded Small stored', exact: true }).waitFor();
-  assert.equal(await modal.getByRole('button', { name: 'Loaded Small stored', exact: true }).isDisabled(), true);
+  await modal.getByRole('button', { name: 'Unload Small stored', exact: true }).waitFor();
+  assert.equal(await modal.getByRole('button', { name: 'Unload Small stored', exact: true }).isEnabled(), true);
+  await modal.getByRole('button', { name: 'Unload Small stored', exact: true }).click();
+  await modal.getByText('Unloaded Small stored. Its files remain stored.', { exact: true }).waitFor();
+  assert.deepEqual(await page.evaluate(() => uiState.residentCids), ['fixture-vision']);
+  assert.equal(await modal.getByRole('button', { name: 'Unload Fixture vision', exact: true }).isEnabled(), true);
+  assert.equal(await page.evaluate(() => uiState.stored.length), 2);
 });
 
 test('stored loading failures and cancellation remain retryable without import or download fallback', async (t) => {
@@ -1220,7 +1300,7 @@ test('unavailable, deleting and loaded stored packages cannot start another load
   ] });
   await openMenuAction(page, 'Stored Models');
   const modal = page.getByRole('dialog', { name: 'Stored Models', exact: true });
-  for (const name of ['Loaded Resident', 'Load Deleting', 'Load Blocked']) {
+  for (const name of ['Load Deleting', 'Load Blocked']) {
     const button = modal.getByRole('button', { name, exact: true }); await button.waitFor();
     assert.equal(await button.isDisabled(), true);
     if (name !== 'Load Blocked') await button.evaluate((element) => element.onclick());
@@ -1231,30 +1311,32 @@ test('unavailable, deleting and loaded stored packages cannot start another load
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => ['load-stored', 'acquire', 'unload'].includes(call.type))), []);
 });
 
-test('Stored Models explains loaded and saved voice packages without dispatching them to chat', async (t) => {
+test('Stored Models loads speech as an additional capability without dispatching it to chat', async (t) => {
   const page = await fixture(t, { loaded: true, stored: [
     { manifestCid: 'fixture-vision', name: 'Moonshine Tiny', totalBytes: 113009473, runtime: 'transformers-speech',
-      loadMode: 'voice', loadHint: 'Use Enable voice in the agent window to load speech models.',
-      localAvailability: { status: 'unknown', code: 'voice_managed' } },
+      task: 'automatic-speech-recognition', localAvailability: { status: 'unknown' } },
     { manifestCid: 'saved-voice', name: 'Supertonic', totalBytes: 262000000, runtime: 'transformers-speech',
-      loadMode: 'voice', localAvailability: { status: 'unknown', code: 'voice_managed' } },
+      task: 'text-to-speech', localAvailability: { status: 'unknown' } },
     { manifestCid: 'bad-voice', name: 'Changed voice package', totalBytes: 1024, runtime: 'transformers-speech',
       loadMode: 'voice', localAvailability: { status: 'unavailable', code: 'catalog_unsupported', reason: 'Speech package differs from the pinned voice catalog' } },
   ] });
   await openMenuAction(page, 'Stored Models');
   const modal = page.getByRole('dialog', { name: 'Stored Models', exact: true });
-  for (const name of ['Loaded Moonshine Tiny', 'Voice controls Supertonic', 'Voice controls Changed voice package']) {
-    const control = modal.getByRole('button', { name, exact: true }); await control.waitFor();
-    assert.equal(await control.isDisabled(), true);
-    await control.evaluate((button) => button.onclick());
-  }
-  assert.match(await modal.textContent(), /Enable voice/);
+  await modal.getByRole('button', { name: 'Unload Moonshine Tiny', exact: true }).waitFor();
+  assert.equal(await modal.getByRole('button', { name: 'Load Supertonic', exact: true }).isEnabled(), true);
+  assert.equal(await modal.getByRole('button', { name: 'Load Changed voice package', exact: true }).isDisabled(), true);
+  assert.match(await modal.textContent(), /Speech recognition.*Talk/);
   assert.match(await modal.textContent(), /differs from the pinned voice catalog/);
   assert.doesNotMatch(await modal.textContent(), /Unsupported model runtime/);
-  assert.deepEqual(await page.evaluate(() => calls.filter((call) => ['load-stored', 'acquire', 'unload'].includes(call.type))), []);
+  await modal.getByRole('button', { name: 'Load Supertonic', exact: true }).click();
+  await modal.waitFor({ state: 'hidden' });
+  assert.deepEqual(await page.evaluate(() => uiState.residentCids), ['fixture-vision', 'saved-voice']);
+  assert.equal(await page.getByLabel('Chat target').inputValue(), 'mixed');
+  assert.deepEqual(await page.evaluate(() => calls.filter((call) => ['generate', 'acquire', 'unload'].includes(call.type))), []);
+  await openMenuAction(page, 'Stored Models');
   await modal.getByRole('button', { name: 'Delete Supertonic', exact: true }).click();
   await page.waitForFunction(() => !uiState.stored.some((model) => model.manifestCid === 'saved-voice'));
-  assert.equal(await modal.getByRole('button', { name: 'Loaded Moonshine Tiny', exact: true }).isDisabled(), true);
+  assert.equal(await modal.getByRole('button', { name: 'Unload Moonshine Tiny', exact: true }).isEnabled(), true);
 });
 
 test('startup downloads the default once, without waiting for the peer network', async (t) => {
