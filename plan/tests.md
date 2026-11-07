@@ -3743,3 +3743,36 @@ This matrix supersedes the preceding ground-primitive/`zIndex` assertions.
   Normal contexts have no page/HTTP/console errors; sandbox denial is intentional.
   Initial headless tab-switch failure emitted no blur; retain it, then use actual
   iframe focus for the native blur assertion. All owned test resources closed.
+
+### November 7 — retained model visibility and local recovery
+
+- Core artifact/provider tests must preserve a complete checkpoint after cancelled
+  revalidation, fail closed on missing/corrupt blocks or forged root metadata,
+  and serialize audit/pin/deletion while preserving unrelated retained packages.
+- `npm run test:artifacts:retention` uses native Chrome with GPU disabled,
+  actual IndexedDB/Web Locks and a synthetic32MiB package. Interrupt publication
+  by navigation, reopen the same origin, cancel/retry a legacy partial recovery,
+  compare SHA/CID and test a second-tab deletion waiting for an active audit.
+  Optional ARTIFACT_RETENTION_REPORT writes evidence outside Git. No HF models,
+  user profile access or public peer publication.
+- Library/controller/panel regressions cover retained partial listing, exact
+  GeoRefine catalog identity, remembered startup without replacement download,
+  local-only Verify locally progress/cancel and no inference/sharing before
+  verification. Actual device compatibility must not disable local verification.
+- Model download native-browser test completes4MiB, fails a sidecar, reloads
+  persistent IndexedDB and retries. Assert only one weight HTTP request across
+  attempts, identical finalCID and rejection of invalid hash/size/partial roots.
+  Final verification must detect actual corrupted bytes. Unfinished-file byte
+  checkpoints across navigation remain unimplemented and are not a claimed gate.
+- Build standalone/CubeChat/Earth shared code and check exact internal HTTPS
+  previews with an isolated GPU-disabled browser and model sources blocked;
+  inspect desktop/mobile recovery UI and SecretWorkshop connections. Receipts,
+  actual outcomes and any limitations belong in plan/log.md.
+- Final results: core64/64, controller73/73, importer29/29, native retained
+  library5/5, panel65/65, world-agent79/79 and additional integration39/39 PASS.
+  Native core32MiB navigation/WebLocks gate passes. All three builds pass.
+  Exact5189 native4MiB recovery preserves SHA/CID with zero model HTTP/GPU
+  workers; desktop/mobile screenshots fit. Exact CubeChat/Earth scene checks
+  pass with expected SecretWorkshop /noise connections and no page/console
+  errors or model requests. User27B integrity remains unverified until they
+  choose Verify locally. All owned browsers/servers closed; user previews remain.

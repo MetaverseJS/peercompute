@@ -135,7 +135,9 @@ test('request and body inactivity deadlines recover; explicit abort during a rea
 test('corrupted resumed data never publishes a package; quota failures do not retry transport', async () => {
   const store = new ArtifactStore({ persistent: false, capacity: 'browser' }); await store.open();
   try {
-    const keep = await importModelPackage(store, { ...spec(), name: 'Keep' }, source, { fetchImpl: async () => response([bytes]) });
+    const keepBytes = new TextEncoder().encode('Unrelated retained bytes');
+    const keep = await importModelPackage(store, { ...spec({ path: 'keep.bin', size: keepBytes.length,
+      sha256: bytesToHex(sha256(keepBytes)) }), name: 'Keep' }, source, { fetchImpl: async () => response([keepBytes]) });
     let count = 0;
     // Correct framing with corrupted bytes must reach (and fail) the final SHA check.
     await assert.rejects(importModelPackage(store, spec(), source, { fetchImpl: async () => ++count === 1

@@ -186,6 +186,8 @@ export class ArtifactProviderDiscovery {
     cid = canonicalCID(String(cid));
     if ((await this.store.stat(cid))?.status !== 'complete') throw new Error('Only verified complete artifacts may be announced');
     if (!this.publicArtifacts.has(cid) && this.publicArtifacts.size >= this.maximumPublicArtifacts) throw new Error('Public artifact catalog is full');
+    // Retention is idempotent for an acknowledged complete root. The closure
+    // below remains a fresh block integrity check before serving is approved.
     await this.store.pin(cid, { signal: this.controller.signal });
     const approved = new Set([...this.publicArtifacts, cid]);
     const blocks = await this._publicBlocksFor(approved);

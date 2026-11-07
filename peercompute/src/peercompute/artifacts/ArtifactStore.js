@@ -21,15 +21,18 @@ export const ARTIFACT_IMPORT_PROFILE = Object.freeze({
 export { ARTIFACT_MANIFEST_SCHEMA };
 const hex = (bytes) => Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 const RETENTION = Symbol('artifact-import-retention');
+const DAMAGE = Symbol('verified-artifact-damage');
 function integer(value, name, minimum = 1) {
   if (!Number.isSafeInteger(value) || value < minimum) throw new RangeError(`Invalid ${name}.`);
   return value;
 }
 function missing(cid) {
   const error = new Error(`Artifact block not found: ${cid}`);
-  error.name = 'NotFoundError'; error.code = 'ERR_NOT_FOUND';
+  error.name = 'NotFoundError'; error.code = 'ERR_NOT_FOUND'; error[DAMAGE] = true;
   return error;
 }
+const integrity = (message) => Object.assign(new Error(message), { code: 'ERR_ARTIFACT_INTEGRITY', [DAMAGE]: true });
+const damaged = (error) => error?.[DAMAGE] === true;
 function abortable(promise, signal) {
   if (!signal) return promise;
   if (signal.aborted) { Promise.resolve(promise).catch(() => {}); throwIfAborted(signal); }
@@ -168,6 +171,7 @@ export class ArtifactStore {
       const previous = await this.backend.get('roots', cid);
       const record = update(previous);
       throwIfAborted(signal);
+      if (record === undefined) return undefined; // Conditional metadata update; never recreate a deleted root.
       await this.backend.put('roots', cid, record, { maximumEntries: this.maximumRoots,
         maximumBytes: Math.min(Number.MAX_SAFE_INTEGER, this.maximumRoots * (ARTIFACT_MANIFEST_MAXIMUM_BYTES + 2048)) });
       this.rootUsage = await this.backend.getUsage('roots');
@@ -188,7 +192,7 @@ export class ArtifactStore {
   async _verifyBlock(cid, bytes) {
     if (!(bytes instanceof Uint8Array) || bytes.byteLength > this.maximumBlockBytes) throw new RangeError('Artifact block exceeds byte limit.');
     const digest = await multihashSha256.digest(bytes);
-    if (!CID.createV1(cid.code, digest).equals(cid)) throw new Error('Artifact block CID verification failed.');
+    if (!CID.createV1(cid.code, digest).equals(cid)) throw integrity('Artifact block CID verification failed.');
   }
 
   async _blockWritePermit(signal) {
@@ -299,23 +303,22 @@ export class ArtifactStore {
     }, undefined, retention);
   }
 
-  async _verifyFile(cid, expected = {}, signal) {
+  async _verifyFile(cid, expected = {}, signal, onBytes) {
     const entry = await exporter(artifactCID(cid).toString(), this._localBlocks(signal));
-    if (!['file', 'raw'].includes(entry.type)) throw new TypeError('Artifact root must identify a file.');
+    if (!['file', 'raw'].includes(entry.type)) throw integrity('Artifact root must identify a file.');
     const size = Number(entry.type === 'raw' ? entry.node.byteLength : entry.unixfs.fileSize());
-    if (!Number.isSafeInteger(size) || size > this.maximumFileBytes || (expected.size !== undefined && size !== expected.size)) {
-      throw new RangeError('Artifact file size differs from its manifest or limit.');
-    }
+    if (!Number.isSafeInteger(size) || size > this.maximumFileBytes) throw new RangeError('Artifact file exceeds its size limit.');
+    if (expected.size !== undefined && size !== expected.size) throw integrity('Artifact file size differs from its manifest.');
     const hash = sha256.create();
     let read = 0;
     for await (const chunk of this._fileChunks(cid, { size, signal })) {
       throwIfAborted(signal); read += chunk.byteLength;
-      if (read > size) throw new RangeError('Artifact content exceeds declared size.');
-      hash.update(chunk);
+      if (read > size) throw integrity('Artifact content exceeds declared size.');
+      hash.update(chunk); onBytes?.(chunk.byteLength);
     }
     const digest = hex(hash.digest());
     if (read !== size || (expected.sha256 !== undefined && digest !== expected.sha256)) {
-      throw new Error('Artifact file integrity differs from its manifest.');
+      throw integrity('Artifact file integrity differs from its manifest.');
     }
     return { size, sha256: digest };
   }
@@ -334,35 +337,35 @@ export class ArtifactStore {
       if (++visited > this.maximumTraversalBlocks || frame.depth > 64) throw new RangeError('Artifact file traversal exceeds its bounds.');
       const bytes = await this._readBlock(frame.cid, signal);
       if (frame.cid.code === 0x55) {
-        if (bytes.byteLength !== frame.size) throw new Error('Raw file block size differs from its UnixFS link.');
+        if (bytes.byteLength !== frame.size) throw integrity('Raw file block size differs from its UnixFS link.');
         const part = bytes.subarray(Math.max(0, offset - frame.start), Math.min(bytes.length, end - frame.start));
         if (part.length) { emitted += part.length; yield part; }
         continue;
       }
       const node = dagPb.decode(bytes);
-      if (!node.Data) throw new Error('UnixFS file node has no metadata.');
+      if (!node.Data) throw integrity('UnixFS file node has no metadata.');
       const file = UnixFS.unmarshal(node.Data);
       const declaredSize = UnixFSNode.decode(bytes).data?.fileSize;
       if (!['file', 'raw'].includes(file.type) || node.Links.length !== file.blockSizes.length
           || Number(file.fileSize()) !== frame.size
-          || (declaredSize !== undefined && declaredSize !== BigInt(frame.size))) throw new Error('UnixFS file metadata is inconsistent.');
+          || (declaredSize !== undefined && declaredSize !== BigInt(frame.size))) throw integrity('UnixFS file metadata is inconsistent.');
       const data = file.data || new Uint8Array();
       let position = frame.start + data.length;
       const children = [];
       for (let i = 0; i < node.Links.length; i++) {
         const childSize = Number(file.blockSizes[i]);
-        if (!Number.isSafeInteger(childSize) || childSize < 0) throw new RangeError('Invalid UnixFS child size.');
+        if (!Number.isSafeInteger(childSize) || childSize < 0) throw integrity('Invalid UnixFS child size.');
         const childCid = artifactCID(node.Links[i].Hash);
         const dagSize = node.Links[i].Tsize;
         if (dagSize !== undefined && (!Number.isSafeInteger(dagSize) || dagSize < childSize
-            || (childCid.code === 0x55 && dagSize !== childSize))) throw new Error('Invalid UnixFS link DAG size.');
+            || (childCid.code === 0x55 && dagSize !== childSize))) throw integrity('Invalid UnixFS link DAG size.');
         if (position < end && position + childSize > offset) {
           children.push({ cid: childCid, start: position, size: childSize, depth: frame.depth + 1 });
         }
         position += childSize;
-        if (!Number.isSafeInteger(position)) throw new RangeError('Invalid UnixFS file extent.');
+        if (!Number.isSafeInteger(position)) throw integrity('Invalid UnixFS file extent.');
       }
-      if (position !== frame.start + frame.size) throw new Error('UnixFS child sizes differ from their parent.');
+      if (position !== frame.start + frame.size) throw integrity('UnixFS child sizes differ from their parent.');
       if (pending.length + children.length > this.maximumTraversalBlocks) throw new RangeError('UnixFS pending traversal exceeds limit.');
       for (let i = children.length - 1; i >= 0; i--) pending.push(children[i]);
       if (data.length && frame.start < end && frame.start + data.length > offset) {
@@ -370,16 +373,16 @@ export class ArtifactStore {
         emitted += part.length; yield part;
       }
     }
-    if (emitted !== length) throw new Error('UnixFS read did not produce the requested number of bytes.');
+    if (emitted !== length) throw integrity('UnixFS read did not produce the requested number of bytes.');
   }
 
-  async _recordVerifiedFile(file, signal) {
-    const verified = await this._verifyFile(file.cid, file, signal);
+  async _recordVerifiedFile(file, signal, onBytes) {
+    const verified = await this._verifyFile(file.cid, file, signal, onBytes);
     return this._writeRoot(file.cid, (previous) => ({ ...previous, cid: file.cid,
       kind: 'file', ...verified, status: 'complete', pinned: Boolean(previous?.pinned), retain: false }), signal);
   }
 
-  async *_walk(roots, { signal, fetchBlock, allowMissing = false } = {}) {
+  async *_walk(roots, { signal, fetchBlock, allowMissing = false, onMissing } = {}) {
     const pending = roots.map((cid) => artifactCID(cid));
     const seen = new Set();
     while (pending.length) {
@@ -392,6 +395,7 @@ export class ArtifactStore {
       let bytes;
       try { bytes = await this._readBlock(cid, signal); } catch (error) {
         if (error.code !== 'ERR_NOT_FOUND') throw error;
+        onMissing?.(error);
         if (fetchBlock) { await this._putBlock(cid, await abortable(fetchBlock(cid, { signal }), signal), signal); bytes = await this._readBlock(cid, signal); }
         else if (allowMissing) continue;
         else throw error;
@@ -405,13 +409,69 @@ export class ArtifactStore {
     }
   }
 
-  async ensureLocal(input, { signal, fetchBlock, pin = true, kind } = {}) {
-    const cid = artifactCID(input).toString();
+  async _invalidateRoot(cid, error) {
+    if (!damaged(error)) return;
+    // Persist an observed integrity failure even if cancellation races it. This
+    // bounded metadata write still owns the operation's GC lock; destroy waits.
+    await this._writeRoot(cid, (previous) => !previous || previous.status === 'deleting' ? undefined : ({ ...previous, cid,
+      kind: previous.kind || 'file', status: 'partial', pinned: Boolean(previous.pinned), retain: true }));
+  }
+
+  async _checkRootIdentity(cid, root, signal) {
+    const bytes = await this._readBlock(cid, signal);
+    if (root.kind === 'manifest') {
+      let canonical;
+      try { canonical = encodeArtifactManifest(root.manifest); }
+      catch { throw integrity('Artifact manifest metadata is invalid.'); }
+      if (canonical.length !== bytes.length || canonical.some((byte, index) => byte !== bytes[index])) {
+        throw integrity('Artifact manifest metadata differs from its verified root.');
+      }
+    }
+    return bytes;
+  }
+
+  async _withRootVerification(cid, signal, callback) {
     return this._run(signal, async (activeSignal) => {
-      await this._writeRoot(cid, (previous) => ({ ...previous, cid,
-        kind: kind || previous?.kind || 'file', status: 'partial',
-        pinned: Boolean(previous?.pinned), retain: true }), activeSignal);
-      for await (const _ of this._walk([cid], { signal: activeSignal, fetchBlock })) { /* Verified persistent blocks. */ }
+      const unlock = await acquireArtifactLock(`${this.lockName}:verify:${cid}`, 'exclusive', activeSignal, this.lockManager);
+      try { return await callback(activeSignal); } finally { unlock(); }
+    });
+  }
+
+  /** A full audit, optionally fetching missing CID blocks. Omitting fetchBlock
+   * is strictly local recovery. Cancellation never revokes an earlier complete
+   * checkpoint; only a proven missing block or integrity error does so.
+   */
+  async ensureLocal(input, { signal, fetchBlock, pin = true, kind, onProgress } = {}) {
+    const cid = artifactCID(input).toString();
+    if (onProgress !== undefined && typeof onProgress !== 'function') throw new TypeError('Artifact progress must be a function.');
+    return this._withRootVerification(cid, signal,
+      (activeSignal) => this._ensureLocal(cid, { signal: activeSignal, fetchBlock, pin, kind, onProgress }));
+  }
+
+  async _ensureLocal(cid, { signal: activeSignal, fetchBlock, pin, kind, onProgress }) {
+    const previous = await this.backend.get('roots', cid);
+    if (previous?.status === 'deleting') throw new Error('Artifact deletion is pending; finish deletion before importing this root.');
+    let loaded = 0; let totalBytes = previous?.size || 0; let completedFiles = 0; let totalFiles = 1;
+    let path = null; let lastProgress = -Infinity;
+    const progress = (force = false) => {
+      const now = performance.now();
+      if (onProgress && (force || now - lastProgress >= 100)) {
+        lastProgress = now;
+        try { Promise.resolve(onProgress({ stage: 'verify', path, loaded, totalBytes, completedFiles, totalFiles })).catch(() => {}); }
+        catch { /* Progress is advisory and cannot alter integrity or durability. */ }
+      }
+      throwIfAborted(activeSignal);
+    };
+    const onBytes = (count) => { loaded += count; progress(); };
+    let observedDamage;
+    const onMissing = (error) => { if (damaged(error)) observedDamage = error; };
+    try {
+      if (previous?.status !== 'complete') await this._writeRoot(cid, (current) => ({ ...current, cid,
+        kind: kind || current?.kind || 'file', status: 'partial',
+        pinned: Boolean(current?.pinned), retain: true }), activeSignal);
+      // Network recovery needs a DAG download pass. Local verification streams
+      // each file once; its range walker already verifies every CID block.
+      if (fetchBlock) for await (const _ of this._walk([cid], { signal: activeSignal, fetchBlock, onMissing })) { /* Download missing blocks. */ }
       let manifest;
       const rootBytes = artifactCID(cid).code === 0x55 ? await this._readBlock(cid, activeSignal) : null;
       if (rootBytes && rootBytes.byteLength <= ARTIFACT_MANIFEST_MAXIMUM_BYTES) {
@@ -421,16 +481,24 @@ export class ArtifactStore {
       }
       if (kind === 'manifest' && !manifest) throw new TypeError('Manifest must be a bounded canonical JSON raw block.');
       if (manifest) {
-        await this._writeRoot(cid, (previous) => ({ ...previous, kind: 'manifest', manifest, retain: true }), activeSignal);
+        if (previous?.status !== 'complete') await this._writeRoot(cid, (current) => ({ ...current, kind: 'manifest', manifest, retain: true }), activeSignal);
+        totalBytes = manifest.files.reduce((sum, file) => sum + file.size, 0); totalFiles = manifest.files.length;
+        if (!Number.isSafeInteger(totalBytes)) throw new RangeError('Artifact verification byte count exceeds safe bounds.');
+        progress(true);
         for (const file of manifest.files) {
-          for await (const _ of this._walk([file.cid], { signal: activeSignal, fetchBlock })) { /* Resume only missing blocks. */ }
-          await this._recordVerifiedFile(file, activeSignal);
+          path = file.path;
+          if (fetchBlock) for await (const _ of this._walk([file.cid], { signal: activeSignal, fetchBlock, onMissing })) { /* Resume missing blocks. */ }
+          await this._recordVerifiedFile(file, activeSignal, onBytes);
+          completedFiles++; progress(true);
         }
       }
-      const verified = manifest ? { size: rootBytes.byteLength, manifest } : await this._verifyFile(cid, {}, activeSignal);
-      return this._writeRoot(cid, (previous) => ({ cid, kind: manifest ? 'manifest' : 'file', ...verified,
-        status: 'complete', pinned: Boolean(pin || previous?.pinned), retain: false }), activeSignal);
-    });
+      const verified = manifest ? { size: rootBytes.byteLength, manifest } : await this._verifyFile(cid, {}, activeSignal, onBytes);
+      const result = await this._writeRoot(cid, (current) => ({ cid, kind: manifest ? 'manifest' : 'file', ...verified,
+        status: 'complete', pinned: Boolean(pin || current?.pinned), retain: false }), activeSignal);
+      observedDamage = undefined; // A repaired closure is now durably complete.
+      totalBytes = loaded; completedFiles = totalFiles; path = null; progress(true);
+      return result;
+    } catch (error) { await this._invalidateRoot(cid, observedDamage || error); throw error; }
   }
 
   async stat(input, { signal, [RETENTION]: retention } = {}) {
@@ -461,7 +529,25 @@ export class ArtifactStore {
     } finally { operation.finish(); }
   }
 
-  async pin(input, { signal } = {}) { return this.ensureLocal(input, { signal, pin: true }); }
+  /** Idempotent retention, not a fresh audit. Complete retained records are
+   * written only after verification; immutable blocks stay protected from GC.
+   * Still verify the root and its manifest identity. Serving separately checks
+   * the entire block closure, and ensureLocal explicitly audits file digests.
+   */
+  async pin(input, { signal } = {}) {
+    const cid = artifactCID(input).toString();
+    return this._withRootVerification(cid, signal, async (activeSignal) => {
+      const root = await this.backend.get('roots', cid);
+      if (root?.status !== 'complete' || (!root.pinned && !root.retain)) {
+        return this._ensureLocal(cid, { signal: activeSignal, pin: true });
+      }
+      try {
+        await this._checkRootIdentity(cid, root, activeSignal);
+        if (root.pinned) return structuredClone(root);
+        return this._writeRoot(cid, (current) => ({ ...current, pinned: true }), activeSignal);
+      } catch (error) { await this._invalidateRoot(cid, error); throw error; }
+    });
+  }
 
   async unpin(input, { signal } = {}) {
     const cid = artifactCID(input).toString();
@@ -563,11 +649,13 @@ export class ArtifactStore {
     try {
       const root = await this.backend.get('roots', cid);
       if (root?.status !== 'complete') throw new Error('Artifact serving requires a complete local root.');
+      await this._checkRootIdentity(cid, root, operation.signal);
       const roots = [cid, ...(root.manifest?.files || []).map((file) => file.cid)];
       for await (const key of this._walk(roots, { signal: operation.signal })) {
         operation.pause(); yield key; operation.resume();
       }
-    } finally { operation.finish(); }
+    } catch (error) { await this._invalidateRoot(cid, error); throw error; }
+    finally { operation.finish(); }
   }
 
   async _collectGarbage(activeSignal, removeCid) {

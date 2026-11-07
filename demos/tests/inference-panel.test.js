@@ -124,6 +124,7 @@ async function fixture(t, scenario = {}) {
           window.emitImportProgress = options.onProgress;
           for (const event of [
             { stage: 'import', path: 'LICENSE', index: 6, total: 7, loaded: 1024, totalBytes: 1024 },
+            { stage: 'import', path: 'LICENSE', index: 6, total: 7, loaded: 1024, totalBytes: 1024, reused: true },
             { stage: 'verify' }, { stage: 'load' }, { type: 'model-load', stage: 'unet', loaded: 0, total: 1000 },
           ]) { options.onProgress(event); await delay(150, options.signal); }
         }
@@ -140,6 +141,15 @@ async function fixture(t, scenario = {}) {
         state.loaded = true; state.loadedCid = cid;
         state.preferredSourceKey = (state.sources ?? []).find((source) => source.manifestCid === cid)?.key ?? 'hf:vision';
         return { manifestCid: cid };
+      },
+      async recoverStoredModel(cid, options) {
+        calls.push({ type: 'verify-local', cid });
+        options.onProgress?.({ stage: 'verify', loaded: 1024, totalBytes: 2048 });
+        await modelDelay(scenario.verifyDelay ?? 20, options.signal);
+        if (scenario.rejectVerification) throw new Error('Local verification failed: missing block. No files were downloaded.');
+        const record = state.stored.find((model) => model.manifestCid === cid);
+        delete record.needsVerification; record.localAvailability = { status: 'unknown' };
+        return { verified: true, manifestCid: cid };
       },
       async setSharing(value) { if (state.rejectSharing) throw new Error('Sharing failed'); state.sharing = value; calls.push({ type: 'sharing', value }); },
       async setHostInference(value) { state.hostInference = value; calls.push({ type: 'hosting', value }); },
@@ -475,6 +485,7 @@ test('import progress advances past the last file into verification and GPU load
   const status = page.locator('.pc-inference-panel > [role=status]');
   await page.waitForFunction(() => document.querySelector('[role=status]').textContent.includes('Downloading 7/7: LICENSE'));
   assert.match(await status.textContent(), /1.0 KiB|1 KiB/);
+  await page.waitForFunction(() => document.querySelector('[role=status]').textContent.includes('Using saved file 7/7: LICENSE'));
   await page.waitForFunction(() => document.querySelector('[role=status]').textContent.includes('Verifying stored model files'));
   await page.waitForFunction(() => document.querySelector('[role=status]').textContent.includes('Loading model into RAM'));
   await page.waitForFunction(() => document.querySelector('[role=status]').textContent.includes('Loading model: unet'));
@@ -801,6 +812,68 @@ test('stored model read and deletion failures stay visible and retryable without
   assert.equal(await page.evaluate(() => uiState.stored.length), 1);
   await page.evaluate(() => { uiState.rejectDelete = false; }); await remove.click();
   await modal.getByText('No models stored on this device.', { exact: true }).waitFor();
+});
+
+const pendingStoredModel = { manifestCid: 'fixture-vision', name: 'Saved package', totalBytes: 2048,
+  needsVerification: true, localAvailability: { status: 'unavailable', code: 'model_verification_required',
+    reason: 'Saved files need local verification. No download is required.' } };
+
+test('retained pending startup guides to local verification without import or automatic load', async (t) => {
+  const page = await fixture(t, { interval: 40, stored: [pendingStoredModel],
+    startup: { ...pendingStoredModel, sourceKey: 'hf:vision' },
+    availability: { 'hf:vision': pendingStoredModel.localAvailability } });
+  await page.getByText(/Open Menu → Stored Models → Verify locally/).waitFor();
+  await page.waitForFunction(() => uiState.refreshCalls >= 3);
+  assert.equal(await page.getByRole('button', { name: 'Load', exact: true }).isDisabled(), true);
+  assert.equal(await page.evaluate(() => calls.some((call) => ['acquire', 'load-stored', 'verify-local'].includes(call.type))), false);
+  await page.getByRole('button', { name: 'Set up selected model', exact: true }).click();
+  const modal = page.getByRole('dialog', { name: 'Stored Models', exact: true });
+  await modal.getByRole('button', { name: 'Verify locally Saved package' }).waitFor();
+  assert.equal(await page.getByRole('dialog', { name: 'Model setup', exact: true }).isVisible(), false);
+  assert.match(await modal.textContent(), /Needs local verification/);
+  assert.equal(await modal.getByRole('button', { name: 'Load Saved package', exact: true }).count(), 0);
+});
+
+test('Verify locally shows byte progress, retains the dialog and requires a separate explicit Load', async (t) => {
+  const page = await fixture(t, { stored: [pendingStoredModel], verifyDelay: 200 });
+  await openMenuAction(page, 'Stored Models');
+  const modal = page.getByRole('dialog', { name: 'Stored Models', exact: true });
+  await modal.getByRole('button', { name: 'Verify locally Saved package' }).click();
+  await modal.getByText(/Verifying stored model files.*1 KiB.*2 KiB/).waitFor();
+  assert.equal(await modal.getByRole('button', { name: 'Delete Saved package' }).isDisabled(), true);
+  await modal.getByText('Verified Saved package from local files. You can now load it.', { exact: true }).waitFor();
+  assert.equal(await page.evaluate(() => calls.some((call) => ['acquire', 'load-stored'].includes(call.type))), false);
+  await modal.getByRole('button', { name: 'Load Saved package', exact: true }).click();
+  await page.waitForFunction(() => uiState.loaded);
+  assert.deepEqual(await page.evaluate(() => calls.filter((call) => ['verify-local', 'load-stored'].includes(call.type)).map((call) => call.type)),
+    ['verify-local', 'load-stored']);
+  assert.equal(await page.evaluate(() => calls.some((call) => call.type === 'acquire')), false);
+});
+
+test('local verification cancel waits for cleanup and failed verification remains retryable', async (t) => {
+  const page = await fixture(t, { stored: [pendingStoredModel], verifyDelay: 60000, waitForLoadCleanup: true });
+  await openMenuAction(page, 'Stored Models');
+  const modal = page.getByRole('dialog', { name: 'Stored Models', exact: true });
+  await modal.getByRole('button', { name: 'Verify locally Saved package' }).click();
+  const cancel = modal.getByRole('button', { name: 'Cancel verification', exact: true });
+  await cancel.click();
+  await page.waitForFunction(() => uiState.cleaning);
+  assert.equal(await cancel.isDisabled(), true);
+  assert.match(await modal.textContent(), /Cancelling verification.*Waiting for cleanup/);
+  assert.equal(await modal.getByRole('button', { name: 'Verify locally Saved package' }).isDisabled(), true);
+  await page.evaluate(() => finishLoadCleanup());
+  await modal.getByText(/Cancelled:/).waitFor();
+  assert.equal(await modal.getByRole('button', { name: 'Verify locally Saved package' }).isEnabled(), true);
+  assert.equal(await page.evaluate(() => uiState.stored[0].needsVerification), true);
+  assert.equal(await page.evaluate(() => calls.some((call) => ['acquire', 'load-stored'].includes(call.type))), false);
+
+  const failed = await fixture(t, { stored: [pendingStoredModel], rejectVerification: true });
+  await openMenuAction(failed, 'Stored Models');
+  const failureModal = failed.getByRole('dialog', { name: 'Stored Models', exact: true });
+  await failureModal.getByRole('button', { name: 'Verify locally Saved package' }).click();
+  await failureModal.getByText(/Local verification failed: missing block/).waitFor();
+  assert.equal(await failureModal.getByRole('button', { name: 'Verify locally Saved package' }).isEnabled(), true);
+  assert.equal(await failureModal.getByRole('button', { name: 'Delete Saved package' }).isEnabled(), true);
 });
 
 test('stored deletion stays disabled during a request and modal bounds fit mobile and desktop', async (t) => {
@@ -1281,17 +1354,28 @@ test('Install is explicit in the menu, supports browser guidance and unsubscribe
 test('HF and peer loading overlays follow download, verification and engine progress until ready', async (t) => {
   for (const key of ['hf:vision', 'peer:fixture']) {
     const page = await fixture(t, { importProgress: true, acquireDelay: 600 });
+    await page.evaluate(() => {
+      window.visibleLoadStages = [];
+      const dialog = document.querySelector('.pc-model-loading');
+      // Capture real rendered stage changes rather than racing 150ms stages
+      // against locator polling and browser scheduling under parallel suites.
+      const observer = new MutationObserver(() => {
+        if (dialog.open) visibleLoadStages.push(dialog.querySelector('[role=status]').textContent);
+      });
+      observer.observe(dialog, { subtree: true, childList: true, characterData: true });
+      window.stopLoadStageObserver = () => observer.disconnect();
+    });
     await browseChoice(page, key, 'Load');
     const overlay = page.getByRole('dialog', { name: 'Loading model', exact: true });
     await overlay.waitFor();
     assert.match(await overlay.textContent(), key === 'hf:vision' ? /Fixture vision/ : /Peer text model/);
     assert.equal(await overlay.getByRole('button', { name: 'Done', exact: true }).count(), 0);
     assert.equal(await overlay.getByRole('button', { name: 'Close', exact: true }).count(), 0);
-    await overlay.getByRole('status').filter({ hasText: 'Downloading 7/7' }).waitFor();
-    await overlay.getByRole('status').filter({ hasText: 'Verifying stored model files' }).waitFor();
-    await overlay.getByRole('status').filter({ hasText: 'Loading model into RAM' }).waitFor();
-    await overlay.getByRole('status').filter({ hasText: 'Loading model: unet' }).waitFor();
     await overlay.waitFor({ state: 'hidden' });
+    const stages = await page.evaluate(() => { stopLoadStageObserver(); return visibleLoadStages; });
+    for (const label of ['Downloading 7/7', 'Using saved file 7/7', 'Verifying stored model files', 'Loading model into RAM', 'Loading model: unet']) {
+      assert(stages.some((text) => text.includes(label)), `Loading overlay displayed ${label}`);
+    }
     assert.equal(await page.evaluate(() => uiState.loaded), true);
     assert.match(await page.locator('.pc-inference-panel > [role=status]').textContent(), /Model ready/);
     assert.equal(await page.getByRole('button', { name: 'Browse models', exact: true }).evaluate((button) => button === document.activeElement), true);

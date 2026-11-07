@@ -12,7 +12,7 @@ import { webSockets } from '@libp2p/websockets';
 import { noise } from 'peercompute-artifact-noise';
 import { yamux } from '@libp2p/yamux';
 import { identify } from '@libp2p/identify';
-import { ArtifactStore } from '../../src/peercompute/artifacts/ArtifactStore.js';
+import { ArtifactStore, ARTIFACT_MANIFEST_SCHEMA } from '../../src/peercompute/artifacts/ArtifactStore.js';
 import { MemoryArtifactBackend } from '../../src/peercompute/artifacts/ArtifactBackends.js';
 import { IpfsArtifactTransport } from '../../src/peercompute/networkManager/IpfsArtifactTransport.js';
 import { NetworkManager } from '../../src/peercompute/networkManager/NetworkManager.js';
@@ -75,6 +75,55 @@ const catalogFixture = ({ maximumTraversalBlocks = 65536, ...options } = {}) => 
   const persist = (approved) => datastore.put(discovery.indexKey, new TextEncoder().encode(JSON.stringify(approved)));
   return { roots, store, datastore, transport, discovery, persisted, persist };
 };
+
+test('interrupted real provider announcement preserves a complete retained package across reopen', async (t) => {
+  const backend = new MemoryArtifactBackend({ name: 'provider-retention' });
+  const store = new ArtifactStore({ persistent: false, backend });
+  const file = await store.importFile(new Uint8Array(2 * 1024 ** 2 + 17).fill(31), { pin: false });
+  const manifest = await store.importManifest({ schema: ARTIFACT_MANIFEST_SCHEMA,
+    files: [{ path: 'model.bin', cid: file.cid, size: file.size, sha256: file.sha256 }] });
+  const fixture = catalogFixture();
+  const discovery = new ArtifactProviderDiscovery(fixture.discovery.manager, fixture.transport, store);
+  await discovery.start();
+  let entered; let release;
+  const started = new Promise((resolve) => { entered = resolve; });
+  const held = new Promise((resolve) => { release = resolve; });
+  const get = backend.get.bind(backend);
+  backend.get = async (collection, key) => {
+    if (collection === 'blocks' && key === file.cid) { entered(); await held; }
+    return get(collection, key);
+  };
+  t.after(async () => { release(); await discovery.stop(); await store.destroy(); });
+  const publication = discovery.announce(manifest.cid);
+  const rejected = assert.rejects(publication, /discovery stopped/);
+  await started;
+  assert.equal((await store.stat(manifest.cid)).status, 'complete');
+  const stopping = discovery.stop(); release();
+  await rejected; await stopping; await store.destroy();
+  const reopened = new ArtifactStore({ persistent: false, backend });
+  t.after(() => reopened.destroy());
+  assert.equal((await reopened.stat(manifest.cid)).status, 'complete');
+  assert.equal((await reopened.stat(manifest.cid)).pinned, true);
+  assert.equal((await reopened.gc()).deletedBlocks, 0);
+  assert.equal(digest(await collect(reopened.openRead(file.cid))), file.sha256);
+  assert.equal(fixture.transport.publicBlocks.size, 0, 'no prefix was published');
+});
+
+test('provider publication rejects a corrupted retained package after the idempotent pin', async (t) => {
+  const store = new ArtifactStore({ persistent: false });
+  const file = await store.importFile(new Uint8Array(300000).fill(42), { pin: false });
+  const root = await store.importManifest({ schema: ARTIFACT_MANIFEST_SCHEMA,
+    files: [{ path: 'model.bin', cid: file.cid, size: file.size, sha256: file.sha256 }] });
+  await store.backend.delete('blocks', file.cid);
+  const fixture = catalogFixture();
+  const discovery = new ArtifactProviderDiscovery(fixture.discovery.manager, fixture.transport, store);
+  t.after(async () => { await discovery.stop(); await store.destroy(); });
+  await discovery.start();
+  await assert.rejects(discovery.announce(root.cid), { code: 'ERR_NOT_FOUND' });
+  assert.equal((await store.stat(root.cid)).status, 'partial');
+  assert.equal(discovery.publicArtifacts.size, 0);
+  assert.equal(fixture.transport.publicBlocks.size, 0);
+});
 
 test('IPFS transport requires a StateManager-owned store and bounded requests', () => {
   assert.throws(() => new IpfsArtifactTransport(), /ArtifactStore/);

@@ -1,6 +1,7 @@
 import { sha1 } from '@noble/hashes/legacy.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { downloadModelFile } from './modelDownload.js';
+import { normalizeArtifactManifest } from '../../../peercompute/src/peercompute/artifacts/ArtifactManifest.js';
 
 /** Serialize package mutations without holding inference or network callbacks. */
 export function createModelMutationQueue() {
@@ -25,9 +26,31 @@ export function modelStorageError(error) {
   return explained;
 }
 
+// Keep only requested immutable identities, rather than copying the whole library.
+// Scan before taking retention: nesting store.list's shared lock behind a queued
+// GC writer could deadlock. Every candidate is checked again inside retention.
+async function completedFileCandidates(store, files, signal) {
+  const identity = (file) => `${file.sha256}:${file.size}`;
+  const wanted = new Set(files.filter((file) => !file.cid && !file.gitBlobSha1
+    && /^[a-f0-9]{64}$/.test(file.sha256) && Number.isSafeInteger(file.size) && file.size >= 0).map(identity));
+  const candidates = new Map();
+  signal?.throwIfAborted();
+  if (!wanted.size) return candidates;
+  for await (const record of store.list({ signal })) {
+    signal?.throwIfAborted();
+    if (record.kind !== 'file' || record.status !== 'complete') continue;
+    const key = identity(record);
+    if (!wanted.delete(key)) continue;
+    candidates.set(key, record.cid);
+    if (!wanted.size) break;
+  }
+  return candidates;
+}
+
 /** Hold package retention across files, including gaps between individual writes. */
 export async function importModelPackage(store, entry, sourceUrl, { signal, onProgress, fetchImpl = fetch } = {}) {
   try {
+    const candidates = await completedFileCandidates(store, entry.files, signal);
     return await store.withRetention(async (scopedStore) => {
       const imported = [];
       for (let index = 0; index < entry.files.length; index += 1) {
@@ -38,8 +61,11 @@ export async function importModelPackage(store, entry, sourceUrl, { signal, onPr
         const report = (extra = {}) => onProgress?.({ stage: 'import', path: file.path, index, total: entry.files.length,
           loaded, totalBytes: file.size, ...extra });
         report();
-        let result = file.cid ? await scopedStore.stat(file.cid, { signal }) : null;
-        if (!result || result.status !== 'complete' || result.size !== file.size || result.sha256 !== file.sha256) {
+        const candidateCid = file.cid || (!file.gitBlobSha1 && candidates.get(`${file.sha256}:${file.size}`));
+        let result = candidateCid ? await scopedStore.stat(candidateCid, { signal }) : null;
+        const reused = result?.kind === 'file' && result.status === 'complete'
+          && result.size === file.size && result.sha256 === file.sha256;
+        if (!reused) {
           const git = file.gitBlobSha1 ? sha1.create().update(new TextEncoder().encode(`blob ${file.size}\0`)) : null;
           async function* verifiedSource() {
             for await (const bytes of downloadModelFile(file, sourceUrl, { signal, fetchImpl, onRetry: report })) {
@@ -56,7 +82,7 @@ export async function importModelPackage(store, entry, sourceUrl, { signal, onPr
         }
         if (file.cid && result.cid !== file.cid) throw new Error(`Imported CID differs: ${file.path}`);
         signal?.throwIfAborted();
-        loaded = file.size; report();
+        loaded = file.size; report(reused ? { reused: true } : {});
         imported.push({ path: file.path, cid: result.cid, size: result.size, sha256: result.sha256 });
       }
       signal?.throwIfAborted();
@@ -72,6 +98,18 @@ export async function listStoredModelRecords(store, { signal } = {}) {
   const records = [];
   for await (const record of store.list({ signal })) {
     signal?.throwIfAborted();
+    if (record.kind === 'manifest' && record.status === 'partial' && (record.pinned || record.retain)) {
+      try {
+        const manifest = normalizeArtifactManifest(record.manifest);
+        if (manifest.model?.runtime !== undefined) {
+          if (typeof manifest.model.runtime !== 'string' || !manifest.model.runtime.trim()) throw new Error('Invalid model runtime');
+          records.push(record);
+        }
+      } catch (cause) {
+        throw new Error(`Stored package ${record.cid} has invalid recovery metadata: ${cause.message}`, { cause });
+      }
+      continue;
+    }
     if (record.kind === 'manifest' && ['complete', 'deleting'].includes(record.status)
         && record.manifest?.model?.runtime) records.push(record);
   }

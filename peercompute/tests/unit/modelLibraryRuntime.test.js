@@ -84,6 +84,93 @@ test('failed integrity checks never report a verified file and cancelling verifi
   } finally { await store.destroy(); }
 });
 
+test('completed SHA256 files are reused without a CID and reverified before publishing', async () => {
+  const store = new ArtifactStore({ persistent: false }); await store.open();
+  const bytes = new TextEncoder().encode('Completed weights from an interrupted package');
+  const spec = entry('Reuse', bytes); spec.files[0].sha256 = bytesToHex(sha256(bytes));
+  try {
+    const file = await store.importFile(bytes, { expectedSha256: spec.files[0].sha256, pin: false });
+    const progress = [];
+    const result = await importModelPackage(store, spec, () => { throw new Error('No weight HTTP allowed'); }, {
+      onProgress: (event) => progress.push(event),
+    });
+    assert.equal(result.manifest.files[0].cid, file.cid);
+    assert(progress.some((event) => event.reused && event.loaded === bytes.length));
+    // A durable descriptor alone does not bypass verification of the actual bytes.
+    await store.backend.delete('blocks', file.cid);
+    await store.backend.put('blocks', file.cid, new Uint8Array(bytes.length));
+    await assert.rejects(importModelPackage(store, { ...spec, name: 'Corrupt retained bytes' }, () => {
+      throw new Error('The retained file should be verified locally');
+    }), /mismatch|verification|CID|SHA-256/i);
+    assert.equal((await listStoredModelRecords(store)).length, 1);
+  } finally { await store.destroy(); }
+});
+
+test('SHA256 reuse rejects mismatched sizes, digests and partial descriptors', async (t) => {
+  const bytes = new TextEncoder().encode('Immutable bounded weight fixture');
+  for (const mutation of [{ size: bytes.length + 1 }, { sha256: '0'.repeat(64) }, { status: 'partial' }]) {
+    await t.test(JSON.stringify(mutation), async () => {
+      const store = new ArtifactStore({ persistent: false }); await store.open();
+      try {
+        const file = await store.importFile(bytes, { pin: false });
+        await store.backend.put('roots', file.cid, { ...file, ...mutation });
+        const spec = entry('Fresh verified file', bytes); spec.files[0].sha256 = bytesToHex(sha256(bytes));
+        let fetches = 0;
+        const result = await importModelPackage(store, spec, () => 'fixture', {
+          fetchImpl: async () => { fetches++; return new Response(bytes); },
+        });
+        assert.equal(fetches, 1); assert.equal(result.status, 'complete');
+      } finally { await store.destroy(); }
+    });
+  }
+});
+
+test('candidate reuse is rechecked after GC and cancellation releases retention without a manifest', async () => {
+  const store = new ArtifactStore({ persistent: false }); await store.open();
+  const bytes = new TextEncoder().encode('Candidate swept before acquiring retention');
+  const spec = entry('GC race', bytes); spec.files[0].sha256 = bytesToHex(sha256(bytes));
+  try {
+    const file = await store.importFile(bytes, { pin: false });
+    const originalRetention = store.withRetention.bind(store);
+    store.withRetention = async (...args) => {
+      await store.gc(); assert.equal(await store.stat(file.cid), undefined);
+      return originalRetention(...args);
+    };
+    let fetches = 0;
+    const result = await importModelPackage(store, spec, () => 'fixture', {
+      fetchImpl: async () => { fetches++; return new Response(bytes); },
+    });
+    assert.equal(fetches, 1); assert.equal(result.status, 'complete');
+    store.withRetention = originalRetention;
+    const controller = new AbortController();
+    await assert.rejects(importModelPackage(store, { ...spec, name: 'Cancelled reuse' }, () => {
+      throw new Error('Cancelled cache hit must not fetch');
+    }, { signal: controller.signal, onProgress: () => controller.abort() }), { name: 'AbortError' });
+    assert.equal(store.getStats().pending, 0);
+    await store.gc(); assert.equal((await store.stat(result.cid)).pinned, true);
+    assert.equal((await listStoredModelRecords(store)).length, 1);
+  } finally { await store.destroy(); }
+});
+
+test('library listing exposes retained partial manifests and reports invalid recovery metadata', async () => {
+  const store = new ArtifactStore({ persistent: false }); await store.open();
+  try {
+    const bytes = new TextEncoder().encode('Retained package needing local recovery');
+    const complete = await importModelPackage(store, entry('Recovery', bytes), () => 'fixture', {
+      fetchImpl: async () => new Response(bytes),
+    });
+    const partial = { ...complete, status: 'partial', pinned: true, retain: true };
+    await store.backend.put('roots', complete.cid, partial);
+    assert.deepEqual(await listStoredModelRecords(store), [partial]);
+    await store.backend.put('roots', complete.cid, { ...partial, pinned: false, retain: false });
+    assert.deepEqual(await listStoredModelRecords(store), []);
+    await store.backend.put('roots', complete.cid, { ...partial, manifest: { ...partial.manifest,
+      files: [{ ...partial.manifest.files[0], path: '../bad' }] } });
+    await assert.rejects(listStoredModelRecords(store), (error) =>
+      error.message.includes(complete.cid) && /invalid recovery metadata/.test(error.message) && !!error.cause);
+  } finally { await store.destroy(); }
+});
+
 test('package import preserves the original storage failure and leaves another pinned model intact', async () => {
   const store = new ArtifactStore({ persistent: false, capacity: 'browser' }); await store.open();
   try {

@@ -538,6 +538,192 @@ test('revalidation marks a formerly complete root partial if a stored block is m
   assert.equal(store.getStats().rootCount, 0);
 });
 
+test('idempotent retained pin reads only the verified manifest root, not every weight block', async (t) => {
+  const store = createStore(t);
+  const file = await store.importFile(fixture(3 * 1024 ** 2 + 17), { pin: false });
+  const root = await store.importManifest({ schema: ARTIFACT_MANIFEST_SCHEMA,
+    files: [{ path: 'model.bin', cid: file.cid, size: file.size, sha256: file.sha256 }] });
+  const reads = [];
+  const get = store.backend.get.bind(store.backend);
+  store.backend.get = async (collection, key) => { if (collection === 'blocks') reads.push(key); return get(collection, key); };
+  await store.pin(root.cid);
+  await store.pin(root.cid);
+  assert.deepEqual(reads, [root.cid, root.cid]);
+  assert.equal((await store.stat(root.cid)).status, 'complete');
+  assert.equal((await store.gc()).deletedBlocks, 0);
+});
+
+test('cancelled complete audit survives IndexedDB reopen; legacy partial recovery is local and reports bytes', async (t) => {
+  const indexedDBImpl = new IDBFactory();
+  const backend = () => new IndexedDBArtifactBackend({ name: 'retention-revalidation', indexedDBImpl, keyRange: IDBKeyRange });
+  const first = createStore(t, { backend: backend(), ownsBackend: true });
+  const bytes = fixture(2 * 1024 ** 2 + 17);
+  const file = await first.importFile(bytes, { pin: false });
+  const root = await first.importManifest({ schema: ARTIFACT_MANIFEST_SCHEMA,
+    files: [{ path: 'model.bin', cid: file.cid, size: file.size, sha256: file.sha256 }] });
+  const storedBytes = first.getStats().storedBytes;
+  const controller = new AbortController();
+  await assert.rejects(first.ensureLocal(root.cid, { signal: controller.signal,
+    onProgress: (event) => { if (event.loaded) controller.abort(); } }), { name: 'AbortError' });
+  await first.destroy();
+  const restored = createStore(t, { backend: backend(), ownsBackend: true });
+  assert.equal((await restored.stat(root.cid)).status, 'complete');
+  assert.equal(restored.getStats().storedBytes, storedBytes);
+  await restored.backend.put('roots', root.cid, { ...root, status: 'partial', retain: true });
+  const cancelled = new AbortController();
+  await assert.rejects(restored.ensureLocal(root.cid, { kind: 'manifest', signal: cancelled.signal,
+    onProgress: (event) => { if (event.loaded) cancelled.abort(); } }), { name: 'AbortError' });
+  assert.equal((await restored.stat(root.cid)).status, 'partial');
+  const events = [];
+  const repaired = await restored.ensureLocal(root.cid, { kind: 'manifest', onProgress: (event) => events.push(event) });
+  assert.equal(repaired.status, 'complete'); assert.equal(repaired.pinned, true);
+  assert.equal(restored.getStats().storedBytes, storedBytes);
+  assert.equal(events.at(-1).loaded, bytes.length); assert.equal(events.at(-1).totalBytes, bytes.length);
+  assert.equal(events.at(-1).completedFiles, 1);
+  assert(events.every((event, index) => event.stage === 'verify' && (!index || event.loaded >= events[index - 1].loaded)));
+  assert(events.length < 12, 'progress is throttled instead of one callback per block');
+  assert.equal(digest(await collect(restored.openRead(file.cid))), file.sha256);
+});
+
+test('pin and audit fail closed on corruption, missing roots and forged manifest metadata', async (t) => {
+  const store = createStore(t);
+  const file = await store.importFile(fixture(), { pin: false });
+  const root = await store.importManifest({ schema: ARTIFACT_MANIFEST_SCHEMA,
+    files: [{ path: 'model.bin', cid: file.cid, size: file.size, sha256: file.sha256 }] });
+  const ids = []; for await (const cid of store.listBlockCids(root.cid)) ids.push(cid);
+  const leaf = ids.find((cid) => cid !== root.cid && CID.parse(cid).code === 0x55);
+  await store.backend.delete('blocks', leaf); // Simulate disk corruption below the guarded immutable facade.
+  await store.backend.put('blocks', leaf, new Uint8Array([1, 2, 3]));
+  // Pin is retention, not an audit; publication and explicit verification still
+  // inspect actual bytes before they can serve or recover this package.
+  await store.pin(root.cid);
+  await assert.rejects(async () => { for await (const _ of store.listBlockCids(root.cid)) {} }, { code: 'ERR_ARTIFACT_INTEGRITY' });
+  assert.equal((await store.stat(root.cid)).status, 'partial');
+  await assert.rejects(store.pin(root.cid), { code: 'ERR_ARTIFACT_INTEGRITY' });
+  await store.backend.put('roots', root.cid, { ...root, manifest: { ...root.manifest, name: 'forged' } });
+  await assert.rejects(store.pin(root.cid), /metadata differs/);
+  assert.equal((await store.stat(root.cid)).status, 'partial');
+  await store.backend.put('roots', root.cid, { ...root, manifest: { unsupported: true } });
+  await assert.rejects(store.pin(root.cid), /metadata is invalid/);
+  assert.equal((await store.stat(root.cid)).status, 'partial');
+  await store.backend.put('roots', root.cid, root);
+  await store.backend.delete('blocks', root.cid);
+  await assert.rejects(store.pin(root.cid), { code: 'ERR_NOT_FOUND' });
+  assert.equal((await store.stat(root.cid)).status, 'partial');
+});
+
+test('transient backend failure preserves the earlier complete checkpoint without promoting unknown roots', async (t) => {
+  const store = createStore(t);
+  const root = await store.importFile(fixture());
+  const get = store.backend.get.bind(store.backend);
+  store.backend.get = async (collection, key) => {
+    if (collection === 'blocks') throw new DOMException('Storage temporarily unavailable', 'UnknownError');
+    return get(collection, key);
+  };
+  await assert.rejects(store.ensureLocal(root.cid), { name: 'UnknownError' });
+  assert.equal((await store.stat(root.cid)).status, 'complete');
+  const unknown = CID.createV1(0x55, await sha256.digest(new Uint8Array([77]))).toString();
+  await assert.rejects(store.ensureLocal(unknown), { name: 'UnknownError' });
+  assert.equal((await store.stat(unknown)).status, 'partial');
+});
+
+test('a caller error code cannot fake corruption, but observed missing bytes remain partial after fetch cancellation', async (t) => {
+  const store = createStore(t);
+  const root = await store.importFile(fixture());
+  const controller = new AbortController();
+  await assert.rejects(store.ensureLocal(root.cid, { signal: controller.signal, onProgress() {
+    controller.abort(Object.assign(new Error('Caller cancelled'), { code: 'ERR_NOT_FOUND' }));
+  } }), /Caller cancelled/);
+  assert.equal((await store.stat(root.cid)).status, 'complete');
+  await store.backend.delete('blocks', root.cid);
+  const fetchController = new AbortController();
+  await assert.rejects(store.ensureLocal(root.cid, { signal: fetchController.signal, fetchBlock: async () => {
+    fetchController.abort(); throw fetchController.signal.reason;
+  } }), { name: 'AbortError' });
+  assert.equal((await store.stat(root.cid)).status, 'partial');
+  assert.equal((await store.stat(root.cid)).pinned, true);
+});
+
+test('cancellation after a repaired complete checkpoint cannot reuse an earlier missing-block observation', async (t) => {
+  const store = createStore(t);
+  const bytes = new Uint8Array([11, 22, 33]);
+  const root = await store.importFile(bytes);
+  await store.backend.delete('blocks', root.cid);
+  const controller = new AbortController();
+  await assert.rejects(store.ensureLocal(root.cid, { signal: controller.signal, fetchBlock: async () => bytes,
+    onProgress(event) { if (event.completedFiles === event.totalFiles) controller.abort(); }
+  }), { name: 'AbortError' });
+  assert.equal((await store.stat(root.cid)).status, 'complete');
+  assert.deepEqual(await collect(store.openRead(root.cid)), Buffer.from(bytes));
+});
+
+test('concurrent audit, pin, GC and deletion settle without losing retention or resurrecting a deleted root', async (t) => {
+  const store = createStore(t);
+  const root = await store.importFile(fixture());
+  const controller = new AbortController();
+  let entered; let release;
+  const started = new Promise((resolve) => { entered = resolve; });
+  const held = new Promise((resolve) => { release = resolve; });
+  const get = store.backend.get.bind(store.backend);
+  let pause = true;
+  store.backend.get = async (collection, key) => {
+    if (collection === 'blocks' && pause) { pause = false; entered(); await held; }
+    return get(collection, key);
+  };
+  const audit = store.ensureLocal(root.cid, { signal: controller.signal });
+  const rejected = assert.rejects(audit, { name: 'AbortError' });
+  await started;
+  const pin = store.pin(root.cid);
+  const gc = store.gc();
+  const removal = store.remove(root.cid);
+  controller.abort(); release();
+  await rejected;
+  assert.equal((await pin).status, 'complete');
+  assert.equal((await gc).deletedBlocks, 0);
+  assert.equal((await removal).removed, true);
+  assert.equal(await store.stat(root.cid), undefined);
+  assert.equal(store.getStats().storedBytes, 0);
+  assert.equal(store.getStats().pending, 0);
+});
+
+test('local partial recovery checks the manifest SHA instead of trusting retained metadata', async (t) => {
+  const store = createStore(t);
+  const file = await store.importFile(fixture());
+  const manifest = { schema: ARTIFACT_MANIFEST_SCHEMA,
+    files: [{ path: 'model.bin', cid: file.cid, size: file.size, sha256: '0'.repeat(64) }] };
+  const raw = await store.importFile(encodeArtifactManifest(manifest));
+  await store.backend.put('roots', raw.cid, { ...raw, kind: 'manifest', manifest, status: 'partial', retain: true });
+  await assert.rejects(store.ensureLocal(raw.cid, { kind: 'manifest' }), /integrity differs/);
+  assert.equal((await store.stat(raw.cid)).status, 'partial');
+});
+
+test('late closure failure cannot resurrect a removed root or replace its deletion tombstone', async (t) => {
+  for (const interruptedDelete of [false, true]) {
+    const store = createStore(t);
+    const root = await store.importFile(fixture());
+    const absent = CID.createV1(0x55, await sha256.digest(new Uint8Array([81])));
+    let damage;
+    try { await collect(store.getBlockstore().get(absent)); } catch (error) { damage = error; }
+    assert.equal(damage.code, 'ERR_NOT_FOUND');
+    const controller = new AbortController();
+    const iterator = store.listBlockCids(root.cid, { signal: controller.signal });
+    assert.equal((await iterator.next()).done, false);
+    controller.abort(); // Paused generators release their GC lease on cancellation.
+    const remove = store.backend.delete.bind(store.backend);
+    if (interruptedDelete) store.backend.delete = async (collection, key) => {
+      if (collection === 'blocks') throw new Error('Simulated interrupted sweep');
+      return remove(collection, key);
+    };
+    if (interruptedDelete) await assert.rejects(store.remove(root.cid), /interrupted sweep/);
+    else await store.remove(root.cid);
+    await assert.rejects(iterator.throw(damage), { code: 'ERR_NOT_FOUND' });
+    assert.equal((await store.stat(root.cid))?.status, interruptedDelete ? 'deleting' : undefined);
+    store.backend.delete = remove;
+    if (interruptedDelete) await store.remove(root.cid);
+    assert.equal(store.getStats().storedBytes, 0);
+  }
+});
+
 test('aborting a stalled ReadableStream cancels its reader without awaiting arbitrary source cleanup', async (t) => {
   const store = createStore(t);
   let cancelled = false;

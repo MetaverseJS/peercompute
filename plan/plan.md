@@ -14,6 +14,16 @@ The root node should exist on a domain secured with SSL enabling all executable 
 
 ## Project Goals:
 
+November7 model retention correction: preserve complete package metadata when
+background sharing or local verification is interrupted. Keep retained partial
+packages visible with explicit local-only verification, preserve startup
+selection, and prevent automatic HF replacement downloads. Reuse completed
+files by pinned SHA256/size when a later package file fails. Validate navigation,
+cancellation, corruption and concurrent deletion with native IndexedDB/Web Locks
+and synthetic files; no user model/GPU work is required. Cross-navigation
+checkpointing of an unfinished HTTP file remains deferred. Evidence and preview
+status are recorded in log.md and the model browser plan.
+
 November6 inhabited-agent correction is implemented in both CubeChat and
 EarthGrid: actual selectable scene bodies, persistent identity and isolated
 visitor conversations, typed and managed spoken interaction, and authenticated

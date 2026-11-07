@@ -21,7 +21,11 @@ const spec = { schema: 'peercompute.artifact.manifest.v1', name: 'Native interru
   files: [{ path: 'weights.bin', size: bytes.length, sha256: sha(bytes) }] };
 const keepSpec = { ...spec, name: 'Retained unrelated package',
   files: [{ path: 'keep.bin', size: keepBytes.length, sha256: sha(keepBytes) }] };
-let temporary, server, browser, origin, expected;
+const sidecar = new TextEncoder().encode('{"fixture":"immutable config after completed weights"}');
+const reuseSpec = { ...spec, name: 'Retry package after navigation', files: [...spec.files,
+  { path: 'config.json', size: sidecar.length, sha256: sha(sidecar) }] };
+let temporary, server, browser, origin, expected, expectedReuse;
+const reuseRequests = { weights: 0, sidecar: 0 };
 const cases = new Map(), sockets = new Set();
 
 before(async () => {
@@ -30,6 +34,9 @@ before(async () => {
     const file = await baseline.importFile(bytes, { expectedSize: bytes.length, expectedSha256: sha(bytes), pin: false });
     const manifest = await baseline.importManifest({ ...spec, files: [{ path: 'weights.bin', cid: file.cid, size: file.size, sha256: file.sha256 }] }, { pin: true });
     expected = { fileCid: file.cid, manifestCid: manifest.cid, sha256: file.sha256 };
+    const config = await baseline.importFile(sidecar, { pin: false });
+    expectedReuse = (await baseline.importManifest({ ...reuseSpec, files: [...manifest.manifest.files,
+      { path: 'config.json', cid: config.cid, size: config.size, sha256: config.sha256 }] }, { pin: true })).cid;
   } finally { await baseline.destroy(); }
   temporary = await mkdtemp(path.join(tmpdir(), 'peercompute-native-download-'));
   await writeFile(path.join(temporary, 'index.html'), '<!doctype html><link rel="icon" href="data:,"><script type="module" src="/fixture.js"></script>');
@@ -72,6 +79,18 @@ before(async () => {
       })();
       // The driver waits for a positive persisted prefix before cutting the socket.
       window.casePromise.catch(() => {});
+    };
+    window.retryCompletedPackage = async (name) => {
+      const store = new ArtifactStore({ name, capacity:'browser' }); await store.open();
+      const events = [];
+      try {
+        let result, error;
+        try { result = await importModelPackage(store, ${JSON.stringify(reuseSpec)}, (path) => '/reuse/' + path,
+          { onProgress: (event) => events.push(event) }); }
+        catch (failure) { error = { name:failure.name, message:failure.message }; }
+        const records = await listStoredModelRecords(store);
+        return { result, error, events, records, pending:store.getStats().pending };
+      } finally { await store.destroy(); }
     };`);
   const dist = path.join(temporary, 'dist');
   await build({ configFile: false, root: temporary, logLevel: 'silent', build: { target: 'esnext', outDir: dist } });
@@ -80,6 +99,19 @@ before(async () => {
     response.setHeader('Cache-Control', 'no-store');
     if (pathname === '/keep') {
       response.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': keepBytes.length }); response.end(keepBytes); return;
+    }
+    if (pathname === '/reuse/weights.bin') {
+      reuseRequests.weights++;
+      // A second network fetch is forbidden even though the immutable source exists.
+      if (reuseRequests.weights > 1) { response.writeHead(403); response.end(); return; }
+      response.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': bytes.length });
+      response.end(bytes); return;
+    }
+    if (pathname === '/reuse/config.json') {
+      reuseRequests.sidecar++;
+      if (reuseRequests.sidecar === 1) { response.writeHead(418); response.end(); return; }
+      response.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': sidecar.length });
+      response.end(sidecar); return;
     }
     if (pathname.startsWith('/transfer/')) {
       const state = cases.get(pathname.slice('/transfer/'.length));
@@ -182,4 +214,27 @@ test('native browser cancellation during retry stops recovery and keeps only the
   assert.deepEqual(result.records.map((record) => record.cid), [result.keptCid]);
   await result.page.waitForTimeout(1200);
   assert.equal(result.requests.length, 1, 'Cancelled backoff must not fire after cleanup');
+});
+
+test('native browser navigation reuses completed IndexedDB weights after a sidecar failure without another weight request', { timeout: 60000 }, async (t) => {
+  const context = await browser.newContext(), page = await context.newPage();
+  const errors = [], external = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await context.route('https://**/*', (route) => { external.push(route.request().url()); return route.abort(); });
+  t.after(async () => { await context.close(); assert.deepEqual(errors, []); assert.deepEqual(external, []); });
+  const name = 'native-completed-reuse-' + crypto.randomUUID();
+  await page.goto(origin); await page.waitForFunction(() => window.retryCompletedPackage);
+  const first = await page.evaluate((name) => window.retryCompletedPackage(name), name);
+  assert.match(first.error.message, /418/); assert.equal(first.result, undefined);
+  assert.equal(first.records.length, 0); assert.equal(first.pending, 0);
+  assert.equal(first.events.findLast((event) => event.path === 'weights.bin').loaded, bytes.length);
+  assert.deepEqual(reuseRequests, { weights: 1, sidecar: 1 });
+  await page.reload(); await page.waitForFunction(() => window.retryCompletedPackage);
+  const second = await page.evaluate((name) => window.retryCompletedPackage(name), name);
+  assert.equal(second.error, undefined); assert.equal(second.result.cid, expectedReuse);
+  assert.equal(second.result.manifest.files.find((file) => file.path === 'weights.bin').cid, expected.fileCid);
+  assert.deepEqual(reuseRequests, { weights: 1, sidecar: 2 });
+  assert(second.events.some((event) => event.path === 'weights.bin' && event.reused && event.loaded === bytes.length));
+  assert.equal(second.records.length, 1); assert.equal(second.records[0].pinned, true);
+  assert.equal(second.pending, 0); assert.equal(page.workers().length, 0);
 });

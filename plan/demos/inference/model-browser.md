@@ -172,3 +172,31 @@ available. Actual Chrome157.0.8103.38/NVIDIA595.91.7.0 adapter probes agree with
 our collector: the existing NVIDIA startup override exposes the feature and
 makes the same entry selectable. No model download or GPU device allocation was
 needed for this comparison; it does not requalify model output or memory fit.
+
+### November 7 — local library recovery after interrupted verification
+
+A previously complete package remains complete if revalidation is cancelled or
+navigation interrupts background sharing. Only observed missing blocks or
+integrity failures invalidate that checkpoint. Pinning an already retained
+complete package checks its root identity without repeating every file hash;
+publication still checks actual blocks before allowing peer reads.
+
+Legacy retained partial manifests remain visible as Needs local verification.
+Stored Models offers Verify locally with streamed byte progress and cancellation,
+independently of device model compatibility. Successful verification returns the
+same CID and enables normal Load; missing/corrupt bytes report a local failure
+and remain listed. No model HTTP or GPU worker is involved. Startup preserves
+pending last-used models, and catalog/Hub acquisition cannot silently download
+another copy while that retained package needs verification.
+
+If a package retry follows a failed sidecar, complete local file roots with the
+exact pinned SHA256 and size are reused even without catalog CIDs. Candidates
+are rechecked inside retention; the final manifest still checks actual bytes.
+Git-only sidecars retain their existing digest path. This does not persist an
+unfinished file's byte offset across page reloads.
+
+Native IndexedDB/Web Locks tests use synthetic files, isolated browser profiles
+and GPU-disabled Chrome. They cover interrupted publication, reopen, legacy
+recovery/cancel, missing/corrupt blocks, concurrent deletion and sidecar failure
+followed by retry with zero repeated weight requests. Test results and exact
+preview evidence are recorded in plan/log.md.

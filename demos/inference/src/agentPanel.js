@@ -67,6 +67,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     view.storedRefresh.disabled = !!operation || !!storedController;
     for (const button of view.storedList.querySelectorAll('button')) button.disabled = !!operation || !!storedController || button.dataset.inactive === 'true';
     view.storedCancel.hidden = !operation || !loadingStoredModel || !!loadingOperation;
+    view.storedCancel.disabled = Boolean(operation?.signal.aborted);
   }
   function renderSources() {
     if (!desiredSourceKey) desiredSourceKey = runtime.getPreferredModelSourceKey?.()
@@ -86,6 +87,9 @@ export async function mountInferencePanel({ container = document.body, stateMana
   }
   function showCompatibilityHelp(source) {
     if (!alive() || operation) return;
+    if (source.needsVerification || source.localAvailability?.code === 'model_verification_required') {
+      view.stored.click(); return;
+    }
     helpSource = { ...source, localAvailability: source.localAvailability ?? runtime.getModelCompatibility?.(source.package ?? source) };
     const environment = detectModelHelpEnvironment();
     view.helpBrowser.value = environment.browser; view.helpOs.value = environment.os;
@@ -195,7 +199,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     if (!alive()) return;
     let label;
     if (event.stage === 'import') {
-      label = 'Downloading ' + (event.index + 1) + '/' + event.total + ': ' + event.path;
+      label = (event.reused ? 'Using saved file ' : 'Downloading ') + (event.index + 1) + '/' + event.total + ': ' + event.path;
       if (Number.isSafeInteger(event.loaded) && Number.isSafeInteger(event.totalBytes) && event.loaded >= 0 && event.totalBytes > 0)
         label += ` · ${formatModelBytes(event.loaded)} / ${formatModelBytes(event.totalBytes)}`;
       if (event.retryAttempt) label += ` · Connection interrupted; retry ${event.retryAttempt}/${event.maxRetries} in ${Math.ceil(event.retryDelayMs / 1000)}s`;
@@ -206,6 +210,8 @@ export async function mountInferencePanel({ container = document.body, stateMana
       'download-peers': 'Fetching and verifying model files from peers…',
       unload: 'Releasing the previous model…', load: 'Loading model into RAM and GPU memory…',
     }[event.stage];
+    if (event.stage === 'verify' && Number.isSafeInteger(event.loaded) && Number.isSafeInteger(event.totalBytes)
+        && event.totalBytes > 0) label += ` · ${formatModelBytes(event.loaded)} / ${formatModelBytes(event.totalBytes)}`;
     if (!label) return;
     const key = `${event.type ?? ''}:${event.stage ?? event.status ?? ''}:${event.path ?? event.file ?? ''}`;
     if (key !== progressKey) { progressKey = key; progressStarted = performance.now(); }
@@ -275,7 +281,8 @@ export async function mountInferencePanel({ container = document.body, stateMana
       try {
         const models = await runtime.listStoredModels({ signal: controller.signal });
         if (alive()) {
-          renderStoredModels(view, models, deleteStoredModel, runtime.loadStoredModel ? loadStoredModel : undefined);
+          renderStoredModels(view, models, deleteStoredModel, runtime.loadStoredModel ? loadStoredModel : undefined,
+            runtime.recoverStoredModel ? recoverStoredModel : undefined);
           view.storedStatus.textContent = `${models.length} model${models.length === 1 ? '' : 's'} stored.`;
         }
         return true;
@@ -298,8 +305,25 @@ export async function mountInferencePanel({ container = document.body, stateMana
       }
     });
   }
+  async function recoverStoredModel(model) {
+    if (!alive() || operation || storedController || !model.needsVerification) return;
+    loadingStoredModel = true; view.storedCancel.textContent = 'Cancel verification';
+    try {
+      await run(async (signal) => {
+        progress({ stage: 'verify' });
+        try { await runtime.recoverStoredModel(model.manifestCid, { signal,
+          onProgress: (event) => { if (!signal.aborted) progress(event); } }); }
+        catch (error) { await refreshStoredModels(); throw error; }
+        signal.throwIfAborted(); await refreshStoredModels(); renderLists();
+        view.status.textContent = view.storedStatus.textContent = `Verified ${model.name} from local files. You can now load it.`;
+      });
+    } finally {
+      loadingStoredModel = false; view.storedCancel.textContent = 'Stop loading';
+      if (alive()) updateControls();
+    }
+  }
   async function loadStoredModel(model) {
-    if (!alive() || operation || storedController || model.loaded || model.cleanupPending) return;
+    if (!alive() || operation || storedController || model.loaded || model.cleanupPending || model.needsVerification) return;
     if (sourceBlocked(model)) { showCompatibilityHelp(model); return; }
     loadingStoredModel = true;
     let loaded = false;
@@ -505,6 +529,8 @@ export async function mountInferencePanel({ container = document.body, stateMana
   view.cancel.onclick = () => {
     if (loadingOperation) { cancelLoading(); return; }
     operation?.abort(new DOMException('User cancelled', 'AbortError'));
+    if (loadingStoredModel) view.storedStatus.textContent = 'Cancelling verification… Waiting for cleanup.';
+    updateControls();
     if (requestId) void runtime.cancel(requestId).catch(showError);
   };
   view.loadingCancel.onclick = cancelLoading;
@@ -601,7 +627,9 @@ export async function mountInferencePanel({ container = document.body, stateMana
     if (startup) {
       desiredSourceKey = startup.sourceKey; renderSources();
       if (sourceBlocked(startup)) {
-        view.status.textContent = `Cannot load ${startup.name}: ${sourceReason(startup)}`;
+        view.status.textContent = startup.needsVerification
+          ? `${startup.name} is saved but needs local verification. Open Menu → Stored Models → Verify locally. No model download has started.`
+          : `Cannot load ${startup.name}: ${sourceReason(startup)}`;
       } else void run(async (signal) => {
         progress({ stage: startup.manifestCid ? 'verify' : 'prepare' });
         const options = { signal, onProgress: (event) => { if (!signal.aborted) progress(event); }, ggufGpuLayers: Number(view.gpuLayers.value) };

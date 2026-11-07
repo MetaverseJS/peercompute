@@ -61,6 +61,13 @@ function fixture({ retained = false, retainedRecords = [], catalogInfo, connecte
     },
       async acquireUse() { calls.push('use'); return async () => { calls.push('release-use'); }; },
       async stat(key) { return records.get(key); },
+      async ensureLocal(key, options) {
+        calls.push('verify-local');
+        assert.equal(options.fetchBlock, undefined, 'Recovery cannot fetch missing blocks');
+        await hooks.recover?.(key, options);
+        options.signal?.throwIfAborted();
+        const record = { ...records.get(key), status: 'complete' }; records.set(key, record); return record;
+      },
       async remove(key) { calls.push('remove'); await hooks.remove?.(key, records); const removed = records.delete(key); return { removed, freedBytes: removed ? 100 : 0 }; } },
     async importCatalog(id) { calls.push('import'); const imported = await hooks.import?.(id) ?? record; records.set(imported.cid, imported); return imported; },
     async importPackage() { records.set(cid, record); return record; },
@@ -856,6 +863,84 @@ function preferenceStore() {
     removeItem: (key) => values.delete(key) };
   return () => createModelPreferences({ storeName: 'test-library', storage });
 }
+
+function pendingCatalogRecord(entry) {
+  return { cid, kind: 'manifest', status: 'partial', pinned: true, retain: true,
+    manifest: { schema: 'peercompute.artifact.manifest.v1', name: entry.name, model: structuredClone(entry.model),
+      files: entry.files.map((file) => ({ path: file.path, size: file.size, cid: secondCid,
+        sha256: file.sha256 ?? '0'.repeat(64) })) } };
+}
+
+test('exact legacy GeoRefine27B retained partial metadata blocks HF reimport and preserves startup recovery', async () => {
+  const entry = GGUF_MODEL_CATALOG['qwen3.8-27b-georefine-d14-gguf'];
+  for (const remembered of [false, true]) {
+    const preferences = preferenceStore();
+    if (remembered) await preferences().rememberLoaded({ manifestCid: cid, modelId: entry.id });
+    const f = fixture({ connected: true, preferences: preferences(), catalogInfo: { [entry.id]: entry },
+      retainedRecords: [pendingCatalogRecord(entry)] });
+    await f.controller.initialize();
+    const rows = await f.runtime.listStoredModels();
+    assert.equal(rows.length, 1); assert.equal(rows[0].needsVerification, true);
+    assert.equal(rows[0].modelId, entry.id); assert.equal(rows[0].totalBytes, entry.totalBytes);
+    const startup = f.runtime.getStartupModel();
+    assert.equal(startup.sourceKey, `hf:${entry.id}`); assert.equal(startup.manifestCid, cid);
+    assert.equal(startup.needsVerification, true); assert.equal(startup.localAvailability.status, 'unavailable');
+    const source = f.runtime.listModelSources().find((item) => item.key === startup.sourceKey);
+    assert.equal(source.needsVerification, true); assert.equal(source.manifestCid, cid);
+    await assert.rejects(f.runtime.acquireModel(startup.sourceKey), { code: 'ERR_MODEL_VERIFICATION_REQUIRED' });
+    await assert.rejects(f.runtime.loadStoredModel(cid), { code: 'ERR_MODEL_VERIFICATION_REQUIRED' });
+    assert.deepEqual((await f.callbacks.getLocalState()).sharedModels, []);
+    assert.equal((await f.callbacks.getLocalState()).hostedModel, null);
+    assert(!f.calls.some((call) => ['import', 'fetch-peer', 'publish', 'load'].includes(call)));
+    if (remembered) assert.equal(preferences().readLastLoaded().manifestCid, cid);
+    await f.runtime.dispose();
+  }
+});
+
+test('explicit local verification promotes the same package without loading, downloading or publishing it', async () => {
+  const entry = GGUF_MODEL_CATALOG['qwen3.8-27b-georefine-d14-gguf'];
+  const f = fixture({ connected: false, catalogInfo: { [entry.id]: entry }, retainedRecords: [pendingCatalogRecord(entry)],
+    hooks: { recover(key, options) { assert.equal(key, cid); assert.equal(options.kind, 'manifest'); assert.equal(options.pin, true);
+      options.onProgress({ stage: 'verify', loaded: 1, totalBytes: 2 }); } } });
+  await f.controller.initialize(); const progress = [];
+  assert.equal((await f.runtime.recoverStoredModel(cid, { onProgress: (event) => progress.push(event) })).verified, true);
+  assert.equal(progress.length, 1); assert.equal((await f.runtime.listStoredModels())[0].needsVerification, undefined);
+  assert(!f.calls.some((call) => ['import', 'fetch-peer', 'publish', 'load'].includes(call)));
+  await f.runtime.loadStoredModel(cid); assert.equal(f.calls.filter((call) => call === 'load').length, 1);
+  await f.runtime.dispose();
+});
+
+test('HF Load uses a complete retained copy even when another manifest of that catalog model needs verification', async () => {
+  const entry = GGUF_MODEL_CATALOG['qwen3.8-27b-georefine-d14-gguf'];
+  const partial = pendingCatalogRecord(entry), complete = { ...partial, cid: secondCid, status: 'complete' };
+  const f = fixture({ connected: false, catalogInfo: { [entry.id]: entry }, retainedRecords: [partial, complete] });
+  await f.controller.initialize();
+  const source = f.runtime.listModelSources().find((entry) => entry.source === 'hf');
+  assert.equal(source.manifestCid, secondCid); assert.equal(source.needsVerification, undefined);
+  await f.runtime.acquireModel(source.key);
+  assert.equal(f.runtime.service.getStatus().manifestCid, secondCid);
+  assert(!f.calls.includes('import')); assert(!f.calls.includes('verify-local'));
+  await f.runtime.dispose();
+});
+
+test('failed or cancelled local verification retains its row, startup recovery and preference', async () => {
+  const entry = GGUF_MODEL_CATALOG['qwen3.8-27b-georefine-d14-gguf'];
+  for (const cancel of [false, true]) {
+    const preferences = preferenceStore(), abort = new AbortController();
+    await preferences().rememberLoaded({ manifestCid: cid, modelId: entry.id });
+    const f = fixture({ connected: false, preferences: preferences(), catalogInfo: { [entry.id]: entry },
+      retainedRecords: [pendingCatalogRecord(entry)], hooks: { recover() {
+        if (cancel) { abort.abort(new DOMException('User cancelled verification', 'AbortError')); throw abort.signal.reason; }
+        throw new Error('Required block is missing');
+      } } });
+    await f.controller.initialize();
+    await assert.rejects(f.runtime.recoverStoredModel(cid, { signal: abort.signal }), cancel ? /cancelled/ : /No files were downloaded/);
+    assert.equal((await f.runtime.listStoredModels())[0].needsVerification, true);
+    assert.equal(f.runtime.getStartupModel().manifestCid, cid); assert.equal(preferences().readLastLoaded().manifestCid, cid);
+    assert(!f.calls.some((call) => ['import', 'fetch-peer', 'publish', 'load'].includes(call)));
+    await f.runtime.dispose();
+  }
+});
 function customStoredRecord(overrides = {}) {
   return { cid: secondCid, kind: 'manifest', pinned: true, status: 'complete',
     manifest: { ...manifest, name: 'Custom offline model', model: { ...model, repository: 'custom/offline' }, files: [{ size: 50 }] },
@@ -912,10 +997,10 @@ test('speech library metadata remains unavailable when its file digest is change
   await f.runtime.dispose();
 });
 
-test('startup selects the default only for an empty complete retained library', async () => {
+test('startup selects the default when only unretained failed import debris remains', async () => {
   const defaultCatalog = { [DEFAULT_MODEL_ID]: { ...catalog.test, id: DEFAULT_MODEL_ID } };
   const f = fixture({ connected: false, catalogInfo: defaultCatalog,
-    retainedRecords: [customStoredRecord({ status: 'partial' })] });
+    retainedRecords: [customStoredRecord({ status: 'partial', pinned: false, retain: false })] });
   await f.controller.initialize();
   const selected = f.runtime.getStartupModel();
   assert.equal(selected.sourceKey, `hf:${DEFAULT_MODEL_ID}`);
@@ -1084,7 +1169,7 @@ test('missing, incomplete, deleting and unretained stored packages never downloa
     await f.controller.initialize(); await f.runtime.loadStoredModel(cid);
     if (target) f.records.set(secondCid, target);
     const calls = f.calls.length;
-    await assert.rejects(f.runtime.loadStoredModel(secondCid), /stored and retained/);
+    await assert.rejects(f.runtime.loadStoredModel(secondCid), /stored and retained|needs local verification/);
     assert.equal(f.runtime.service.getStatus().manifestCid, cid);
     assert.equal(f.calls.length, calls);
     await f.runtime.dispose();
@@ -1235,5 +1320,21 @@ test('invalid or locally unsupported Hub packages cannot replace the resident mo
   const invalid = hubPackage(); invalid.revision = 'main';
   assert.throws(() => f.runtime.acquireHubModel(invalid), /immutable/);
   assert(!f.calls.includes('unload')); assert(!f.calls.includes('import-hub'));
+  await f.runtime.dispose();
+});
+
+test('Hub matching partial package cannot reimport, while an independent complete copy remains loadable', async () => {
+  const entry = hubPackage();
+  const partial = { cid, kind: 'manifest', status: 'partial', pinned: true, retain: true, manifest: {
+    schema: 'peercompute.artifact.manifest.v1', name: entry.name, model: entry.model,
+    files: entry.files.map((file) => ({ ...file, cid: secondCid })) } };
+  const f = fixture({ connected: false, retainedRecords: [partial] });
+  await f.controller.initialize();
+  await assert.rejects(f.runtime.acquireHubModel(entry), { code: 'ERR_MODEL_VERIFICATION_REQUIRED' });
+  assert(!f.calls.includes('import-hub')); assert(!f.calls.includes('load'));
+  f.records.set(secondCid, { ...partial, cid: secondCid, status: 'complete' });
+  await f.runtime.acquireHubModel(entry);
+  assert.equal(f.runtime.service.getStatus().manifestCid, secondCid);
+  assert(!f.calls.includes('import-hub')); assert(!f.calls.includes('verify-local'));
   await f.runtime.dispose();
 });

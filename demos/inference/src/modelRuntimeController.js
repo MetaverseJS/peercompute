@@ -44,6 +44,9 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
   const owner = {};
   const retained = new Map();
   const retainedManifests = new Map();
+  const pendingVerification = new Map();
+  const verificationAvailability = { status: 'unavailable', code: 'model_verification_required',
+    reason: 'This saved package needs local verification. Open Stored Models and choose Verify locally. No download is required to check the saved bytes.' };
   const published = new Set();
   const sharingErrors = new Map();
   const requests = new Map();
@@ -110,16 +113,30 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
   }
   async function refreshStoredRecords(signal) {
     const records = await listStoredModelRecords(runtime.store, { signal });
-    const available = new Set();
+    const available = new Set(), present = new Set();
+    pendingVerification.clear();
     for (const record of records) {
       if (record.status === 'deleting') { deleting.add(record.cid); continue; }
-      if (record.pinned || record.retain) { available.add(record.cid); await remember(record); }
+      if (record.pinned || record.retain) {
+        present.add(record.cid);
+        if (record.status === 'partial') pendingVerification.set(record.cid, record);
+        else { available.add(record.cid); await remember(record); }
+      }
     }
     for (const cid of retained.keys()) if (!available.has(cid)) { retained.delete(cid); retainedManifests.delete(cid); }
-    if (lastLoaded && !available.has(lastLoaded.manifestCid)) {
+    if (lastLoaded && !present.has(lastLoaded.manifestCid)) {
       lastLoaded = await preferences.clearLastLoaded(lastLoaded);
     }
     return records;
+  }
+  function pendingModel(record) { return { ...descriptor(record.cid, record.manifest), needsVerification: true,
+    localAvailability: verificationAvailability }; }
+  function pendingForModel(modelId) {
+    return [...pendingVerification.values()].find((record) => descriptor(record.cid, record.manifest)?.modelId === modelId);
+  }
+  function requireVerified(record) {
+    if (record?.status === 'partial' && (record.pinned || record.retain)) throw Object.assign(new Error(verificationAvailability.reason),
+      { code: 'ERR_MODEL_VERIFICATION_REQUIRED', manifestCid: record.cid });
   }
   async function rememberSuccessfulLoad(cid, signal) {
     const model = resident();
@@ -128,7 +145,7 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
   }
   function resident() {
     const status = runtime.service.getStatus();
-    return current && !deleting.has(current.manifestCid) && status.status === 'ready'
+    return current && !deleting.has(current.manifestCid) && !pendingVerification.has(current.manifestCid) && status.status === 'ready'
       && status.manifestCid === current.manifestCid ? current : null;
   }
   const remoteModels = () => (peerService?.listModels() ?? []).map((entry) => ({ ...entry, ...capabilities(entry),
@@ -351,7 +368,8 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
     getSharingErrors: () => [...sharingErrors].map(([manifestCid, error]) => ({ manifestCid, message: error.message })),
     getDiscoveryStatus: () => structuredClone({ ...discovery, connected: Boolean(runtime.networkManager?.isConnected) }),
     getPreferredModelSourceKey() {
-      const saved = lastLoaded && !deleting.has(lastLoaded.manifestCid) && retained.get(lastLoaded.manifestCid);
+      const saved = lastLoaded && !deleting.has(lastLoaded.manifestCid) && (retained.get(lastLoaded.manifestCid)
+        ?? (pendingVerification.has(lastLoaded.manifestCid) ? pendingModel(pendingVerification.get(lastLoaded.manifestCid)) : null));
       return saved && !voiceManaged(saved) ? catalog[saved.modelId] ? `hf:${saved.modelId}` : `stored:${saved.manifestCid}`
         : `hf:${DEFAULT_MODEL_ID}`;
     },
@@ -367,13 +385,18 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
         .sort(compareModelSizes).map((entry) => ({ sourceKey: entry.key, name: entry.name,
           localAvailability: localAvailability(entry) }));
       const preferred = saved.find((entry) => entry.manifestCid === lastLoaded?.manifestCid);
+      const pending = [...pendingVerification.values()]
+        .map(pendingModel).sort(compareModelSizes).map((entry) => ({ ...entry,
+          sourceKey: catalog[entry.modelId] ? `hf:${entry.modelId}` : `stored:${entry.manifestCid}` }));
+      const preferredPending = pending.find((entry) => entry.manifestCid === lastLoaded?.manifestCid);
       const fallback = choices.find((entry) => entry.sourceKey === `hf:${DEFAULT_MODEL_ID}`);
       // Unknown physical memory remains eligible under the admission policy.
       // Pending checks never authorize a speculative replacement download.
       const supported = (entry) => ['available', 'unknown'].includes(entry?.localAvailability.status);
       const checking = (entry) => entry?.localAvailability.status === 'checking';
-      return (supported(preferred) ? preferred : null) ?? saved.find(supported)
+      return preferredPending ?? (supported(preferred) ? preferred : null) ?? saved.find(supported)
         ?? (checking(preferred) ? preferred : null) ?? saved.find(checking)
+        ?? pending[0]
         ?? (supported(fallback) || checking(fallback) ? fallback : null) ?? choices.find(supported)
         ?? choices.find(checking) ?? preferred ?? saved[0] ?? fallback ?? choices[0] ?? null;
     },
@@ -383,9 +406,12 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
         description: entry.description ?? '', repository: entry.repository ?? entry.model.repository,
         revision: entry.revision ?? entry.model.revision, license: entry.license, model: entry.model, files: entry.files,
         dtype: entry.model.dtype, catalog: true,
+        localAvailability: localAvailability(entry),
         ...(() => { const saved = [...retained.values()].find((item) => item.modelId === entry.id);
-          return saved ? { stored: true, manifestCid: saved.manifestCid } : {}; })(),
-        localAvailability: localAvailability(entry) })),
+          if (saved) return { stored: true, manifestCid: saved.manifestCid };
+          const pending = pendingForModel(entry.id);
+          return pending ? { stored: true, manifestCid: pending.cid, needsVerification: true,
+            localAvailability: verificationAvailability } : {}; })() })),
       ...remoteModels().map((entry) => ({ ...entry, key: `peer:${entry.manifestCid}`, source: 'peers',
         localAvailability: localAvailability(entry) })),
       ...[...retained.values()].filter((entry) => !catalog[entry.modelId] && !deleting.has(entry.manifestCid))
@@ -395,7 +421,9 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
           description: retainedManifests.get(entry.manifestCid)?.description ?? '',
           license: retainedManifests.get(entry.manifestCid)?.provenance?.license,
           dtype: retainedManifests.get(entry.manifestCid)?.model?.dtype,
-          localAvailability: localAvailability(retainedManifests.get(entry.manifestCid) ?? entry) }))]
+          localAvailability: localAvailability(retainedManifests.get(entry.manifestCid) ?? entry) })),
+      ...[...pendingVerification.values()].map(pendingModel).filter((entry) => !catalog[entry.modelId])
+        .map((entry) => ({ ...entry, key: `stored:${entry.manifestCid}`, source: 'stored', stored: true }))]
         .filter((entry) => !voiceManaged(entry)).sort(compareModelSizes);
     },
     listInferenceTargets() {
@@ -444,6 +472,8 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
       const profile = source.source === 'hf' ? catalog[source.modelId] : source;
       assertChatLoadable(profile);
       return acquire(async (signal) => {
+        await refreshStoredRecords(signal);
+        if (source.source !== 'hf') requireVerified(pendingVerification.get(source.manifestCid));
         assertChatLoadable(profile);
         let record;
         if (source.source === 'hf') {
@@ -451,7 +481,10 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
           const saved = preferred?.modelId === source.modelId ? preferred
             : [...retained.values()].find((entry) => entry.modelId === source.modelId);
           record = saved && await runtime.store.stat(saved.manifestCid, { signal });
-          if (!record || record.status !== 'complete') record = await importModel('importCatalog', [source.modelId, { ...options, signal }], { deferSharing: true });
+          if (!record || record.status !== 'complete') {
+            requireVerified(pendingForModel(source.modelId));
+            record = await importModel('importCatalog', [source.modelId, { ...options, signal }], { deferSharing: true });
+          }
         } else {
           if (runtime.inspectPeerPackage) assertLocallyAvailable(await runtime.inspectPeerPackage(source.manifestCid, { signal }));
           signal.throwIfAborted();
@@ -471,11 +504,15 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
       validateHubPackage(entry);
       assertLocallyAvailable(entry);
       return acquire(async (signal) => {
+        await refreshStoredRecords(signal);
         assertLocallyAvailable(entry);
         const saved = [...retainedManifests].find(([cid, manifest]) => !deleting.has(cid) && matchesHubPackage(manifest, entry));
         let record = saved && await runtime.store.stat(saved[0], { signal });
         if (record && !await verifyStoredHubPackage(runtime.store, saved[1], entry, { signal })) record = null;
-        if (!record || record.status !== 'complete') record = await importModel('importHub', [entry, { ...options, signal, reuseManifest: saved?.[1] }], { deferSharing: true });
+        if (!record || record.status !== 'complete') {
+          requireVerified([...pendingVerification.values()].find((record) => matchesHubPackage(record.manifest, entry)));
+          record = await importModel('importHub', [entry, { ...options, signal, reuseManifest: saved?.[1] }], { deferSharing: true });
+        }
         return activateRecord(record, options, signal);
       }, options.signal);
     },
@@ -484,6 +521,7 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
       return acquire(async (signal) => {
         if (deleting.has(cid)) throw new Error('This model is being deleted; retry deletion before loading it');
         const record = await runtime.store.stat(cid, { signal });
+        requireVerified(record);
         if (record?.kind !== 'manifest' || record.status !== 'complete' || !(record.pinned || record.retain)) {
           throw new Error('This model is no longer completely stored and retained on this device. Import it before loading.');
         }
@@ -491,6 +529,27 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
       }, options.signal);
     },
     unload() { return mutate(() => unloadModel()); },
+    recoverStoredModel(input, { signal, onProgress } = {}) {
+      const cid = artifactCID(input).toString();
+      return mutate(async (activeSignal) => {
+        const record = await runtime.store.stat(cid, { signal: activeSignal });
+        if (record?.kind !== 'manifest' || !['partial', 'complete'].includes(record.status)
+            || !(record.pinned || record.retain) || deleting.has(cid)) {
+          throw new Error('This retained model package is not available for local verification.');
+        }
+        try {
+          // No fetchBlock: recovery must prove the local DAG, never fetch weights.
+          const verified = record.status === 'complete' ? record : await runtime.store.ensureLocal(cid,
+            { kind: 'manifest', pin: true, signal: activeSignal, onProgress });
+          activeSignal.throwIfAborted(); await refreshStoredRecords(activeSignal);
+          return { manifestCid: cid, verified: true, record: verified };
+        } catch (error) {
+          await refreshStoredRecords().catch(() => {});
+          if (activeSignal.aborted) throw error;
+          throw new Error(`Local verification failed: ${error.message}. No files were downloaded. The package remains listed so you can retry or delete it.`, { cause: error });
+        }
+      }, signal);
+    },
     async listStoredModels({ signal } = {}) {
       assertOpen();
       const activeSignal = combined(signal);
@@ -502,9 +561,11 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
         modelId: descriptor(record.cid, record.manifest)?.modelId ?? record.cid,
         totalBytes: record.manifest.files.reduce((sum, file) => sum + file.size, 0),
         runtime: record.manifest.model.runtime,
+        ...(record.status === 'partial' ? { needsVerification: true } : {}),
         ...(voiceManaged(record.manifest) ? { loadMode: 'voice', loadHint: VOICE_MODEL_LOAD_HINT } : {}),
         localAvailability: record.status === 'deleting' || deleting.has(record.cid)
           ? { status: 'unavailable', code: 'model_deleting', reason: 'Finish deleting this package before loading it.' }
+          : record.status === 'partial' ? verificationAvailability
           : !(record.pinned || record.retain)
             ? { status: 'unavailable', code: 'model_not_retained', reason: 'This package is not retained for local use. Import it before loading.' }
             : localAvailability(record.manifest),
@@ -551,7 +612,7 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
           unloaded = await runtime.unloadAuxiliaryModel?.(cid) || unloaded;
           activeSignal.throwIfAborted();
           const result = await runtime.store.remove(cid, { signal: activeSignal });
-          retained.delete(cid); retainedManifests.delete(cid); deleting.delete(cid); sharingErrors.delete(cid);
+          retained.delete(cid); retainedManifests.delete(cid); pendingVerification.delete(cid); deleting.delete(cid); sharingErrors.delete(cid);
           if (lastLoaded?.manifestCid === cid) lastLoaded = await preferences.clearLastLoaded(lastLoaded);
           await peerService?.setHostingEnabled(hostInference);
           return { deleted: result.removed, freedBytes: result.freedBytes, unloaded };

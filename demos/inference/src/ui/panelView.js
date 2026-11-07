@@ -197,24 +197,26 @@ export function renderModelCompatibilityHelp(view, help) {
   view.helpStatus.textContent = '';
 }
 
-export function renderStoredModels(view, models, onDelete, onLoad) {
+export function renderStoredModels(view, models, onDelete, onLoad, onRecover) {
   view.storedList.replaceChildren();
   if (!models.length) view.storedList.append(node('li', 'No models stored on this device.', 'pc-stored-empty'));
   for (const model of sortModelPackages(models)) {
     const row = node('li', undefined, 'pc-stored-model');
     const details = node('div'); details.append(node('strong', model.name));
     const metadata = [formatModelBytes(model.totalBytes), ...(model.loaded ? ['Loaded'] : []), ...(model.shared ? ['Shared'] : []),
-      ...(model.cleanupPending ? ['Cleanup pending'] : [])];
+      ...(model.cleanupPending ? ['Cleanup pending'] : []), ...(model.needsVerification ? ['Needs local verification'] : [])];
     details.append(node('p', metadata.join(' · '), 'pc-inference-note'));
     if (model.shareError) details.append(node('p', `Sharing unavailable: ${String(model.shareError).slice(0, 256)}`, 'pc-inference-note'));
     const blocked = ['checking', 'unavailable'].includes(model.localAvailability?.status);
     const voice = model.loadMode === 'voice';
     if (voice) details.append(node('p', String(model.loadHint || 'Use Enable voice in the world-agent window to load speech models.').slice(0, 512), 'pc-inference-note'));
     if (blocked) details.append(node('p', String(model.localAvailability.reason || 'This model is unavailable on this device.').slice(0, 512), 'pc-inference-note'));
-    const loadLabel = model.loaded ? 'Loaded' : voice ? 'Voice controls' : 'Load';
+    const loadLabel = model.needsVerification ? 'Verify locally' : model.loaded ? 'Loaded' : voice ? 'Voice controls' : 'Load';
     const load = button(loadLabel, `${loadLabel} ${model.name}`);
-    load.dataset.inactive = String(Boolean(voice || model.loaded || model.cleanupPending || blocked || !onLoad));
-    load.disabled = load.dataset.inactive === 'true'; load.onclick = () => { if (!voice) onLoad?.(model); };
+    load.dataset.inactive = String(model.needsVerification ? Boolean(model.cleanupPending || !onRecover)
+      : Boolean(voice || model.loaded || model.cleanupPending || blocked || !onLoad));
+    load.disabled = load.dataset.inactive === 'true';
+    load.onclick = () => { if (model.needsVerification) onRecover?.(model); else if (!voice) onLoad?.(model); };
     const removeLabel = model.cleanupPending ? 'Retry delete' : 'Delete';
     const remove = button(removeLabel, `${removeLabel} ${model.name}`); remove.className = 'pc-delete-model';
     const actions = node('div', undefined, 'pc-stored-actions'); actions.append(load, remove);

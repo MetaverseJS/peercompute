@@ -296,6 +296,17 @@ live in the **Config** modal alongside GGUF GPU layers, connection and unload
 controls. **Stored Models** opens a separate window listing local model packages,
 sizes and loaded/shared status. **Load** switches the local worker to a complete
 stored package without downloading it again; loading can be stopped in the dialog.
+Retained packages left incomplete by an interrupted verification stay listed as
+**Needs local verification**. Choose **Verify locally** to check their existing
+CID blocks and file hashes, with byte progress and cancellation, then **Load**.
+Verification needs no GPU or model download. Startup preserves these packages
+and the remembered selection instead of downloading a replacement. A missing or
+damaged block fails verification and leaves the package visible for recovery or
+deletion; a successful check does not change its CID.
+Package retries also reuse completed local files with the exact pinned SHA256
+and size, even when a catalog does not supply file CIDs. An unfinished file can
+resume during the same running import; its partial HTTP offset is not yet
+persisted across page reloads.
 **Delete** stops sharing/hosting that model,
 unloads it if needed, and frees files unused by other retained packages. Shared
 blocks and independently pinned files remain available to their other owners.

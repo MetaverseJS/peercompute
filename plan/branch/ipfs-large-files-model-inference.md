@@ -1145,3 +1145,19 @@ journaling across reloads is deferred; original interface-change cause is unknow
 - Validate the real native Talk/Stop path and controlled failure regressions;
   publish corrected internal previews only. Standalone agent administration is
   the Agents button in the existing inference console on HTTPS5189.
+
+### November 7 — recover retained models after navigation
+
+- User reports successfully running27B, navigating away and finding an empty
+  library despite14.3GB still in IndexedDB at the same5189 origin. Preserve all
+  data; recovery should inspect local blocks before any new download.
+- Do not revoke a verified complete checkpoint just because sharing or an audit
+  is interrupted. Idempotent pinning checks root identity; provider publication
+  still validates the serving closure. Proven damage remains unavailable.
+- Show retained partial packages with Verify locally, byte progress and cancel;
+  retain their startup preference and prevent implicit HF replacement. Recovery
+  is separate from GPU loading and does not contact model sources.
+- Reuse completed files across package retries by pinned SHA256/size, then
+  validate the final manifest. Partial-file HTTP checkpoints across page reload
+  remain separate future work. Use synthetic native-browser tests and update
+  internal previews; preserve user GPU capacity and existing model storage.
