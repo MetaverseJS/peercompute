@@ -4144,3 +4144,14 @@ and direct-reference assets match; an additional overlapping 54-file check cover
 every changed JS/MJS/CSS/HTML release asset, including dynamic application chunks.
 Zero accepted-run runtime/request/cleanup errors. Source release dc655b02 is
 published; the evidence-only follow-up preserves its exact docs tree.
+
+
+## README and main integration — November 8
+
+Validate source-grounded README behavior, local Markdown links and npm commands.
+Run existing demo-ports/release consistency checks. Preview the merge with
+merge-tree, preserve both parents and verify application/docs tree equality to
+the already tested feature release; no new application changes imply no redundant
+model downloads or full GPU matrix. After push, verify main ancestry/remote SHA,
+Pages source main:/docs, exact deployed commit and representative public asset
+hashes. Prior full15-demo build/native/public acceptance remains linked in log.md.

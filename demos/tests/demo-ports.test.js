@@ -496,12 +496,15 @@ test('cubechat, hyperborea, and sneakywoods register bot bridges for shared harn
   );
 });
 
-test('cubechat, hyperborea, and sneakywoods expose bot controls in settings screens', () => {
+test('CubeChat exposes native Residents while Hyperborea and SneakyWoods retain bot controls', () => {
   const cubechatMain = fs.readFileSync(path.join(demosRoot, 'cubechat', 'src', 'main.js'), 'utf8');
+  const cubechatSettings = fs.readFileSync(path.join(demosRoot, 'cubechat', 'src', 'ui', 'CubeSettingsUi.js'), 'utf8');
+  const cubechatResidents = fs.readFileSync(path.join(demosRoot, 'cubechat', 'src', 'ui', 'CubeWorldUi.js'), 'utf8');
   const hyperboreaHtml = fs.readFileSync(path.join(demosRoot, 'hyperborea', 'cb.html'), 'utf8');
   const sneakywoodsHtml = fs.readFileSync(path.join(demosRoot, 'sneakywoods', 'index.html'), 'utf8');
-  assert.ok(cubechatMain.includes('id="bot-count"'), 'cubechat bot count control missing');
-  assert.ok(cubechatMain.includes('id="bot-add"'), 'cubechat bot add control missing');
+  assert.ok(cubechatSettings.includes('data-world-action="residents"'), 'CubeChat Residents menu entry missing');
+  assert.ok(cubechatMain.includes('onResidents: () => this.worldUi?.openResidents()'), 'CubeChat Residents menu is not connected to the world UI');
+  assert.ok(cubechatResidents.includes("button('Place resident')"), 'CubeChat resident creation control missing');
   assert.ok(hyperboreaHtml.includes('id="bot-preset"'), 'hyperborea bot preset control missing');
   assert.ok(hyperboreaHtml.includes('id="bot-status"'), 'hyperborea bot status control missing');
   assert.ok(sneakywoodsHtml.includes('id="bot-clear"'), 'sneakywoods bot clear control missing');

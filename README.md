@@ -1,6 +1,75 @@
 # PeerCompute
 
-PeerCompute is a browser-based P2P networking and distributed compute library built on libp2p. It targets multiplayer games, collaborative simulations, and flexible compute workloads that need to run in the browser with configurable topology and clocking.
+PeerCompute is a browser-based peer-to-peer compute platform built on libp2p,
+WebGPU and JavaScript workers. It combines a reusable networking/state/compute
+library with applications for hosting AI models, persistent agents, multiplayer
+worlds and collaborative simulations. A browser can retain model files, serve
+them to peers and run inference for another player without that player downloading
+the model.
+
+[Demo overview](https://metaversejs.github.io/peercompute/) ·
+[Models and agents](https://metaversejs.github.io/peercompute/inference/) ·
+[CubeChat](https://metaversejs.github.io/peercompute/cubechat/) ·
+[EarthGrid](https://metaversejs.github.io/peercompute/earth/)
+
+## Current application — November 8, 2026
+
+- **Models and storage:** one Models window combines a saved-model library with
+  curated choices and Hugging Face search, filtering and compatibility inspection.
+  Select several saved packages to load or delete together. Model artifacts are
+  content-addressed with IPFS/UnixFS, verified and retained in IndexedDB; interrupted
+  imports reuse completed files and supported partial-download checkpoints.
+- **Local and peer inference:** load multiple specialist models for text, vision,
+  image generation, speech recognition and speech synthesis. The default **Mixed**
+  router prefers a capable loaded local model and otherwise uses an available
+  peer. **Local only** prevents remote dispatch. Sharing stored files and hosting
+  inference are separate controls; both require an active, reachable browser.
+- **One chat interface:** type, paste/drop/attach images, or hold **Talk** and release
+  to submit speech. Image-generation and spoken-reply glyphs are mutually
+  exclusive. Chat options hold the target selector and default-on **Be concise**
+  preference. The network glyph opens diagnostics and turns green when connected
+  peers, shared models and hosted models are all available. The console is an
+  installable PWA with an offline app shell, not an always-running background host.
+- **Persistent general agents:** identity, instructions, goals, context and bounded
+  conversation history survive reloads in private IndexedDB records. Agents use
+  the same model registry, router and chat interface, with explicit pause/resume,
+  cancellation, export and deletion.
+- **Inhabited worlds:** CubeChat combines human keyboard chat, overhead speech
+  bubbles, compact player names and a Residents roster. Each agent has one cube
+  body using the existing bot movement system, private conversations, optional
+  world-chat replies, managed voice and an optional generated front-face portrait.
+  EarthGrid shares the reusable agent, model and speech foundations in its own world.
+- **Reusable runtime:** NodeKernel coordinates NetworkManager transport,
+  StateManager persistence and ComputeManager-owned JS/WASM/WebGPU workers.
+  Existing game, procedural-world, Earth/GIS, physics and NetViz demos use this
+  same foundation; see the [demo gallery](#demo-gallery) and
+  [core library guide](peercompute/README.md).
+
+Model support depends on the actual export, architecture, browser features and
+available memory. The shipped workers cover Transformers.js ONNX text/vision,
+wllama/llama.cpp GGUF text, ONNX diffusion and separate speech specialists;
+finding a Hugging Face repository does not make every file in it executable.
+Memory figures are planning estimates, not measurements of free VRAM. Browser
+storage is scoped to the exact origin, including the port, so another demo origin
+does not automatically see the same saved packages.
+
+Model routing currently chooses a capable host for each request; it does not split
+one model's tensors across peers. Learned routing, consented agent migration and
+cloning, self-directed training, neural locomotion and evolving 3D bodies remain
+planned in the [Humunculus design](plan/demos/humunculus/humunculus.pdf) and
+[agent-layer plan](plan/demos/inference/agent-layer-plan.md). Scientific demos also
+retain explicit reduced/proxy-model and validation boundaries; the application
+does not claim calibrated full-physics simulation.
+
+The November 8 chat-control release passed 193 focused cases, the complete
+15-demo build, and public model-console/CubeChat/EarthGrid/overview checks with
+authenticated SecretWorkshop connections. Those checks qualify this release's UI
+and integration scope, not every model on every device. Detailed hardware trials,
+earlier full-route checks and remaining gates are in [plan/tests.md](plan/tests.md)
+and [plan/log.md](plan/log.md).
+
+For development, start with [Quick Start](#quick-start). For design and acceptance
+history, continue with the implementation notes below or [the project plan](plan/plan.md).
 
 ## Humunculus design
 
@@ -52,10 +121,11 @@ Run `npm run test:agent-layer` for persistence/routing/UI checks. The opt-in
 `test:agent-layer:browser` harness uses `AGENT_MODEL_PROFILE` and its matching
 `AGENT_MODEL_PORT` to exercise a previously retained model without downloads.
 
-## IPFS Files And Model Inference - November 3, 2026
+## IPFS files and model inference — implementation notes
 
-[IPFS-01](plan/branch/ipfs-large-files-model-inference.md) is being implemented on
-`feature/ipfs-artifacts-webgpu`. StateManager owns verified UnixFS/IPFS blocks,
+[IPFS-01](plan/branch/ipfs-large-files-model-inference.md) supplies the implemented
+artifact and model services below; its broader acceptance gates remain tracked in
+the plan. StateManager owns verified UnixFS/IPFS blocks,
 IndexedDB persistence, manifests, pins and GC. NetworkManager discovers signed
 providers and serves explicitly published artifacts. ComputeManager owns model
 workers, residency, cancellation and CPU/GPU admission.
@@ -73,13 +143,14 @@ package also passes the independent-peer reseeding test. CubeChat and EarthGrid
 now have selectable world inhabitants with persistent identities,
 private visitor conversations and optional managed speech. The model console is
 secondary configuration; see the [architecture and acceptance plan](plan/demos/inference/inhabited-agents.md).
-To speak with a world agent, select its body (or open Agents), enable voice, and
+To speak with a world agent, select its body, enable voice, and
 use Talk followed by Stop. Speak replies enables local speech synthesis. World
 speech packages are managed together through Enable voice. The dedicated model
 console also has Talk and Speak replies, with local or peer speech specialists.
 
 The exact Tsotchke-Corporation/Qwen3.8-27B-GeoRefine-D14-abl-GGUF is catalogued for
-storage and hosting. All 11 files (14.20 GB total) are verified and pinned;
+storage, sharing and GGUF text inference on a compatible device. Its qualified
+CLI import verified and pinned all 11 files (14.20 GB total);
 persistent reopen and reads across the 2 GiB/4 GiB boundaries and EOF pass.
 Peak CLI import RSS was 237.6 MB. The stable manifest is
 `bafkreia44oqmad5qe6j2dxe2gamyk5567hthj7lefwuwivfgm6u4o2oh3q`.
@@ -96,7 +167,7 @@ from the verified local Node artifact store; full14GB browser peer transfer and
 browser persistence are separate, unproven gates for this model.
 The GGUF chat models are text-only; the Transformers.js text and vision models remain available.
 
-Additional model choices on this branch:
+Additional catalog choices (package sizes and qualification from the recorded trials):
 
 | Model | Package download | Task |
 | --- | --- | --- |
@@ -286,7 +357,8 @@ console connects to the configured Secret Workshop backend automatically.
 The top row contains Back, Models and Agents. Click the network icon beside the
 hamburger for connection and model counts: green means connected peers, shared
 packages and hosted inference are all available; red means disconnected; yellow
-means connecting, incomplete availability or a reported issue. This describes
+means connecting or incomplete availability. Warnings remain visible in the
+popover without overriding an otherwise green availability state. This describes
 discovery, not a guarantee that every advertised model can execute a request.
 Open **Models → Browse models**, choose a catalog, peer or Hugging Face package,
 then **Load**. After inspecting an original Hugging Face checkpoint, use
@@ -379,11 +451,14 @@ timer throttling cannot expire a loaded model's reservation. Explicit revocation
 quarantine or loss of its assigned worker still makes the model unavailable and
 requires cleanup before capacity is reused.
 The standalone console permits up to eight resident models, including multiple
-models using the same backend. Workers start on demand; the shared admission
-budget remains 12 GiB CPU memory and 16 GiB GPU memory. These are application
-ceilings, not measurements of free hardware memory. A failed additional load
-leaves existing residents loaded. Startup restores one conversational model;
-it does not load every saved package.
+models using the same backend. Workers start on demand. Its **Auto** memory policy
+tracks estimated resident usage without imposing a fixed application byte cap;
+explicit combined CPU/GPU budgets and limits owned by an embedding application
+still apply. Slot, worker and package bounds remain enforced, and an actual GPU
+allocation can fail even when estimates fit. A failed additional load leaves
+existing residents loaded. When saved packages exist, startup opens **Models →
+Stored models** and waits for **Load selected**; only an empty library attempts a
+supported default model.
 Diffusion also checks WebGPU allocation, validation and internal errors during
 loading and generation. A failed GPU operation invalidates the model instead of
 returning a corrupt image. GPU memory estimates describe the model budget, not
@@ -440,8 +515,9 @@ used512 context and do not establish the peak at2,048.
 
 The standalone chat fills the available browser window. Type any question,
 attach an image with **+**, and press Enter to send
-(Shift+Enter inserts a newline). The selector next to Send offers the local model
-and one entry per remotely hosted immutable model package. It refreshes every
+(Shift+Enter inserts a newline). **Chat options → Chat target** offers routing
+modes, agents, local models and one entry per remotely hosted immutable model
+package. Peer availability refreshes every
 five seconds, chooses the longest-idle available host, and marks a model **(busy)**
 when all its hosts are busy. Requests then try the first reachable host's bounded
 queue. Before sending a prompt, a failed stream-open attempt can fall back to
@@ -452,8 +528,8 @@ they are excluded from shared state and pubsub. A remote requester needs no mode
 weights or GPU worker. Discovery is scoped to the connected PeerCompute room.
 
 The network summary separates shared files from loaded inference hosts. For
-example, a shared DreamShaper package appears in the **Load** model list, but appears
-beside **Send** only while a peer has it loaded with **Host inference** enabled.
+example, a shared DreamShaper package appears in **Models**, but becomes an
+inference target only while a peer has it loaded with **Host inference** enabled.
 Artifact restoration/publication runs independently of the five-second discovery
 refresh. A second tab that cannot own the same local artifact store can still
 discover and use remote inference; file-sharing errors are reported separately.
@@ -511,9 +587,13 @@ two physical devices remain an acceptance gate. Run `npm run test:peer-inference
 `npm run test:inference:ui`, and `npm run test:peer-inference:browser` for the
 protocol, UI and hardware workflows. See [test evidence and remaining gates](plan/tests.md).
 
-## Current Status - September 14, 2026
+## Historical runtime survey — September 14, 2026
 
-The [current state survey](plan/reports/2026-09-14-project-state-survey.md)
+This dated snapshot predates the model, agent and world-chat work described above.
+Its test counts and unresolved findings are historical evidence, not a fresh
+whole-repository release result.
+
+The [September state survey](plan/reports/2026-09-14-project-state-survey.md)
 maps the implementation to the overall roadmap. The runtime and Earth/game
 foundations are substantial; automatic resource-driven network organization and
 calibrated multiscale science remain unfinished. Fresh checks passed 873 of 874
@@ -647,7 +727,7 @@ runtime metadata to NetViz.
   gates, source transfer/target mutation preflights, proxy worker-write
   execution/verification, and explicit scientific-readiness blockers.
 
-### Recorded Release Validation Through August 2026
+### Historical release validation through August 2026
 
 The following records describe the August release slices. The September survey
 above contains the newer test baseline; the full chaos lab remains open.
@@ -758,6 +838,9 @@ modes.
 
 
 ## What You Can Use Today
+- **Model and agent applications** with retained IPFS packages, supported model
+  workers, local/peer task routing, private persistent identities and reusable
+  world-chat/speech components, as described in the current application overview.
 - **Browser-first libp2p runtime** with websocket relay bootstrap, relay reservations, gossipsub/floodsub messaging, presence, room/game scoping, and relay-config discovery.
 - **NodeKernel orchestration** with `NetworkManager`, `StateManager`, `ComputeManager`, `ioManager`, and configurable clocking/policy modes.
 - **NetworkScheduler streams** for snapshots, events, and commands with cadence control, retries, keepalive, and profile-based defaults.
@@ -944,11 +1027,14 @@ modes.
 
 ### Core Components
 - **NodeKernel**: orchestration and policy. Chooses what to send, when to send it, and who to send/request from.
-- **NetworkManager**: transport, routing, discovery, and scoping (libp2p).
+- **NetworkManager**: transport, routing, discovery and scoping (libp2p), including
+  artifact-provider discovery and authenticated peer inference streams.
 - **NetworkScheduler**: timing primitive (cadence, batching, keepalive, retries).
-- **StateManager**: shared state sync (Yjs + scoped namespaces).
+- **StateManager**: shared state sync (Yjs + scoped namespaces), local DataState,
+  verified artifact stores and private persistent agent records.
 - **GPU Hub (main thread)**: shared WebGPU context for render-coupled compute tasks.
-- **ComputeManager**: JS/WASM/WebGPU compute runtime with worker offload, hybrid `wasm-webgpu` tasks, and `commitDelta` support.
+- **ComputeManager**: JS/WASM/WebGPU execution with worker offload, hybrid
+  `wasm-webgpu` tasks, `commitDelta`, model residency and acknowledged cleanup.
 - **ioManager**: controls local input/output (like threejs and your keyboard).
 - **DataState (layered)**: hot GPU buffers, warm CPU deltas, cold IndexedDB snapshots.
 
@@ -977,14 +1063,27 @@ PeerCompute supports multiple timing models:
 
 ## Quick Start
 
+Use Node.js **24 LTS** and run these commands from the repository root. The
+workspace install prepares the pinned GGUF runtime; Vite serves the applications
+over HTTPS and the core library retains its webpack development harness.
+
 ```bash
+nvm use 24
 npm install
 
 # Start relay + all demos over HTTPS
 npm run dev
 ```
 
+To work only on the model console against the configured backend, use
+`npm run dev:inference` instead. `npm run dev:cubechat` starts CubeChat alone.
+The checked-in production relay discovery configuration points to
+`https://secretworkshop.net/peercompute/config/relay-config.json`; the complete
+development stack starts a local relay and writes its runtime configuration.
+See [relay runtime selection](#relay-runtime-selection) when choosing a backend.
+
 Dev servers:
+- `https://localhost:5189/` (Models and agents)
 - `https://localhost:5175/` (Hyperborea)
 - `https://localhost:5176/` (CubeChat)
 - `https://localhost:5177/` (PlanetGen)
@@ -1000,22 +1099,13 @@ Dev servers:
 - `https://localhost:5184/` (Schrodinger Materials Console)
 - `https://localhost:5182/` (NetViz)
 
-Current direct Tailnet HTTPS development handoffs:
-
-- WXGlobe: `https://100.68.165.52:5186/`
-- EarthGrid: `https://100.68.165.52:5187/`
-- RoadVector: `https://100.68.165.52:5188/`
-
-These are private-IP listeners with an IP-SAN self-signed development
-certificate, not Tailscale Serve or Funnel; the headset/browser must accept or
-trust that certificate first. EarthGrid and RoadVector keep their geodata
-dependency loopback-only behind the same-origin Vite proxy.
-
-The Tailscale-issued trusted-certificate form of the same direct listener would
-be `https://shitbox.tail5c077c.ts.net:5188/`, but issuing that certificate
-requires the local Tailscale operator/root permission. It is not currently
-installed; the active IP listener above remains the self-signed development
-handoff.
+Vite generates a local development certificate with OpenSSL when no certificate
+is supplied. Trust that certificate for local testing. For a LAN or Tailscale
+handoff, set **both** `SSL_CERT` and `SSL_KEY` to a certificate/key valid for the
+hostname you will open, keep the key outside Git, and use that hostname with the
+same demo port. Listeners bind to `0.0.0.0`; remote browsers need a trusted secure
+context for WebGPU, microphone access and service workers. EarthGrid and
+RoadVector keep their geodata dependency on loopback behind the Vite proxy.
 
 Multiplayer bot controls:
 - Hyperborea and SneakyWoods expose a `Bots` section in settings. CubeChat uses one native `Residents` roster with a shared Room/resident chat bar, overhead typed speech bubbles, and separate Player, World/Rooms and Media windows. Its automated bot launch URLs remain available for network tests.
@@ -1030,10 +1120,13 @@ Multiplayer bot controls:
 
 ### Docs Build / Preview
 ```bash
-npm run build
+npm run build:all
 npm run docs:preview
 ```
 
+- `build:all` builds the core library and writes all 15 Vite demo builds to `docs/`.
+  The published site uses GitHub Pages from `main` / `docs`; building locally
+  does not publish changes. Preview is `https://localhost:4173/?prod=1`.
 - The overview page (`docs/index.html`) now defaults to production folder links (`./hyperborea/`, `./cubechat/`, etc.), so GitHub Pages-style deploys work under nested paths like `https://MetaverseJS.github.io/<repo>/`.
 - When the overview is served from local docs dev port `4173`, links automatically switch to local demo ports for dev workflows. Use `?prod=1` to force production links locally.
 
@@ -1306,10 +1399,17 @@ Use this together with `PCSERVER_ENABLE_TURN=0` on `scripts/install-relay-system
 - Keep relay `webrtc.iceServers` aligned with coturn host/port and credentials.
 
 ## Demo Gallery
-See `docs/index.html` for the full demo index.
+Open the [published overview](https://metaversejs.github.io/peercompute/) or
+`docs/index.html` for the full demo index.
 
 Current demos and validation surfaces:
-- **CubeChat**: browser video chat world with themed maps, room/password deep links, shared movement/state, screen share, and in-browser bot spawning.
+- **Models and agents** (`inference/`): installable model console with Hugging Face
+  discovery, retained IPFS artifacts, multiple managed models, local/peer routing,
+  text/vision/image/voice chat and persistent general agents.
+- **CubeChat**: browser video chat world with themed maps, room/password deep
+  links, shared movement/state, screen share, native keyboard chat and speech
+  bubbles. A shared Residents interface manages bots and inhabited agents;
+  portraits, voice and opt-in public chat use the same model services.
 - **Hyperborea**: multiplayer action/adventure surface for replicated movement, attacks, remote-player assertions, and bot-driven room activity.
 - **SneakyWoods**: multiplayer stealth/action surface with the shared bot bridge and settings-screen bot host.
 - **Daddy Go!**: compact multiplayer score/state validation demo with deterministic runtime checks.
@@ -1319,7 +1419,8 @@ Current demos and validation surfaces:
   without tiled imagery as green equal-elevation contours over black terrain;
   NOAA ETOPO 2022 is the pole-to-pole default and AWS Terrarium is an optional
   higher-detail land source.
-- **EarthGrid**: reusable non-aviation Cesium Earth/GIS viewer with the same
+- **EarthGrid**: reusable non-aviation Cesium Earth/GIS viewer with shared model
+  and inhabited-agent services, alongside
   transparent black terrain, actual blue/green NURBS contour geometry, blue
   50%-opacity OSM buffer polygons, exact blue NURBS shorelines with paired green
   land-side curves, wireframe buildings,
@@ -1630,6 +1731,13 @@ npm run test:backend
 node --test demos/tests/demo-ports.test.js
 
 # Demo/model gates
+npm run test:artifacts
+npm run test:inference
+npm run test:inference:ui
+npm run test:peer-inference
+npm run test:agent-layer
+npm run test:model-library
+npm run test:world-agents
 npm run test:earth-platform
 npm --prefix demos/planetgen test
 npm --prefix demos/multiscale test
@@ -1642,10 +1750,10 @@ npm --prefix demos/webgpuphys run test:ppf-contact
 npm run build:all
 npm run test:runtime
 
-# Complete Pages-shaped visual/production-relay acceptance (Node24, system Chrome)
+# Pages-shaped visual/production-relay acceptance (Node 24, headless system Chrome)
 # Use your certificate's valid hostname so Chrome can install service workers.
-# PAGES_HEADED=1 uses an owned system-browser window when headless GPU rendering fails.
-PAGES_HEADED=1 PAGES_HOST=0.0.0.0 PAGES_PUBLIC_HOST=fastbox.tail5c077c.ts.net \
+# Replace your-preview-hostname with a hostname covered by the supplied certificate.
+PAGES_HOST=0.0.0.0 PAGES_PUBLIC_HOST=your-preview-hostname \
   PAGES_OUTPUT_DIR=/tmp/peercompute-pages-check node demos/tests/pages-runtime.mjs
 
 # Deterministic built EarthGrid/RoadVector/WXGlobe release gate
@@ -1680,7 +1788,7 @@ Notes:
   relay requirement; NetViz, Multiscale and Schrodinger exercise their explicit
   connection controls. `PAGES_ROUTES=inference,cubechat` selects a focused run;
   `PAGES_CHROME_ARGS` accepts a JSON array of hardware-specific launch flags.
-- The November 4, 2026 public deployment at
+- The recorded November 4, 2026 public deployment at
   [the demo overview](https://metaversejs.github.io/peercompute/) passes all 23
   shipped route checks, including authenticated SecretWorkshop connections in
   all nine network-enabled demo packages. The second tile opens the live
@@ -1690,7 +1798,9 @@ Notes:
   First navigation may reload once before application startup. Registration
   failure leaves the application usable; GGUF still requires the browser's actual
   shared-memory, JSPI, memory64 and shader-f16 capabilities. The worker does not
-  cache model files or assets. Developer-server headers are a separate mechanism.
+  cache model files. The inference PWA additionally caches its versioned app shell;
+  model storage remains owned by StateManager. Developer-server headers are a
+  separate mechanism.
 - A Pages build does not deploy the optional Earth/RoadVector geodata service.
   Configure `VITE_GEODATA_API_URL` only with a deployed compatible HTTPS origin
   and matching server CORS. SecretWorkshop's relay configuration endpoint is
@@ -1757,6 +1867,17 @@ scripts/
 ```
 
 ## Roadmap Highlights
+The remaining work is tracked in [plan/plan.md](plan/plan.md), the
+[artifact/inference plan](plan/branch/ipfs-large-files-model-inference.md), and
+the [agent-layer plan](plan/demos/inference/agent-layer-plan.md). Earlier runtime
+and scientific acceptance findings below are not claims that those features are
+complete.
+
+- Qualify more model architectures and devices, physical-host peer inference,
+  large-package reseeding and rendering/inference resource contention.
+- Extend the general-agent layer with opt-in model provisioning, migration and
+  cloning, then evaluate learned routing and the staged Humunculus embodiment and
+  training design. Current world movement uses the existing bot controller.
 - Stabilize the ordered multi-demo P2P browser matrix, especially the
   Hyperborea-to-SneakyWoods shared-context failure and Daddy Go! after full
   matrix order.

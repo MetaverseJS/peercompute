@@ -1264,3 +1264,12 @@ previews after native and affected-route visual/console checks. No merge to ulg.
 Completed and published November 8 as dc655b02: native tests, full build, internal
 and public layout/connection checks pass. Recovered the interrupted build after
 a workstation reboot without losing source changes. No merge to ulg.
+
+
+### November 8 — integration into main
+
+The user now requests an up-to-date PeerCompute README and merging this feature
+branch into main. Update both application/library documentation, preserve main
+history with a normal merge, verify the resulting application/build tree, push
+main and align GitHub Pages to main:/docs. This supersedes the temporary feature
+publication workflow; it does not request an ulg merge or branch deletion.

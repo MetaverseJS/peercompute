@@ -14,6 +14,8 @@ The root node should exist on a domain secured with SSL enabling all executable 
 
 ## Project Goals:
 
+November 8 main integration: refresh root/package READMEs for the shipped model, agent and world application; merge feature/ipfs-artifacts-webgpu into main while preserving upstream history, and publish the existing verified docs build from main. Documentation and integration verification are in progress.
+
 November8 chat controls: availability-based network glyph, mutually exclusive image/ear output controls, hold-to-record input and default concise LLM prompts. Implemented and published on the feature branch. 193 focused cases, the full 15-demo build, internal previews, and public inference/Cube/Earth/overview checks pass. New published assets match the release; no merge to ulg.
 
 November7 CubeChat presentation follow-up: menu-only Residents/Models, one model
