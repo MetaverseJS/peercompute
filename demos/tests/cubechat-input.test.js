@@ -22,7 +22,7 @@ before(async () => {
           <style>body{margin:0;min-height:2200px}#world{display:block;width:100%;height:700px;touch-action:none}
           #editors{position:fixed;top:20px;right:20px;z-index:2000;width:300px;background:white}
           input,textarea,select,[contenteditable]{display:block;width:250px;margin:8px}</style>
-          <canvas id="world" width="900" height="700" tabindex="0" aria-label="World"></canvas>
+          <div id="scene-container"><canvas id="world" width="900" height="700" tabindex="0" aria-label="World"></canvas></div>
           <section id="editors"><input aria-label="Name"><textarea aria-label="Model prompt"></textarea>
           <select aria-label="Setting"><option>First</option><option>Second</option></select>
           <div contenteditable="true" aria-label="Rich prompt"><span>Editable text</span></div>
@@ -69,6 +69,8 @@ async function fixture(t, { touch = false } = {}) {
     });
     document.addEventListener('keydown', (event) => observedInput.push({ type: event.type, key: event.key, trusted: event.isTrusted }), true);
     document.addEventListener('touchstart', (event) => observedInput.push({ type: event.type, trusted: event.isTrusted }), true);
+    window.addEventListener('wheel', (event) => observedInput.push({ type: event.type, trusted: event.isTrusted,
+      target: event.target.id, prevented: event.defaultPrevented }));
     document.querySelector('#action').onclick = () => actionClicks++;
   });
   return page;
@@ -280,6 +282,81 @@ test('moving focus into an editor releases held keys and keyup remains effective
   await page.keyboard.down('w');
   assert.equal((await movement(page)).forward, 1);
   await page.keyboard.up('w');
+});
+
+test('native world wheel zooms without document scrolling and respects previously handled input', async (t) => {
+  const page = await fixture(t);
+  await page.mouse.move(200, 300);
+  await page.mouse.wheel(0, 240);
+  await page.waitForFunction(() => observedInput.some((event) => event.type === 'wheel'));
+  assert.equal(await page.evaluate(() => controller.getZoom()), 1.1);
+  assert.equal(await page.evaluate(() => scrollY), 0);
+  assert.deepEqual(await page.evaluate(() => observedInput.filter((event) => event.type === 'wheel')),
+    [{ type: 'wheel', trusted: true, target: 'world', prevented: true }]);
+  await page.evaluate(() => document.querySelector('#world').addEventListener('wheel',
+    (event) => event.preventDefault(), { once: true, passive: false }));
+  await page.mouse.wheel(0, 240);
+  await page.waitForFunction(() => observedInput.filter((event) => event.type === 'wheel').length === 2);
+  assert.equal(await page.evaluate(() => controller.getZoom()), 1.1, 'another input owner may consume the wheel first');
+});
+
+test('native wheel scrolls modal image previews, editable fields and UI controls without camera zoom', async (t) => {
+  const page = await fixture(t);
+  await page.evaluate(() => {
+    const modal = document.createElement('dialog'); modal.id = 'model-dialog';
+    modal.style.cssText = 'width:400px;height:240px;overflow:auto';
+    modal.innerHTML = '<canvas id="image-preview" width="300" height="180"></canvas><div style="height:1200px">Model rows</div>';
+    document.body.append(modal); modal.showModal();
+  });
+  await page.locator('#image-preview').hover({ position: { x: 40, y: 40 } });
+  await page.mouse.wheel(0, 220);
+  await page.waitForFunction(() => document.querySelector('#model-dialog').scrollTop > 0);
+  assert.equal(await page.evaluate(() => controller.getZoom()), 1);
+  await page.evaluate(() => {
+    document.querySelector('#model-dialog').close();
+    const editor = document.querySelector('textarea');
+    editor.style.height = '100px'; editor.value = 'Line of editable text\n'.repeat(80);
+  });
+  await page.locator('textarea').hover();
+  await page.mouse.wheel(0, 220);
+  await page.waitForFunction(() => document.querySelector('textarea').scrollTop > 0);
+  await page.evaluate(() => {
+    const ui = document.createElement('section'); ui.id = 'scrollable-ui';
+    ui.style.cssText = 'position:fixed;left:40px;top:40px;width:300px;height:180px;overflow:auto;z-index:4000;background:white';
+    ui.innerHTML = '<button id="ui-action">UI action</button><div style="height:1200px">Other controls</div>';
+    document.body.append(ui);
+  });
+  await page.locator('#ui-action').hover();
+  await page.mouse.wheel(0, 220);
+  await page.waitForFunction(() => document.querySelector('#scrollable-ui').scrollTop > 0);
+  assert.equal(await page.evaluate(() => controller.getZoom()), 1);
+  assert.equal(await page.evaluate(() => observedInput.filter((event) => event.type === 'wheel')
+    .every((event) => event.trusted && !event.prevented)), true);
+});
+
+test('native pointer-locked world wheel zooms and released UI wheel remains native', async (t) => {
+  const page = await fixture(t);
+  await page.evaluate(() => {
+    const canvas = document.querySelector('#world');
+    canvas.addEventListener('click', () => canvas.requestPointerLock(), { once: true });
+  });
+  await page.locator('#world').click({ position: { x: 200, y: 300 } });
+  await page.waitForFunction(() => document.pointerLockElement?.id === 'world');
+  await page.mouse.wheel(0, 240);
+  await page.waitForFunction(() => controller.getZoom() === 1.1);
+  await page.evaluate(() => document.exitPointerLock());
+  await page.waitForFunction(() => document.pointerLockElement === null);
+  await page.evaluate(() => {
+    const editor = document.querySelector('textarea');
+    editor.style.height = '100px'; editor.value = 'Line of editable text\n'.repeat(80);
+  });
+  await page.locator('textarea').hover();
+  await page.mouse.wheel(0, 220);
+  await page.waitForFunction(() => document.querySelector('textarea').scrollTop > 0);
+  assert.equal(await page.evaluate(() => controller.getZoom()), 1.1);
+  assert.deepEqual(await page.evaluate(() => observedInput.filter((event) => event.type === 'wheel')
+    .map(({ trusted, prevented }) => ({ trusted, prevented }))),
+  [{ trusted: true, prevented: true }, { trusted: true, prevented: false }]);
 });
 
 test('modified, composing and already-handled keyboard events do not capture gameplay input', async (t) => {

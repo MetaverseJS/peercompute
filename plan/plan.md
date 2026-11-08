@@ -14,6 +14,14 @@ The root node should exist on a domain secured with SSL enabling all executable 
 
 ## Project Goals:
 
+November7 stored-library follow-up: whenever any saved packages exist, open
+Stored Models at startup and wait for explicit multi-selection plus Load selected
+models. Empty storage alone permits the supported default. Sequential additions
+preserve completed/existing residents through failure or cancellation. Paste and
+drop image bytes into the unified composer; keep text intact and fetch only
+same-origin blob images. Confirm the page back arrow and await cleanup on Leave.
+Native UI119/119, retained library172/172, world85/85, layout4/4 and Cube input14/14 checks pass. All three internal previews pass visual and SecretWorkshop checks; see the multimodal console plan.
+
 November7 resident-memory correction: the default fixed12GiB CPU pool rejects
 DreamShaper8GiB plus Qwen2B8GiB before a second GPU allocation. Owned-console Auto
 should track estimates without an invented byte cap; explicit combined budgets

@@ -213,3 +213,49 @@ A fresh two-client production discovery run receives the live hosted models and
 mutual v3 directories, retaining transient startup errors as evidence. Concurrent
 DreamShaper plus Qwen2B physical allocation remains unqualified. Detailed receipts
 and corrected fixture failures are recorded in plan/log.md.
+
+
+## November 7 — explicit saved-model selection and image intake
+
+The shared panel reads the retained library once at startup, independently of
+peer discovery. Any saved row (including speech, verification-needed or blocked
+packages) opens Stored Models; it never starts a load. A successful empty read
+alone allows the existing compatible default. Read failures expose Refresh and
+never imply missing files. The remembered choice remains a browsing hint.
+
+Stored Models supports accessible per-package checkboxes and Load selected models.
+Selection is reconciled by CID on refresh; loaded, blocked, checking, deleting or
+verification-needed rows cannot be selected. A snapshot runs sequentially through
+loadStoredModel with one cancellation signal and the existing spinner. Ordinary
+per-model failures continue; cancellation or incomplete cleanup stops remaining
+loads. Completed and preexisting residents stay. Final metadata reads share the
+operation signal; failed/cancelled refresh cannot be reported as success.
+
+Reusable ui/chatImageInput.js owns clipboard/drag event intake, bounded same-origin
+blob reading, eligibility checks and cancellation. Both file input and transfers
+use readImageAttachment for the existing8MiB/512px pixel boundary. File bytes take
+precedence over HTML/URL metadata. Plain text keeps native editing behavior;
+foreign/expired URLs explain how to attach a file instead. New input supersedes
+old decoding/fetch work; removal, identity changes and teardown cancel it.
+
+The page back arrow opens Leave model console? with Stay here/Leave. Stay or
+Escape leaves execution/draft untouched. Leave awaits owned panel disposal before
+navigation; incomplete cleanup retains a retry action and prevents navigation.
+Native browser regressions, three affected builds and exact internal preview
+checks are the acceptance scope; this slice does not requalify large-model GPU fit.
+
+The live phone checks also found existing overflow clipping in embedded world
+model panels. Only `.world-agent-models .pc-inference-panel` now scrolls when
+metadata and controls exceed its fixed height, keeping Talk/Send reachable.
+Standalone geometry is unchanged; native wheel/hit-test and exact world previews
+qualify the scoped layout fix. Stored-model bulk actions remain outside its
+library row scroller so selection controls stay visible.
+
+Acceptance is complete on the feature branch: UI119/119, retained library172/172,
+world85/85, affected-layout4/4 and Cube input14/14 pass (counts overlap). Exact
+trusted HTTPS5189/5176/5187 visual checks and authenticated SecretWorkshop links
+pass. Cube and Earth phone composers are reachable with real wheel input and
+hit-tests; Cube camera zoom is unchanged in dialogs and still works on its world
+canvas. No user caches, model downloads, public inference, Pages publication or
+merge occurred. The overview4173 destination has separate development-HMR
+websocket diagnostics; they do not occur on the three changed static previews.

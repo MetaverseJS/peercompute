@@ -61,3 +61,27 @@ create a tron themed overworld consisting of a dark infinite grid of blue lines.
   three-resident reasoning/ASR/TTS spatial playback. The fixture used encrypted
   relay requests after direct native upgrade timeouts; tiny Gemma quality was
   inconsistent. Neither movement nor autonomous agent dialogue is claimed.
+
+
+## Model panel scrolling — November 7 2026
+
+- The shared model panel now offers stored-package multi-selection at startup,
+  explicit batch loading, paste/drop image attachments and confirmed overview
+  navigation. Saved packages do not automatically consume model memory on opening.
+- Phone layouts scroll the embedded model panel when metadata exceeds its fixed
+  height. Keep the library bulk controls outside the scrolling package list.
+- Camera wheel zoom belongs to the actual world canvas, selected after TronScene
+  initialization or passed to PlayerController explicitly. Native dialogs,
+  editable fields, UI/image canvases and handled/modified events retain browser
+  scrolling. Pointer-lock ownership must not transfer camera input to another UI.
+- Native controller tests14/14PASS, including actual wheel and pointer lock;
+  actual promoted Cube preview must prove modal wheel reaches target/Attach/Talk/
+  Send without camera movement, then prove scene-canvas wheel zoom still works.
+  Preserve failed prior wheel/hit-test evidence; no GPU/model download is needed.
+
+- Final actual5176PASS: native dialog wheels reach every composer control on
+  desktop/phone with hit-tests true and camera zoom unchanged at1.0; after closing
+  UI, world-canvas wheel changes zoom to1.1. Both room and model networks have
+  authenticated SecretWorkshop Noise connections; no page/console/HTTP/model/
+  cleanup errors. Cube-only build13.05s and internal promotion02:01:55Z preserve
+  existing assets; owned browser closed.

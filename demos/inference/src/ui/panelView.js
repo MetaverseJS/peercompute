@@ -64,6 +64,9 @@ export function createPanelView(container) {
   currentModel.setAttribute('aria-label', 'Current model');
   const acquire = button('Load'), stored = button('Stored Models'), configure = button('Config', 'Configure model chat');
   const settings = dialog('Config'), library = dialog('Stored Models'), help = dialog('Model setup'), aboutWindow = dialog('About PeerCompute');
+  const leaveWindow = dialog('Leave model console?', { dismissible: false });
+  const stay = button('Stay here'), leave = button('Leave'); stay.autofocus = true;
+  leaveWindow.body.append(node('p', 'Are you sure? Leaving stops the models and inference hosted by this page. Stored model files remain on this device.'), stay, leave);
   const loadingWindow = dialog('Loading model', { dismissible: false }), loading = loadingWindow.element;
   loading.classList.add('pc-model-loading'); loading.tabIndex = -1;
   const loadingSpinner = node('span', undefined, 'pc-loading-spinner'); loadingSpinner.setAttribute('aria-hidden', 'true');
@@ -153,7 +156,11 @@ export function createPanelView(container) {
   library.body.append(node('p', 'Load adds a model using saved files when memory is available. Unload releases that model’s memory and keeps its files. Delete also removes its stored package; shared files needed by other packages are kept.', 'pc-inference-note'));
   const storedList = node('ul', undefined, 'pc-stored-models'); storedList.setAttribute('aria-label', 'Stored model packages');
   const storedRefresh = button('Refresh'), storedCancel = button('Stop loading'); storedCancel.hidden = true;
-  library.body.append(storedList, storedRefresh, storedCancel);
+  const storedLoadSelected = button('Load selected models'); storedLoadSelected.disabled = true;
+  const storedSelection = node('p', '0 models selected.', 'pc-inference-note'); storedSelection.setAttribute('aria-live', 'polite');
+  const storedFooter = node('div', undefined, 'pc-stored-footer'), storedActions = node('div', undefined, 'pc-stored-footer-actions');
+  storedActions.append(storedLoadSelected, storedRefresh, storedCancel); storedFooter.append(storedSelection, storedActions);
+  library.body.append(storedList); library.element.insertBefore(storedFooter, library.status);
   const transcript = node('div', undefined, 'pc-inference-transcript');
   transcript.setAttribute('role', 'log'); transcript.setAttribute('aria-label', 'Conversation'); transcript.setAttribute('aria-live', 'polite');
   const empty = node('p', 'Load a model or choose an available peer to start chatting.', 'pc-chat-empty'); transcript.append(empty); panel.append(transcript);
@@ -176,9 +183,10 @@ export function createPanelView(container) {
   const send = button('Send'), talk = button('Talk'), cancel = button('Stop'); cancel.hidden = true;
   talk.title = 'Record a voice message, then press Stop recording to send. Load a speech-recognition model or use a compatible peer.';
   const composer = node('div', undefined, 'pc-chat-controls'); composer.append(target, attach, imageFile, talk, send, cancel); panel.append(composer);
-  panel.append(configuration, storedModels, compatibility, about, menuWindow, loading); container.append(panel);
+  panel.append(configuration, storedModels, compatibility, about, menuWindow, loading, leaveWindow.element); container.append(panel);
   return { panel, browse, agents, currentModel, sourceStatus, sourceHelp, discoveryStatus, acquire, stored, configure, sharing, hosting, status, configuration,
-    configurationStatus: settings.status, storedModels, storedList, storedRefresh, storedCancel, storedStatus: library.status, gpuLayers,
+    configurationStatus: settings.status, storedModels, storedList, storedRefresh, storedCancel, storedLoadSelected, storedSelection, storedStatus: library.status, gpuLayers,
+    leaveConfirmation: leaveWindow.element, leaveStatus: leaveWindow.status, stay, leave,
     back, menu, menuWindow, menuStatus: menuDialog.status, about, aboutButton, install,
     loading, loadingModel, loadingStatus: loadingWindow.status, loadingCancel,
     compatibility, helpModel, helpReason, helpBrowser, helpOs, helpDetails, helpCommandGroup, helpCommand, helpCopy, helpConfig, helpStatus: help.status,
@@ -207,11 +215,23 @@ export function renderModelCompatibilityHelp(view, help) {
   view.helpStatus.textContent = '';
 }
 
-export function renderStoredModels(view, models, onDelete, onLoad, onRecover, onUnload) {
+export function canSelectStoredModel(model) {
+  return !!model.manifestCid && !model.loaded && !model.cleanupPending && !model.needsVerification
+    && !['checking', 'unavailable'].includes(model.localAvailability?.status);
+}
+
+export function renderStoredModels(view, models, onDelete, onLoad, onRecover, onUnload, { selected = new Set(), onSelect } = {}) {
   view.storedList.replaceChildren();
   if (!models.length) view.storedList.append(node('li', 'No models stored on this device.', 'pc-stored-empty'));
   for (const model of sortModelPackages(models)) {
     const row = node('li', undefined, 'pc-stored-model');
+    row.dataset.modelCid = model.manifestCid;
+    if (onSelect) {
+      const select = node('input'); select.type = 'checkbox'; select.setAttribute('aria-label', `Select ${model.name}`);
+      select.dataset.inactive = String(!onLoad || !canSelectStoredModel(model)); select.disabled = select.dataset.inactive === 'true';
+      select.checked = !select.disabled && selected.has(model.manifestCid);
+      select.onchange = () => onSelect(model, select.checked); row.append(select);
+    }
     const details = node('div'); details.append(node('strong', model.name));
     const metadata = [formatModelBytes(model.totalBytes), ...(model.loaded ? ['Loaded'] : []), ...(model.shared ? ['Shared'] : []),
       ...(model.cleanupPending ? ['Cleanup pending'] : []), ...(model.needsVerification ? ['Needs local verification'] : [])];

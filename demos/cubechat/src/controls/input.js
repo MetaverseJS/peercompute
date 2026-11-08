@@ -10,7 +10,7 @@ const gameplayKeys = new Set(['w', 'a', 's', 'd', 'q', 'e', 'arrowup', 'arrowdow
 const isEditable = (target) => target?.isContentEditable || Boolean(target?.closest?.('input, textarea, select'));
 
 export class PlayerController {
-  constructor() {
+  constructor({ canvas = document.querySelector('#scene-container > canvas') } = {}) {
     this.keys = {};
     
     // Camera controls
@@ -43,7 +43,7 @@ export class PlayerController {
     this.mobileControls = null;
     this.touchResetters = [];
     
-    this.setupEventListeners();
+    this.setupEventListeners(canvas);
   }
 
   setMobileMode(enabled) {
@@ -396,7 +396,7 @@ export class PlayerController {
     });
   }
 
-  setupEventListeners() {
+  setupEventListeners(canvas) {
     // Keyboard events
     window.addEventListener('keydown', (e) => {
       if (e.defaultPrevented || e.isComposing || e.ctrlKey || e.metaKey || e.altKey || isEditable(e.target)) return;
@@ -435,8 +435,13 @@ export class PlayerController {
       }
     });
 
-    // Mousewheel for zoom
+    // Only the world canvas owns wheel zoom. Dialogs, editors and other UI
+    // (including image canvases) must retain native scrolling.
     window.addEventListener('wheel', (event) => {
+      if (event.defaultPrevented || event.ctrlKey || event.metaKey || !event.deltaY ||
+          event.target !== canvas || isEditable(event.target) ||
+          event.target?.closest?.('dialog, [role="dialog"]') ||
+          (document.pointerLockElement && document.pointerLockElement !== canvas)) return;
       event.preventDefault();
       
       // Zoom in/out with mousewheel

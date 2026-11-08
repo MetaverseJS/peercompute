@@ -29,3 +29,5 @@
 .pc-model-toolbar > button { flex: 0 0 auto; }
 .pc-conversation-options{flex-shrink:0;gap:8px 18px}.pc-conversation-options label{flex-direction:row!important;margin:0!important;gap:7px;align-items:center}.pc-conversation-options input{order:-1}.pc-route-policy{margin:0;flex-shrink:0;max-height:3.8em;overflow:auto}.pc-chat-controls{flex-wrap:wrap}.pc-chat-controls select{flex:1 1 180px}.pc-stored-actions button{white-space:normal}.pc-chat-speaker{overflow-wrap:anywhere}
 @media(max-width:540px){.pc-chat-controls select{flex-basis:100%}.pc-chat-controls button{flex:1 0 auto}.pc-chat-controls button:first-of-type{flex:0 0 42px}.pc-conversation-options{justify-content:flex-start}.pc-route-policy{font-size:10px;line-height:1.35}}
+.pc-stored-footer{flex-shrink:0}.pc-stored-footer-actions{display:flex;flex-wrap:wrap;gap:8px}.pc-stored-footer-actions button{white-space:normal}.pc-stored-model>input[type=checkbox]{flex:0 0 auto;width:16px;height:16px;margin:0;accent-color:#73cf97}
+.world-agent-models .pc-inference-panel{overflow:auto;overscroll-behavior:contain;scrollbar-color:#365b46 transparent}

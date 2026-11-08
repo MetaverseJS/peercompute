@@ -305,13 +305,24 @@ cleanup finishes. Completed stored packages remain available for another attempt
 in the background, so preparing publication does not hold up
 local chat. Sharing failures remain visible in **Stored Models**.
 Choices are ordered by package size, smallest first, with download size shown
-separately from RAM/GPU estimates. Startup automatically loads the last successfully
-used compatible model whose complete package is still stored in this library.
-Without that hint, it reuses a compatible saved model. Otherwise it downloads
-and loads Qwen3.5 0.8B Abliterated if supported, or the smallest supported catalog
-model. Startup loading can be cancelled. If no model is supported, setup help
-remains available alongside peer inference. This startup attempt runs once and does not retry on discovery refresh.
-The visible back arrow returns to the demo overview. The top-right hamburger
+separately from RAM/GPU estimates. If any packages are stored, startup opens
+**Stored Models** without loading anything. Select compatible packages and click
+**Load selected models** to add them sequentially; already loaded models stay
+resident. Cancel stops the remaining batch and keeps completed loads. Ordinary
+per-model failures leave successful models usable and failed choices selected
+for an explicit retry; incomplete cleanup stops the batch. Packages needing
+verification or cleanup must finish that step before selection.
+Only an empty library downloads and loads Qwen3.5 0.8B Abliterated if supported,
+or the smallest supported catalog model. A storage-read error never starts a
+replacement download. This cancellable default attempt runs once and does not
+retry on discovery refresh. Setup help and peer inference remain available.
+Paste or drop an image directly onto **Message**, or use **+**. Image bytes use
+the same bounded attachment decoder; prompt text stays intact. Same-origin blob
+images are supported; for images from another website, copy the image bytes or
+save and attach the file. No arbitrary image URL is fetched.
+The visible back arrow asks **Leave model console?** before returning to the
+demo overview. **Stay here** preserves the draft and running models; **Leave**
+waits for cleanup, keeping stored files. The top-right hamburger
 contains Stored Models, Config, About and installation controls. About opens a
 separate modal with links to Tsotchke's Hugging Face organization,
 [tsotchke.org](https://tsotchke.org/) and [tsotchke.net](https://tsotchke.net/).

@@ -1,7 +1,8 @@
 import { createInferenceRuntime } from './runtime.js';
-import { createPanelView, appendMessage, renderStoredModels, formatModelBytes, renderModelCompatibilityHelp } from './ui/panelView.js';
+import { createPanelView, appendMessage, renderStoredModels, canSelectStoredModel, formatModelBytes, renderModelCompatibilityHelp } from './ui/panelView.js';
 import { buildModelCompatibilityHelp, detectModelHelpEnvironment } from './ui/modelCompatibilityHelp.js';
 import { readImageAttachment } from './ui/imageAttachment.js';
+import { bindChatImageInput } from './ui/chatImageInput.js';
 import { createGeneratedImageRenderer } from './ui/generatedImages.js';
 import { createModelBrowser } from './ui/modelBrowser.js';
 import { createAgentConsole } from './agents/agentConsole.js';
@@ -16,7 +17,7 @@ const defaultAudio = async () => (await import('../../shared/agents/speech/World
 export async function mountInferencePanel({ container = document.body, stateManager, computeManager,
   networkManager, getContext, actions, runtimeBaseUrl, onClose, autoConnect = false,
   runtimeFactory = createInferenceRuntime, refreshIntervalMs = 5000, pwaInstallController,
-  voiceSessionFactory = defaultVoiceSession, audioFactory = defaultAudio } = {}) {
+  voiceSessionFactory = defaultVoiceSession, audioFactory = defaultAudio, navigate = (url) => location.assign(url) } = {}) {
   const view = createPanelView(container);
   const generatedImages = createGeneratedImageRenderer(view.panel);
   const directTranscript = document.createElement('div'); directTranscript.hidden = true; view.panel.append(directTranscript);
@@ -24,6 +25,8 @@ export async function mountInferencePanel({ container = document.body, stateMana
   let runtime, operation, operationDone, requestId, attachment, imageController, imageLoading = false;
   let disposed = false, closing = false, disposingPromise, refreshPromise, refreshController, connectController, connectPromise, connectionFailure;
   let storedPromise, storedController, loadingStoredModel = false;
+  let storedRows = [], startupReading = true, imageInput, imageTransferPending = false, leaving = false;
+  const selectedStored = new Set();
   let refreshTimer, sources = [], targets = [];
   let desiredSourceKey, modelBrowser, hubSelection;
   let helpSource, helpVersion = 0;
@@ -98,13 +101,13 @@ export async function mountInferencePanel({ container = document.body, stateMana
     const target = selectedTarget();
     const source = sources.find((entry) => entry.key === desiredSourceKey);
     view.prompt.placeholder = view.generateImage.checked ? 'Describe an image…' : 'Message…';
-    view.acquire.disabled = !!operation || !source || sourceBlocked(source);
-    view.browse.disabled = !!operation; modelBrowser?.setBusy(!!operation);
+    view.acquire.disabled = startupReading || !!operation || !source || sourceBlocked(source);
+    view.browse.disabled = startupReading || !!operation; modelBrowser?.setBusy(startupReading || !!operation);
     view.agents.disabled = !!operation || !!openingAgents || !runtime?.getAgentController;
     view.sourceHelp.disabled = !!operation;
     view.cpuBudget.disabled = view.gpuBudget.disabled = !!operation || !runtime?.setMemoryBudgets;
     const attachmentConflict = view.generateImage.checked && !!attachment;
-    view.send.disabled = !!operation || historyLoading || imageLoading || attachmentConflict || !hasCapacity(target, requestTask()) || (!view.prompt.value.trim() && !attachment);
+    view.send.disabled = !!operation || historyLoading || imageLoading || imageTransferPending || attachmentConflict || !hasCapacity(target, requestTask()) || (!view.prompt.value.trim() && !attachment);
     view.cancel.hidden = !operation || !!loadingOperation; view.target.disabled = !!operation;
     view.attach.disabled = !!operation || view.generateImage.checked || !supportsTask(selectedTarget('image-text-to-text'), 'image-text-to-text');
     view.attach.title = view.generateImage.checked ? 'Generate image uses a text prompt. Uncheck it to attach an image.'
@@ -113,7 +116,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     view.generateImage.disabled = view.speakReplies.disabled = !!operation;
     const capturing = voiceState.recording || voiceState.status === 'requesting-microphone';
     view.talk.textContent = capturing ? 'Stop recording' : 'Talk';
-    view.talk.disabled = !!loadingOperation || (!!operation && !capturing) || historyLoading || imageLoading || attachmentConflict || (!!target?.agentId && !target.available);
+    view.talk.disabled = !!loadingOperation || (!!operation && !capturing) || historyLoading || imageLoading || imageTransferPending || attachmentConflict || (!!target?.agentId && !target.available);
     view.resumeAgent.hidden = !target?.agentId || !target.reason || /busy|unavailable/i.test(target.reason);
     view.resumeAgent.disabled = !!operation || historyLoading;
     view.modeStatus.textContent = attachmentConflict
@@ -131,7 +134,9 @@ export async function mountInferencePanel({ container = document.body, stateMana
     view.clearChat.title = target?.agentId ? 'Agent history and memory are persistent. Manage this agent through Agents.' : '';
     if (view.configuration.open) renderMemoryUsage();
     view.storedRefresh.disabled = !!operation || !!storedController;
-    for (const button of view.storedList.querySelectorAll('button')) button.disabled = !!operation || !!storedController || button.dataset.inactive === 'true';
+    for (const control of view.storedList.querySelectorAll('button,input')) control.disabled = !!operation || !!storedController || control.dataset.inactive === 'true';
+    view.storedLoadSelected.disabled = !!operation || !!storedController || !selectedStored.size;
+    view.storedSelection.textContent = `${selectedStored.size} model${selectedStored.size === 1 ? '' : 's'} selected.`;
     view.storedCancel.hidden = !operation || !loadingStoredModel || !!loadingOperation;
     view.storedCancel.disabled = Boolean(operation?.signal.aborted);
   }
@@ -278,7 +283,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     if (before === key) { if (isAgent) await restoreAgentHistory(key); updateControls(); return; }
     historyController?.abort(); historyVersion++; historyLoading = false;
     selectedChat = key; view.target.value = key;
-    if (wasAgent || isAgent) { imageController?.abort(); clearAttachment(); view.prompt.value = ''; }
+    if (wasAgent || isAgent) { imageInput?.cancel(); imageController?.abort(); clearAttachment(); view.prompt.value = ''; }
     invalidateActions();
     if (isAgent) {
       if (!wasAgent) directTranscript.append(...view.transcript.childNodes);
@@ -458,21 +463,49 @@ export async function mountInferencePanel({ container = document.body, stateMana
     })();
     await operationDone;
   }
-  async function refreshStoredModels() {
+  async function refreshStoredModels({ signal, preserveStatus = false } = {}) {
     if (!alive() || storedPromise) return storedPromise;
     const controller = new AbortController(); storedController = controller;
-    view.storedStatus.textContent = 'Reading stored models…'; updateControls();
+    const focusedRowControl = view.storedList.contains(document.activeElement) ? document.activeElement : null;
+    if (!preserveStatus) view.storedStatus.textContent = 'Reading stored models…'; updateControls();
     storedPromise = (async () => {
+      // Publish ownership before even an already-aborted read can finish.
+      await Promise.resolve();
       try {
-        const models = await runtime.listStoredModels({ signal: controller.signal });
+        const readSignal = signal ? AbortSignal.any([controller.signal, signal]) : controller.signal;
+        readSignal.throwIfAborted();
+        const models = await runtime.listStoredModels({ signal: readSignal });
+        readSignal.throwIfAborted();
         if (alive()) {
+          storedRows = models;
+          const eligible = new Set(models.filter(canSelectStoredModel).map((model) => model.manifestCid));
+          for (const cid of selectedStored) if (!eligible.has(cid)) selectedStored.delete(cid);
           renderStoredModels(view, models, deleteStoredModel, runtime.loadStoredModel ? loadStoredModel : undefined,
-            runtime.recoverStoredModel ? recoverStoredModel : undefined, unloadStoredModel);
-          view.storedStatus.textContent = `${models.length} model${models.length === 1 ? '' : 's'} stored.`;
+            runtime.recoverStoredModel ? recoverStoredModel : undefined, unloadStoredModel, { selected: selectedStored,
+              onSelect: (model, checked) => {
+                if (!alive() || operation || storedController || !canSelectStoredModel(model)) return;
+                if (checked) selectedStored.add(model.manifestCid); else selectedStored.delete(model.manifestCid);
+                updateControls();
+              } });
+          if (!preserveStatus) view.storedStatus.textContent = `${models.length} model${models.length === 1 ? '' : 's'} stored.`;
         }
         return true;
-      } catch (error) { showError(error); return false; }
-      finally { storedPromise = null; storedController = null; if (alive()) updateControls(); }
+      } catch (error) {
+        if (!preserveStatus) {
+          showError(error);
+          if (alive()) view.storedStatus.textContent = 'Error: ' + error.message;
+        }
+        return false;
+      }
+      finally {
+        storedPromise = null; storedController = null;
+        if (alive()) {
+          updateControls();
+          if (view.storedModels.open && focusedRowControl && !focusedRowControl.isConnected && document.activeElement === document.body) {
+            view.storedModels.querySelector('button:not(:disabled)')?.focus();
+          }
+        }
+      }
     })();
     return storedPromise;
   }
@@ -516,29 +549,58 @@ export async function mountInferencePanel({ container = document.body, stateMana
       if (alive()) updateControls();
     }
   }
-  async function loadStoredModel(model) {
+  function loadStoredModel(model) {
     if (!alive() || operation || storedController || model.loaded || model.cleanupPending || model.needsVerification) return;
     if (sourceBlocked(model)) { showCompatibilityHelp(model); return; }
+    return loadStoredModels([model]);
+  }
+  async function loadStoredModels(models) {
+    if (!alive() || operation || storedController) return;
+    const batch = [...new Map(models.filter(canSelectStoredModel).map((model) => [model.manifestCid, model])).values()];
+    if (!batch.length) return;
     loadingStoredModel = true;
-    let loaded = false;
+    let completed = false, cancelled = false;
     try {
       await run(async (signal) => {
-        invalidateActions(); progress({ stage: 'verify' });
+        invalidateActions(); const failures = []; let loaded = 0, refreshed = false;
         try {
-          await runtime.loadStoredModel(model.manifestCid, { signal,
-            onProgress: (event) => { if (!signal.aborted) progress(event); }, ggufGpuLayers: Number(view.gpuLayers.value) });
-        } catch (error) { await refreshStoredModels(); throw error; }
+          for (const [index, model] of batch.entries()) {
+            signal.throwIfAborted();
+            view.loadingModel.textContent = batch.length > 1 ? `${index + 1} / ${batch.length} · ${model.name}` : model.name;
+            progress({ stage: 'verify' });
+            try {
+              await runtime.loadStoredModel(model.manifestCid, { signal,
+                onProgress: (event) => { if (!signal.aborted) progress(event); }, ggufGpuLayers: Number(view.gpuLayers.value) });
+              signal.throwIfAborted(); loaded++; selectedStored.delete(model.manifestCid);
+            } catch (error) {
+              // Keep a cleanup failure distinct from successful cancellation.
+              const resident = runtime.listResidentModels?.().find((entry) => entry.manifestCid === model.manifestCid);
+              if (error instanceof AggregateError || (resident && !['ready', 'idle'].includes(resident.status))) throw error;
+              signal.throwIfAborted();
+              if (error.name === 'AbortError') throw error;
+              failures.push({ model, error });
+            }
+          }
+        } finally {
+          refreshed = await refreshStoredModels({ signal });
+          cancelled = signal.aborted;
+        }
         signal.throwIfAborted();
+        if (!refreshed) throw new Error('Model loading finished, but the stored library could not be refreshed. Use Refresh to check its state.');
         desiredSourceKey = runtime.getPreferredModelSourceKey?.() ?? desiredSourceKey;
         renderLists();
-        view.status.textContent = view.storedStatus.textContent = `Loaded ${model.name}. Compatible tasks can now use it.`;
-        loaded = true;
-      }, { modelName: model.name });
+        if (failures.length) throw new Error(batch.length === 1 ? failures[0].error.message
+          : `Loaded ${loaded} of ${batch.length} models. ${failures.map(({ model, error }) => `${model.name}: ${error.message}`).join('; ')}`);
+        view.status.textContent = view.storedStatus.textContent = batch.length === 1
+          ? `Loaded ${batch[0].name}. Compatible tasks can now use it.` : `Loaded ${loaded} models. Compatible tasks can now use them.`;
+        completed = true;
+      }, { modelName: batch.length === 1 ? batch[0].name : `${batch.length} selected models` });
     } finally {
       loadingStoredModel = false;
       if (alive()) {
         updateControls();
-        if (loaded) { view.storedModels.close(); view.prompt.focus(); }
+        if (completed) { view.storedModels.close(); view.prompt.focus(); }
+        else if (cancelled) void refreshStoredModels({ preserveStatus: true });
       }
     }
   }
@@ -616,6 +678,29 @@ export async function mountInferencePanel({ container = document.body, stateMana
     };
   }
   view.storedRefresh.onclick = () => { void refreshStoredModels(); };
+  view.storedLoadSelected.onclick = () => { void loadStoredModels(storedRows.filter((model) => selectedStored.has(model.manifestCid))); };
+  view.back.onclick = (event) => {
+    event.preventDefault();
+    if (alive() && !view.leaveConfirmation.open) view.leaveConfirmation.showModal();
+  };
+  view.stay.onclick = () => { if (!leaving) { view.leaveConfirmation.close(); view.back.focus(); } };
+  view.leaveConfirmation.addEventListener('cancel', (event) => {
+    if (leaving) event.preventDefault();
+  });
+  view.leave.onclick = async () => {
+    if (view.leave.disabled) return;
+    const destination = view.back.href;
+    leaving = true; view.leave.disabled = view.stay.disabled = true;
+    view.leaveStatus.textContent = 'Stopping models and closing connections…';
+    try { await dispose(); navigate(destination); }
+    catch (error) {
+      // A failed worker stop must remain owned, with an explicit cleanup retry.
+      view.panel.inert = false; view.leave.disabled = false;
+      view.leaveStatus.textContent = `Could not finish cleanup: ${error.message}. Click Leave to retry.`;
+      if (!view.leaveConfirmation.open) view.leaveConfirmation.showModal();
+      view.leave.focus();
+    }
+  };
   view.browse.onclick = () => { if (alive() && !operation) modelBrowser.open({ selectedKey: desiredSourceKey }); };
   view.sourceHelp.onclick = () => {
     const selected = sources.find((entry) => entry.key === desiredSourceKey);
@@ -717,19 +802,32 @@ export async function mountInferencePanel({ container = document.body, stateMana
     view.status.textContent = 'Pinned ' + file.name + ' locally.'; view.file.value = '';
   });
   view.attach.onclick = () => view.imageFile.click();
-  view.imageFile.onchange = async () => {
+  async function attachImageFile(file, { signal } = {}) {
+    if (!file || !alive()) return;
     imageController?.abort(); const controller = new AbortController(); imageController = controller;
-    const file = view.imageFile.files[0]; if (!file) return;
+    const imageSignal = signal ? AbortSignal.any([controller.signal, signal]) : controller.signal;
     imageLoading = true; updateControls();
     try {
-      const next = await readImageAttachment(file, { signal: controller.signal });
-      if (!alive() || controller.signal.aborted) return;
+      const next = await readImageAttachment(file, { signal: imageSignal });
+      if (!alive() || imageSignal.aborted) return;
       attachment = next; view.attachmentImage.src = next.preview; view.attachmentName.textContent = next.name;
       view.attachment.hidden = false; updateControls(); view.prompt.focus();
-    } catch (error) { if (!controller.signal.aborted) showError(error); }
+    } catch (error) { if (!imageSignal.aborted) showError(error); }
     finally { if (imageController === controller) { imageLoading = false; if (alive()) updateControls(); } }
+  }
+  imageInput = bindChatImageInput({ textarea: view.prompt, onFile: attachImageFile, onError: showError,
+    onPendingChange: (pending) => {
+      if (pending) imageController?.abort();
+      imageTransferPending = pending; if (alive()) updateControls();
+    },
+    canAccept: () => !alive() ? 'This chat is closing.' : operation || historyLoading ? 'Wait for the current chat operation to finish.'
+      : view.generateImage.checked ? 'Uncheck Generate image to attach an image for a vision model.'
+        : supportsTask(selectedTarget('image-text-to-text'), 'image-text-to-text') || 'Choose Mixed or a loaded local or peer vision model to attach an image.',
+  });
+  view.imageFile.onchange = () => {
+    imageInput.cancel(); void attachImageFile(view.imageFile.files[0]);
   };
-  view.removeAttachment.onclick = () => { imageController?.abort(); clearAttachment(); };
+  view.removeAttachment.onclick = () => { imageInput.cancel(); imageController?.abort(); clearAttachment(); };
   view.cancel.onclick = () => {
     if (loadingOperation) { cancelLoading(); return; }
     operation?.abort(new DOMException('User cancelled', 'AbortError'));
@@ -923,27 +1021,40 @@ export async function mountInferencePanel({ container = document.body, stateMana
   view.prompt.onkeydown = (event) => {
     if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); void send(); }
   };
-  // Runtime initialization only reads the library. Start exactly one cancellable
-  // load after the controls exist, independently of peer connection readiness.
-  try {
-    const startup = runtime.getStartupModel?.();
-    if (startup) {
-      desiredSourceKey = startup.sourceKey; renderSources();
-      if (sourceBlocked(startup)) {
-        view.status.textContent = startup.needsVerification
-          ? `${startup.name} is saved but needs local verification. Open Menu → Stored Models → Verify locally. No model download has started.`
-          : `Cannot load ${startup.name}: ${sourceReason(startup)}`;
-      } else void run(async (signal) => {
-        progress({ stage: startup.manifestCid ? 'verify' : 'prepare' });
-        const options = { signal, onProgress: (event) => { if (!signal.aborted) progress(event); }, ggufGpuLayers: Number(view.gpuLayers.value) };
-        if (startup.manifestCid) await runtime.loadStoredModel(startup.manifestCid, options);
-        else await runtime.acquireModel(startup.sourceKey, options);
-        signal.throwIfAborted();
-        renderLists();
-        view.status.textContent = `Loaded ${startup.name}. Send a message.`;
-      }, { modelName: startup.name });
+  // A retained library is a choice, never a trigger for an automatic download.
+  // Keep this read independent of peer connectivity and track it through teardown.
+  const startupReady = (async () => {
+    const listed = await refreshStoredModels();
+    if (!alive()) return;
+    startupReading = false; updateControls();
+    if (!listed || storedRows.length) {
+      if (!view.storedModels.open) view.storedModels.showModal();
+      if (listed) view.status.textContent = 'Choose stored models to load, or close the library to use peers.';
+      return;
     }
-  } catch (error) { showError(error); }
+    try {
+      const startup = runtime.getStartupModel?.();
+      if (startup) {
+        desiredSourceKey = startup.sourceKey; renderSources();
+        // A stale remembered CID after a concurrent deletion is not an empty
+        // library default. Let the user choose instead of silently downloading.
+        if (startup.manifestCid) {
+          view.status.textContent = 'The remembered model is no longer in the stored library. Choose a model to load.';
+        } else if (sourceBlocked(startup)) {
+          view.status.textContent = startup.needsVerification
+            ? `${startup.name} is saved but needs local verification. Open Menu → Stored Models → Verify locally. No model download has started.`
+            : `Cannot load ${startup.name}: ${sourceReason(startup)}`;
+        } else void run(async (signal) => {
+          progress({ stage: 'prepare' });
+          const options = { signal, onProgress: (event) => { if (!signal.aborted) progress(event); }, ggufGpuLayers: Number(view.gpuLayers.value) };
+          await runtime.acquireModel(startup.sourceKey, options);
+          signal.throwIfAborted();
+          renderLists();
+          view.status.textContent = `Loaded ${startup.name}. Send a message.`;
+        }, { modelName: startup.name });
+      }
+    } catch (error) { showError(error); }
+  })();
   refreshTimer = setInterval(() => { void refreshPeers(); void agentChat?.refresh().catch(showError); }, Math.max(20, refreshIntervalMs));
   if (runtime.getAgentController) void getAgentChat().catch((error) => { if (alive()) showError(error); });
   if (autoConnect && !runtime.networkReady) {
@@ -962,15 +1073,16 @@ export async function mountInferencePanel({ container = document.body, stateMana
     closing = true; modelBrowser?.dispose(); unsubscribeInstall?.(); generatedImages.dispose(); view.menuWindow.close(); view.compatibility.close(); view.storedModels.close(); view.configuration.close(); view.about.close(); view.panel.inert = true;
     disposingPromise = (async () => {
       clearInterval(refreshTimer); operation?.abort('Chat closed'); historyController?.abort(); imageController?.abort(); refreshController?.abort(); connectController?.abort(); storedController?.abort();
+      await imageInput?.dispose();
       // Release pending bridge reads before awaiting initialization/finalization.
       // The turn signal, not the read-only bridge, owns execution cancellation.
       await agentChat?.dispose();
-      invalidateActions(); await operationDone; await refreshPromise; await connectPromise; await storedPromise; await Promise.allSettled([...preferenceTasks]);
+      invalidateActions(); await operationDone; await refreshPromise; await connectPromise; await storedPromise; await startupReady; await Promise.allSettled([...preferenceTasks]);
       await openingAgents; await agentsStarting?.catch(() => {}); await historyPromise; await agentConsole?.dispose();
       await voiceStarting; await voiceSession?.dispose();
       await runtime.dispose(); disposed = true; histories.clear(); attachment = null; view.panel.remove(); onClose?.();
     })();
     try { await disposingPromise; } finally { disposingPromise = null; }
   }
-  return { element: view.panel, runtime, dispose, refreshPeers };
+  return { element: view.panel, runtime, dispose, refreshPeers, startupReady };
 }

@@ -3906,3 +3906,51 @@ This matrix supersedes the preceding ground-primitive/`zIndex` assertions.
   nor establish two-physical-device speech performance. Image intent/routes and
   legacy image framing pass controlled/native protocol tests; prior image engine
   qualification remains recorded above.
+
+
+### Stored selection, pasted images and back confirmation — November 7 2026
+
+- Native startup: any retained/speech/blocked/pending package opens the library
+  without inference/import; empty read permits one default; failed read has no
+  fallback. Reload/polls/reopening do not trigger selected loads.
+- Native batch: eligible checkboxes, CID reconciliation, sequential partial
+  success, existing residents, retry only failed choices, middle-item cancel and
+  final metadata-read cancel. Failed cleanup keeps ownership/error and stops.
+- Native input: actual ClipboardEvent/DragEvent/DataTransfer files and same-origin
+  blobs, complete distinct RGBA hashes through Mixed peer routing, retained draft,
+  no blob text, non-image/multiple/oversized rejection and no arbitrary HTTP fetch.
+  Latest input wins across chooser and blob fetch; removal/disposal cancel intake.
+- Native navigation: Stay/Escape preserve draft/residents; Leave navigates only
+  after acknowledged cleanup; failed cleanup exposes retry. Desktop/mobile layout.
+- npm run test:inference:ui includes the reusable image-input tests. Update the
+  actual model-library-selection harness to assert explicit saved selection on
+  reload; GPU execution is separate from controlled panel/transport evidence.
+- Three external builds and exact trusted HTTPS5189/5176/5187 visual/SecretWorkshop
+  probes follow source tests. Preserve old hashed assets for active tabs; no public
+  Pages/push/merge. Results and prior failures are recorded in log.md.
+
+- Final isolated Node24 qualification: UI119/119, library172/172, worlds85/85
+  PASS. First parallel run and stale fixture failures are retained in evidence;
+  no timeout, compatibility or admission checks were relaxed. File input and
+  paste/drop send distinct complete native RGBA hashes to the injected peer
+  interface. This verifies panel routing/pixels, not another public peer/GPU run.
+
+- Follow-up layout qualification4/4PASS: native wheel scroll reaches embedded
+  phone Talk/Send; fixed library footer, desktop/phone standalone bounds and
+  loading overlay remain valid. Exact world checks wait for canvas resize to
+  settle, then wheel and hit-test composer controls rather than accepting clipped
+  bounding boxes. Overview4173 destination HMR diagnostics are retained separately
+  from exact5189 console and SecretWorkshop gates.
+
+- Cube global wheel correction: controller tests14/14PASS (previous11 plus3
+  native wheel regressions). Explicit/default actual-world canvas ownership allows
+  native UI/dialog/editable scrolling, preserves world/pointer-lock zoom, and
+  respects handled/modified events. Exact Cube validation separately proves
+  constructor default selection against the actual scene and UI hit-testing.
+
+- Final exact trusted previewsPASS: console5189, Earth5187 and correctedCube5176,
+  with SecretWorkshop Noise links, desktop/phone screenshots, normal disposal,
+  no model transfers or application console/page errors. Cube wheel keeps zoom1.0
+  inside dialogs and changes1.0→1.1 on the scene canvas. Retain destination-only
+  overview4173 development-HMR diagnostics and earlier failed resize/wheel receipts.
+  Evidence: /home/cos/.cache/peercompute-picker-inputs-20261107.

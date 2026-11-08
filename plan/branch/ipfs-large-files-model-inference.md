@@ -1221,3 +1221,8 @@ new negotiation and active inference on both ends without closing older active
 connections. Recovery must happen before application data; committed prompts
 never replay. Keep connection capacity, cancellation, cooldown and shutdown
 ownership explicit, and qualify this using the actual private vision worker.
+
+
+### November 7 — stored picker, image input and navigation
+
+User requests multi-select saved packages with **Load selected models**, opening this library on startup whenever any saved model exists. Empty storage alone retains compatible default loading. Paste/drop images on Message through the bounded attachment pipeline, preserving draft text and avoiding pasted blob URL strings. Confirm the page back arrow with Stay here/Leave; retain sessions until confirmed cleanup. Keep existing models resident across sequential additions and cancellation.

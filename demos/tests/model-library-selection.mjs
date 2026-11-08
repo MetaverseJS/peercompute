@@ -110,24 +110,44 @@ try {
   const imported = report.modelRequests.length;
   assert(imported > 0, 'The initial package was imported normally');
   forbidModelDownloads = true;
-  phase = 'retained-auto-start';
+  phase = 'retained-startup-picker';
   await page.reload(); await ready();
   assert.equal(await selected(), `hf:${modelId}`, 'Reload restores the last successfully used stored model');
+  const library = page.getByRole('dialog', { name: 'Stored Models', exact: true });
+  const row = library.locator('.pc-stored-model').filter({ hasText: 'SmolVLM 256M' });
+  await library.waitFor({ state: 'visible' }); await row.waitFor();
+  const startupState = () => page.evaluate(() => ({
+    residents: inferencePanel.runtime.listResidentModels(),
+    services: Object.fromEntries(Object.entries(inferencePanel.runtime.services).map(([key, service]) => [key, service.getStatus().status])),
+    leases: inferencePanel.runtime.computeManager.resourceBroker.reportPressure().activeLeaseCount,
+  }));
+  report.storedStartupPicker = await startupState();
+  assert.deepEqual(report.storedStartupPicker.residents, [], 'Saved packages must wait for explicit selection before loading');
+  assert(Object.values(report.storedStartupPicker.services).every((status) => status === 'idle'));
+  assert.equal(report.storedStartupPicker.leases, 0);
+  assert.equal(await library.getByRole('button', { name: 'Load selected models', exact: true }).isDisabled(), true);
+  await snapshot('stored-startup-desktop');
+  // Keep the real saved-library picker open through the normal peer refresh.
+  await page.waitForTimeout(5500);
+  assert.deepEqual(await startupState(), report.storedStartupPicker, 'Background refresh must not start a saved model');
+  assert.equal(report.modelRequests.length, imported, 'Opening the saved-library picker must not fetch model files');
+  await row.getByRole('checkbox').check();
+  phase = 'explicit-stored-startup-load';
+  await library.getByRole('button', { name: 'Load selected models', exact: true }).click();
   await loaded();
-  report.storedAutoStart = await modelStatus();
-  assert.equal(report.storedAutoStart.manifestCid, report.manifestCid, 'Reload automatically loads the remembered local package');
-  assert.equal(report.modelRequests.length, imported, 'Automatic stored loading must not fetch model files');
+  report.storedSelectedLoad = await modelStatus();
+  assert.equal(report.storedSelectedLoad.manifestCid, report.manifestCid, 'Explicit selection loads the remembered local package');
+  assert.equal(report.modelRequests.length, imported, 'Explicit stored selection must not fetch model files');
+  if (await library.isVisible()) await library.getByRole('button', { name: 'Done', exact: true }).click();
   await page.getByRole('button', { name: 'Menu', exact: true }).click();
   await page.getByRole('button', { name: 'Configure model chat', exact: true }).click();
-  await page.getByRole('button', { name: 'Unload local model', exact: true }).click();
+  await page.getByRole('button', { name: 'Unload all local models', exact: true }).click();
   await page.waitForFunction(() => window.inferencePanel.runtime.service.getStatus().status === 'idle');
   await page.waitForFunction(() => ![...document.querySelectorAll('button')].find((button) => button.textContent === 'Browse models').disabled);
   await page.keyboard.press('Escape');
   await page.evaluate(() => { inferencePanel.runtime.services.onnx.collectGpuEvidence = true; });
   await page.getByRole('button', { name: 'Menu', exact: true }).click();
   await page.getByRole('button', { name: 'Stored Models', exact: true }).click();
-  const library = page.getByRole('dialog', { name: 'Stored Models', exact: true });
-  const row = library.locator('.pc-stored-model').filter({ hasText: 'SmolVLM 256M' });
   await row.waitFor(); await snapshot('stored-desktop');
   phase = 'stored-load';
   await row.getByRole('button', { name: /^Load / }).click();
