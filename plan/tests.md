@@ -3985,3 +3985,35 @@ This matrix supersedes the preceding ground-primitive/`zIndex` assertions.
   authenticated SecretWorkshop checksPASS. Counts exclude focused repeats.
   Preserve the full diff-size gate264>200 failure separately; the passing behavior
   gates do not change that policy or erase initial failure receipts.
+
+### November 7 — compact chat controls
+
+- Network component: healthy/pending/offline truth table, unknown counts and
+  artifact/discovery warnings, bounded text diagnostics, keyboard and outside
+  dismissal, focus restoration, queued native toggle ownership, disposal and
+  non-popover fallback. Native top-layer popup must escape embedded clipping
+  and remain in the visual viewport after resize.
+- Integrated panel: native 320/390/1280 navigation and composer bounds/order;
+  Chat options contains the actual target/check controls, preserves drafts and
+  target-specific histories, and restores focus on Done/Escape. Disable it during
+  voice/request ownership. Routine status occupies no layout; errors/progress
+  remain visible. Open Network status to inspect discovery diagnostics.
+- An agent-history failure must remain visible inside open Chat options without
+  executing or resuming an agent. Queued native close delivery must not steal a
+  newer Message focus or prevent Enter-to-send; verify this deterministically
+  with native close followed by explicit focus in the same turn.
+- Migrate panel/voice/unified regressions through actual native Chat options,
+  then run those three files and image/voice helpers sequentially. Preserve
+  saved-library, cancel, back confirmation and paste/drop behavior. Network
+  component tests run first; no overlapping browser suites on this host.
+- Build console/CubeChat/Earth sequentially into new external roots and verify
+  exact HTTPS5189/5176/5187 desktop/mobile visuals, dialog controls and actual
+  authenticated SecretWorkshop connectivity. Keep destination-only overview
+  diagnostics separate. No user storage, GPU model execution or public deployment.
+
+- Final native acceptance: network6/6, panel/voice/history109/109 and unchanged
+  image/voice helpers19/19PASS (134 distinct tests, excluding focused repeats).
+  Initial failures are retained; modal-error and queued-close focus defects have
+  deterministic regression coverage. All3external builds and exact trusted
+  5189/5176/5187 desktop/mobile/SecretWorkshop checksPASS. Preserve separate
+  discovered-provider warnings and overview4173 destination diagnostics in log.md.

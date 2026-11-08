@@ -1,4 +1,5 @@
 import { resolveOverviewUrl } from './consoleNavigation.js';
+import { createNetworkStatus } from './networkStatus.js';
 
 const node = (tag, text, className) => {
   const result = document.createElement(tag);
@@ -56,13 +57,19 @@ export function createPanelView(container) {
   const navigation = node('nav', undefined, 'pc-console-navigation'); navigation.setAttribute('aria-label', 'Console navigation');
   const back = node('a', '←', 'pc-console-back'); back.href = resolveOverviewUrl(location.href);
   back.setAttribute('aria-label', 'Back to demo overview'); back.title = 'Back to demo overview';
-  const menu = button('☰', 'Menu'); menu.title = 'Menu';
-  navigation.append(back, menu); panel.append(navigation);
+  const menu = button('☰', 'Menu'); menu.title = 'Menu'; menu.className = 'pc-icon-button';
+  const navigationMain = node('div', undefined, 'pc-navigation-main');
+  const navigationActions = node('div', undefined, 'pc-navigation-actions');
+  navigationMain.append(back); navigationActions.append(menu);
+  navigation.append(navigationMain, navigationActions); panel.append(navigation);
   const browse = button('Models'); browse.setAttribute('aria-haspopup', 'dialog');
   const agents = button('Agents'); agents.setAttribute('aria-haspopup', 'dialog'); agents.disabled = true;
   const modelsMenu = button('Models'), configure = button('Config', 'Configure model chat');
   modelsMenu.setAttribute('aria-haspopup', 'dialog');
   const settings = dialog('Config'), help = dialog('Model setup'), aboutWindow = dialog('About PeerCompute');
+  const chatSettings = dialog('Chat options'), chatOptions = chatSettings.element;
+  chatOptions.classList.add('pc-chat-options'); chatSettings.status.hidden = true;
+  const chatConfigure = button('⚙', 'Chat options'); chatConfigure.title = 'Chat options'; chatConfigure.className = 'pc-chat-icon';
   const storedContent = node('section', undefined, 'pc-model-library');
   const libraryBody = node('div', undefined, 'pc-dialog-body');
   const storedStatus = node('p', '', 'pc-inference-status'); storedStatus.setAttribute('role', 'status');
@@ -114,13 +121,11 @@ export function createPanelView(container) {
   help.body.append(helpModel, helpReason, helpEnvironment,
     node('p', 'Browser detection is approximate. Adjust these choices if needed.', 'pc-inference-note'),
     helpDetails, helpCommandGroup, helpConfig);
-  for (const [trigger, modal] of [[configure, configuration], [aboutButton, about], [menu, menuWindow]]) {
+  for (const [trigger, modal] of [[configure, configuration], [aboutButton, about], [menu, menuWindow], [chatConfigure, chatOptions]]) {
     modal.id = `model-window-${crypto.randomUUID()}`;
     trigger.setAttribute('aria-controls', modal.id); trigger.setAttribute('aria-haspopup', 'dialog');
   }
-  const top = node('div', undefined, 'pc-model-toolbar'); top.append(browse, agents); panel.append(top);
-  const discoveryStatus = node('p', 'Connecting to peer network…', 'pc-network-summary');
-  discoveryStatus.setAttribute('aria-live', 'polite'); panel.append(discoveryStatus);
+  const top = node('div', undefined, 'pc-model-toolbar'); top.append(browse, agents); navigationMain.append(top);
   const sharing = node('input'); sharing.type = 'checkbox'; sharing.checked = true;
   const hosting = node('input'); hosting.type = 'checkbox'; hosting.checked = true;
   const toggles = node('div', undefined, 'pc-model-preferences');
@@ -129,7 +134,7 @@ export function createPanelView(container) {
   const hostingLabel = label('Host inference', hosting); hostingLabel.prepend(hosting);
   hostingLabel.title = 'Allow connected peers to send requests to compatible models loaded on this device.';
   toggles.append(sharingLabel, hostingLabel); settings.body.append(toggles);
-  const status = node('p', 'Opening model chat…', 'pc-inference-status'); status.setAttribute('role', 'status'); panel.append(status);
+  const status = node('p', 'Opening model chat…', 'pc-inference-status pc-status-quiet'); status.setAttribute('role', 'status'); panel.append(status);
   const gpuLayers = node('input'); gpuLayers.type = 'number'; gpuLayers.min = '1'; gpuLayers.max = '99999'; gpuLayers.value = '99999';
   gpuLayers.setAttribute('aria-label', 'GGUF GPU layer limit');
   const limits = node('div', undefined, 'pc-config-grid');
@@ -161,7 +166,7 @@ export function createPanelView(container) {
   libraryBody.append(storedList); storedContent.append(storedFooter, storedStatus);
   const transcript = node('div', undefined, 'pc-inference-transcript');
   transcript.setAttribute('role', 'log'); transcript.setAttribute('aria-label', 'Conversation'); transcript.setAttribute('aria-live', 'polite');
-  const empty = node('p', 'Load a model or choose an available peer to start chatting.', 'pc-chat-empty'); transcript.append(empty); panel.append(transcript);
+  const empty = node('p', 'Open Models to load one, or use ⚙ to choose a peer model.', 'pc-chat-empty'); transcript.append(empty); panel.append(transcript);
   const proposed = node('div', undefined, 'pc-inference-actions'); panel.append(proposed);
   const attachment = node('div', undefined, 'pc-chat-attachment'); attachment.hidden = true;
   const attachmentImage = node('img'); attachmentImage.alt = 'Selected image';
@@ -172,17 +177,19 @@ export function createPanelView(container) {
   generateImage.type = speakReplies.type = 'checkbox';
   const conversationOptions = node('div', undefined, 'pc-model-preferences pc-conversation-options');
   conversationOptions.append(label('Generate image', generateImage), label('Speak replies', speakReplies));
-  panel.append(conversationOptions);
-  const modeStatus = node('p', '', 'pc-inference-note pc-route-policy'); modeStatus.setAttribute('aria-live', 'polite'); panel.append(modeStatus);
+  const modeStatus = node('p', '', 'pc-inference-note pc-route-policy'); modeStatus.setAttribute('aria-live', 'polite');
   const target = node('select'); target.setAttribute('aria-label', 'Chat target');
-  const attach = button('+', 'Attach image'); attach.title = 'Attach an image';
+  chatSettings.body.append(label('Chat target', target), conversationOptions, modeStatus);
+  const attach = button('+', 'Attach image'); attach.title = 'Attach an image'; attach.className = 'pc-chat-icon';
   const imageFile = node('input'); imageFile.type = 'file'; imageFile.accept = 'image/png,image/jpeg,image/webp,image/gif'; imageFile.hidden = true; imageFile.setAttribute('aria-label', 'Choose image attachment');
   const resumeAgent = button('Resume agent'); resumeAgent.hidden = true; panel.append(resumeAgent);
   const send = button('Send'), talk = button('Talk'), cancel = button('Stop'); cancel.hidden = true;
   talk.title = 'Record a voice message, then press Stop recording to send. Load a speech-recognition model or use a compatible peer.';
-  const composer = node('div', undefined, 'pc-chat-controls'); composer.append(target, attach, imageFile, talk, send, cancel); panel.append(composer);
-  panel.append(configuration, compatibility, about, menuWindow, loading, leaveWindow.element); container.append(panel);
-  return { panel, browse, agents, discoveryStatus, modelsMenu, configure, sharing, hosting, status, configuration,
+  const composer = node('div', undefined, 'pc-chat-controls'); composer.append(chatConfigure, attach, imageFile, talk, send, cancel); panel.append(composer);
+  panel.append(configuration, compatibility, about, menuWindow, chatOptions, loading, leaveWindow.element);
+  const networkInfo = createNetworkStatus({ container: panel }); navigationActions.prepend(networkInfo.trigger);
+  container.append(panel);
+  return { panel, browse, agents, networkInfo, discoveryStatus: networkInfo.status, modelsMenu, configure, chatConfigure, chatOptions, chatOptionsStatus: chatSettings.status, sharing, hosting, status, configuration,
     configurationStatus: settings.status, storedContent, storedList, storedRefresh, storedCancel, storedLoadSelected, storedSelection, storedStatus, gpuLayers,
     leaveConfirmation: leaveWindow.element, leaveStatus: leaveWindow.status, stay, leave,
     back, menu, menuWindow, menuStatus: menuDialog.status, about, aboutButton, install,

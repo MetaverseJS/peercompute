@@ -22,6 +22,25 @@ before(async () => {
 });
 after(async () => { await browser?.close(); await server?.close(); if (cache) await rm(cache, { recursive: true, force: true }); });
 
+
+async function openChatOptions(page) {
+  const dialog = page.getByRole('dialog', { name: 'Chat options', exact: true });
+  if (!await dialog.isVisible()) await page.getByRole('button', { name: 'Chat options', exact: true }).click();
+  return dialog;
+}
+async function selectChatTarget(page, target) {
+  const dialog = await openChatOptions(page);
+  await dialog.getByLabel('Chat target', { exact: true }).selectOption(target);
+  await dialog.getByRole('button', { name: 'Done', exact: true }).click();
+  await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Chat options');
+}
+async function setChatOption(page, name, checked) {
+  const dialog = await openChatOptions(page);
+  await dialog.getByLabel(name, { exact: true }).setChecked(checked);
+  await dialog.getByRole('button', { name: 'Done', exact: true }).click();
+  await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Chat options');
+}
+
 async function fixture(t, { width = 390, height = 844 } = {}) {
   const context = await browser.newContext({ viewport: { width, height } }), page = await context.newPage();
   const errors = [], external = []; page.setDefaultTimeout(5000);
@@ -107,11 +126,12 @@ test('console defaults Mixed with explicit image and speech opt-ins and no micro
 
 test('native Talk/Stop invokes real VoiceSession ASR, routed reasoning and optional TTS without loading models', async (t) => {
   const page = await fixture(t);
-  await page.getByLabel('Speak replies', { exact: true }).check();
+  await setChatOption(page, 'Speak replies', true);
   await page.getByRole('button', { name: 'Talk', exact: true }).click();
   await page.waitForFunction(() => captureActive);
   assert.equal(await page.getByRole('button', { name: 'Send', exact: true }).isDisabled(), true);
   assert.equal(await page.getByRole('button', { name: 'Models', exact: true }).isDisabled(), true);
+  assert.equal(await page.getByRole('button', { name: 'Chat options', exact: true }).isDisabled(), true);
   await page.getByRole('button', { name: 'Stop recording', exact: true }).click();
   await page.waitForFunction(() => calls.some((entry) => entry.type === 'play'));
   await page.waitForFunction(() => !document.querySelector('[aria-label="Chat target"]').disabled);
@@ -133,8 +153,8 @@ test('native Talk/Stop invokes real VoiceSession ASR, routed reasoning and optio
 
 test('explicit local reasoning selection keeps ASR and TTS local and preserves the reasoning target', async (t) => {
   const page = await fixture(t);
-  await page.getByLabel('Chat target').selectOption('local:chat');
-  await page.getByLabel('Speak replies', { exact: true }).check();
+  await selectChatTarget(page, 'local:chat');
+  await setChatOption(page, 'Speak replies', true);
   await page.getByRole('button', { name: 'Talk', exact: true }).click(); await page.waitForFunction(() => captureActive);
   await page.getByRole('button', { name: 'Stop recording', exact: true }).click();
   await page.waitForFunction(() => calls.some((entry) => entry.type === 'play'));
@@ -151,6 +171,7 @@ test('cancel during transcription retains operation ownership until cleanup and 
   await page.waitForFunction(() => typeof releaseCleanup === 'function');
   assert.equal(await page.getByRole('button', { name: 'Talk', exact: true }).isDisabled(), true);
   assert.equal(await page.getByRole('button', { name: 'Models', exact: true }).isDisabled(), true);
+  assert.equal(await page.getByRole('button', { name: 'Chat options', exact: true }).isDisabled(), true);
   await page.evaluate(() => releaseCleanup());
   await page.getByText(/Cancelled: User cancelled/).waitFor();
   assert.equal(await page.getByRole('button', { name: 'Talk', exact: true }).isEnabled(), true);
@@ -171,7 +192,7 @@ test('permission rejection and missing speech remain actionable without silently
   await page.getByText(/Load a speech-recognition model in Models/).waitFor();
   assert.equal(await page.evaluate(() => calls.some((entry) => entry.type === 'execute' && entry.task === 'text-generation')), false);
   await page.evaluate(() => { control.denied = false; control.missing = 'text-to-speech'; });
-  await page.getByLabel('Speak replies', { exact: true }).check();
+  await setChatOption(page, 'Speak replies', true);
   await page.getByLabel('Message', { exact: true }).fill('Keep the text response');
   await page.getByRole('button', { name: 'Send', exact: true }).click();
   await page.getByText(/Text reply received.*Load a speech-synthesis model/).waitFor();
@@ -181,8 +202,8 @@ test('permission rejection and missing speech remain actionable without silently
 
 test('a spoken image prompt uses explicit image generation and never synthesizes the image as speech', async (t) => {
   const page = await fixture(t);
-  await page.getByLabel('Generate image', { exact: true }).check();
-  await page.getByLabel('Speak replies', { exact: true }).check();
+  await setChatOption(page, 'Generate image', true);
+  await setChatOption(page, 'Speak replies', true);
   await page.getByLabel('Message', { exact: true }).fill('Retained unsent draft');
   await page.getByRole('button', { name: 'Talk', exact: true }).click();
   await page.waitForFunction(() => captureActive);

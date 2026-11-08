@@ -77,6 +77,29 @@ async function browseChoice(page, key, action) {
   return modal;
 }
 
+
+async function openChatOptions(page) {
+  const dialog = page.getByRole('dialog', { name: 'Chat options', exact: true });
+  if (!await dialog.isVisible()) await page.getByRole('button', { name: 'Chat options', exact: true }).click();
+  return dialog;
+}
+async function selectChatTarget(page, target) {
+  const dialog = await openChatOptions(page);
+  await dialog.getByLabel('Chat target', { exact: true }).selectOption(target);
+  await dialog.getByRole('button', { name: 'Done', exact: true }).click();
+  await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Chat options');
+}
+async function setChatOption(page, name, checked) {
+  const dialog = await openChatOptions(page);
+  await dialog.getByLabel(name, { exact: true }).setChecked(checked);
+  await dialog.getByRole('button', { name: 'Done', exact: true }).click();
+  await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Chat options');
+}
+async function openNetworkStatus(page) {
+  await page.getByRole('button', { name: 'Network status', exact: true }).click();
+  return page.getByRole('dialog', { name: 'Network status', exact: true });
+}
+
 async function fixture(t, scenario = {}) {
   const page = await browser.newPage({ viewport: { width: 420, height: 820 } });
   const errors = [], external = [];
@@ -206,7 +229,7 @@ async function fixture(t, scenario = {}) {
             channels: options.image.channels, pixels: [...pixels], sha256: [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('') });
         }
         await delay(state.generateDelay ?? scenario.generateDelay ?? 1, scenario.ignoreAbort ? undefined : options.signal);
-        if (state.rejectGeneration) throw new Error('Vision fixture generation failed');
+        if (state.rejectGeneration) throw new Error(scenario.generationError ?? 'Vision fixture generation failed');
         if (scenario.diffusion) {
           options.onProgress?.({ type: 'diffusion-progress', stage: 'denoise', step: 1, steps: 1 });
           const data = new Uint8Array(512 * 512 * 4);
@@ -387,6 +410,105 @@ test('unloaded injected runtime defaults sharing and hosting on without Close, C
   assert.doesNotMatch(html + main, /<canvas|LOCAL MODEL LAB|getContext|square|circle/);
 });
 
+test('compact navigation and composer preserve native control order at 320 and 390 pixels', async (t) => {
+  const page = await fixture(t, { loaded: true });
+  const navigation = page.getByRole('navigation', { name: 'Console navigation', exact: true });
+  for (const width of [320, 390, 1280]) {
+    await page.setViewportSize({ width, height: 844 });
+    const controls = [navigation.getByRole('link', { name: 'Back to demo overview', exact: true }),
+      navigation.getByRole('button', { name: 'Models', exact: true }), navigation.getByRole('button', { name: 'Agents', exact: true }),
+      navigation.getByRole('button', { name: 'Network status', exact: true }), navigation.getByRole('button', { name: 'Menu', exact: true })];
+    const bounds = await Promise.all(controls.map((control) => control.boundingBox()));
+    assert(bounds.every((box) => box && box.x >= 0 && box.x + box.width <= width && box.y >= 0), JSON.stringify(bounds));
+    for (let index = 1; index < bounds.length; index++) {
+      assert(bounds[index].x >= bounds[index - 1].x + bounds[index - 1].width - 1, JSON.stringify(bounds));
+      assert(Math.abs(bounds[index].y - bounds[0].y) < 5, JSON.stringify(bounds));
+    }
+    const options = await page.getByRole('button', { name: 'Chat options', exact: true }).boundingBox();
+    const attach = await page.getByRole('button', { name: 'Attach image', exact: true }).boundingBox();
+    assert(options.x + options.width <= attach.x + 1 && Math.abs(options.y - attach.y) < 5);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    for (const name of ['Chat target', 'Generate image', 'Speak replies']) assert.equal(await page.getByLabel(name, { exact: true }).isVisible(), false, name);
+    assert.equal(await page.locator('.pc-route-policy').isVisible(), false);
+    assert.equal(await page.locator('.pc-inference-panel > .pc-network-summary').count(), 0);
+  }
+});
+
+test('Chat options preserves draft and history, routes the selected target, and returns keyboard focus', async (t) => {
+  const page = await fixture(t, { loaded: true, interval: 50 });
+  await selectChatTarget(page, 'peer:fixture');
+  const message = page.getByLabel('Message', { exact: true });
+  await message.fill('First conversation turn'); await message.press('Enter');
+  await page.getByText('Reply to First conversation turn', { exact: true }).waitFor();
+  await message.fill('Retained draft\nsecond line');
+  const options = await openChatOptions(page);
+  await options.getByLabel('Chat target', { exact: true }).selectOption('peer:fixture');
+  await options.getByLabel('Generate image', { exact: true }).check();
+  await options.getByLabel('Generate image', { exact: true }).uncheck();
+  await options.getByLabel('Speak replies', { exact: true }).check();
+  await options.getByLabel('Speak replies', { exact: true }).uncheck();
+  assert.match(await options.locator('.pc-route-policy').textContent(), /another peer/);
+  for (let index = 0; index < 8; index++) {
+    await page.keyboard.press('Tab');
+    assert.equal(await options.evaluate((element) => element.contains(document.activeElement)), true);
+  }
+  await options.getByRole('button', { name: 'Done', exact: true }).click();
+  assert.equal(await page.getByRole('button', { name: 'Chat options', exact: true }).evaluate((element) => document.activeElement === element), true);
+  assert.equal(await message.inputValue(), 'Retained draft\nsecond line');
+  assert.equal(await page.locator('.pc-chat-message').count(), 2);
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'generate').length), 1);
+  await message.press('Enter');
+  await page.waitForFunction(() => document.querySelector('.pc-inference-panel > [role=status]').textContent === 'Ready.'
+    && window.calls.filter((call) => call.type === 'generate').length === 2);
+  assert.match(await page.getByRole('log', { name: 'Conversation', exact: true }).textContent(), /Reply to Retained draft\s+second line/);
+  const request = await page.evaluate(() => calls.filter((call) => call.type === 'generate').at(-1));
+  assert.equal(request.target, 'peer:fixture');
+  assert.match(JSON.stringify(request.messages), /First conversation turn/);
+  await openChatOptions(page); await page.keyboard.press('Escape');
+  assert.equal(await options.isVisible(), false);
+  assert.equal(await page.getByRole('button', { name: 'Chat options', exact: true }).evaluate((element) => document.activeElement === element), true);
+  assert.equal(await page.getByLabel('Chat target', { exact: true }).inputValue(), 'peer:fixture');
+  assert.deepEqual(await page.evaluate(() => calls.filter((call) => ['acquire', 'load-stored', 'unload', 'pin'].includes(call.type))), []);
+});
+
+test('routine main status is quiet while errors remain visible and successful replies stay in the transcript', async (t) => {
+  const page = await fixture(t, { loaded: true });
+  const status = page.locator('.pc-inference-panel > [role=status]');
+  await page.waitForFunction(() => document.querySelector('.pc-inference-panel > [role=status]').classList.contains('pc-status-quiet'));
+  const quiet = await status.boundingBox(); assert(quiet === null || quiet.height <= 1, JSON.stringify(quiet));
+  assert.match(await page.locator('.pc-chat-empty').textContent(), /Ask a question/);
+  assert.match(await page.locator('.pc-chat-empty').textContent(), /⚙.*models, images and voice/);
+  await page.evaluate(() => { uiState.rejectGeneration = true; });
+  const message = page.getByLabel('Message', { exact: true });
+  await message.fill('Show an actionable error'); await message.press('Enter');
+  await page.waitForFunction(() => document.querySelector('.pc-inference-panel > [role=status]').textContent.startsWith('Error:'));
+  assert.equal(await status.evaluate((element) => element.classList.contains('pc-status-quiet')), false);
+  assert((await status.boundingBox()).height > 1);
+  assert.match(await status.textContent(), /Vision fixture generation failed/);
+  await page.evaluate(() => { uiState.rejectGeneration = false; });
+  await message.fill('Successful retry'); await message.press('Enter');
+  await page.getByText('Reply to Successful retry', { exact: true }).waitFor();
+  await page.waitForFunction(() => document.querySelector('.pc-inference-panel > [role=status]').textContent === 'Ready.'
+    && document.querySelector('.pc-inference-panel > [role=status]').classList.contains('pc-status-quiet'));
+  assert.match(await page.getByRole('log', { name: 'Conversation', exact: true }).textContent(), /Successful retry/);
+});
+
+test('a queued native Chat options close event preserves newer explicit composer focus', async (t) => {
+  const page = await fixture(t, { loaded: true });
+  await openChatOptions(page);
+  assert.equal(await page.evaluate(() => {
+    const dialog = document.querySelector('.pc-chat-options');
+    dialog.addEventListener('close', () => { window.closeFocus = document.activeElement?.getAttribute('aria-label'); }, { once: true });
+    dialog.close(); document.querySelector('[aria-label="Message"]').focus();
+    return document.activeElement?.getAttribute('aria-label');
+  }), 'Message');
+  await page.waitForFunction(() => window.closeFocus !== undefined);
+  assert.equal(await page.evaluate(() => closeFocus), 'Message');
+  await page.getByLabel('Message', { exact: true }).fill('Keep the composer focus');
+  await page.keyboard.press('Enter');
+  await page.getByText('Reply to Keep the composer focus', { exact: true }).waitFor();
+});
+
 test('unified import adds local capability and preserves default Mixed routing', async (t) => {
   const page = await fixture(t);
   await browseChoice(page, 'peer:fixture', 'Load');
@@ -417,7 +539,7 @@ test('Mixed sends explicit text tasks and labels the actual route; Local only ne
   assert.match(await page.locator('.pc-chat-message-assistant .pc-chat-speaker').last().textContent(), /Local · Fixture vision/);
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'generate').map((call) => [call.target, call.task])),
     [['mixed', 'text-generation'], ['mixed', 'text-generation']]);
-  await page.getByLabel('Chat target').selectOption('local-only');
+  await selectChatTarget(page, 'local-only');
   await page.evaluate(() => { uiState.loaded = false; });
   await page.getByLabel('Message', { exact: true }).fill('Keep local');
   await page.waitForFunction(() => document.querySelector('.pc-route-policy').textContent.includes('No compatible text'));
@@ -444,7 +566,7 @@ test('speech catalog choices remain visible and explicitly loadable through task
 
 test('modal filtering preserves selection and does not change the remote chat target during refresh', async (t) => {
   const page = await fixture(t, { interval: 50 });
-  await page.getByLabel('Chat target').selectOption('peer:fixture');
+  await selectChatTarget(page, 'peer:fixture');
   const modal = await browseChoice(page, 'peer:fixture');
   await showBrowseResults(page);
   const filter = modal.getByLabel('Search models', { exact: true });
@@ -484,7 +606,7 @@ test('unavailable and checking choices offer explicit setup help and stale handl
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'acquire')), []);
   await page.keyboard.press('Escape');
   if (await help.isVisible()) await page.keyboard.press('Escape');
-  await page.getByLabel('Chat target').selectOption('peer:fixture');
+  await selectChatTarget(page, 'peer:fixture');
   await page.getByLabel('Message', { exact: true }).fill('Use the peer instead.');
   await page.getByLabel('Message', { exact: true }).press('Enter');
   await page.waitForFunction(() => calls.some((call) => call.type === 'generate'));
@@ -569,7 +691,7 @@ test('Enter sends, Shift+Enter preserves a newline, optional embedded context st
   assert.equal(await input.inputValue(), 'First\nSecond');
   assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'generate').length), 0);
   await input.press('Enter');
-  await page.waitForFunction(() => document.querySelector('[role=status]').textContent === 'Ready.' && calls.some((c) => c.type === 'generate'));
+  await page.waitForFunction(() => document.querySelector('.pc-inference-panel > [role=status]').textContent === 'Ready.' && calls.some((c) => c.type === 'generate'));
   const result = await page.evaluate(() => ({ request: calls.find((call) => call.type === 'generate'), contextCalls,
     actions: calls.filter((call) => call.type === 'action').length,
     bottom: document.querySelector('[role=log]').scrollHeight - document.querySelector('[role=log]').clientHeight - document.querySelector('[role=log]').scrollTop }));
@@ -584,7 +706,7 @@ test('Enter sends, Shift+Enter preserves a newline, optional embedded context st
 test('local and peer replies retain their full text and visibly report generation limits', async (t) => {
   for (const target of ['local:fixture-vision', 'peer:fixture']) {
     const page = await fixture(t, { loaded: true, longReply: true, finishReason: 'length', outputTokens: 1024, contextTruncated: true });
-    await page.getByLabel('Chat target').selectOption(target);
+    await selectChatTarget(page, target);
     await page.getByLabel('Message', { exact: true }).fill('Explain how rainbows form in detail.');
     await page.getByRole('button', { name: 'Send', exact: true }).click();
     await page.getByRole('log').getByText(/Response reached the model’s output or context limit/).waitFor();
@@ -620,7 +742,7 @@ test('Config clears conversation context without unloading a model or changing s
   await openMenuAction(page, 'Configure model chat');
   const clear = page.getByRole('button', { name: 'Clear conversation', exact: true });
   assert.equal(await clear.isDisabled(), true);
-  await page.waitForFunction(() => document.querySelector('[role=status]').textContent === 'Ready.');
+  await page.waitForFunction(() => document.querySelector('.pc-inference-panel > [role=status]').textContent === 'Ready.');
   await clear.click();
   assert.equal(await page.locator('.pc-chat-message').count(), 0);
   assert.equal(await page.evaluate(() => uiState.loaded), true);
@@ -648,11 +770,13 @@ test('peer status distinguishes empty directories, query failures and unavailabl
   const page = await fixture(t, { discovery: { connected: true, peerCount: 2, sharedModelCount: 0, hostedModelCount: 0,
     errors: [{ peerId: 'fixture', code: 'ERR_DIRECTORY', message: 'Directory timed out' }] },
     artifactNetwork: { status: 'error', error: 'Another tab owns file sharing' } });
-  const summary = page.locator('.pc-network-summary');
+  const network = await openNetworkStatus(page);
+  const summary = network.locator('.pc-network-summary');
   await page.waitForFunction(() => document.querySelector('.pc-network-summary').textContent.includes('Directory timed out'));
   assert.match(await summary.textContent(), /2 peers · 0 shared models · 0 hosted models/);
   assert.match(await summary.textContent(), /File sharing unavailable: Another tab owns file sharing/);
-  await page.getByLabel('Chat target').selectOption('peer:fixture');
+  await network.getByRole('button', { name: 'Close network status', exact: true }).click();
+  await selectChatTarget(page, 'peer:fixture');
   await page.getByLabel('Message', { exact: true }).fill('Hello');
   assert.equal(await page.getByRole('button', { name: 'Send', exact: true }).isDisabled(), false);
 });
@@ -660,15 +784,17 @@ test('peer status distinguishes empty directories, query failures and unavailabl
 test('discovery stays visible while file sharing prepares retained packages', async (t) => {
   const page = await fixture(t, { discovery: { connected: true, peerCount: 3, sharedModelCount: 5, hostedModelCount: 1, errors: [] },
     artifactNetwork: { status: 'starting' } });
+  const network = await openNetworkStatus(page);
   await page.waitForFunction(() => document.querySelector('.pc-network-summary').textContent.includes('5 shared models'));
-  assert.match(await page.locator('.pc-network-summary').textContent(), /1 hosted models/);
-  assert.match(await page.locator('.pc-network-summary').textContent(), /Inference discovery remains available/);
+  assert.match(await network.locator('.pc-network-summary').textContent(), /1 hosted models/);
+  assert.match(await network.locator('.pc-network-summary').textContent(), /Inference discovery remains available/);
 });
 
 test('failed auto-connect stays offline with its error through later directory refreshes', async (t) => {
   const page = await fixture(t, { connectFailure: true, interval: 30 });
   await page.waitForFunction(() => uiState.refreshCalls >= 3);
-  const text = await page.locator('.pc-network-summary').textContent();
+  const network = await openNetworkStatus(page);
+  const text = await network.locator('.pc-network-summary').textContent();
   assert.match(text, /Peer network is offline/);
   assert.match(text, /Relay unavailable/);
   assert.doesNotMatch(text, /Connecting/);
@@ -678,6 +804,7 @@ test('opened model pickers wrap long names inside desktop and mobile viewports a
   const page = await fixture(t, { interval: 50, loaded: true });
   for (const viewport of [{ width: 866, height: 900 }, { width: 390, height: 844 }]) {
     await page.setViewportSize(viewport);
+    const options = await openChatOptions(page);
     for (const name of ['Chat target']) {
       const select = page.getByLabel(name, { exact: true });
       await select.click();
@@ -695,6 +822,7 @@ test('opened model pickers wrap long names inside desktop and mobile viewports a
       assert.equal(await select.evaluate((element) => element === document.activeElement), true);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     }
+    await options.getByRole('button', { name: 'Done', exact: true }).click();
   }
 });
 
@@ -702,21 +830,21 @@ test('import progress advances past the last file into verification and GPU load
   const page = await fixture(t, { importProgress: true, acquireDelay: 1200 });
   await browseChoice(page, 'hf:vision', 'Load');
   const status = page.locator('.pc-inference-panel > [role=status]');
-  await page.waitForFunction(() => document.querySelector('[role=status]').textContent.includes('Downloading 7/7: LICENSE'));
+  await page.waitForFunction(() => document.querySelector('.pc-inference-panel > [role=status]').textContent.includes('Downloading 7/7: LICENSE'));
   assert.match(await status.textContent(), /1.0 KiB|1 KiB/);
-  await page.waitForFunction(() => document.querySelector('[role=status]').textContent.includes('Using saved file 7/7: LICENSE'));
-  await page.waitForFunction(() => document.querySelector('[role=status]').textContent.includes('Verifying stored model files'));
-  await page.waitForFunction(() => document.querySelector('[role=status]').textContent.includes('Loading model into RAM'));
-  await page.waitForFunction(() => document.querySelector('[role=status]').textContent.includes('Loading model: unet'));
-  await page.waitForFunction(() => /Loading model: unet \(\d+s\)/.test(document.querySelector('[role=status]').textContent));
-  await page.waitForFunction(() => document.querySelector('[role=status]').textContent.includes('Model ready.'));
+  await page.waitForFunction(() => document.querySelector('.pc-inference-panel > [role=status]').textContent.includes('Using saved file 7/7: LICENSE'));
+  await page.waitForFunction(() => document.querySelector('.pc-inference-panel > [role=status]').textContent.includes('Verifying stored model files'));
+  await page.waitForFunction(() => document.querySelector('.pc-inference-panel > [role=status]').textContent.includes('Loading model into RAM'));
+  await page.waitForFunction(() => document.querySelector('.pc-inference-panel > [role=status]').textContent.includes('Loading model: unet'));
+  await page.waitForFunction(() => /Loading model: unet \(\d+s\)/.test(document.querySelector('.pc-inference-panel > [role=status]').textContent));
+  await page.waitForFunction(() => document.querySelector('.pc-inference-panel > [role=status]').textContent.includes('Model ready.'));
   assert.doesNotMatch(await status.textContent(), /LICENSE|undefined/);
   await page.waitForTimeout(1050); assert.match(await status.textContent(), /Model ready/);
 });
 
 test('peer refresh marks busy only for all-busy providers and never silently changes a selected target', async (t) => {
   const page = await fixture(t, { loaded: true, interval: 50, refreshDelay: 80 });
-  await page.getByLabel('Chat target').selectOption('peer:fixture');
+  await selectChatTarget(page, 'peer:fixture');
   assert.doesNotMatch(await page.getByLabel('Chat target').locator('option:checked').textContent(), /busy/);
   await page.evaluate(() => { uiState.providers = [true, true]; });
   await page.waitForFunction(() => document.querySelector('[aria-label="Chat target"]').selectedOptions[0].textContent.includes('(busy)'));
@@ -743,7 +871,7 @@ test('explicit file attachment is bounded and consumed by its request; standalon
     canvas.getContext('2d').fillRect(0, 0, 640, 320); return canvas.toDataURL('image/png').split(',')[1]; });
   await page.getByLabel('Choose image attachment').setInputFiles({ name: 'selected.png', mimeType: 'image/png', buffer: Buffer.from(data, 'base64') });
   await page.getByAltText('Selected image', { exact: true }).waitFor({ state: 'visible' });
-  await page.getByLabel('Chat target').selectOption('peer:fixture');
+  await selectChatTarget(page, 'peer:fixture');
   await page.getByLabel('Message', { exact: true }).fill('Describe this.');
   assert.equal(await page.getByRole('button', { name: 'Send', exact: true }).isDisabled(), true);
   assert.match(await page.locator('.pc-route-policy').textContent(), /No compatible vision/);
@@ -751,13 +879,13 @@ test('explicit file attachment is bounded and consumed by its request; standalon
   assert.equal(await page.getByAltText('Selected image', { exact: true }).isVisible(), true);
   assert.equal(await page.getByLabel('Message', { exact: true }).inputValue(), 'Describe this.');
   assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'generate').length), 0);
-  await page.getByLabel('Chat target').selectOption('local:fixture-vision');
+  await selectChatTarget(page, 'local:fixture-vision');
   await page.getByRole('button', { name: 'Send', exact: true }).click();
   await page.waitForFunction(() => calls.some((call) => call.type === 'generate'));
   const request = await page.evaluate(() => calls.find((call) => call.type === 'generate'));
   assert.deepEqual(request.image, { width: 512, height: 256, bytes: 512 * 256 * 4 });
   assert.equal(request.messages.length, 1); assert.equal(await page.getByAltText('Selected image', { exact: true }).isVisible(), false);
-  await page.getByLabel('Chat target').selectOption('peer:fixture');
+  await selectChatTarget(page, 'peer:fixture');
   assert.equal(await page.getByRole('button', { name: 'Attach image', exact: true }).isDisabled(), true);
 });
 
@@ -785,7 +913,7 @@ test('Mixed and an exact peer accept vision attachments without a compatible loc
     'peer:fixture': { status: 'unavailable', reason: 'WebGPU is unavailable on this device.' },
   } });
   for (const target of ['mixed', 'peer:fixture']) {
-    await page.getByLabel('Chat target').selectOption(target);
+    await selectChatTarget(page, target);
     assert.equal(await page.getByRole('button', { name: 'Attach image', exact: true }).isEnabled(), true);
     const input = await patternedImage(page, target === 'mixed' ? 4 : 5);
     const chooser = page.waitForEvent('filechooser');
@@ -825,10 +953,10 @@ test('busy peer vision keeps attachments and drafts while full queues block send
   assert.equal(await page.getByRole('button', { name: 'Attach image', exact: true }).isEnabled(), true);
   assert.equal(await page.getByLabel('Message', { exact: true }).inputValue(), 'Keep this draft');
   assert.equal(await page.evaluate(() => calls.some((call) => call.type === 'generate')), false);
-  await page.getByLabel('Chat target').selectOption('local-only');
+  await selectChatTarget(page, 'local-only');
   assert.equal(await page.getByRole('button', { name: 'Send', exact: true }).isDisabled(), true);
   assert.equal(await page.getByRole('button', { name: 'Attach image', exact: true }).isDisabled(), true);
-  await page.getByLabel('Chat target').selectOption('mixed');
+  await selectChatTarget(page, 'mixed');
   await page.getByLabel('Message', { exact: true }).press('Enter');
   await page.getByText('Reply to Keep this draft', { exact: true }).waitFor();
   assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'generate').length), 1);
@@ -836,9 +964,9 @@ test('busy peer vision keeps attachments and drafts while full queues block send
 
 test('peer image generation does not claim vision input capability', async (t) => {
   const page = await fixture(t, { diffusion: true });
-  await page.getByLabel('Chat target').selectOption('peer:fixture');
+  await selectChatTarget(page, 'peer:fixture');
   assert.equal(await page.getByRole('button', { name: 'Attach image', exact: true }).isDisabled(), true);
-  await page.getByLabel('Generate image', { exact: true }).check();
+  await setChatOption(page, 'Generate image', true);
   await page.getByLabel('Message', { exact: true }).fill('A blue flower');
   assert.equal(await page.getByRole('button', { name: 'Send', exact: true }).isEnabled(), true);
   assert.equal(await page.getByRole('button', { name: 'Attach image', exact: true }).isDisabled(), true);
@@ -849,14 +977,14 @@ test('Generate image requires an explicit choice and never discards a conflictin
   const input = await patternedImage(page, 3);
   await page.getByLabel('Choose image attachment').setInputFiles(input.file);
   await page.getByAltText('Selected image', { exact: true }).waitFor({ state: 'visible' });
-  await page.getByLabel('Generate image', { exact: true }).check();
+  await setChatOption(page, 'Generate image', true);
   await page.getByLabel('Message', { exact: true }).fill('Describe my photo');
   assert.match(await page.locator('.pc-route-policy').textContent(), /Remove the attached image or uncheck/);
   assert.equal(await page.getByRole('button', { name: 'Send', exact: true }).isDisabled(), true);
   await page.getByLabel('Message', { exact: true }).press('Enter');
   assert.equal(await page.evaluate(() => calls.some((call) => call.type === 'generate')), false);
   assert.equal(await page.getByAltText('Selected image', { exact: true }).isVisible(), true);
-  await page.getByLabel('Generate image', { exact: true }).uncheck();
+  await setChatOption(page, 'Generate image', false);
   await page.getByRole('button', { name: 'Send', exact: true }).click();
   await page.getByText('Reply to Describe my photo', { exact: true }).waitFor();
   assert.equal(await page.evaluate(() => calls.find((call) => call.type === 'generate').task), 'image-text-to-text');
@@ -902,7 +1030,7 @@ test('consecutive different images with the same filename send fresh complete pi
 
 for (const target of ['local:fixture-vision', 'peer:fixture']) test(`new vision context on ${target} preserves system instructions and visible transcript`, async (t) => {
   const page = await fixture(t, { loaded: true, peerVision: true, context: true });
-  await page.getByLabel('Chat target').selectOption(target);
+  await selectChatTarget(page, target);
   const send = async (text, count, file) => {
     if (file) { await page.getByLabel('Choose image attachment').setInputFiles(file); await page.getByAltText('Selected image', { exact: true }).waitFor({ state: 'visible' }); }
     await page.getByLabel('Message', { exact: true }).fill(text); await page.getByRole('button', { name: 'Send', exact: true }).click();
@@ -1011,13 +1139,13 @@ test('Stop cancels an active request and failed preferences restore their prior 
   await page.evaluate(() => { uiState.rejectSharing = true; });
   await openMenuAction(page, 'Configure model chat');
   await page.getByLabel('Share with peers', { exact: true }).click();
-  await page.waitForFunction(() => document.querySelector('[role=status]').textContent.includes('Sharing failed'));
+  await page.waitForFunction(() => document.querySelector('.pc-inference-panel > [role=status]').textContent.includes('Sharing failed'));
   assert.equal(await page.getByLabel('Share with peers', { exact: true }).isChecked(), true);
   await page.getByRole('dialog', { name: 'Config', exact: true }).getByRole('button', { name: 'Done' }).click();
   await page.getByLabel('Message', { exact: true }).fill('Cancel me'); await page.getByLabel('Message', { exact: true }).press('Enter');
   await page.waitForFunction(() => calls.some((call) => call.type === 'generate'));
   await page.getByRole('button', { name: 'Stop', exact: true }).click();
-  await page.waitForFunction(() => calls.some((call) => call.type === 'cancel') && document.querySelector('[role=status]').textContent.startsWith('Cancelled'));
+  await page.waitForFunction(() => calls.some((call) => call.type === 'cancel') && document.querySelector('.pc-inference-panel > [role=status]').textContent.startsWith('Cancelled'));
   assert.equal(await page.getByRole('button', { name: 'Stop', exact: true }).isVisible(), false);
 });
 
@@ -1229,7 +1357,7 @@ test('a sharing failure keeps the imported model usable and explains its library
     { manifestCid: 'fixture-vision', name: 'Fixture vision', totalBytes: 1024, shared: false, shareError: 'Peer network is offline' },
   ] });
   await browseChoice(page, 'hf:vision', 'Load');
-  await page.waitForFunction(() => document.querySelector('[role=status]').textContent.includes('Model ready. Sharing is unavailable'));
+  await page.waitForFunction(() => document.querySelector('.pc-inference-panel > [role=status]').textContent.includes('Model ready. Sharing is unavailable'));
   await page.getByLabel('Message', { exact: true }).fill('Still usable');
   assert.equal(await page.getByRole('button', { name: 'Send', exact: true }).isEnabled(), true);
   await openMenuAction(page, 'Models');
@@ -1239,15 +1367,15 @@ test('a sharing failure keeps the imported model usable and explains its library
 test('local and peer image targets turn each prompt into a bounded image without chat context or attachments', async (t) => {
   const page = await fixture(t, { loaded: true, diffusion: true, context: true });
   assert.equal(await page.getByLabel('Generate image', { exact: true }).isChecked(), false);
-  await page.getByLabel('Generate image', { exact: true }).check();
+  await setChatOption(page, 'Generate image', true);
   const prompt = page.getByLabel('Message', { exact: true });
   assert.equal(await prompt.getAttribute('placeholder'), 'Describe an image…');
   assert.equal(await page.getByRole('button', { name: 'Attach image', exact: true }).isDisabled(), true);
   for (const [target, text] of [['local:fixture-vision', 'A red circle'], ['peer:fixture', 'A blue square']]) {
-    await page.getByLabel('Chat target').selectOption(target);
+    await selectChatTarget(page, target);
     await prompt.fill(text); await prompt.press('Enter');
     await page.getByAltText(`Generated image: ${text}`, { exact: true }).waitFor();
-    await page.waitForFunction(() => document.querySelector('[role=status]').textContent === 'Ready.');
+    await page.waitForFunction(() => document.querySelector('.pc-inference-panel > [role=status]').textContent === 'Ready.');
     const generated = page.getByAltText(`Generated image: ${text}`, { exact: true });
     await generated.evaluate((image) => image.decode());
     assert.deepEqual(await generated.evaluate((image) => ({ width: image.naturalWidth, height: image.naturalHeight, local: image.src.startsWith('blob:') })),
@@ -1267,12 +1395,12 @@ test('local and peer image targets turn each prompt into a bounded image without
 
 test('generated image previews have a bounded history and revoke every URL on disposal', async (t) => {
   const page = await fixture(t, { loaded: true, diffusion: true });
-  await page.getByLabel('Generate image', { exact: true }).check();
+  await setChatOption(page, 'Generate image', true);
   for (let index = 0; index < 8; index++) {
     await page.getByLabel('Message', { exact: true }).fill('Image ' + index);
     await page.getByLabel('Message', { exact: true }).press('Enter');
     await page.getByAltText('Generated image: Image ' + index, { exact: true }).waitFor();
-    await page.waitForFunction(() => document.querySelector('[role=status]').textContent === 'Ready.');
+    await page.waitForFunction(() => document.querySelector('.pc-inference-panel > [role=status]').textContent === 'Ready.');
   }
   assert.equal(await page.locator('.pc-generated-image').count(), 6);
   assert.equal(await page.evaluate(() => previewUrls.revoked.length), 2);
@@ -1282,16 +1410,16 @@ test('generated image previews have a bounded history and revoke every URL on di
 
 test('invalid pixels and late cancelled image results never become preview URLs', async (t) => {
   const invalid = await fixture(t, { loaded: true, diffusion: true, invalidImage: true });
-  await invalid.getByLabel('Generate image', { exact: true }).check();
+  await setChatOption(invalid, 'Generate image', true);
   await invalid.getByLabel('Message', { exact: true }).fill('Invalid output'); await invalid.getByLabel('Message', { exact: true }).press('Enter');
-  await invalid.waitForFunction(() => document.querySelector('[role=status]').textContent.includes('bounded RGBA'));
+  await invalid.waitForFunction(() => document.querySelector('.pc-inference-panel > [role=status]').textContent.includes('bounded RGBA'));
   assert.equal(await invalid.evaluate(() => previewUrls.created.length), 0);
   const cancelled = await fixture(t, { loaded: true, diffusion: true, generateDelay: 100, ignoreAbort: true });
-  await cancelled.getByLabel('Generate image', { exact: true }).check();
+  await setChatOption(cancelled, 'Generate image', true);
   await cancelled.getByLabel('Message', { exact: true }).fill('Cancel output'); await cancelled.getByLabel('Message', { exact: true }).press('Enter');
   await cancelled.waitForFunction(() => calls.some((call) => call.type === 'generate'));
   await cancelled.getByRole('button', { name: 'Stop', exact: true }).click();
-  await cancelled.waitForFunction(() => document.querySelector('[role=status]').textContent.startsWith('Cancelled'));
+  await cancelled.waitForFunction(() => document.querySelector('.pc-inference-panel > [role=status]').textContent.startsWith('Cancelled'));
   assert.equal(await cancelled.evaluate(() => previewUrls.created.length), 0);
 });
 
@@ -1444,7 +1572,7 @@ test('modal package order and selection survive directory refresh without loadin
     { key: 'hf:invalid', name: 'Bad size', source: 'hf', totalBytes: -1 },
   ];
   const page = await fixture(t, { sources, preferredSourceKey: 'hf:huge', interval: 50 });
-  await page.getByLabel('Chat target').selectOption('peer:fixture');
+  await selectChatTarget(page, 'peer:fixture');
   const modal = await browseChoice(page, 'stored:small');
   assert.deepEqual(await modal.locator('[data-model-key]').evaluateAll((items) => items.map((item) => item.dataset.modelKey)),
     ['stored:small', 'hf:tie', 'hf:huge', 'hf:invalid', 'peer:fixture', 'peer:unknown']);
@@ -1486,7 +1614,7 @@ test('Stored Models adds a package atomically, preserves the chosen target and r
     sources: [{ key: 'hf:vision', name: 'Fixture vision', source: 'hf', totalBytes: 1024 ** 3 },
       { key: 'stored:small', name: 'Small stored', source: 'stored', manifestCid: 'small', totalBytes: 2 * 1024 ** 2 }],
   });
-  await page.getByLabel('Chat target').selectOption('peer:fixture');
+  await selectChatTarget(page, 'peer:fixture');
   await openMenuAction(page, 'Models');
   const modal = page.getByRole('dialog', { name: 'Models', exact: true });
   const load = modal.getByRole('button', { name: 'Load Small stored', exact: true }); await load.waitFor();
@@ -1588,7 +1716,7 @@ test('startup downloads the default once, without waiting for the peer network',
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'acquire')),
     [{ type: 'acquire', key: 'hf:vision', gpuLayers: 99999 }]);
   assert.match(await page.locator('.pc-inference-panel > [role=status]').textContent(), /Loaded Fixture vision/);
-  await page.getByLabel('Chat target').selectOption('peer:fixture');
+  await selectChatTarget(page, 'peer:fixture');
   await browseChoice(page, 'peer:fixture'); await closeModels(page);
   await page.waitForFunction(() => uiState.refreshCalls >= 4);
   assert.equal(await page.getByLabel('Chat target').inputValue(), 'peer:fixture');
@@ -1626,7 +1754,7 @@ test('blocked startup keeps setup help in Models details and remote inference av
   assert.equal(await models.getByRole('button', { name: 'Load', exact: true }).isDisabled(), true);
   assert.equal(await models.getByRole('button', { name: 'Setup help', exact: true }).isVisible(), true);
   await closeModels(page);
-  await page.getByLabel('Chat target').selectOption('peer:fixture');
+  await selectChatTarget(page, 'peer:fixture');
   await page.getByLabel('Message', { exact: true }).fill('Hello peer');
   await page.getByLabel('Message', { exact: true }).press('Enter');
   await page.waitForFunction(() => calls.some((call) => call.type === 'generate'));
@@ -2020,14 +2148,18 @@ test('final library read failure preserves residents and never reports a fully s
 });
 
 test('embedded phone model panel can scroll to its composer instead of clipping Talk and Send', async (t) => {
-  const page = await fixture(t, { loaded: true });
+  const page = await fixture(t, { loaded: true,
+    generationError: 'Model execution failed. Close unused models and retry the request. '.repeat(25) });
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => { uiState.rejectGeneration = true; });
+  await page.getByLabel('Message', { exact: true }).fill('Exercise a long actionable error');
+  await page.getByLabel('Message', { exact: true }).press('Enter');
+  await page.waitForFunction(() => document.querySelector('.pc-inference-panel > [role=status]').textContent.startsWith('Error: Model execution failed'));
   await page.evaluate(() => {
     const container = document.querySelector('#panel'); container.classList.remove('pc-inference-standalone');
     const shell = document.createElement('dialog'); shell.className = 'world-agent-models';
     shell.style.cssText = 'box-sizing:border-box;margin:auto;width:96vw;height:90dvh;max-width:none;padding:12px;overflow:auto;';
     document.body.append(shell); shell.append(container); shell.showModal();
-    document.querySelector('.pc-network-summary').textContent = 'Peer discovery is preparing stored packages. '.repeat(30);
   });
   const panel = page.locator('.pc-inference-panel');
   const initial = await panel.evaluate((element) => ({ overflow: getComputedStyle(element).overflowY, height: element.clientHeight, scrollHeight: element.scrollHeight }));

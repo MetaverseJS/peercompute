@@ -14,6 +14,16 @@ The root node should exist on a domain secured with SSL enabling all executable 
 
 ## Project Goals:
 
+November7 compact chat controls: Back, Models and Agents share the top row;
+an adjacent network glyph opens detailed diagnostics beside Menu. Green requires
+connected peers plus shared and hosted models; disconnected is red and incomplete
+or warning states are yellow. A cog left of Attach opens Chat options containing
+target routing, image generation and spoken replies. Keep one composer, preserve
+draft/history and task ownership, hide routine readiness text and retain visible
+errors/progress. Updated guidance,134native tests,3builds and exact phone/desktop
+embedded previews pass. SecretWorkshop relay connections are authenticated;
+discovered-provider errors remain visible separately from relay health.
+
 November7 Models consolidation: a single Models window holds Stored models and
 Browse models tabs. Stored models is the default whenever saved packages exist;
 startup continues to await explicit selection. Remove main-page Load, selected

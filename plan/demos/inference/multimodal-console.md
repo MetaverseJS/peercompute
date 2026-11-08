@@ -284,3 +284,39 @@ pass without double-counting focused repeats. Three builds and exact internal
 native clicks during discovery; synchronous close ownership protects a reopened
 Stored view. The generic diff-size gate remains flagged and is recorded with
 the reviewed requested removals in log.md; no policy threshold was changed.
+
+## November 7 — compact chat controls
+
+Back, Models and Agents now share the top row. The network glyph immediately
+before Menu opens an accessible, dismissible diagnostics popover. The display
+module consumes the existing discovery snapshot and owns no polling or network
+work. Green requires a connected network, known positive peer/shared/hosted
+counts and no reported discovery or artifact issue. Disconnected is red;
+connecting, unknown counts, incomplete availability and warnings are yellow.
+State text accompanies color. Escape, outside click and modal navigation close
+the popover; viewport positioning and native top-layer rendering keep it usable
+inside embedded world panels. Discovery health does not prove remote execution.
+
+The cog immediately left of Attach opens Chat options, holding the existing
+Chat target, Generate image and Speak replies controls plus route explanation.
+The same controls and handlers retain routing, agent identity, history and
+attachment semantics. No duplicated state or new model loading is introduced.
+The cog is disabled during startup and active operations, including voice turns;
+Done/Escape restores focus. Moving between other dialogs closes Chat options.
+Queued close events preserve newer user focus, including Enter-to-send from
+Message. Agent-history read failures are shown inside the open options dialog.
+
+Routine readiness/load-success text is visually quiet but remains accessible.
+Explicit status classification retains visible progress, cancellation, errors,
+sharing warnings and incomplete-response notices. Empty-chat guidance follows
+available capability and directs users to Models or Chat options. Small screens
+retain a single row of navigation and a single row of cog/Attach/Talk/Send.
+Native regression tests and exact preview acceptance are recorded in tests.md
+and log.md; this presentation change adds no model or remote-inference claim.
+
+Final native acceptance passes134 distinct tests: network6, panel/voice/history109
+and unchanged image/voice helpers19. Focused repeats and initial failures are not
+included in that total. Three external builds and exact internal5189/5176/5187
+desktop/mobile layout and authenticated SecretWorkshop checks pass. Provider
+discovery warnings remain visible in the pending network popup; no remote model
+execution was performed in this presentation-only acceptance.

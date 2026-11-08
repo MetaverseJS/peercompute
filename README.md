@@ -283,6 +283,11 @@ For an internal preview, run `npm run docs:dev` (overview4173) and
 `SSL_CERT` and `SSL_KEY` to a trusted certificate/key outside the repository for
 cross-device use. The overview's second card opens the console. The standalone
 console connects to the configured Secret Workshop backend automatically.
+The top row contains Back, Models and Agents. Click the network icon beside the
+hamburger for connection and model counts: green means connected peers, shared
+packages and hosted inference are all available; red means disconnected; yellow
+means connecting, incomplete availability or a reported issue. This describes
+discovery, not a guarantee that every advertised model can execute a request.
 Open **Models → Browse models**, choose a catalog, peer or Hugging Face package,
 then **Load**. After inspecting an original Hugging Face checkpoint, use
 **Find browser conversions** to discover publisher-linked ONNX/GGUF packages.
@@ -452,6 +457,13 @@ that startup and preserve its ownership and integrity checks.
 Model options wrap within the window in browsers supporting native customizable
 selects; other browsers retain their native picker. Applicable browser setup help
 starts with the launch command, followed by verification and driver/browser updates.
+
+Open **Chat options** with the **⚙** button immediately left of **+** to select
+**Chat target**, **Generate image** or **Speak replies**. These controls and their
+routing explanation live in the small dialog; Done or Escape returns to chat.
+Options cannot change during an active request or voice turn. Routine readiness
+messages no longer take up chat space; progress and actionable errors remain
+visible.
 
 **Mixed** is the default inference provider: a capable loaded local model takes
 precedence, including its bounded queue; otherwise the request uses a capable

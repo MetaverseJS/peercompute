@@ -130,6 +130,25 @@ async function mount(page, options = {}) {
   }, options);
 }
 
+
+async function openChatOptions(page) {
+  const dialog = page.getByRole('dialog', { name: 'Chat options', exact: true });
+  if (!await dialog.isVisible()) await page.getByRole('button', { name: 'Chat options', exact: true }).click();
+  return dialog;
+}
+async function selectChatTarget(page, target) {
+  const dialog = await openChatOptions(page);
+  await dialog.getByLabel('Chat target', { exact: true }).selectOption(target);
+  await dialog.getByRole('button', { name: 'Done', exact: true }).click();
+  await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Chat options');
+}
+async function setChatOption(page, name, checked) {
+  const dialog = await openChatOptions(page);
+  await dialog.getByLabel(name, { exact: true }).setChecked(checked);
+  await dialog.getByRole('button', { name: 'Done', exact: true }).click();
+  await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Chat options');
+}
+
 async function fixture(t, options = {}) {
   const context = await browser.newContext({ viewport: { width: 1050, height: 900 } }), page = await context.newPage();
   page.setDefaultTimeout(8000);
@@ -154,7 +173,7 @@ const transcript = (page) => page.getByRole('log', { name: 'Conversation', exact
 async function agent(page, name = 'Ada') {
   const id = await page.evaluate((name) => ids[name], name);
   await page.locator(`[aria-label="Chat target"] option[value="agent:${id}"]`).waitFor({ state: 'attached' });
-  await page.getByLabel('Chat target', { exact: true }).selectOption(`agent:${id}`);
+  await selectChatTarget(page, `agent:${id}`);
   return id;
 }
 async function send(page, text) {
@@ -192,7 +211,7 @@ test('one main composer selects a paused saved identity, resumes explicitly and 
 
 test('agent A, agent B and direct chat retain separate context; Clear conversation cannot erase agent memory', async (t) => {
   const page = await fixture(t, { ready: true });
-  await page.getByLabel('Chat target').selectOption('local:chat'); await send(page, 'Direct secret');
+  await selectChatTarget(page, 'local:chat'); await send(page, 'Direct secret');
   await agent(page, 'Ada'); await send(page, 'Alpha secret');
   await agent(page, 'Beta'); await send(page, 'Beta secret');
   const beta = await page.evaluate(() => calls.filter((call) => call.type === 'execute').at(-1));
@@ -213,7 +232,7 @@ test('agent A, agent B and direct chat retain separate context; Clear conversati
   assert(await button(page, 'Clear conversation').isDisabled());
   assert.match(await button(page, 'Clear conversation').getAttribute('title'), /agent|persist|memory/i);
   await page.keyboard.press('Escape');
-  await page.getByLabel('Chat target').selectOption('local:chat'); await send(page, 'Direct follow-up');
+  await selectChatTarget(page, 'local:chat'); await send(page, 'Direct follow-up');
   const direct = await page.evaluate(() => calls.filter((call) => call.type === 'execute').at(-1));
   assert.match(JSON.stringify(direct.messages), /Direct secret/);
   assert.doesNotMatch(JSON.stringify(direct.messages), /Alpha secret|Beta secret|private memory/);
@@ -221,7 +240,7 @@ test('agent A, agent B and direct chat retain separate context; Clear conversati
 
 test('local-only Talk routes ASR, persisted agent task and TTS locally with one acknowledged reply', async (t) => {
   const page = await fixture(t, { ready: true }); const id = await agent(page);
-  await page.getByLabel('Speak replies', { exact: true }).check();
+  await setChatOption(page, 'Speak replies', true);
   await page.evaluate(() => { calls.length = 0; });
   await button(page, 'Talk').click(); await page.waitForFunction(() => captureActive);
   await button(page, 'Stop recording').click();
@@ -253,7 +272,7 @@ test('local-only agent cannot send microphone audio to peer-only speech even whe
 
 test('network-assisted voice preserves actual remote provider receipts and never changes agent identity', async (t) => {
   const page = await fixture(t, { ready: true, networkAssisted: true, remoteOnly: true }); const id = await agent(page);
-  await page.getByLabel('Speak replies', { exact: true }).check();
+  await setChatOption(page, 'Speak replies', true);
   await button(page, 'Talk').click(); await page.waitForFunction(() => captureActive);
   await button(page, 'Stop recording').click(); await page.waitForFunction(() => calls.some((call) => call.type === 'play'));
   await page.waitForFunction(() => !document.querySelector('[aria-label="Chat target"]').disabled);
@@ -275,7 +294,7 @@ test('a newly local-only policy prevents remote TTS after an already completed p
       return outcome;
     };
   });
-  await page.getByLabel('Speak replies', { exact: true }).check();
+  await setChatOption(page, 'Speak replies', true);
   await button(page, 'Talk').click(); await page.waitForFunction(() => captureActive);
   await button(page, 'Stop recording').click();
   await transcript(page).getByText('Reply to Recognized private message', { exact: true }).waitFor();
@@ -294,7 +313,7 @@ test('a failed result checkpoint disables further chat and speech until explicit
     nativeStore.commit = (id, change, options) => control.rejectResult && change.event?.type === 'result'
       ? Promise.reject(new DOMException('Fixture storage refused result', 'QuotaExceededError')) : commit(id, change, options);
   });
-  await page.getByLabel('Speak replies', { exact: true }).check();
+  await setChatOption(page, 'Speak replies', true);
   await page.getByLabel('Message', { exact: true }).fill('A response requiring persistence'); await button(page, 'Send').click();
   await page.waitForFunction(async (id) => (await nativeController.get(id)).activity?.unsaved === true, id);
   await page.waitForFunction(() => !document.querySelector('[aria-label="Chat target"]').disabled);
@@ -328,7 +347,7 @@ test('cancel holds the selected identity until actual agent cleanup settles and 
 test('reload restores native identity, generated pixels and console history but excludes world visitor events', async (t) => {
   const page = await fixture(t, { ready: true }); const id = await agent(page);
   await send(page, 'Durable console memory');
-  await page.getByLabel('Generate image', { exact: true }).check();
+  await setChatOption(page, 'Generate image', true);
   await page.getByLabel('Message', { exact: true }).fill('A red square'); await button(page, 'Send').click();
   await transcript(page).locator('img').waitFor();
   await page.waitForFunction(() => !document.querySelector('[aria-label="Chat target"]').disabled);
@@ -414,4 +433,41 @@ test('disposing during a stalled initial agent list aborts the bridge read befor
   assert.equal(await page.locator('.pc-inference-panel').count(), 0);
   assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'disposed').length), 1);
   assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'execute').length), 0);
+});
+
+test('Chat options shows a failed agent history read without hiding Done or implicitly resuming the agent', async (t) => {
+  const page = await fixture(t);
+  const id = await page.evaluate(() => ids.Ada);
+  await page.locator(`[aria-label="Chat target"] option[value="agent:${id}"]`).waitFor({ state: 'attached' });
+  const before = await page.evaluate((id) => nativeController.get(id), id);
+  await page.evaluate(() => {
+    const events = nativeController.events.bind(nativeController); let failed = false;
+    window.historyReadCompletions = [];
+    nativeController.events = async (...args) => {
+      if (args[0] === ids.Ada && !failed) {
+        failed = true;
+        throw new DOMException('Saved agent history could not be read. Select the agent again to retry.', 'UnknownError');
+      }
+      const result = await events(...args); historyReadCompletions.push(args[0]); return result;
+    };
+  });
+  const options = await openChatOptions(page);
+  await options.getByLabel('Chat target', { exact: true }).selectOption(`agent:${id}`);
+  const status = options.getByRole('status');
+  await status.filter({ hasText: 'Saved agent history could not be read' }).waitFor({ state: 'visible' });
+  assert((await status.boundingBox()).height > 1);
+  assert.equal(await options.isVisible(), true);
+  assert.equal(await options.getByRole('button', { name: 'Done', exact: true }).isEnabled(), true);
+  const after = await page.evaluate((id) => nativeController.get(id), id);
+  assert.equal(after.status, 'paused'); assert.equal(after.revision, before.revision);
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'execute').length), 0);
+  await options.getByRole('button', { name: 'Done', exact: true }).click();
+  await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Chat options');
+  await openChatOptions(page); assert.equal(await status.isVisible(), false);
+  await options.getByLabel('Chat target', { exact: true }).selectOption(`agent:${await page.evaluate(() => ids.Beta)}`);
+  await options.getByLabel('Chat target', { exact: true }).selectOption(`agent:${id}`);
+  await page.waitForFunction((id) => historyReadCompletions.includes(id), id);
+  assert.equal(await status.isVisible(), false);
+  assert.equal(await page.evaluate((id) => nativeController.get(id).then((head) => head.status), id), 'paused');
+  await options.getByRole('button', { name: 'Done', exact: true }).click();
 });
