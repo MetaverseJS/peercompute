@@ -227,3 +227,33 @@ that executor and its tests exist.
   shared host/body fixture. Earth local geodata backend is unconfigured. No
   automatic movement, agent-initiated dialogue, migration or learned policy is
   implied by these results. Public GitHub Pages remains unchanged.
+
+## Cube resident appearance and public response layer — November 7 2026
+
+`WorldAppearance` uses the existing agent inference adapter/router and durable
+image attachments. The world binding stores private appearance text and the
+acknowledged image attachment reference; `normalizePublicAgent` exposes only
+bounded face dimensions/hash. `AgentConversationService` verifies the current
+shared binding and authenticated same-world requester before credited pixel
+transfer. `WorldAppearancePresenter` owns bounded reads, shape/hash caching and
+stale-result suppression; the Cube adapter alone owns Three.js front textures.
+This separates identity, inference, persistence, transport and presentation so
+other homunculus bodies can reuse the same attachment and appearance contracts.
+No image provider means saved description plus explicit retry, not auto-loading
+weights or preventing a resident from existing. Reload reads the saved image.
+
+`WorldChatResponder` consumes authenticated public human messages, chooses only
+local opted-in residents and serializes responses with bounded context/dedup/
+cooldown/latest-message coalescing. `WorldAgentHost` routes a public turn under a
+separate conversation ID; direct visitor histories are excluded. Existing shared
+identity/goals and explicitly saved agent context still apply. Output carries
+agentId under the room sender's authenticated owner identity. Resident messages
+are displayed but do not trigger another response. Opt-out cancels and awaits
+cleanup; provider absence does not persist a failed turn. This is bounded social
+interaction infrastructure, not learned dialogue initiation or motor training.
+
+Cube model management borrows the world's runtime through a single owned dialog.
+Config/setup/loading replace that dialog's content, preserve library state and
+never create a second composer. Closing awaits panel cleanup before releasing
+world input; failed cleanup remains owned and retryable. Other embeddings retain
+their existing lifecycle unless they explicitly opt into panel-owned windows.

@@ -27,7 +27,7 @@ export const PAGES_ROUTES = Object.freeze([
   route('multiscale', 'multiscale/', 'opt-in'),
   route('planetgen', 'planetgen/'),
   route('wxglobe', 'wxglobe/'),
-  route('earth', 'earth/', 'local-only', { isolation: true }),
+  route('earth', 'earth/', 'automatic', { isolation: true }),
   route('motorcycle', 'motorcycle/', 'automatic'),
   route('netviz', 'netviz/', 'opt-in'),
   route('fano-reactor', 'fano-reactor/'),
@@ -122,7 +122,8 @@ export function pagesOptions(env = process.env) {
     executablePath: env.PAGES_CHROME_PATH ?? env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
       ?? (existsSync('/opt/google/chrome/chrome') ? '/opt/google/chrome/chrome' : undefined),
     args: [...args, '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'],
-    allowModelStartup,
+    allowModelStartup, gpuLifecycle: env.PAGES_GPU_LIFECYCLE === '1',
+    reducedPhysics: env.PAGES_REDUCED_PHYSICS === '1',
     timeoutMs: positiveInteger(env.PAGES_ROUTE_TIMEOUT_MS, allowModelStartup ? 600000 : 180000), settleMs: positiveInteger(env.PAGES_SETTLE_MS, 2500),
     desktop: { width: 1440, height: 1000 }, mobile: { width: 390, height: 844 },
   };
@@ -138,11 +139,11 @@ function modelRequestInfo(request) {
   return { modelSource, allowed };
 }
 
-// Standalone exposes its runtime; embedded Earth intentionally exposes only UI.
-// Do not infer a model CID or native execution from DOM readiness alone.
+// Existing standalone and world-host diagnostic accessors expose owned runtimes.
+// No model CID or native execution is inferred from DOM readiness alone.
 export function modelStartupSnapshot() {
   const panel = document.querySelector('.pc-inference-panel');
-  const runtime = window.inferencePanel?.runtime;
+  const runtime = window.inferencePanel?.runtime ?? window.__cubechat?.worldAgents?.runtime ?? window.__earthDemo?.agentHost?.runtime;
   const services = runtime ? Object.values(runtime.services)
     : (window.__PEERCOMPUTE_KERNELS__ ?? []).flatMap((kernel) => [...(kernel.getComputeManager?.()?.modelServices ?? [])]);
   const statuses = services.map((service) => service.getStatus());
@@ -157,7 +158,8 @@ export function modelStartupSnapshot() {
     [...dialog.querySelectorAll('[role="tab"][aria-selected="true"]')].some((tab) => tab.textContent.trim() === 'Stored models'));
   return { loading: !!panel?.querySelector('.pc-model-loading[open]'), message,
     sourceKey: startup?.sourceKey ?? null, startupManifestCid: startup?.manifestCid ?? null, storedPickerOpen,
-    controlsReady: [...(panel?.querySelectorAll('.pc-model-toolbar button') ?? [])].some((button) => button.textContent === 'Models' && !button.disabled),
+    managementOnly: !!panel?.classList.contains('pc-model-management'),
+    controlsReady: [...(panel?.querySelectorAll('.pc-model-toolbar button, .pc-browser-tabs button') ?? [])].some((button) => !button.disabled),
     toggles, statuses, runtimeExposed: !!runtime, proof: services.length ? 'managed service status' : 'DOM-only embedded readiness',
     preferences: runtime?.getPreferences?.() ?? null,
     ready: statuses.length ? statuses.some((state) => state.status === 'ready') : /^Loaded .+\. (?:Send a message\.|Compatible tasks can now use it\.)/.test(message) };
@@ -217,9 +219,9 @@ export function sceneSnapshot(id) {
   if (id === 'webgpuphys-index' || id === 'webgpuphys-gallery') return { ...base, ready: document.querySelectorAll('a[href]').length >= 2 };
   if (id.startsWith('webgpuphys-')) {
     const error = text('#error'), status = text('#status'), particles = Number(text('#particleCount')), fps = Number(text('#fps'));
-    const headless = id === 'webgpuphys-mpm-headless', mpm = id === 'webgpuphys-mpm-visual';
-    return { ...base, ready: !error && (headless ? window.__mpmStarted === true : mpm ? canvas && !/init|error|fail/i.test(status) : canvas && particles > 0 && fps > 0),
-      error, status, particles, fps, mpmStarted: window.__mpmStarted, mpmSteps: window.__mpmStepsRan };
+    const headless = id === 'webgpuphys-mpm-headless', mpm = id === 'webgpuphys-mpm-visual', mass = Number(text('#mass'));
+    return { ...base, ready: !error && (headless ? window.__mpmStarted === true : mpm ? canvas && mass > 0 && fps > 0 && !/init|error|fail/i.test(status) : canvas && particles > 0 && fps > 0),
+      error, status, particles, fps, mass, mpmStarted: window.__mpmStarted, mpmSteps: window.__mpmStepsRan };
   }
   if (['cubechat', 'sneakywoods', 'hyperborea', 'hyperborea-cb'].includes(id)) {
     const game = id.startsWith('hyperborea') ? 'hyperborea' : id;
@@ -236,7 +238,40 @@ export function sceneSnapshot(id) {
 
 // Use the same controls a visitor uses, and read only existing diagnostic
 // snapshots. Never manufacture game state, scores, model output, or peers.
-async function basicInteraction(page, id) {
+async function basicInteraction(page, id, { reducedPhysics = false } = {}) {
+  if (reducedPhysics && ['webgpuphys-toychest', 'webgpuphys-mpm-visual'].includes(id)) {
+    const controller = (name) => page.locator('.controller').filter({ has: page.locator('.name', { hasText: new RegExp(`^${name}$`) }) });
+    const before = Number(await page.locator('#particleCount').textContent());
+    const isMpm = id === 'webgpuphys-mpm-visual';
+    const input = controller(isMpm ? 'Particle Count' : 'Object Count').locator('input').last();
+    await input.fill(isMpm ? '1000' : '128'); await input.press('Enter'); await input.blur();
+    if (isMpm) await controller('Render Mode').locator('select').selectOption({ label: 'Particles' });
+    await page.waitForFunction((previous) => {
+      const count = Number(document.querySelector('#particleCount')?.textContent);
+      return count > 0 && count < previous && Number(document.querySelector('#fps')?.textContent) > 0;
+    }, before, { timeout: 15000 });
+    await page.waitForTimeout(750);
+    const after = Number(await page.locator('#particleCount').textContent());
+    const evidence = isMpm ? { mass: await page.locator('#mass').textContent(), momentum: await page.locator('#momentum').textContent() } : {};
+    if (isMpm) { assert(Number(evidence.mass) > 0, 'Reduced MPM did not compute mass'); await page.locator('#toggleBtn').click(); }
+    else await controller('paused').locator('input[type=checkbox]').check();
+    return { action: 'native reduced-count controls, running simulation, then pause for bounded software capture',
+      scope: 'Reduced-count visual/interaction qualification only; default-count compute is a separate receipt',
+      beforeParticles: before, afterParticles: after, renderMode: isMpm ? 'Particles' : 'default', ...evidence };
+  }
+  if (id === 'overview') {
+    const links = await page.locator('[data-demo-dir]').evaluateAll((elements) => elements.map((element) => ({
+      demo: element.dataset.demoDir, href: element.href, title: element.textContent.trim().slice(0, 200), origin: location.origin,
+    })));
+    assert.equal(links.length, 17, 'Gallery card count changed');
+    for (const link of links) {
+      const target = new URL(link.href);
+      assert.equal(target.origin, link.origin, 'Built gallery points outside the Pages origin');
+      assert(target.pathname.startsWith(`${prefix}${link.demo}/`), 'Built gallery target escaped its nested demo path');
+      assert(PAGES_ROUTES.some((entry) => `${prefix}${entry.pathname}` === target.pathname), `Gallery route lacks acceptance: ${target.pathname}`);
+    }
+    return { action: 'validate all gallery destinations including model/IPFS console', links };
+  }
   if (['cubechat', 'sneakywoods', 'hyperborea', 'hyperborea-cb'].includes(id)) {
     const game = id.startsWith('hyperborea') ? 'hyperborea' : id;
     let started = null;
@@ -245,7 +280,7 @@ async function basicInteraction(page, id) {
       if (await loading.isVisible()) await loading.click();
       await loading.waitFor({ state: 'hidden' });
       started = true;
-      if (await page.locator('#settings-menu').isVisible()) await page.locator('#close-settings').click();
+      if (await page.locator('#settings-menu').isVisible()) await page.locator('#settings-menu [data-close-settings]').click();
       await page.locator('#settings-menu').waitFor({ state: 'hidden' });
     }
     const position = () => page.evaluate((key) => {
@@ -301,13 +336,17 @@ async function basicInteraction(page, id) {
   return { action: 'none', scope: 'scene and route-specific readiness only' };
 }
 
-async function gpuSnapshot(browser, page) {
+async function systemGpuSnapshot(browser) {
   const session = await browser.newBrowserCDPSession();
-  let system;
   try {
     const info = await bounded(session.send('SystemInfo.getInfo'), 5000, 'Browser GPU diagnostics');
-    system = { devices: info.gpu?.devices, featureStatus: info.gpu?.featureStatus };
+    return { devices: info.gpu?.devices, featureStatus: info.gpu?.featureStatus,
+      glRenderer: info.gpu?.auxAttributes?.glRenderer };
   } finally { await session.detach(); }
+}
+
+async function gpuSnapshot(browser, page) {
+  const system = await systemGpuSnapshot(browser);
   let adapter;
   try {
     adapter = await bounded(page.evaluate(async () => {
@@ -348,7 +387,10 @@ export function networkSnapshot({ expectedPeers }) {
     encryption: connection.encryption ?? null, limited: !!connection.limits });
   const managers = [...(window.__PEERCOMPUTE_KERNELS__ ?? []).map((kernel) => ({
     label: `${kernel.config?.gameId}:${kernel.config?.roomId}`, manager: kernel.getNetworkManager?.(),
-  })), { label: 'inference', manager: window.inferencePanel?.runtime.networkManager }].filter(({ manager }) => manager);
+  })), { label: 'inference', manager: window.inferencePanel?.runtime?.networkManager },
+    { label: 'cubechat-room', manager: window.__cubechat?.network?.node?.getNetworkManager?.() },
+    { label: 'cubechat-models', manager: window.__cubechat?.worldAgents?.runtime?.networkManager },
+    { label: 'earth-models', manager: window.__earthDemo?.agentHost?.runtime?.networkManager }].filter(({ manager }) => manager);
   const nodes = managers.map(({ label, manager }) => ({ label, isConnected: manager.isConnected,
     peerId: manager.peerId, bootstrapPeers: [...(manager.bootstrapPeerIds ?? [])],
     connections: (manager.getLibp2pNode?.()?.getConnections?.() ?? []).map(normalize) }));
@@ -358,7 +400,10 @@ export function networkSnapshot({ expectedPeers }) {
   const accepted = nodes.flatMap((node) => node.connections.filter((connection) => connection.status === 'open'
     && expectedPeers.includes(connection.remotePeer)
     && ['/noise', '/tls/1.0.0', 'native'].includes(connection.encryption)).map((connection) => ({ node: node.label, ...connection })));
-  return { nodes, accepted, relayConnected: accepted.length > 0 };
+  const requiredLabels = window.__cubechat ? ['cubechat-room', 'cubechat-models']
+    : window.__earthDemo ? ['earth-models'] : [];
+  return { nodes, accepted, requiredLabels, relayConnected: accepted.length > 0
+    && requiredLabels.every((label) => accepted.some((entry) => entry.node === label)) };
 }
 
 async function isolationSnapshot(page, initializeWorker = false) {
@@ -384,11 +429,19 @@ async function runRoute(definition, options, baseUrl, expectedPeers) {
   const result = { id: definition.id, pathname: definition.pathname, networkPolicy: definition.network,
     startedAt: timestamp(), passed: false, failures: [], screenshots: [], consoleErrors: 0,
     warnings: 0, gpuLossWarnings: 0, pageErrors: 0, httpErrors: 0, failedRequests: 0, websocketErrors: 0, cleanupErrors: [], samples: [], interactions: [],
-    modelStartups: [], modelRequests: [], expectedCancelledModelRequests: [], unexpectedModelRequests: [] };
+    modelStartups: [], modelRequests: [], modelResponses: [], heldModelRequests: [], expectedCancelledModelRequests: [], unexpectedModelRequests: [] };
   const eventPath = path.join(options.outputDir, `${definition.id}.events.jsonl`);
   result.events = eventPath;
   const events = createWriteStream(eventPath, { flags: 'w' });
   let browser, context, page, closing = false, eventError, watchdog, cancellingModel = false;
+  const heldModelRoutes = new Map();
+  const releaseModelRequests = async () => {
+    const pending = [...heldModelRoutes.entries()]; heldModelRoutes.clear();
+    await Promise.all(pending.map(async ([route, release]) => {
+      try { await route.abort('aborted'); } catch { /* The browser may already acknowledge the real AbortSignal. */ }
+      finally { release(); }
+    }));
+  };
   events.on('error', (error) => { eventError = error; });
   const event = (type, data) => events.write(`${JSON.stringify({ at: timestamp(), type, duringCleanup: closing, ...data })}\n`);
   const began = Date.now();
@@ -404,7 +457,11 @@ async function runRoute(definition, options, baseUrl, expectedPeers) {
     // Leave time to capture actual failures before the whole-route watchdog.
     const deadline = Date.now() + Math.min(60000, Math.max(0, remaining() - 20000));
     do {
-      try { if ((await sample('readiness')).ready) return true; }
+      try {
+        const state = await sample('readiness');
+        if (state.error || state.fatalError) throw new Error(`Scene reported a fatal startup error: ${state.error || state.fatalError}`);
+        if (state.ready) return true;
+      }
       catch (error) {
         // A cold isolation bootstrap may perform its one real document reload.
         if (!/Execution context was destroyed|Cannot find context|most likely because of a navigation/.test(error.message)) throw error;
@@ -427,7 +484,7 @@ async function runRoute(definition, options, baseUrl, expectedPeers) {
     const budget = Math.min(240000, Math.max(1, remaining() - 20000));
     const deadline = Date.now() + budget;
     const entry = { label, startedAt: timestamp(), modelRequestsBefore: result.modelRequests.length,
-      mode: options.allowModelStartup ? 'load bounded SmolVLM package; explicitly select saved package' : 'cancel automatic loading; leave saved packages unloaded' };
+      mode: options.allowModelStartup ? 'load bounded SmolVLM package; explicitly select saved package' : 'hold startup model requests before network transfer, cancel through native UI; leave stored packages unloaded' };
     result.modelStartups.push(entry);
     await page.waitForFunction(() => {
       const labels = [...document.querySelectorAll('.pc-inference-panel label')];
@@ -448,11 +505,11 @@ async function runRoute(definition, options, baseUrl, expectedPeers) {
       const state = await page.evaluate(modelStartupSnapshot); entry.state = state;
       const preferencesOff = state.toggles.every((input) => !input.checked && !input.disabled);
       if (/^Error:/.test(state.message)) throw new Error(`Automatic model startup failed: ${state.message}`);
-      if (state.sourceKey && state.sourceKey !== `hf:${startupModelId}`) throw new Error(`Unexpected startup model ${state.sourceKey}; only ${startupModelId} is authorized by this gate`);
+      if (options.allowModelStartup && state.sourceKey && state.sourceKey !== `hf:${startupModelId}`) throw new Error(`Unexpected startup model ${state.sourceKey}; only ${startupModelId} is authorized by this gate`);
       if (state.storedPickerOpen && state.controlsReady && preferencesOff && !storedChoiceHandled) {
         const dialog = page.getByRole('dialog', { name: 'Models', exact: true });
         assert.equal(await dialog.getByRole('tab', { name: 'Stored models', exact: true }).getAttribute('aria-selected'), 'true');
-        if (options.allowModelStartup) {
+        if (options.allowModelStartup && !state.managementOnly) {
           const row = state.startupManifestCid
             ? dialog.locator(`[data-model-cid="${state.startupManifestCid}"]`)
             : dialog.locator('.pc-stored-model').filter({ hasText: MODEL_CATALOG[startupModelId].name });
@@ -462,7 +519,7 @@ async function runRoute(definition, options, baseUrl, expectedPeers) {
           entry.explicitStoredSelection = { modelId: startupModelId, manifestCid: await row.getAttribute('data-model-cid') };
           await dialog.getByRole('button', { name: 'Load selected', exact: true }).click();
         } else {
-          await dialog.getByRole('button', { name: 'Done', exact: true }).click();
+          if (!state.managementOnly) await dialog.getByRole('button', { name: 'Done', exact: true }).click();
           entry.savedPackagesLeftUnloaded = true;
         }
         storedChoiceHandled = true;
@@ -471,12 +528,15 @@ async function runRoute(definition, options, baseUrl, expectedPeers) {
       if (!options.allowModelStartup && state.loading && !cancellationRequested) {
         cancellingModel = true; cancellationRequested = true;
         await page.locator('.pc-model-loading').getByRole('button', { name: 'Cancel', exact: true }).click();
+        await releaseModelRequests();
       }
       if (!state.loading && state.controlsReady && preferencesOff) {
-        if (options.allowModelStartup) assert(state.ready, `Automatic model did not become ready: ${state.message}`);
+        if (options.allowModelStartup && !state.managementOnly) assert(state.ready, `Automatic model did not become ready: ${state.message}`);
         else {
-          assert(cancellationRequested || entry.savedPackagesLeftUnloaded || state.ready, `No startup, cancellation, or saved-package choice was observed: ${state.message}`);
-          if ((cancellationRequested || entry.savedPackagesLeftUnloaded) && state.statuses.length) assert(state.statuses.every((status) => status.status === 'idle'), 'Cancellation or saved-package choice left a resident model');
+          assert(!state.ready, 'No-model acceptance unexpectedly loaded a resident model');
+          if (state.statuses.length) assert(state.statuses.every((status) => status.status === 'idle'), 'Startup cancellation or saved-package choice left a resident model');
+          entry.startupBlockedOrDeferred = !cancellationRequested && !entry.savedPackagesLeftUnloaded;
+          assert.equal(heldModelRoutes.size, 0, 'Model requests remain held after startup cleanup');
         }
         if (state.preferences) assert.deepEqual(state.preferences, { sharing: false, hostInference: false });
         entry.cancelled = cancellationRequested; entry.finishedAt = timestamp();
@@ -496,10 +556,35 @@ async function runRoute(definition, options, baseUrl, expectedPeers) {
       result.failures.push({ phase: 'route deadline', error: `Exceeded ${options.timeoutMs}ms; closing owned browser` });
       void browser.close().catch((error) => result.cleanupErrors.push(errorText(error)));
     }, remaining());
-    context = await browser.newContext({ ignoreHTTPSErrors: true, viewport: options.desktop,
+    // Observe browser GPU initialization before a demo requests its adapter.
+    // This changes no page capabilities and dispatches no GPU workload.
+    result.initialGpu = await systemGpuSnapshot(browser);
+    context = await browser.newContext({ ignoreHTTPSErrors: false, viewport: options.desktop,
       permissions: definition.id === 'cubechat' ? ['camera', 'microphone'] : [] });
-    if (definition.isolation) await context.route('https://**/*', (route) => {
+    if (options.gpuLifecycle) await context.addInitScript(() => {
+      const trace = { created: 0, destroyCalls: [], losses: [] }; window.__pagesGpuLifecycle = trace;
+      if (!globalThis.GPUAdapter || !globalThis.GPUDevice) return;
+      const ids = new WeakMap(), request = GPUAdapter.prototype.requestDevice, destroy = GPUDevice.prototype.destroy;
+      GPUAdapter.prototype.requestDevice = async function (...args) {
+        const device = await request.apply(this, args), id = ++trace.created; ids.set(device, id);
+        device.lost.then((loss) => trace.losses.push({ id, reason: loss.reason, message: loss.message, at: performance.now() }));
+        return device;
+      };
+      GPUDevice.prototype.destroy = function (...args) {
+        trace.destroyCalls.push({ id: ids.get(this) ?? null, stack: new Error('Application GPUDevice.destroy').stack, at: performance.now() });
+        return destroy.apply(this, args);
+      };
+    });
+    if (definition.isolation) await context.route('https://**/*', async (route) => {
       const request = route.request(), info = modelRequestInfo(request);
+      if (info.modelSource && !options.allowModelStartup) {
+        if (closing) return route.abort('aborted');
+        // Hold before network continuation, preserving native startup/cancellation.
+        // No synthetic capabilities, responses, model bytes or stored fixtures.
+        result.heldModelRequests.push(request.url());
+        event('held-model-request', { url: request.url(), reason: 'No model transfer is authorized in this route gate' });
+        await new Promise((resolve) => heldModelRoutes.set(route, resolve)); return;
+      }
       if (info.modelSource && !info.allowed) {
         result.unexpectedModelRequests.push(request.url());
         event('rejected-model-request', { url: request.url(), reason: 'Only the pinned SmolVLM 256M startup package is allowed' });
@@ -519,6 +604,7 @@ async function runRoute(definition, options, baseUrl, expectedPeers) {
     });
     page.on('response', (response) => { event('response', { url: response.url(), status: response.status(), fromServiceWorker: response.fromServiceWorker(),
       contentType: response.headers()['content-type'], coop: response.headers()['cross-origin-opener-policy'], coep: response.headers()['cross-origin-embedder-policy'] });
+      if (modelRequestInfo(response.request()).modelSource) result.modelResponses.push({ url: response.url(), status: response.status() });
       if (!closing && response.status() >= 400) result.httpErrors++; });
     page.on('requestfailed', (request) => {
       const expectedCancellation = cancellingModel && modelRequestInfo(request).modelSource && request.failure()?.errorText === 'net::ERR_ABORTED';
@@ -534,12 +620,12 @@ async function runRoute(definition, options, baseUrl, expectedPeers) {
     if (['cubechat', 'daddygo'].includes(definition.id) || definition.id.startsWith('hyperborea')) url.searchParams.set('e2e', '1');
     result.url = url.href;
     await attempt('cold navigation', () => page.goto(url.href, { waitUntil: 'domcontentloaded', timeout: Math.min(60000, remaining()) }));
-    if (definition.id === 'inference') await attempt('cold automatic model startup', () => modelStartup('cold'));
+    if (definition.id === 'inference') await attempt('cold model startup and cancellation', () => modelStartup('cold'));
     const sceneReady = await attempt('scene readiness', ready);
     if (!sceneReady) await attempt('failure diagnostic screenshot', () => screenshot('failure'));
     await attempt('settle and observe', async () => { await page.waitForTimeout(Math.min(options.settleMs, remaining())); await sample('settled'); });
     if (sceneReady) await attempt('basic visitor interaction', async () => {
-      result.interactions.push({ at: timestamp(), ...await basicInteraction(page, definition.id) });
+      result.interactions.push({ at: timestamp(), ...await basicInteraction(page, definition.id, options) });
       await sample('after interaction');
     });
     else result.interactions.push({ action: 'skipped', reason: 'Scene did not become ready; failure preserved' });
@@ -550,7 +636,7 @@ async function runRoute(definition, options, baseUrl, expectedPeers) {
       else await page.locator('#peercompute-attach').click();
     });
     if (['automatic', 'opt-in'].includes(definition.network)) await attempt('authenticated SecretWorkshop relay', async () => {
-      const deadline = Date.now() + Math.max(0, remaining() - 12000);
+      const deadline = Date.now() + Math.min(45000, Math.max(0, remaining() - 20000));
       do {
         result.network = await page.evaluate(networkSnapshot, { expectedPeers });
         if (result.network.relayConnected) return;
@@ -567,11 +653,26 @@ async function runRoute(definition, options, baseUrl, expectedPeers) {
         if (label === 'mobile') result.interactions.push({ viewport: label, ...await basicInteraction(page, definition.id) });
       });
     }
+    if (definition.id === 'inference') await attempt('standalone Models tabs', async () => {
+      const panel = page.locator('.pc-inference-panel'), library = page.locator('dialog.pc-model-browser');
+      for (const [label, viewport] of [['desktop', options.desktop], ['mobile', options.mobile]]) {
+        await page.setViewportSize(viewport);
+        await panel.locator('.pc-model-toolbar').getByRole('button', { name: 'Models', exact: true }).click();
+        await library.getByRole('tab', { name: 'Stored models', exact: true }).click();
+        await library.getByRole('button', { name: 'Refresh', exact: true }).and(page.locator(':enabled')).waitFor();
+        await screenshot(`models-stored-${label}`);
+        await library.getByRole('tab', { name: 'Browse models', exact: true }).click();
+        await screenshot(`models-browse-${label}`);
+        await library.getByRole('button', { name: 'Done', exact: true }).click();
+        await library.waitFor({ state: 'hidden' });
+      }
+    });
     if (definition.id === 'daddygo') await attempt('restore desktop game layout', async () => {
       await page.setViewportSize(options.desktop); await page.waitForTimeout(400);
       result.interactions.push({ action: 'restored desktop game layout', ...await daddygoLayout(page) });
     });
-    await attempt('GPU capability diagnostics', async () => { result.gpu = await gpuSnapshot(browser, page); });
+    await attempt('GPU capability diagnostics', async () => { result.gpu = await gpuSnapshot(browser, page);
+      if (options.gpuLifecycle) result.gpuLifecycle = await page.evaluate(() => window.__pagesGpuLifecycle); });
     if (definition.isolation) {
       await attempt('cold document and worker isolation', async () => {
         result.coldIsolation = await isolationSnapshot(page, definition.id === 'inference');
@@ -590,13 +691,57 @@ async function runRoute(definition, options, baseUrl, expectedPeers) {
         assert(result.warmIsolation.document.crossOriginIsolated && result.warmIsolation.document.sharedArrayBuffer, 'Warm document isolation did not survive reload');
         if (definition.id === 'inference') assert(result.warmIsolation.workers.length > 0 && result.warmIsolation.workers.every((worker) => worker.crossOriginIsolated && worker.sharedArrayBuffer), 'Warm managed worker isolation failed');
       });
-      if (definition.id !== 'inference') await attempt('embedded model panel startup', async () => {
-        await page.getByRole('button', { name: '> LOCAL AGENT', exact: true }).click();
-        await page.locator('.pc-inference-panel').waitFor({ state: 'visible', timeout: Math.min(60000, remaining()) });
+      if (definition.id !== 'inference') await attempt('world model management', async () => {
+        if (definition.id === 'cubechat') {
+          await basicInteraction(page, definition.id);
+          await page.getByRole('button', { name: 'Settings', exact: true }).click();
+          await page.locator('#settings-menu').getByRole('button', { name: 'Residents', exact: true }).click();
+          const residents = page.getByRole('dialog', { name: 'Residents', exact: true });
+          await residents.locator('summary').filter({ hasText: 'Place a resident' }).click();
+          await residents.getByRole('textbox', { name: 'Physical appearance', exact: true }).waitFor();
+          assert.equal(await residents.getByRole('checkbox', { name: 'Respond to world chat', exact: true }).isChecked(), false);
+          await screenshot('residents-mobile');
+          await residents.getByRole('button', { name: 'Done', exact: true }).click();
+          await page.getByRole('button', { name: 'Settings', exact: true }).click();
+          await page.locator('#settings-menu').getByRole('button', { name: 'Models', exact: true }).click();
+        } else {
+          await page.getByRole('button', { name: 'Agents', exact: true }).click();
+          await page.getByRole('dialog', { name: 'Agents · EarthGrid', exact: true }).getByRole('button', { name: 'Models', exact: true }).click();
+        }
+        await page.locator('.pc-inference-panel').waitFor({ state: 'attached', timeout: Math.min(60000, remaining()) });
         await modelStartup('embedded');
-        await screenshot('embedded-model');
-        await page.getByRole('button', { name: 'CLOSE / UNLOAD', exact: true }).click();
-        await page.locator('.pc-inference-panel').waitFor({ state: 'detached' });
+        const panel = page.locator('.pc-inference-panel');
+        const library = page.locator('dialog.pc-model-browser');
+        if (!await library.isVisible()) await panel.locator('.pc-model-toolbar').getByRole('button', { name: 'Models', exact: true }).click();
+        if (definition.id === 'cubechat') assert.equal(await page.locator('dialog[open]').count(), 1, 'Cube model management opened nested dialogs');
+        for (const [label, viewport] of [['desktop', options.desktop], ['mobile', options.mobile]]) {
+          await page.setViewportSize(viewport);
+          await library.getByRole('tab', { name: 'Stored models', exact: true }).click();
+          await library.getByRole('button', { name: 'Refresh', exact: true }).and(page.locator(':enabled')).waitFor();
+          const bounds = await library.evaluate((node) => {
+            const rect = node.getBoundingClientRect();
+            return { x: rect.x, y: rect.y, right: rect.right, bottom: rect.bottom, width: innerWidth, height: innerHeight };
+          });
+          assert(bounds.x >= -1 && bounds.y >= -1 && bounds.right <= bounds.width + 1 && bounds.bottom <= bounds.height + 1, 'Models exceeds viewport');
+          await screenshot(`models-stored-${label}`);
+          await library.getByRole('tab', { name: 'Browse models', exact: true }).click();
+          await screenshot(`models-browse-${label}`);
+        }
+        if (definition.id === 'cubechat') {
+          await library.getByRole('button', { name: 'Config', exact: true }).click();
+          assert.equal(await page.locator('dialog[open]').count(), 1, 'Config opened a second model dialog');
+          await library.getByRole('spinbutton', { name: 'Model RAM budget (GiB)', exact: true }).waitFor();
+          await screenshot('models-config-mobile');
+          await library.getByRole('button', { name: 'Done', exact: true }).click();
+          await library.getByRole('button', { name: 'Done', exact: true }).click();
+          await panel.waitFor({ state: 'detached' });
+          assert.equal(await page.locator('dialog[open]').count(), 0, 'Closing Models did not return directly to the world');
+        } else {
+          await library.getByRole('button', { name: 'Done', exact: true }).click();
+          await page.locator('dialog.world-agent-models').getByRole('button', { name: 'Back to world', exact: true }).click();
+          await panel.waitFor({ state: 'detached' });
+          await page.getByRole('dialog', { name: 'Agents · EarthGrid', exact: true }).getByRole('button', { name: 'Close', exact: true }).click();
+        }
       });
     }
   } catch (error) { result.failures.push({ phase: 'route setup', error: errorText(error) }); }
@@ -604,17 +749,21 @@ async function runRoute(definition, options, baseUrl, expectedPeers) {
     closing = true; clearTimeout(watchdog);
     if (page && !page.isClosed()) {
       try { await bounded(page.evaluate(async () => {
-        if (window.inferencePanel) await window.inferencePanel.dispose();
+        await window.inferencePanel?.dispose?.();
+        await window.__cubechat?.destroy?.();
+        await window.__earthDemo?.dispose?.();
         for (const kernel of [...(window.__PEERCOMPUTE_KERNELS__ ?? [])].reverse()) await kernel.stop();
         await window.__motorcycleDemo?.dispose?.();
       }), 15000, 'Application cleanup'); } catch (error) { result.cleanupErrors.push(errorText(error)); }
     }
+    try { await bounded(releaseModelRequests(), 5000, 'Held model request cleanup'); } catch (error) { result.cleanupErrors.push(errorText(error)); }
     try { await bounded(context?.close(), 15000, 'Browser context cleanup'); } catch (error) { result.cleanupErrors.push(errorText(error)); }
     try { await bounded(browser?.close(), 15000, 'Browser cleanup'); } catch (error) { result.cleanupErrors.push(errorText(error)); }
     events.end(); await new Promise((resolve) => events.closed ? resolve() : events.once('close', resolve));
     if (eventError) result.cleanupErrors.push(errorText(eventError));
     result.finishedAt = timestamp(); result.durationMs = Date.now() - began;
     result.passed = !result.failures.length && !result.cleanupErrors.length && !result.pageErrors
+      && (options.allowModelStartup || result.modelResponses.length === 0)
       && !result.consoleErrors && !result.gpuLossWarnings && !result.httpErrors && !result.failedRequests && !result.websocketErrors && !result.unexpectedModelRequests.length;
     await save(); console.log(`[pages] ${definition.id}: ${result.passed ? 'PASS' : 'FAIL'} (${result.durationMs}ms)`);
   }
@@ -625,8 +774,9 @@ export async function runPagesAcceptance(options = pagesOptions()) {
   await mkdir(options.outputDir, { recursive: true });
   const report = { startedAt: timestamp(), scope: options.allowModelStartup
     ? 'Built Pages routes, owned browsers, automatic pinned SmolVLM 256M startup, sharing/hosting disabled, no user-host inference'
-    : 'Built Pages routes, owned browsers, automatic loading cancelled after initialization; partial pinned SmolVLM downloads may occur; no user-host inference',
-    allowModelStartup: options.allowModelStartup, allowedStartupModel: startupModelId,
+    : 'Built Pages routes, owned browsers, model requests held before transfer and native startup cancellation; no weights or user-host inference',
+    allowModelStartup: options.allowModelStartup, allowedStartupModel: options.allowModelStartup ? startupModelId : null,
+    reducedPhysics: options.reducedPhysics,
     docsRoot: options.docsRoot, chrome: options.executablePath, chromeArgs: options.args, headless: options.headless, routes: [], cleanupErrors: [], passed: false };
   const file = path.join(options.outputDir, 'report.json');
   const save = () => writeFile(file, JSON.stringify(report, null, 2));

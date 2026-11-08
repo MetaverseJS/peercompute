@@ -31,12 +31,23 @@ Shift+Enter adds a line, and Escape returns to the world. The transcript keeps
 full messages while overhead bubbles show a brief excerpt and expire.
 Delivery status reports peer acknowledgments; it is not a read receipt.
 
-Choose **Residents**, name a resident and place it in the world. Click its cube
+Open **Residents** in the hamburger menu, name a resident and place it in the world. Click its cube
 or select it as the chat target to use the same composer for a direct
 conversation. Direct visitor histories remain separate from public room chat.
 Residents can roam, follow their host's player, or stay stationary. These are
 bounded scripted motor policies with a replaceable controller; learned movement
 and autonomous agent-to-agent dialogue remain later work.
+
+Describe a resident’s physical appearance when placing it. If an image model is
+available, its generated image is saved and displayed on the front of the cube;
+otherwise the description is retained for Retry appearance. Shared residents
+share their bounded face texture with other players. Reload restores the saved
+image without generating again.
+
+Enable **Respond to world chat** for public replies to players. It is off by
+default, ignores messages from other residents, and uses a separate history from
+direct conversations. The option makes replies public even for an unshared body.
+Set your own display name under Player to show it above your cube to others.
 
 The native roster replaces the separate bot and agent interfaces. A resident
 uses one mesh and collider. Browser body leases prevent two same-origin tabs
@@ -45,7 +56,7 @@ through the room network. The saved position is a spawn anchor; moving does not
 write the private agent journal every frame. Remote motion interpolates owner
 updates and may lag the owner by a directory update interval.
 
-**Models** opens the shared library and runtime configuration without another
+**Models** in the hamburger menu opens the shared library and runtime configuration without another
 chat interface or automatic downloads. The host keeps loaded models when this
 window closes. Chat voice options prepare the managed speech packages; Talk /
 Stop records a short utterance, and spoken resident replies use positional audio.
@@ -58,7 +69,8 @@ the normal Residents interface does not create hidden bot browser frames.
 
 Reusable components live in `demos/shared`: authenticated `RoomChatService`,
 `SpeechBubbleLayer`, `WorldEmbodimentLease`, `WorldResidentMotion`, and the existing
-`WorldAgentHost`. The Cube scene supplies rendering, placement and input; agents
+`WorldAgentHost`, plus `WorldAppearance`, `WorldAppearancePresenter` and
+`WorldChatResponder`. The Cube scene supplies rendering, placement and input; agents
 retain private IndexedDB identity/history and managed model routing. These seams
 support the homunculus architecture without coupling its future policies to DOM
 controls or CubeChat-specific physics.

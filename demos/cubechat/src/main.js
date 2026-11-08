@@ -121,7 +121,8 @@ class CubeChat {
       onMessage: message => {
         if (this.roomChat !== service || this.isDestroying) return;
         this.worldUi?.appendRoomMessage(message);
-        this.speechBubbles?.show(message.peerId, message.text);
+        if (!message.agentId) this.speechBubbles?.show(message.peerId, message.text);
+        this.worldAgents?.receiveWorldMessage(message);
       },
       onStatus: delivery => {
         if (this.roomChat !== service || this.isDestroying) return;
@@ -160,6 +161,12 @@ class CubeChat {
           networkManager: this.network.node.getNetworkManager()
         }),
         exclusiveEmbodiments: true,
+        panelOwnsWindow: true,
+        getModelReturnFocus: () => document.getElementById('settings-button'),
+        publishWorldMessage: (input, { signal }) => {
+          if (!this.roomChat) throw new Error('Room chat is not connected');
+          return this.roomChat.send(input, { signal });
+        },
         beforeOpen: () => this._releaseWorldInput(),
         uiFactory: options => {
           const ui = createCubeWorldUi({ ...options,
@@ -640,6 +647,7 @@ class CubeChat {
       // The updateRemoteBillboardProximity() method will automatically apply it when in range
     } else if (message.type === 'player_update') {
       const { peerId, data } = message;
+      const displayName = typeof data.name === 'string' ? data.name.trim().slice(0, 20) || 'Anonymous' : 'Anonymous';
 
       // Add new remote player if not already tracked
       if (!this.remotePlayers.has(peerId)) {
@@ -647,18 +655,13 @@ class CubeChat {
         this.physics.createPlayerBody(peerId, data.position);
         this.remotePlayers.add(peerId);
         
-        // Apply name if available
-        if (data.name) {
-          this.scene.setPlayerName(peerId, data.name);
-        }
+        this.scene.setPlayerName(peerId, displayName);
         
         console.log('New player joined:', peerId);
         this.logEvent(`Player joined: ${data.name || peerId.substring(0, 8)}...`, 'join');
       } else {
         // Update existing player's name and color if changed
-        if (data.name) {
-          this.scene.setPlayerName(peerId, data.name);
-        }
+        this.scene.setPlayerName(peerId, displayName);
         if (data.color) {
           this.scene.updatePlayerColor(peerId, data.color);
         }
@@ -1227,10 +1230,9 @@ class CubeChat {
     }
     
     // Apply saved settings
-    if (savedName) {
-      this.network.localPlayer.name = savedName;
-      this.scene.setPlayerName(this.network.localPlayer.id, savedName);
-    }
+    this.network.localPlayer.name = savedName.trim().slice(0, 20) || 'Anonymous';
+    this.scene.setPlayerName(this.network.localPlayer.id, this.network.localPlayer.name);
+    this.network.broadcastPlayerState();
     if (savedColor !== this.network.localPlayer.color) {
       this.network.localPlayer.color = savedColor;
       this.scene.updatePlayerColor(this.network.localPlayer.id, savedColor);
@@ -1247,14 +1249,14 @@ class CubeChat {
 
     // Save settings
     saveButton.addEventListener('click', () => {
-      const newName = nameInput.value.trim();
+      const newName = nameInput.value.trim().slice(0, 20);
       const newColor = colorInput.value;
       const newMass = parseFloat(massInput.value) || 1;
       const newScreenHeight = parseFloat(screenHeightInput.value) || 100;
       const newInvertMouse = invertMouseInput.checked;
       
       // Update local player
-      this.network.localPlayer.name = newName;
+      this.network.localPlayer.name = newName || 'Anonymous';
       this.network.localPlayer.color = newColor;
       
       // Save to localStorage
@@ -1266,7 +1268,7 @@ class CubeChat {
       
       // Update visuals
       this.scene.updatePlayerColor(this.network.localPlayer.id, newColor);
-      this.scene.setPlayerName(this.network.localPlayer.id, newName);
+      this.scene.setPlayerName(this.network.localPlayer.id, this.network.localPlayer.name);
       
       // Update physics mass
       const body = this.physics.getPlayerBody(this.network.localPlayer.id);
@@ -1443,7 +1445,7 @@ class CubeChat {
     }
     this.scene.createPlayer(localPlayer.id, localPlayer.color, localPlayer.position);
     this.scene.setLocalPlayer(localPlayer.id);
-    this.scene.setPlayerName(localPlayer.id, localPlayer.name || '');
+    this.scene.setPlayerName(localPlayer.id, localPlayer.name || 'Anonymous');
     this.physics.createPlayerBody(localPlayer.id, localPlayer.position);
     if (this.network.getLocalStream()) {
       this.scene.setPlayerVideoStream(localPlayer.id, this.network.getLocalStream());

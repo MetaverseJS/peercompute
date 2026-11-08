@@ -60,6 +60,38 @@ test('two real Noise services echo locally once, derive author from connection, 
   await b.service.send({ name: 'B', text: 'Reply' }); assert.equal(a.messages[1].text, 'Reply');
 });
 
+test('resident room messages retain authenticated owner plus bounded agentId and legacy human wire stays unchanged', { timeout: 15000 }, async t => {
+  const [a, b] = await fixture(t), wire = [], envelope = a.service._envelope.bind(a.service);
+  a.service._envelope = (...args) => { const value = envelope(...args); if (value.type === 'message') wire.push(value); return value; };
+  const agentId = crypto.randomUUID();
+  assert.equal((await a.service.send({ agentId, name: 'Resident name is display only', text: 'I live here' })).delivery.status, 'delivered');
+  assert.equal(a.messages[0].agentId, agentId); assert.equal(b.messages[0].agentId, agentId);
+  assert.equal(b.messages[0].peerId, a.node.peerId.toString());
+  assert.equal(b.messages[0].local, false); assert.equal(wire[0].agentId, agentId);
+  assert.equal((await a.service.send({ text: 'Human reply' })).delivery.status, 'delivered');
+  assert.equal(Object.hasOwn(wire[1], 'agentId'), false); assert.equal(Object.hasOwn(b.messages[1], 'agentId'), false);
+  for (const input of [{ agentId: '' }, { agentId: null }, { agentId: 4 }, { agentId: 'a'.repeat(81) }, { agentId: '../another' },
+    { agentId, peerId: b.node.peerId.toString() }, { agentId, ownerPeerId: b.node.peerId.toString() }]) {
+    assert.throws(() => a.service.send({ text: 'Invalid attribution', ...input }));
+  }
+  assert.equal(a.messages.length, 2); assert.equal(b.messages.length, 2);
+});
+
+test('resident replay cannot change human/resident attribution or evade authenticated scope', { timeout: 15000 }, async t => {
+  const [a, b] = await fixture(t), id = crypto.randomUUID(), agentId = crypto.randomUUID();
+  assert.equal((await raw(a, b, { message: { id, agentId } })).type, 'ack');
+  assert.equal((await raw(a, b, { message: { id, agentId } })).type, 'ack');
+  assert.equal(b.messages.length, 1); assert.equal(b.messages[0].peerId, a.node.peerId.toString());
+  for (const changed of [{ id }, { id, agentId: 'other' }, { agentId, peerId: b.node.peerId.toString() },
+    { agentId: {} }, { agentId: '\ud800' }, { agentId, worldId: 'other' }, { agentId, scope: { ...scope, roomId: 'other' } }]) {
+    assert.equal((await raw(a, b, { message: changed })).type, 'error');
+  }
+  const humanId = crypto.randomUUID();
+  assert.equal((await raw(a, b, { message: { id: humanId } })).type, 'ack');
+  assert.equal((await raw(a, b, { message: { id: humanId, agentId } })).type, 'error');
+  assert.equal(b.messages.length, 2);
+});
+
 test('enumeration excludes bootstrap, self, unknown and other room/topology/game peers', { timeout: 15000 }, async (t) => {
   const [a, b] = await fixture(t);
   const peer = b.node.peerId.toString();

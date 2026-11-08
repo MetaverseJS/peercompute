@@ -83,10 +83,23 @@ async function fixture(t, { mobile = false, enabled = true } = {}) {
         pending.reply?.reject(new DOMException('Cancelled', 'AbortError')); delete pending.reply; ui.setBusy(false);
       },
       onSpawn: async input => {
-        calls.push({ type: 'spawn', input }); const agent = { key: 'local:new', agentId: 'new', local: true, name: input.name, status: 'idle' };
+        calls.push({ type: 'spawn', input }); if (window.failSpawn) throw Error('Save failed');
+        const agent = { key: 'local:new', agentId: 'new', local: true, name: input.name, status: 'idle', appearancePrompt: input.appearancePrompt, respondToWorldChat: input.respondToWorldChat, appearanceStatus: input.appearancePrompt ? 'waiting' : undefined };
         residents.push(agent); ui.setAgents(residents); ui.open(); ui.select(agent); ui.setMessages([]);
       },
       onMovement: async input => { calls.push({ type: 'movement', ...input }); },
+      onAppearance: async input => {
+        calls.push({ type: 'appearance', ...input });
+        if (window.holdAppearance) await hold('appearance');
+        if (window.failAppearance) throw Error('Image provider unavailable; description remains saved.');
+      },
+      onWorldChat: async input => {
+        calls.push({ type: 'world-chat', ...input });
+        if (window.holdWorldChat) await hold('world-chat');
+        if (window.failWorldChat) throw Error('World-chat preference was not saved.');
+        residents = residents.map(agent => agent.key === input.key ? { ...agent, respondToWorldChat: input.enabled } : agent);
+        ui.setAgents(residents);
+      },
       onRemove: async key => { calls.push({ type: 'remove', key }); residents = residents.filter(row => row.key !== key); ui.setAgents(residents); },
       onResume: async key => { calls.push({ type: 'resume', key }); residents = residents.map(row => row.key === key ? { ...row, status: 'idle', recoveryRequired: false } : row); ui.setAgents(residents); },
       onPlayerCaption: text => calls.push({ type: 'caption', text }),
@@ -98,6 +111,15 @@ async function fixture(t, { mobile = false, enabled = true } = {}) {
         else { pending.record?.resolve(); delete pending.record; ui.setVoiceStatus({ enabled: true, recording: false }); }
       }
     });
+    // The application owns this external menu; CubeWorldUi only exposes actions.
+    const menuButton = document.createElement('button'); menuButton.textContent = 'World menu';
+    menuButton.id = 'fixture-menu'; menuButton.style.cssText = 'position:fixed;right:8px;top:58px;z-index:2200';
+    const menu = document.createElement('dialog'); menu.setAttribute('aria-label', 'World menu'); menu.className = 'cube-settings';
+    for (const action of ['Residents', 'Models']) {
+      const entry = document.createElement('button'); entry.textContent = action; menu.append(entry);
+      entry.onclick = () => { menu.close(); if (action === 'Residents') ui.openResidents({ returnFocus: menuButton }); else void ui.openModels(); };
+    }
+    menuButton.onclick = () => menu.showModal(); document.body.append(menuButton, menu);
     ui.setAgents(residents); ui.setEnabled(enabled);
     window.canvasEnters = 0; document.querySelector('canvas').addEventListener('keydown', event => { if (event.key === 'Enter') canvasEnters++; });
     window.outsideClicks = 0; document.querySelector('#outside').onclick = () => outsideClicks++;
@@ -108,7 +130,112 @@ const prompt = page => page.getByRole('textbox', { name: 'World message', exact:
 const target = page => page.getByRole('combobox', { name: 'Chat with', exact: true });
 const transcript = page => page.getByRole('log', { name: 'World conversation', exact: true });
 async function openChat(page) { await page.getByRole('button', { name: /^Chat ·/ }).click(); }
+async function openResidents(page) {
+  await page.getByRole('button', { name: 'World menu', exact: true }).click();
+  await page.getByRole('dialog', { name: 'World menu', exact: true }).getByRole('button', { name: 'Residents', exact: true }).click();
+}
 async function selectAgent(page, key = 'local:ada') { await target(page).selectOption(key); await page.waitForFunction(key => ui.getTarget() === key && !document.querySelector('[aria-label="World message"]').disabled, key); }
+
+test('world HUD has no Residents or Models launchers; external menu and hidden-opener focus remain usable', async t => {
+  const page = await fixture(t);
+  const uiRoot = page.locator('.cube-native-ui');
+  assert.equal(await uiRoot.getByRole('button', { name: /^(Residents|Models)$/ }).count(), 0);
+  assert.equal(await uiRoot.locator('.cube-native-nav').count(), 0);
+  await openResidents(page);
+  const dialog = page.getByRole('dialog', { name: 'Residents', exact: true });
+  await page.keyboard.press('Escape'); await dialog.waitFor({ state: 'hidden' });
+  assert.equal(await page.locator('#fixture-menu').evaluate(element => document.activeElement === element), true);
+  await page.getByRole('button', { name: 'World menu', exact: true }).click();
+  await page.getByRole('dialog', { name: 'World menu', exact: true }).getByRole('button', { name: 'Models', exact: true }).click();
+  await page.waitForFunction(() => calls.some(call => call.type === 'models'));
+  await page.evaluate(() => {
+    const hiddenOpener = document.querySelector('dialog[aria-label="World menu"] button');
+    ui.openResidents({ returnFocus: hiddenOpener });
+  });
+  await dialog.getByRole('button', { name: 'Done', exact: true }).click();
+  assert.equal(await page.getByRole('button', { name: /^Chat ·/ }).evaluate(element => document.activeElement === element), true);
+});
+
+test('appearance presentation is bounded and local-only; retries await the host without repeating work', async t => {
+  const page = await fixture(t);
+  await page.evaluate(() => {
+    residents = residents.map(agent => ({ ...agent, appearancePrompt: 'Blue robot face', appearanceStatus: 'waiting' }));
+    ui.setAgents(residents);
+  });
+  await openResidents(page);
+  const dialog = page.getByRole('dialog', { name: 'Residents', exact: true });
+  const ada = dialog.locator('[data-agent-key="local:ada"]'), peer = dialog.locator('[data-agent-key="peer:remote"]');
+  assert.equal(await peer.getByRole('button', { name: /appearance/ }).count(), 0);
+  assert.equal(await peer.locator('.cube-native-appearance-status').count(), 0);
+  const retry = ada.getByRole('button', { name: 'Retry appearance for Ada', exact: true });
+  await page.evaluate(() => { holdAppearance = true; failAppearance = true; });
+  await retry.click(); await page.waitForFunction(() => Boolean(pending.appearance));
+  assert.equal(await retry.isDisabled(), true);
+  await retry.evaluate(element => element.onclick());
+  assert.equal(await page.evaluate(() => calls.filter(call => call.type === 'appearance').length), 1);
+  await page.evaluate(() => pending.appearance.resolve());
+  await dialog.getByRole('status').filter({ hasText: 'Image provider unavailable; description remains saved.' }).waitFor();
+  assert.equal(await retry.isEnabled(), true);
+  assert.equal(await page.evaluate(() => residents[0].appearancePrompt), 'Blue robot face');
+  await page.evaluate(() => { residents[0].appearanceStatus = 'generating'; ui.setAgents(residents); });
+  assert.equal(await ada.getByRole('button', { name: 'Generate appearance for Ada', exact: true }).isDisabled(), true);
+  assert.match(await ada.innerText(), /Generating appearance/);
+  await page.evaluate(() => {
+    residents[0].appearanceStatus = 'error'; residents[0].appearanceError = '<img src=x>'.repeat(200); ui.setAgents(residents);
+  });
+  assert.equal(await ada.locator('img').count(), 0);
+  assert((await ada.locator('.cube-native-appearance-status').innerText()).length < 600);
+  assert.equal(await ada.getByRole('button', { name: 'Retry appearance for Ada', exact: true }).isEnabled(), true);
+});
+
+test('optional appearance prompt preserves failed-save draft and rejects injected over-limit text', async t => {
+  const page = await fixture(t); await openResidents(page);
+  const dialog = page.getByRole('dialog', { name: 'Residents', exact: true });
+  await dialog.locator('summary').click();
+  await dialog.getByRole('textbox', { name: 'Resident name', exact: true }).fill('Saved look');
+  const appearance = dialog.getByRole('textbox', { name: 'Physical appearance', exact: true });
+  await appearance.evaluate(element => { element.value = 'x'.repeat(1001); });
+  await dialog.getByRole('button', { name: 'Place resident', exact: true }).click();
+  assert.match(await dialog.innerText(), /at most 1000 characters/);
+  assert.equal(await page.evaluate(() => calls.filter(call => call.type === 'spawn').length), 0);
+  await appearance.fill('A silver face'); await page.evaluate(() => { failSpawn = true; });
+  await dialog.getByRole('button', { name: 'Place resident', exact: true }).click();
+  await dialog.getByRole('status').filter({ hasText: 'Save failed' }).waitFor();
+  assert.equal(await appearance.inputValue(), 'A silver face');
+  await appearance.fill(''); await page.evaluate(() => { failSpawn = false; });
+  await dialog.getByRole('checkbox', { name: 'Respond to world chat', exact: true }).check();
+  await dialog.getByRole('button', { name: 'Place resident', exact: true }).click();
+  await dialog.waitFor({ state: 'hidden' });
+  assert.equal(await page.evaluate(() => calls.filter(call => call.type === 'spawn').at(-1).input.appearancePrompt), '');
+  assert.equal(await page.evaluate(() => calls.filter(call => call.type === 'spawn').at(-1).input.respondToWorldChat), true);
+});
+
+test('world-chat response preference is owner-only, serialized, and restored when saving fails', async t => {
+  const page = await fixture(t); await openResidents(page);
+  const dialog = page.getByRole('dialog', { name: 'Residents', exact: true });
+  const ada = dialog.locator('[data-agent-key="local:ada"]');
+  const respond = ada.getByRole('checkbox', { name: 'Respond to world chat for Ada', exact: true });
+  assert.equal(await respond.isChecked(), false);
+  assert.equal(await dialog.locator('[data-agent-key="peer:remote"]').getByRole('checkbox').count(), 0);
+  await page.evaluate(() => { holdWorldChat = true; failWorldChat = true; });
+  await respond.check(); await page.waitForFunction(() => Boolean(pending['world-chat']));
+  assert.equal(await respond.isDisabled(), true);
+  assert.equal(await ada.getByRole('button', { name: 'Remove body Ada', exact: true }).isDisabled(), true);
+  await respond.evaluate(element => element.onchange());
+  assert.equal(await page.evaluate(() => calls.filter(call => call.type === 'world-chat').length), 1);
+  await page.evaluate(() => pending['world-chat'].resolve());
+  await dialog.getByRole('status').filter({ hasText: 'World-chat preference was not saved.' }).waitFor();
+  assert.equal(await respond.isChecked(), false);
+  await page.evaluate(() => { holdWorldChat = false; failWorldChat = false; });
+  await respond.check(); await page.waitForFunction(() => residents[0].respondToWorldChat === true);
+  assert.equal(await respond.isChecked(), true);
+  await page.evaluate(() => ui.setBusy(true)); assert.equal(await respond.isDisabled(), true);
+  await page.evaluate(() => ui.setBusy(false)); await respond.uncheck();
+  await page.waitForFunction(() => residents[0].respondToWorldChat === false);
+  assert.deepEqual(await page.evaluate(() => calls.filter(call => call.type === 'world-chat').map(({key,enabled})=>({key,enabled}))), [
+    { key: 'local:ada', enabled: true }, { key: 'local:ada', enabled: true }, { key: 'local:ada', enabled: false }
+  ]);
+});
 
 test('world Enter opens one composer before canvas picking, clears movement, and respects startup/native button focus', async t => {
   const page = await fixture(t, { enabled: false });
@@ -208,7 +335,7 @@ test('target change waits for cancellation cleanup, and failure retains the sele
 });
 
 test('Residents is one accessible roster with owner-only movement/recovery/removal and spawn defaults', async t => {
-  const page = await fixture(t); await page.getByRole('button', { name: 'Residents', exact: true }).click();
+  const page = await fixture(t); await openResidents(page);
   const dialog = page.getByRole('dialog', { name: 'Residents', exact: true });
   const peer = dialog.locator('[data-agent-key="peer:remote"]');
   assert.equal(await peer.getByRole('button').count(), 1); assert.equal(await peer.getByRole('combobox').count(), 0);
@@ -218,14 +345,18 @@ test('Residents is one accessible roster with owner-only movement/recovery/remov
   await page.waitForFunction(() => calls.some(call => call.type === 'movement' && call.mode === 'follow'));
   await dialog.locator('summary').click(); await dialog.getByRole('textbox', { name: 'Resident name', exact: true }).fill('New resident');
   await dialog.getByRole('textbox', { name: 'Resident goals', exact: true }).fill('Listen\nHelp visitors');
+  await dialog.getByRole('textbox', { name: 'Physical appearance', exact: true }).fill('  A friendly blue robot face  ');
+  assert.equal(await dialog.getByRole('textbox', { name: 'Physical appearance', exact: true }).getAttribute('maxlength'), '1000');
+  assert.equal(await dialog.getByRole('checkbox', { name: 'Respond to world chat', exact: true }).isChecked(), false);
   assert.equal(await dialog.getByRole('combobox', { name: 'Movement', exact: true }).inputValue(), 'roam');
   await dialog.getByRole('button', { name: 'Place resident', exact: true }).click();
   await dialog.waitFor({ state: 'hidden' });
   const created = await page.evaluate(() => calls.find(call => call.type === 'spawn').input);
-  assert.deepEqual(created, { name: 'New resident', goals: ['Listen', 'Help visitors'], localOnly: false, shared: true });
+  assert.deepEqual(created, { name: 'New resident', goals: ['Listen', 'Help visitors'], appearancePrompt: 'A friendly blue robot face', respondToWorldChat: false, localOnly: false, shared: true });
   assert.deepEqual(await page.evaluate(() => calls.filter(call => call.type === 'movement').at(-1)), { type: 'movement', key: 'local:new', mode: 'roam' });
   assert.equal(await page.evaluate(() => ui.getTarget()), 'local:new');
-  await page.getByRole('button', { name: 'Residents', exact: true }).click();
+  await openResidents(page);
+  assert.match(await dialog.locator('[data-agent-key="local:new"]').innerText(), /Appearance saved/);
   await dialog.getByRole('button', { name: 'Remove body New resident', exact: true }).click();
   await page.waitForFunction(() => ui.getTarget() === 'room');
 });
@@ -234,18 +365,20 @@ test('Models awaits active cancellation, closes its own dialogs and keeps one co
   const page = await fixture(t); await openChat(page); await selectAgent(page);
   await page.evaluate(() => { holdReply = true; holdCancel = true; }); await prompt(page).fill('running'); await page.keyboard.press('Enter');
   await page.waitForFunction(() => Boolean(pending.reply));
-  await page.getByRole('button', { name: 'Residents', exact: true }).click();
+  await openResidents(page);
   await page.evaluate(() => { void ui.openModels(); }); await page.waitForFunction(() => Boolean(pending.cancel));
   assert.equal(await page.evaluate(() => calls.filter(call => call.type === 'models').length), 0);
   await page.evaluate(() => pending.cancel.resolve()); await page.waitForFunction(() => calls.some(call => call.type === 'models'));
   assert.equal(await page.getByRole('dialog', { name: 'Residents', exact: true }).isVisible(), false);
-  assert.equal(await prompt(page).count(), 1); assert.equal(await prompt(page).inputValue(), 'running');
+  assert.equal(await page.locator('.cube-native-composer textarea').count(), 1);
+  if (!await prompt(page).isVisible()) await openChat(page);
+  assert.equal(await prompt(page).inputValue(), 'running');
 });
 
 test('roster Chat reopens the current resident without losing its draft and modal gameplay keys remain owned by the UI', async t => {
   const page = await fixture(t); await openChat(page); await selectAgent(page);
   await prompt(page).fill('current resident draft');
-  await page.getByRole('button', { name: 'Residents', exact: true }).click();
+  await openResidents(page);
   const dialog = page.getByRole('dialog', { name: 'Residents', exact: true });
   await dialog.getByRole('button', { name: 'Done', exact: true }).focus();
   await page.keyboard.down('w');
@@ -320,17 +453,18 @@ test('mobile chat and Residents wrap within the viewport and suspend touch HUD o
   for (const control of await page.locator('.cube-native-chat-body button:visible').all()) {
     const r = await control.boundingBox(); assert(r.x >= 0 && r.x + r.width <= 391 && r.y + r.height <= 845);
   }
-  await page.getByRole('button', { name: 'Residents', exact: true }).click();
+  await openResidents(page);
   await page.evaluate(() => { residents[0].name = 'Long resident name '.repeat(12); ui.setAgents(residents); });
   const dialog = page.getByRole('dialog', { name: 'Residents', exact: true });
   assert.equal(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth), true);
   await page.keyboard.press('Escape'); await dialog.waitFor({ state: 'hidden' });
+  if (!await prompt(page).isVisible()) await openChat(page);
   await page.getByRole('button', { name: 'Close chat', exact: true }).click(); await prompt(page).waitFor({ state: 'hidden' });
   assert.equal(await page.locator('#mobile-controls').evaluate(element => getComputedStyle(element).visibility), 'visible');
   if (process.env.CUBE_NATIVE_UI_EVIDENCE) {
     await mkdir(process.env.CUBE_NATIVE_UI_EVIDENCE, { recursive: true });
     await openChat(page); await page.screenshot({ path: join(process.env.CUBE_NATIVE_UI_EVIDENCE, 'native-chat-mobile.png') });
-    await page.getByRole('button', { name: 'Residents', exact: true }).click();
+    await openResidents(page);
     await page.screenshot({ path: join(process.env.CUBE_NATIVE_UI_EVIDENCE, 'native-residents-mobile.png') });
   }
 });

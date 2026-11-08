@@ -153,11 +153,18 @@ async function fixture(t, scenario = {}) {
           await new Promise((resolve) => { window.finishLoadCleanup = resolve; });
           state.cleaning = false;
         }
-        if (scenario.cleanupFailure) throw new AggregateError([error], 'Model cleanup is incomplete');
+        if (scenario.cleanupFailure) {
+          if (scenario.retainedCancelledCid) {
+            state.residentCids.push(scenario.retainedCancelledCid); state.cleanupRetained = true;
+          }
+          throw new AggregateError([error], 'Model cleanup is incomplete');
+        }
         throw error;
       }
     };
     const runtime = {
+      ...(scenario.retainedCancelledCid ? { getResidentModelStates: () => state.residentCids.map(manifestCid => ({ manifestCid,
+        status: state.cleanupRetained && manifestCid === scenario.retainedCancelledCid ? 'lost' : 'ready' })) } : {}),
       networkReady: !scenario.connectFailure,
       getDiscoveryStatus: () => scenario.discovery,
       getArtifactNetworkStatus: () => scenario.artifactNetwork,
@@ -308,7 +315,14 @@ async function fixture(t, scenario = {}) {
         emitInstall({ installed: true, available: false }); return { outcome: 'accepted' }; },
       dispose() { calls.push({ type: 'dispose-install-controller' }); },
     } : undefined;
-    window.panel = await mountInferencePanel({ pwaInstallController, container: document.querySelector('#panel'), runtimeFactory: async () => runtime,
+    window.mountPanel = async () => {
+    window.panel = await mountInferencePanel({ pwaInstallController, container: document.querySelector('#panel'),
+      runtimeFactory: async () => scenario.borrowedRuntime ? new Proxy(runtime, { get(target, key) {
+        return key === 'dispose' ? async () => { calls.push({ type: 'borrowed-panel-release' }); } : Reflect.get(target, key);
+      } }) : runtime,
+      onRequestClose: scenario.managementOnly ? async () => {
+        calls.push({ type: 'request-close' }); await window.panel.dispose(); calls.push({ type: 'window-closed' });
+      } : undefined,
       navigate: (url) => calls.push({ type: 'navigate', url, disposed: state.disposed }),
       autoConnect: !!scenario.connectFailure,
       managementOnly: !!scenario.managementOnly,
@@ -316,6 +330,8 @@ async function fixture(t, scenario = {}) {
       ...(scenario.context ? { getContext: (options) => { contextCalls.push(options); return { text: 'Optional embedded scene context', image: { forbidden: true } }; },
         actions: { instructions: 'Suggest an approved action.', invalidate() {}, propose() { return [{ label: 'test action', apply() { calls.push({ type: 'action' }); } }]; } } } : {}) });
     await panel.startupReady;
+    };
+    await mountPanel();
   }, scenario);
   // Unrelated legacy scenarios begin after the user dismisses the startup picker.
   // Dedicated startup tests keep it open and assert no loading has occurred.
@@ -327,17 +343,179 @@ async function fixture(t, scenario = {}) {
 }
 
 test('world model management opens the library without a second chat or automatic model load', async (t) => {
-  const page = await fixture(t, { managementOnly: true, keepStartupPicker: true, stored: [] });
+  const page = await fixture(t, { managementOnly: true, borrowedRuntime: true, keepStartupPicker: true, stored: [] });
   assert.equal(await libraryDialog(page).isVisible(), true);
+  assert.equal(await page.locator('dialog[open]').count(), 1);
   assert.equal(await libraryDialog(page).getByRole('tab', { name: 'Browse models', exact: true }).getAttribute('aria-selected'), 'true');
-  await closeModels(page);
-  for (const name of ['Message', 'Send', 'Talk', 'Agents', 'Back to demos']) {
+  for (const name of ['Message', 'Send', 'Talk', 'Agents', 'Back to demos', 'Menu']) {
     const candidates = page.getByRole(name === 'Message' ? 'textbox' : 'button', { name, exact: true });
     if (await candidates.count()) assert.equal(await candidates.isVisible(), false, name);
   }
   assert.deepEqual(await page.evaluate(() => calls.filter(call => ['acquire', 'load-stored', 'generate'].includes(call.type))), []);
-  await page.getByRole('button', { name: 'Models', exact: true }).click();
+  await libraryDialog(page).getByRole('button', { name: 'Done', exact: true }).click();
+  await page.waitForFunction(() => calls.some(call => call.type === 'window-closed'));
+  assert.equal(await page.locator('dialog[open]').count(), 0);
+  assert.equal(await page.evaluate(() => uiState.disposed), false);
+  await page.evaluate(() => mountPanel());
   assert.equal(await libraryDialog(page).isVisible(), true);
+  assert.equal(await page.locator('dialog[open]').count(), 1);
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => calls.filter(call => call.type === 'window-closed').length === 2);
+  assert.equal(await page.evaluate(() => uiState.disposed), false);
+});
+
+test('world management Config uses the same centered window and returns to stored selection', async (t) => {
+  const page = await fixture(t, { managementOnly: true, borrowedRuntime: true, keepStartupPicker: true,
+    stored: [{ manifestCid: 'saved', name: 'Saved model', totalBytes: 1024 }] });
+  await page.setViewportSize({ width: 1280, height: 960 });
+  const id = await libraryDialog(page).getAttribute('id');
+  await selectStored(page, ['Saved model']);
+  await libraryDialog(page).getByRole('button', { name: 'Config', exact: true }).click();
+  const config = page.getByRole('dialog', { name: 'Config', exact: true });
+  assert.equal(await config.getAttribute('id'), id); assert.equal(await page.locator('dialog[open]').count(), 1);
+  await config.getByLabel('Share with peers', { exact: true }).uncheck();
+  await page.waitForFunction(() => uiState.sharing === false);
+  await config.getByLabel('Model RAM budget (GiB)', { exact: true }).fill('8');
+  await config.getByLabel('Model GPU memory budget (GiB)', { exact: true }).click();
+  await page.waitForFunction(() => uiState.memoryBudgets.cpuBytes === 8 * 1024 ** 3);
+  await config.getByRole('button', { name: 'Done', exact: true }).click();
+  assert.equal(await storedChoice(page, 'Saved model').isChecked(), true);
+  assert.equal(await libraryDialog(page).getByRole('tab', { name: 'Stored models', exact: true }).getAttribute('aria-selected'), 'true');
+  const bounds = await libraryDialog(page).boundingBox();
+  assert(Math.abs(bounds.x + bounds.width / 2 - 640) < 2); assert(Math.abs(bounds.y + bounds.height / 2 - 480) < 2);
+  assert.deepEqual(await page.evaluate(() => calls.filter(call => call.type === 'request-close')), []);
+});
+
+test('world management Config unload refreshes Stored rows on return without losing selection', async (t) => {
+  const page = await fixture(t, { managementOnly: true, borrowedRuntime: true, keepStartupPicker: true, loaded: true,
+    stored: [{ manifestCid: 'fixture-vision', name: 'Saved vision', totalBytes: 1024 }] });
+  await selectStored(page, ['Saved vision']);
+  assert.equal(await storedPanel(page).getByRole('button', { name: 'Unload Saved vision', exact: true }).isVisible(), true);
+  await libraryDialog(page).getByRole('button', { name: 'Config', exact: true }).click();
+  const config = page.getByRole('dialog', { name: 'Config', exact: true });
+  await config.getByRole('button', { name: 'Unload all local models', exact: true }).click();
+  await page.waitForFunction(() => uiState.residentCids.length === 0);
+  await config.getByRole('button', { name: 'Done', exact: true }).click();
+  await page.waitForFunction(() => ![...document.querySelectorAll('.pc-stored-model button')].some(button => button.textContent === 'Unload'), undefined, { timeout: 1500 });
+  assert.equal(await storedChoice(page, 'Saved vision').isChecked(), true);
+  assert.equal(await storedLoad(page).isEnabled(), true);
+  assert.deepEqual(await page.evaluate(() => calls.filter(call => ['acquire', 'load-stored'].includes(call.type))), []);
+});
+
+test('world management mobile setup and Config return to the same details before final dismissal', async (t) => {
+  const page = await fixture(t, { managementOnly: true, borrowedRuntime: true, keepStartupPicker: true,
+    availability: { 'hf:vision': { status: 'unavailable', code: 'gpu_budget_exceeded', reason: 'Exceeds configured GPU memory budget' } } });
+  await page.setViewportSize({ width: 390, height: 740 });
+  const id = await libraryDialog(page).getAttribute('id');
+  await browseChoice(page, 'hf:vision', 'Setup help');
+  const help = page.getByRole('dialog', { name: 'Model setup', exact: true });
+  assert.equal(await help.getAttribute('id'), id); assert.equal(await page.locator('dialog[open]').count(), 1);
+  await help.getByRole('button', { name: 'Open Config', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Config', exact: true }).getByRole('button', { name: 'Done', exact: true }).click();
+  assert.equal(await libraryDialog(page).getByRole('region', { name: 'Model details', exact: true }).isVisible(), true);
+  assert.match(await libraryDialog(page).getByRole('region', { name: 'Model details', exact: true }).textContent(), /Fixture vision/);
+  await libraryDialog(page).getByRole('button', { name: 'Done', exact: true }).click();
+  assert.equal(await libraryDialog(page).isVisible(), true);
+  assert.equal(await libraryDialog(page).getByRole('region', { name: 'Model details', exact: true }).isVisible(), false);
+  assert.deepEqual(await page.evaluate(() => calls.filter(call => ['request-close', 'acquire'].includes(call.type))), []);
+  await page.keyboard.press('Escape'); await page.waitForFunction(() => calls.some(call => call.type === 'window-closed'));
+});
+
+test('world management load returns to the library and preserves loaded models when dismissed', async (t) => {
+  const page = await fixture(t, { managementOnly: true, borrowedRuntime: true, keepStartupPicker: true, loadStoredDelay: 100,
+    stored: [{ manifestCid: 'saved', name: 'Saved model', totalBytes: 1024 }] });
+  const id = await libraryDialog(page).getAttribute('id');
+  await loadStored(page, ['Saved model']);
+  await page.getByRole('dialog', { name: 'Loading model', exact: true }).waitFor();
+  assert.equal(await page.locator('dialog[open]').count(), 1);
+  await libraryDialog(page).waitFor();
+  assert.equal(await libraryDialog(page).getAttribute('id'), id);
+  assert.equal(await storedPanel(page).getByRole('button', { name: 'Unload Saved model', exact: true }).isVisible(), true);
+  assert.equal(await libraryDialog(page).evaluate(element => element.contains(document.activeElement)), true);
+  await libraryDialog(page).getByRole('button', { name: 'Done', exact: true }).click();
+  await page.waitForFunction(() => calls.some(call => call.type === 'window-closed'));
+  assert.deepEqual(await page.evaluate(() => uiState.residentCids), ['saved']);
+  assert.equal(await page.evaluate(() => uiState.disposed), false);
+});
+
+test('world management close during load waits for cancellation cleanup with no late model', async (t) => {
+  const page = await fixture(t, { managementOnly: true, borrowedRuntime: true, keepStartupPicker: true,
+    stored: [{ manifestCid: 'saved', name: 'Saved model', totalBytes: 1024 }], loadStoredDelay: 10000, waitForLoadCleanup: true });
+  await loadStored(page, ['Saved model']);
+  const loading = page.getByRole('dialog', { name: 'Loading model', exact: true });
+  await loading.getByRole('button', { name: 'Close Models', exact: true }).click();
+  await page.waitForFunction(() => typeof finishLoadCleanup === 'function');
+  assert.equal(await loading.isVisible(), true); assert.equal(await page.locator('dialog[open]').count(), 1);
+  assert.match(await loading.textContent(), /Waiting for cleanup/);
+  assert.equal(await page.evaluate(() => calls.some(call => call.type === 'window-closed')), false);
+  await page.evaluate(() => finishLoadCleanup());
+  await page.waitForFunction(() => calls.some(call => call.type === 'window-closed'));
+  assert.deepEqual(await page.evaluate(() => uiState.residentCids), []);
+  assert.equal(await page.locator('dialog[open]').count(), 0);
+});
+
+test('world management Cancel returns to the retained library after acknowledged load cleanup', async (t) => {
+  const page = await fixture(t, { managementOnly: true, borrowedRuntime: true, keepStartupPicker: true,
+    stored: [{ manifestCid: 'saved', name: 'Saved model', totalBytes: 1024 }], loadStoredDelay: 10000, waitForLoadCleanup: true });
+  await loadStored(page, ['Saved model']);
+  const loading = page.getByRole('dialog', { name: 'Loading model', exact: true });
+  await loading.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.waitForFunction(() => typeof finishLoadCleanup === 'function');
+  assert.equal(await loading.isVisible(), true);
+  assert.equal(await loading.getByRole('button', { name: 'Cancel', exact: true }).isDisabled(), true);
+  await page.evaluate(() => finishLoadCleanup()); await libraryDialog(page).waitFor();
+  await page.waitForFunction(() => !document.querySelector('.pc-stored-footer button').disabled);
+  assert.equal(await storedChoice(page, 'Saved model').isChecked(), true);
+  assert.match(await libraryDialog(page).textContent(), /Cancelled/);
+  assert.deepEqual(await page.evaluate(() => uiState.residentCids), []);
+  assert.deepEqual(await page.evaluate(() => calls.filter(call => call.type === 'request-close')), []);
+});
+
+test('world management peer action and failed load remain visible in the same window', async (t) => {
+  const page = await fixture(t, { managementOnly: true, borrowedRuntime: true, keepStartupPicker: true, rejectAcquire: true });
+  await browseChoice(page, 'peer:fixture', 'Use peer');
+  assert.equal(await libraryDialog(page).isVisible(), true);
+  assert.match(await libraryDialog(page).textContent(), /available to residents/);
+  await browseChoice(page, 'hf:vision', 'Load');
+  await libraryDialog(page).getByText(/Model download failed/).waitFor();
+  assert.equal(await page.locator('dialog[open]').count(), 1);
+  assert.equal(await libraryDialog(page).getByRole('button', { name: 'Load', exact: true }).isEnabled(), true);
+  assert.deepEqual(await page.evaluate(() => calls.filter(call => ['request-close', 'generate'].includes(call.type))), []);
+});
+
+test('world management failed cleanup keeps a visible retryable window', async (t) => {
+  const page = await fixture(t, { managementOnly: true, keepStartupPicker: true, disposeFailsOnce: true,
+    stored: [{ manifestCid: 'saved', name: 'Saved model', totalBytes: 1024 }] });
+  await selectStored(page, ['Saved model']);
+  await libraryDialog(page).getByRole('button', { name: 'Done', exact: true }).click();
+  await libraryDialog(page).getByText(/Worker stop not acknowledged/).waitFor();
+  assert.equal(await page.locator('dialog[open]').count(), 1);
+  assert.equal(await libraryDialog(page).getByRole('button', { name: 'Done', exact: true }).isEnabled(), true);
+  assert.equal(await storedLoad(page).isDisabled(), true);
+  assert.equal(await storedDelete(page).isDisabled(), true);
+  assert.equal(await libraryDialog(page).getByRole('button', { name: 'Config', exact: true }).isDisabled(), true);
+  assert.equal(await libraryDialog(page).evaluate(element => element.closest('[inert]') !== null), false);
+  await libraryDialog(page).getByRole('button', { name: 'Done', exact: true }).click();
+  await page.waitForFunction(() => calls.some(call => call.type === 'window-closed'));
+  assert.equal(await page.evaluate(() => uiState.disposeAttempts), 2);
+});
+
+test('world management failed load cancellation remains actionable without releasing unrelated residents', async (t) => {
+  const page = await fixture(t, { managementOnly: true, borrowedRuntime: true, keepStartupPicker: true, loaded: true,
+    stored: [{ manifestCid: 'saved', name: 'Saved model', totalBytes: 1024 }], loadStoredDelay: 10000,
+    cleanupFailure: true, retainedCancelledCid: 'saved' });
+  await loadStored(page, ['Saved model']);
+  await page.getByRole('dialog', { name: 'Loading model', exact: true }).getByRole('button', { name: 'Close Models', exact: true }).click();
+  await libraryDialog(page).getByText(/Retry Unload/).waitFor();
+  assert.deepEqual(await page.evaluate(() => calls.filter(call => call.type === 'request-close')), []);
+  assert.deepEqual(await page.evaluate(() => uiState.residentCids), ['fixture-vision', 'saved']);
+  const unload = storedPanel(page).getByRole('button', { name: 'Unload Saved model', exact: true });
+  await unload.waitFor(); await unload.click();
+  await page.waitForFunction(() => uiState.residentCids.length === 1);
+  assert.deepEqual(await page.evaluate(() => uiState.residentCids), ['fixture-vision']);
+  await libraryDialog(page).getByRole('button', { name: 'Done', exact: true }).click();
+  await page.waitForFunction(() => calls.some(call => call.type === 'window-closed'));
+  assert.equal(await page.evaluate(() => uiState.disposed), false);
 });
 
 test('Models launcher and menu share one tabbed dialog and reuse the startup stored snapshot', async (t) => {

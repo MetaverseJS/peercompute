@@ -33,4 +33,9 @@
 
 .pc-chat-options{width:min(420px,calc(100vw - 24px));max-height:min(520px,calc(100dvh - 32px))}.pc-chat-options .pc-dialog-body{display:flex;flex-direction:column;gap:14px}.pc-chat-options .pc-model-preferences{margin:0}.pc-chat-options .pc-route-policy{margin:0}.pc-chat-options select{min-height:40px}
 .pc-inference-panel>.pc-status-quiet{position:absolute;width:1px;height:1px;min-height:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;padding:0;border:0;pointer-events:none}
+.pc-model-management{display:contents}
+.pc-model-management>:not(dialog){display:none!important}
+.pc-model-management .pc-browser-page .pc-model-preferences{margin-bottom:18px}
+.pc-model-management .pc-browser-page label{display:flex;flex-direction:column;gap:5px;margin-bottom:10px}
+.pc-model-management .pc-browser-page .pc-model-preferences label{flex-direction:row;align-items:center}
 @media(max-width:360px){.pc-navigation-main,.pc-navigation-actions,.pc-model-toolbar{gap:6px}.pc-console-navigation{gap:6px}.pc-model-toolbar>button{padding:7px}.pc-chat-controls{gap:6px}}

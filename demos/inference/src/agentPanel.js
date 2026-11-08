@@ -5,6 +5,7 @@ import { readImageAttachment } from './ui/imageAttachment.js';
 import { bindChatImageInput } from './ui/chatImageInput.js';
 import { createGeneratedImageRenderer } from './ui/generatedImages.js';
 import { createModelBrowser } from './ui/modelBrowser.js';
+import { createModelManagementWindow } from './ui/modelManagementWindow.js';
 import { createAgentConsole } from './agents/agentConsole.js';
 import { createAgentChatSession } from './agents/agentChatSession.js';
 import { supportsTask as modelSupportsTask, hasInferenceCapacity } from '../../../peercompute/src/peercompute/inference/InferenceRouter.js';
@@ -15,7 +16,7 @@ const defaultAudio = async () => (await import('../../shared/agents/speech/World
 
 /** Shared chat surface; the facade owns storage, inference and networking. */
 export async function mountInferencePanel({ container = document.body, stateManager, computeManager,
-  networkManager, getContext, actions, runtimeBaseUrl, onClose, autoConnect = false, managementOnly = false,
+  networkManager, getContext, actions, runtimeBaseUrl, onClose, onRequestClose, autoConnect = false, managementOnly = false,
   runtimeFactory = createInferenceRuntime, refreshIntervalMs = 5000, pwaInstallController,
   voiceSessionFactory = defaultVoiceSession, audioFactory = defaultAudio, navigate = (url) => location.assign(url) } = {}) {
   const view = createPanelView(container);
@@ -23,6 +24,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     // Embodied applications already own their conversation. Reuse the library
     // and lifecycle controls without exposing a second composer or auto-load.
     view.panel.setAttribute('aria-label', 'Model management');
+    view.panel.classList.add('pc-model-management');
     for (const element of [view.back, view.agents, view.transcript, view.proposed, view.attachment,
       view.prompt, view.resumeAgent, view.send.parentElement, view.clearChat, view.clearChat.nextElementSibling]) {
       if (element) element.style.display = 'none';
@@ -40,10 +42,11 @@ export async function mountInferencePanel({ container = document.body, stateMana
   let storedRows = [], startupReading = true, imageInput, imageTransferPending = false, leaving = false;
   const selectedStored = new Set();
   let refreshTimer, sources = [], targets = [];
-  let desiredSourceKey, modelBrowser, hubSelection;
+  let desiredSourceKey, modelBrowser, managementWindow, hubSelection;
   let helpSource, helpVersion = 0;
   let progressTimer, progressLabel, progressKey, progressStarted;
   let loadingOperation;
+  let cancelledLoadCleanupError;
   let unsubscribeInstall;
   let agentConsole, openingAgents;
   let agentChat, agentsStarting, agentHeads = [], selectedChat = 'mixed', activeAgentId, voiceAgentId;
@@ -92,6 +95,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
   function setStatus(message, { quiet = false } = {}) {
     view.status.textContent = message;
     view.status.classList.toggle('pc-status-quiet', quiet);
+    if (managementOnly) modelBrowser?.setFeedback(message);
     return message;
   }
   const showError = (error) => {
@@ -102,7 +106,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     if (view.chatOptions.open) {
       view.chatOptionsStatus.textContent = message; view.chatOptionsStatus.hidden = false;
     }
-    if (view.configuration.open) view.configurationStatus.textContent = message;
+    if (view.configuration.open || managementWindow?.isShowing(view.configuration)) view.configurationStatus.textContent = message;
     if (modelBrowser?.isStoredOpen()) view.storedStatus.textContent = message;
   };
   const scrollTranscript = () => {
@@ -116,7 +120,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     view.browse.disabled = startupReading || !!operation;
     view.modelsMenu.disabled = startupReading || !!loadingOperation;
     view.chatConfigure.disabled = startupReading || !!operation;
-    modelBrowser?.setBusy(startupReading || !!operation);
+    modelBrowser?.setBusy(closing || startupReading || !!operation);
     view.agents.disabled = !!operation || !!openingAgents || !runtime?.getAgentController;
     view.cpuBudget.disabled = view.gpuBudget.disabled = !!operation || !runtime?.setMemoryBudgets;
     const attachmentConflict = view.generateImage.checked && !!attachment;
@@ -150,7 +154,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     view.unload.disabled = !!operation;
     view.clearChat.disabled = !!operation || !!target?.agentId;
     view.clearChat.title = target?.agentId ? 'Agent history and memory are persistent. Manage this agent through Agents.' : '';
-    if (view.configuration.open) renderMemoryUsage();
+    if (view.configuration.open || managementWindow?.isShowing(view.configuration)) renderMemoryUsage();
     view.storedRefresh.disabled = !!operation || !!storedController;
     for (const control of view.storedList.querySelectorAll('button,input')) control.disabled = !!operation || !!storedController || control.dataset.inactive === 'true';
     const selectedRows = storedRows.filter((model) => selectedStored.has(model.manifestCid));
@@ -183,7 +187,9 @@ export async function mountInferencePanel({ container = document.body, stateMana
     helpSource = { ...source, localAvailability: source.localAvailability ?? runtime.getModelCompatibility?.(source.package ?? source) };
     const environment = detectModelHelpEnvironment();
     view.helpBrowser.value = environment.browser; view.helpOs.value = environment.os;
-    renderHelp(); view.networkInfo.close(); view.chatOptions.close(); view.menuWindow.close(); view.configuration.close(); modelBrowser?.close(); view.about.close();
+    renderHelp();
+    if (managementWindow) { managementWindow.show(view.compatibility); return; }
+    view.networkInfo.close(); view.chatOptions.close(); view.menuWindow.close(); view.configuration.close(); modelBrowser?.close(); view.about.close();
     if (!view.compatibility.open) view.compatibility.showModal();
   }
   function renderLists() {
@@ -416,6 +422,22 @@ export async function mountInferencePanel({ container = document.body, stateMana
     if (!loadingOperation || loadingOperation.controller.signal.aborted) return;
     loadingOperation.controller.abort(new DOMException('Model load cancelled', 'AbortError'));
   }
+  async function requestManagementClose() {
+    // Finish a panel-owned load before beginning teardown of the view. A failed
+    // cancellation must leave its Unload controls available, not hide the error
+    // behind the world's intentionally no-op borrowed-runtime dispose.
+    if (operation) {
+      operation.abort(new DOMException('Models window closed', 'AbortError'));
+      await operationDone;
+    }
+    if (cancelledLoadCleanupError) throw new Error('Model cleanup is incomplete. Retry Unload in Stored models or Config before closing.',
+      { cause: cancelledLoadCleanupError });
+    return onRequestClose ? onRequestClose() : dispose();
+  }
+  function acknowledgeUnloadCleanup() {
+    const states = runtime.getResidentModelStates?.() ?? runtime.listResidentModels?.();
+    if (!states || !states.some((entry) => !['ready', 'idle', 'closed'].includes(entry.status))) cancelledLoadCleanupError = null;
+  }
   function showLoading(controller, modelName) {
     view.networkInfo.close(); view.chatOptions.close();
     const entry = { controller, focus: document.activeElement,
@@ -426,10 +448,12 @@ export async function mountInferencePanel({ container = document.body, stateMana
     entry.onAbort = () => {
       view.loadingCancel.disabled = true;
       view.loadingStatus.textContent = 'Cancelling load… Waiting for cleanup.';
-      if (alive()) view.loading.focus();
+      if (alive()) (managementWindow ? modelBrowser.element : view.loading).focus();
     };
     controller.signal.addEventListener('abort', entry.onAbort, { once: true });
-    updateControls(); view.loading.showModal();
+    updateControls();
+    if (managementWindow) managementWindow.show(view.loading, { closeWindow: true });
+    else view.loading.showModal();
   }
   function finishLoading(controller) {
     const entry = loadingOperation;
@@ -437,6 +461,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     controller.signal.removeEventListener('abort', entry.onAbort);
     loadingOperation = null; view.loading.close();
     if (!alive()) return;
+    if (managementWindow) { managementWindow.showLibrary(); return; }
     const focus = entry.focus?.isConnected && entry.focus.matches('button,input,select,textarea,a[href],[tabindex]')
       && !entry.focus.disabled && entry.focus.getClientRects().length ? entry.focus
       : entry.previousDialog?.open ? entry.previousDialog.querySelector('button:not(:disabled)')
@@ -450,7 +475,10 @@ export async function mountInferencePanel({ container = document.body, stateMana
       try {
         if (modelName !== undefined) showLoading(controller, modelName);
         await action(controller.signal);
-      } catch (error) { showError(error); }
+      } catch (error) {
+        if (managementOnly && modelName !== undefined && controller.signal.aborted && error instanceof AggregateError) cancelledLoadCleanupError = error;
+        showError(error);
+      }
       finally {
         clearInterval(progressTimer); progressTimer = null; progressKey = null;
         activeAgentId = null; voiceAgentId = null;
@@ -574,7 +602,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
   async function unloadStoredModel(model) {
     if (!alive() || operation || storedController || !model.loaded) return;
     await run(async () => {
-      await runtime.unload(model.manifestCid);
+      await runtime.unload(model.manifestCid); acknowledgeUnloadCleanup();
       histories.delete(`local:${model.manifestCid}`); invalidateActions();
       await refreshStoredModels(); renderLists();
       setStatus(view.storedStatus.textContent = `Unloaded ${model.name}. Its files remain stored.`, { quiet: true });
@@ -642,7 +670,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
       loadingStoredModel = false;
       if (alive()) {
         updateControls();
-        if (completed && !selectedStored.size) { modelBrowser?.close(); view.prompt.focus(); }
+        if (completed && !selectedStored.size && !managementOnly) { modelBrowser?.close(); view.prompt.focus(); }
         else if (cancelled) void refreshStoredModels({ preserveStatus: true });
       }
     }
@@ -655,6 +683,9 @@ export async function mountInferencePanel({ container = document.body, stateMana
     const preferences = runtime.getPreferences(); view.sharing.checked = preferences.sharing; view.hosting.checked = preferences.hostInference;
     syncMemoryBudgets();
     modelBrowser = createModelBrowser({ container: view.panel,
+      keepOpenOnAction: managementOnly,
+      onConfigure: managementOnly ? () => view.configure.click() : undefined,
+      onDismiss: managementOnly ? () => managementWindow.requestClose() : undefined,
       storedContent: view.storedContent,
       hasStoredModels: () => storedRows.length > 0 || sources.some((entry) => entry.source === 'stored'),
       onStoredOpen: ({ signal } = {}) => refreshStoredModels({ signal, quietCancellation: true }),
@@ -682,9 +713,11 @@ export async function mountInferencePanel({ container = document.body, stateMana
       },
       onSetup: showCompatibilityHelp,
     });
+    if (managementOnly) managementWindow = createModelManagementWindow({ browser: modelBrowser,
+      onRequestClose: requestManagementClose });
     for (const trigger of [view.browse, view.modelsMenu]) trigger.setAttribute('aria-controls', modelBrowser.element.id);
     modelBrowser.element.addEventListener('close', () => {
-      if (alive() && !view.panel.querySelector('dialog[open]')
+      if (!managementOnly && alive() && !view.panel.querySelector('dialog[open]')
           && (document.activeElement === document.body || !document.activeElement?.getClientRects().length)) view.browse.focus();
     });
     renderLists(); setStatus('Ready.', { quiet: true });
@@ -705,11 +738,15 @@ export async function mountInferencePanel({ container = document.body, stateMana
   });
   view.configure.onclick = () => {
     if (!alive() || loadingOperation) return;
+    if (managementWindow) {
+      view.configurationStatus.textContent = ''; renderMemoryUsage(); managementWindow.show(view.configuration, { refreshStoredOnReturn: true }); return;
+    }
     view.networkInfo.close(); view.chatOptions.close();
     view.menuWindow.close(); view.about.close(); view.compatibility.close(); modelBrowser?.close(); view.configurationStatus.textContent = ''; view.configuration.showModal();
   };
   function openModels(options = {}) {
     if (!alive() || startupReading || loadingOperation) return;
+    if (managementWindow) managementWindow.showLibrary();
     view.networkInfo.close(); view.chatOptions.close();
     view.menuWindow.close(); view.about.close(); view.compatibility.close(); view.configuration.close();
     modelBrowser.open({ selectedKey: desiredSourceKey, ...options });
@@ -787,7 +824,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     const command = view.helpCommand.value;
     if (!command || !alive()) return;
     const version = ++helpVersion;
-    const current = () => alive() && view.compatibility.open && helpVersion === version;
+    const current = () => alive() && (view.compatibility.open || managementWindow?.isShowing(view.compatibility)) && helpVersion === version;
     try {
       await navigator.clipboard.writeText(command);
       if (current()) view.helpStatus.textContent = 'Command copied.';
@@ -851,11 +888,12 @@ export async function mountInferencePanel({ container = document.body, stateMana
       renderLists(); updateControls();
       const sharingIssue = !!runtime.getSharingErrors?.().length;
       setStatus(sharingIssue
-        ? 'Model ready. Sharing is unavailable for some stored models; see Models → Stored models.' : 'Model ready. Send a message.', { quiet: !sharingIssue });
+        ? 'Model ready. Sharing is unavailable for some stored models; see Models → Stored models.'
+        : managementOnly ? 'Model ready. Return to the world to use it.' : 'Model ready. Send a message.', { quiet: !sharingIssue });
     }, { modelName: selected.name });
   }
   view.unload.onclick = () => run(async () => {
-    invalidateActions(); await runtime.unload();
+    invalidateActions(); await runtime.unload(); acknowledgeUnloadCleanup();
     for (const key of histories.keys()) if (key === 'local' || key.startsWith('local:')) histories.delete(key);
     setStatus('Local models unloaded. Stored files are kept.', { quiet: true });
     view.configurationStatus.textContent = view.status.textContent;
@@ -1149,7 +1187,13 @@ export async function mountInferencePanel({ container = document.body, stateMana
     clearInterval(progressTimer); progressTimer = null;
     if (disposed) return;
     if (disposingPromise) return disposingPromise;
-    closing = true; view.networkInfo.dispose(); view.chatOptions.close(); modelBrowser?.dispose(); unsubscribeInstall?.(); generatedImages.dispose(); view.menuWindow.close(); view.compatibility.close(); view.configuration.close(); view.about.close(); view.panel.inert = true;
+    closing = true; view.networkInfo.dispose(); view.chatOptions.close();
+    if (managementWindow) {
+      modelBrowser.setBusy(true); modelBrowser.setFeedback('Closing Models… Waiting for cleanup.');
+      for (const control of view.storedContent.querySelectorAll('button,input')) control.disabled = true;
+    }
+    else { modelBrowser?.dispose(); view.panel.inert = true; }
+    unsubscribeInstall?.(); generatedImages.dispose(); view.menuWindow.close(); view.compatibility.close(); view.configuration.close(); view.about.close();
     disposingPromise = (async () => {
       clearInterval(refreshTimer); operation?.abort('Chat closed'); historyController?.abort(); imageController?.abort(); refreshController?.abort(); connectController?.abort(); storedController?.abort();
       await imageInput?.dispose();
@@ -1159,9 +1203,18 @@ export async function mountInferencePanel({ container = document.body, stateMana
       invalidateActions(); await operationDone; await refreshPromise; await connectPromise; await storedPromise; await startupReady; await Promise.allSettled([...preferenceTasks]);
       await openingAgents; await agentsStarting?.catch(() => {}); await historyPromise; await agentConsole?.dispose();
       await voiceStarting; await voiceSession?.dispose();
-      await runtime.dispose(); disposed = true; histories.clear(); attachment = null; view.panel.remove(); onClose?.();
+      await runtime.dispose(); disposed = true; modelBrowser?.dispose(); histories.clear(); attachment = null; view.panel.remove(); onClose?.();
     })();
-    try { await disposingPromise; } finally { disposingPromise = null; }
+    try { await disposingPromise; }
+    catch (error) {
+      if (managementWindow) {
+        // Cleanup may already have disposed some services. Keep mutations
+        // stopped, while allowing the window's Done control to retry cleanup.
+        managementWindow.showLibrary(); modelBrowser.setBusy(true);
+        modelBrowser.setFeedback(`Could not close Models: ${error.message}. Click Done to retry.`);
+      }
+      throw error;
+    } finally { disposingPromise = null; }
   }
   return { element: view.panel, runtime, dispose, refreshPeers, startupReady, openModels };
 }

@@ -121,3 +121,35 @@ create a tron themed overworld consisting of a dark infinite grid of blue lines.
   motion preserve one mesh/collider locally and one remote body; remote pose
   retains the five-second directory cadence. No new GPU/voice/model-quality
   qualification or public Pages deployment is claimed by this UI pass.
+
+## Resident appearance, public replies and model windows — November 7 2026
+
+- Keep Residents and Models in the hamburger menu only. Model management owns
+  one native dialog across Stored/Browse, details, Config, setup and loading;
+  Done/Escape await cleanup and restore focus to the world menu. Failed cleanup
+  retains ownership for retry; closing never disposes borrowed world models.
+- A private appearance description belongs to the persistent world binding.
+  Optional text-to-image generation uses existing local-first agent routing and
+  honors local-only. Save the resident even with no provider; expose a retry.
+  Retain original generated pixels in the agent store, bind a digest-verified
+  thumbnail and place it only on the cube front. Shared peers fetch bounded RGBA
+  through the authenticated world service; no private prompt or attachment ID is
+  advertised. Presenter reads are bounded, cancel on identity/face changes and
+  cannot apply after body teardown. Do not regenerate on reload.
+- Respond to world chat is an explicit per-resident opt-in. Human room messages
+  alone trigger replies; resident-origin messages do not start reply loops.
+  Use one active response, latest-message coalescing, per-resident cooldown and
+  bounded public context. Public replies use their own persisted conversation
+  channel and authenticated owner+agent attribution. Turning the option off
+  cancels owned work and waits for cleanup; absent models do not pause residents.
+  Opting in makes these replies public even if the body itself is not shared.
+- Human snapshots carry their bounded Player name (Anonymous when blank). Human
+  and resident labels fit their text with small padding; unchanged snapshots
+  do not allocate replacement textures. Dispose changed labels and face assets.
+- Qualification includes native library/host ownership, real encrypted face and
+  room transport, persisted appearance/no-provider/cancel/reload, public/private
+  history isolation, front-only rendering and desktop/mobile previews. Simulated
+  inference fixtures qualify wiring and persistence, not new model quality.
+- User authorizes a fresh docs/ build and origin push after all current changes
+  pass. Pages source is feature/ipfs-artifacts-webgpu:/docs; preserve the current
+  branch and verify the overview/IPFS link plus the complete demo route matrix.

@@ -51,6 +51,16 @@ async function fixture(t, options = {}) {
     const storedContent = options.storedContent ? document.createElement('section') : undefined;
     if (storedContent) { storedContent.innerHTML = '<p>Stored fixture library</p><button type="button">Load selected</button>'; }
     window.modelBrowser = createModelBrowser({ container: document.querySelector('#root'), getSources: () => state.sources, getTargets: () => state.targets,
+      keepOpenOnAction: !!options.managed,
+      onConfigure: options.managed ? () => {
+        const content = document.createElement('p'); content.textContent = 'Configuration fixture';
+        modelBrowser.showPage({ title: 'Config', content, onBack: () => modelBrowser.showLibrary() });
+      } : undefined,
+      onDismiss: options.managed ? async () => {
+        calls.push({ type: 'dismiss' });
+        if (options.pendingDismiss) await new Promise((resolve, reject) => { window.finishDismiss = { resolve, reject }; });
+        modelBrowser.close();
+      } : undefined,
       storedContent, hasStoredModels: () => state.storedCount > 0,
       async onStoredOpen({ signal }) {
         calls.push({ type: 'stored-open' });
@@ -157,6 +167,55 @@ test('Models tabs use native accessible selection with Arrow, Home and End focus
   await page.keyboard.press('ArrowLeft'); assert.equal(await browse.getAttribute('aria-selected'), 'true');
   assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'stored-open').length), 2);
   assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'search').length), 0);
+});
+
+test('managed browser navigation and actions keep one dialog without requesting final dismissal', async (t) => {
+  const page = await fixture(t, { managed: true, storedContent: true });
+  const id = await dialog(page).getAttribute('id');
+  await dialog(page).locator('[data-model-key="hf:vision"]').click();
+  await dialog(page).getByRole('button', { name: 'Load', exact: true }).click();
+  await page.waitForFunction(() => calls.some(call => call.type === 'load'));
+  assert.equal(await dialog(page).isVisible(), true);
+  await dialog(page).getByRole('button', { name: 'Config', exact: true }).click();
+  const config = page.getByRole('dialog', { name: 'Config', exact: true });
+  assert.equal(await config.getAttribute('id'), id); assert.equal(await page.locator('dialog[open]').count(), 1);
+  await page.keyboard.press('Escape');
+  assert.equal(await dialog(page).locator('[data-model-key="hf:vision"]').getAttribute('aria-pressed'), 'true');
+  assert.equal(await dialog(page).getByRole('tab', { name: 'Browse models', exact: true }).getAttribute('aria-selected'), 'true');
+  await page.evaluate(() => modelBrowser.close());
+  assert.deepEqual(await page.evaluate(() => calls.filter(call => call.type === 'dismiss')), []);
+});
+
+test('managed final dismissal is coalesced, waits for cleanup and remains retryable on failure', async (t) => {
+  const page = await fixture(t, { managed: true, pendingDismiss: true });
+  await dialog(page).getByRole('button', { name: 'Done', exact: true }).click();
+  await page.waitForFunction(() => Boolean(window.finishDismiss));
+  await page.keyboard.press('Escape');
+  assert.equal(await dialog(page).isVisible(), true);
+  assert.equal(await page.evaluate(() => calls.filter(call => call.type === 'dismiss').length), 1);
+  await page.evaluate(() => { finishDismiss.reject(new Error('Cleanup is still owned')); });
+  await dialog(page).getByText(/Cleanup is still owned/).waitFor();
+  assert.equal(await dialog(page).getByRole('button', { name: 'Done', exact: true }).isEnabled(), true);
+  await dialog(page).getByRole('button', { name: 'Done', exact: true }).click();
+  await page.waitForFunction(() => calls.filter(call => call.type === 'dismiss').length === 2);
+  await page.evaluate(() => finishDismiss.resolve());
+  await dialog(page).waitFor({ state: 'hidden' });
+});
+
+test('managed Config pauses and resumes metadata search only when returning to Browse', async (t) => {
+  const page = await fixture(t, { managed: true, searchMode: 'pending' });
+  await page.getByRole('searchbox', { name: 'Search models' }).fill('garden');
+  await page.waitForFunction(() => state.pending.length === 1);
+  await dialog(page).getByRole('button', { name: 'Config', exact: true }).click();
+  assert.equal(await page.evaluate(() => calls.filter(call => call.type === 'search-abort').length), 1);
+  await page.evaluate(() => { modelBrowser.setBusy(true); modelBrowser.setBusy(false); });
+  assert.equal(await page.evaluate(() => state.pending.length), 1);
+  await page.getByRole('dialog', { name: 'Config', exact: true }).getByRole('button', { name: 'Done', exact: true }).click();
+  await page.waitForFunction(() => state.pending.length === 2, undefined, { timeout: 1500 });
+  assert.equal(await page.getByRole('searchbox', { name: 'Search models' }).inputValue(), 'garden');
+  await page.evaluate(() => { state.pending[0].resolve(); state.pending[1].resolve(); });
+  await dialog(page).getByRole('heading', { name: 'garden result', exact: true }).waitFor();
+  assert.equal(await page.locator('dialog[open]').count(), 1);
 });
 
 test('cached stored startup and polling do not repeat stored reads; closing aborts a late stored callback', async (t) => {

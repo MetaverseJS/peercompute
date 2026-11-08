@@ -6,7 +6,6 @@
 .cube-native-ui :disabled { opacity: .45; cursor: default; }
 .cube-native-ui :focus-visible { outline: 2px solid #d9faff; outline-offset: 2px; }
 .cube-native-ui textarea { resize: vertical; }
-.cube-native-nav { position: fixed; z-index: 2100; left: 16px; top: 16px; display: flex; gap: 8px; }
 .cube-native-chat { position: fixed; z-index: 2100; bottom: 16px; left: 16px; width: min(620px, calc(100vw - 32px)); }
 .cube-native-chat-launcher { background: #071722e8 !important; text-align: left; }
 .cube-native-chat-body { padding: 12px; border: 1px solid var(--cube-border); background: #06141ef0; box-shadow: 0 4px 24px #0009; display: flex; flex-direction: column; gap: 8px; max-height: min(70dvh, 650px); }
@@ -27,6 +26,7 @@
 .cube-native-dialog h2 { font: bold 1.15em monospace; }
 .cube-native-resident { padding: 12px 0; border-bottom: 1px solid #4aa8bb66; overflow-wrap: anywhere; }
 .cube-native-resident strong { display: block; }
+.cube-native-appearance-status { color: #b7d5df; font-size: .85em; overflow-wrap: anywhere; margin-block: 6px; }
 .cube-native-resident .cube-native-actions { margin-top: 8px; }
 .cube-native-resident select { flex: 1; min-width: 120px; }
 .cube-native-dialog details { margin-top: 16px; }
@@ -36,7 +36,6 @@
 .cube-native-check input { width: 18px; height: 18px; min-height: 18px; flex: 0 0 auto; padding: 0; accent-color: #88d8ee; }
 body:has(.cube-native-expanded) #mobile-controls, body:has(.cube-native-dialog[open]) #mobile-controls { display: none !important; visibility: hidden; pointer-events: none; }
 @media (max-width: 600px) {
-  .cube-native-nav { left: 8px; top: 8px; gap: 6px; }
   .cube-native-chat { left: 8px; bottom: 8px; width: calc(100vw - 16px); }
   .cube-native-chat-launcher { max-width: 100%; }
   .cube-native-chat-body { padding: 10px; max-height: calc(100dvh - 76px); }

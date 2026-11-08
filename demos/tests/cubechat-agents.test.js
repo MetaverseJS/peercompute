@@ -223,8 +223,8 @@ test('labels render plain text into bounded canvases and caption expiry releases
     return { width: canvas.width, height: canvas.height, brightPixels, captionWidth: entry.caption.material.map.image.width,
       captionHeight: entry.caption.material.map.image.height, imageElements: document.querySelectorAll('img').length };
   });
-  assert.equal(evidence.width, 768); assert.equal(evidence.height, 160); assert.ok(evidence.brightPixels > 300);
-  assert.equal(evidence.captionWidth, 768); assert.equal(evidence.captionHeight, 320); assert.equal(evidence.imageElements, 0);
+  assert.ok(evidence.width <= 512 && evidence.width > 40); assert.ok(evidence.height <= 88); assert.ok(evidence.brightPixels > 300);
+  assert.equal(evidence.captionWidth, 768); assert.ok(evidence.captionHeight <= 184); assert.equal(evidence.imageElements, 0);
   await page.clock.runFor(1001);
   assert.deepEqual(await page.evaluate(() => ({ visible: Boolean(layer.entries.get(base.key).caption), disposed: captionDisposed })), { visible: false, disposed: 1 });
 });
@@ -341,4 +341,86 @@ test('failed node cleanup rejects stop and preserves ownership for an acknowledg
     await network.stop();
     return { error, retained, stoppedAfterFailure, calls, mediaStopped, node: network.node };
   }), { error: 'Cleanup pending', retained: true, stoppedAfterFailure: 0, calls: 2, mediaStopped: 1, node: null });
+});
+
+test('resident face is copied onto +Z only, survives metadata refresh, and disposes on replace/remove', async t => {
+  const page = await fixture(t);
+  const result = await page.evaluate(() => {
+    layer.upsert(base); const entry = layer.entries.get(base.key);
+    const image = { width: 2, height: 2, channels: 4, data: new Uint8Array([255,0,0,255, 0,255,0,255, 0,0,255,255, 255,255,255,255]) };
+    layer.setAppearance(base.key, image); const first = entry.faceMaterial;
+    const faceIndex = entry.mesh.material.findIndex(m => m.map?.isDataTexture);
+    image.data.fill(0); const copied = first.map.image.data[0] === 255;
+    const normal = entry.mesh.geometry.attributes.normal;
+    const group = entry.mesh.geometry.groups[4]; const firstIndex = entry.mesh.geometry.index.getX(group.start);
+    const orientation = [normal.getX(firstIndex), normal.getY(firstIndex), normal.getZ(firstIndex)];
+    let disposed = 0; first.addEventListener('dispose', () => disposed++); first.map.addEventListener('dispose', () => disposed++);
+    layer.upsert({ ...base, status: 'thinking', color: '#ff0000' });
+    const preserved = entry.faceMaterial === first && entry.mesh.material[4] === first;
+    layer.setAppearance(base.key, { ...image, data: new Uint8Array(16).fill(230) });
+    const replaced = disposed; const second = entry.faceMaterial;
+    second.addEventListener('dispose', () => disposed++); second.map.addEventListener('dispose', () => disposed++);
+    let rejected = false; try { layer.setAppearance(base.key, { ...image, width: 300 }); } catch { rejected = true; }
+    const afterInvalid = entry.faceMaterial === second;
+    layer.remove(base.key);
+    return { faceIndex, copied, orientation, preserved, replaced, disposed, rejected, afterInvalid,
+      stale: layer.setAppearance(base.key, image) };
+  });
+  assert.deepEqual(result, { faceIndex: 4, copied: true, orientation: [0, 0, 1], preserved: true,
+    replaced: 2, disposed: 4, rejected: true, afterInvalid: true, stale: false });
+});
+test('human and agent name labels fit content and reuse or dispose their owned resources', async t => {
+  const page = await fixture(t);
+  const result = await page.evaluate(async () => {
+    const { TronScene } = await import('/demos/cubechat/src/renderer/scene.js');
+    const player = new THREE.Mesh(new THREE.BoxGeometry(6,6,6), new THREE.MeshBasicMaterial());
+    const scene = Object.create(TronScene.prototype); scene.players = new Map([['peer', player]]);
+    scene.setPlayerName('peer', 'Ada'); const first = player.userData.nameLabel;
+    let disposed = 0; first.material.addEventListener('dispose', () => disposed++); first.material.map.addEventListener('dispose', () => disposed++);
+    const narrow = first.material.map.image.width;
+    for (let i = 0; i < 30; i++) scene.setPlayerName('peer', 'Ada');
+    const same = first === player.userData.nameLabel;
+    scene.setPlayerName('peer', 'A much longer visible human name'); const next = player.userData.nameLabel;
+    const changed = disposed, wide = next.material.map.image.width;
+    next.material.addEventListener('dispose', () => disposed++); next.material.map.addEventListener('dispose', () => disposed++);
+    const visible = !next.material.depthTest && !next.material.depthWrite && next.position.y === 4.5;
+    scene.setPlayerName('peer', ''); const cleared = player.userData.nameLabel === null;
+    layer.upsert(base); const label = layer.entries.get(base.key).label;
+    return { narrow, wide, same, changed, disposed, visible, cleared,
+      agentWidth: label.material.map.image.width, agentHeight: label.material.map.image.height, agentScale: label.scale.x };
+  });
+  assert.equal(result.same, true); assert.equal(result.changed, 2); assert.equal(result.disposed, 4);
+  assert.equal(result.visible, true); assert.equal(result.cleared, true);
+  assert.ok(result.narrow < 110 && result.wide > result.narrow && result.wide <= 512);
+  assert.ok(result.agentWidth < 110 && result.agentHeight < 70 && result.agentScale < 2);
+});
+
+test('resident captions reuse the shared presenter and fit default desktop/390px cameras above compact names', async t => {
+  const page = await fixture(t);
+  for (const [width, height] of [[1440, 1000], [390, 844]]) {
+    await page.setViewportSize({ width, height });
+    const result = await page.evaluate(({ width, height }) => {
+      shell.camera.fov = 75; shell.camera.aspect = width / height; shell.camera.position.set(0, 13, 15);
+      shell.camera.lookAt(0, 3, 0); shell.camera.updateProjectionMatrix(); shell.camera.updateMatrixWorld();
+      const caption = 'Hello room, I am the portrait resident. This longer reply should show only a readable overhead excerpt. '.repeat(10);
+      return [0, -14].map(z => {
+        layer.remove(base.key); layer.upsert({ ...base, position: [0,3,z], caption });
+        const entry = layer.entries.get(base.key); const sprite = entry.caption;
+        const corners = [-1,1].flatMap(x=>[-1,1].map(y=>new THREE.Vector3(x*sprite.scale.x/2,y*sprite.scale.y/2,0)
+          .applyQuaternion(shell.camera.quaternion).add(sprite.position).project(shell.camera).toArray()));
+        const before = sprite.position.x; entry.mesh.position.x += 2; layer.captions.update();
+        const followed = Math.abs(sprite.position.x - before - 2) < 1e-9;
+        return { shared: layer.captions.entries.get(base.key).sprite === sprite,
+          visible: sprite.visible, corners, height: sprite.material.map.image.height, followed,
+          nameY: entry.label.position.y, annotation: !sprite.material.depthTest && !sprite.material.depthWrite,
+          aboveName: sprite.position.y-sprite.scale.y/2 > entry.mesh.position.y+entry.label.position.y+entry.label.scale.y/2 };
+      });
+    }, { width, height });
+    for (const item of result) {
+      assert.equal(item.shared,true); assert.equal(item.visible,true); assert.equal(item.followed,true);
+      assert.equal(item.nameY,4.5); assert.equal(item.annotation,true); assert.equal(item.aboveName,true);
+      assert.ok(item.height <= 184);
+      for (const corner of item.corners) assert.ok(Math.abs(corner[0]) < 1 && Math.abs(corner[1]) < 1, `${width}: ${JSON.stringify(corner)}`);
+    }
+  }
 });

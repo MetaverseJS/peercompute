@@ -192,7 +192,8 @@ export class AgentRuntime {
               ...(imageId ? { attachmentIds: [imageId], imageAttachmentId: imageId } : {}) },
             ...(imageId ? { attachments: [{ id: imageId, ...result.image }] } : {}) });
           this.#activity(id, { status: 'completed', requestId, route: actualRoute });
-          return { agentId: id, requestId, head: saved, result, route: actualRoute };
+          return { agentId: id, requestId, head: saved, result, route: actualRoute,
+            ...(imageId ? { imageAttachmentId: imageId } : {}) };
         } catch (error) {
           if (!this.unsaved.has(id)) {
             const status = error.committed ? 'outcome-unknown' : combined.aborted ? 'cancelled' : 'failed';

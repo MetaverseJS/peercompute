@@ -1239,3 +1239,15 @@ overhead text bubbles, a unified Residents interface, smaller settings windows,
 and one smoothly moving body per resident. Use reusable delivery, ownership,
 motor and presentation components toward homunculus. Keep agent private histories,
 model lifecycle and existing automated peer URLs; no learned-control claim.
+
+## November 7 — resident presentation and Pages publication
+
+Follow-up instructions: remove floating Residents/Models buttons and keep menu
+entries; simplify model management windows; persist a resident appearance prompt,
+use an available image model and put its image on the cube front; allow opt-in
+world-chat replies; show human names and compact resident nameplates. Implement
+reusable appearance/presentation and public-response orchestration toward the
+homunculus plan. Human-only triggering is the current default to prevent loops.
+The user explicitly requests a new GitHub Pages docs/ build and push to origin
+when these changes finish. This supersedes earlier internal-only publication
+limits for this release; no merge to ulg is requested.

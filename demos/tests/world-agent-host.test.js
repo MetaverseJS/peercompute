@@ -42,12 +42,17 @@ async function boot() {
     window.start = async () => {
       const bodies = new Map(); window.bodyMap = bodies;
       host = installWorldAgents({ worldId: 'cubechat:test', worldLabel: 'CubeChat',
+        publishWorldMessage: async (input, options) => {
+          options.signal.throwIfAborted(); calls.push(['public-message', input]);
+          host.receiveWorldMessage({ ...input, peerId: window.fixturePeerId ?? 'owner', id: crypto.randomUUID() });
+        },
         exclusiveEmbodiments: window.exclusiveBodies ?? false,
         getRuntimeOptions: () => ({ networkManager: window.roomManager }),
         beforeOpen: () => calls.push('input-release'),
         adapter: { upsert: (body) => bodies.set(body.key, body), remove: (key) => bodies.delete(key), normalizePosition: (value) => [...value],
           getSpawnPosition: () => [1, 3, 5], getPosition: (key) => bodies.get(key)?.position,
           getContext: (body) => ({ position: [...body.position] }), focus: () => {},
+          setAppearance: (key, image) => calls.push(['face', key, image]),
           getAudioPose: () => ({}), dispose: () => { calls.push('adapter-dispose'); bodies.clear(); } },
         uiFactory: (callbacks) => { window.callbacks = callbacks; return {
           open: () => { callbacks.onOpen?.(); view.open = true; }, dispose: () => { view.open = false; calls.push('ui-dispose'); },
@@ -58,18 +63,24 @@ async function boot() {
           calls.push(['runtime', options.residentModelSlots]);
           if (options.networkManager) throw new Error('Room networking must not restrict global model discovery');
           const store = new AgentRecordStore({ name: 'world-fixture' }); await store.open();
-          const agents = new AgentRuntime({ store, inference: { listCandidates: async () => [candidate],
+          const imageCandidate = { ...candidate, task: 'text-to-image', runtime: 'onnx-diffusion', outputModalities: ['image'] };
+          const agents = new AgentRuntime({ store, inference: { listCandidates: async ({ task }) => window.noTextProvider && task === 'text-generation'
+            ? [] : [task === 'text-to-image' ? imageCandidate : candidate],
             generate: async (_candidate, input, { signal }) => {
               calls.push(['generate', input]);
-              if (input.prompt === 'wait') {
+              if (input.prompt === 'wait' || window.waitWorld && input.prompt.includes('public world-chat')) {
                 await new Promise((resolve) => signal.addEventListener('abort', resolve, { once: true }));
                 await new Promise((resolve) => { window.finishCleanup = resolve; });
                 signal.throwIfAborted();
               }
-              return { text: 'Fixture response (not real inference).', finishReason: 'stop' };
+              return { text: window.fixtureAnswer ?? 'Fixture response (not real inference).', finishReason: 'stop',
+                ...(input.task === 'text-to-image' ? { image: { width: 2, height: 2, channels: 4, data: new Uint8Array(16).fill(123) } } : {}) };
             }, cancel: async () => {} } });
           window.agents = agents;
           return { networkReady: true, networkManager: { peerId: window.fixturePeerId ?? 'owner' }, getAgentController: async () => agents,
+            listInferenceTargets: () => window.imageAvailable ? [imageCandidate] : [],
+            service: { getStatus: () => ({ status: 'ready', manifestCid: 'fixture', sessionId: 'fixture' }) },
+            store: { getManifest: async () => ({ model: imageCandidate }) }, refreshPeers: async () => {},
             dispose: async () => { await agents.dispose(); await store.destroy(); calls.push('runtime-dispose'); } };
         },
         serviceFactory: (options) => { window.networkOptions = options; return {
@@ -264,4 +275,95 @@ test('real same-origin tabs grant one local body owner and permit takeover only 
   await visitor.evaluate((entry) => networkOptions.onDirectory([{ ...entry, ownerPeerId: 'first-owner' }]), publicBody);
   assert.equal(await visitor.evaluate(() => host.getStatus().bodies.length), 1, 'old directory TTL cannot duplicate the newly owned persisted identity');
   await visitor.evaluate(() => host.dispose()); await visitor.close();
+});
+
+test('appearance spawn persists description without a provider, retries into a shared face and restores from storage', async t => {
+  const page = await fixture(t);
+  await page.evaluate(() => host.spawn({ name: 'Painter', localOnly: true, appearancePrompt: 'Blue robot with green eyes' }));
+  await page.waitForFunction(() => view.agents?.[0]?.appearanceStatus === 'waiting' && !view.busy);
+  const result = await page.evaluate(async () => {
+    const key = host.getStatus().selectedKey, before = host.getStatus().bodies[0];
+    const notPaused = (await agents.get(before.agentId)).status !== 'paused';
+    window.imageAvailable = true; await callbacks.onAppearance({ key });
+    await new Promise(resolve => setTimeout(resolve, 100));
+    const published = networkOptions.listLocalAgents()[0], generated = calls.filter(c => c[0] === 'generate');
+    const face = calls.find(c => c[0] === 'face')?.[2];
+    await host.dispose(); await start(); await new Promise(resolve => setTimeout(resolve, 100));
+    return { before, notPaused, published, generated, face, restored: host.getStatus().bodies[0],
+      faceReads: calls.filter(c => c[0] === 'face').length };
+  });
+  assert.equal(result.before.appearancePrompt, 'Blue robot with green eyes'); assert.equal(result.notPaused, true);
+  assert.equal(result.generated.length, 1); assert.equal(result.generated[0][1].task, 'text-to-image');
+  assert.equal(result.face.width, 2); assert(result.faceReads >= 2);
+  assert.equal(result.restored.face.sha256, result.published.face.sha256);
+  assert.equal('appearancePrompt' in result.published, false); assert.equal('attachmentId' in result.published.face, false);
+});
+
+test('public room replies are opt-in, use a separate history and only caption the authenticated resident owner', async t => {
+  const page = await fixture(t);
+  const result = await page.evaluate(async () => {
+    await host.spawn({ name: 'Ada' }); const key = host.getStatus().selectedKey, id = view.selected.agentId;
+    await host.send({ text: 'Visitor private secret' });
+    const incoming = { peerId: 'human', name: 'Human', text: 'Hello room', id: 'one' };
+    host.receiveWorldMessage(incoming); await new Promise(r => setTimeout(r, 40));
+    const before = calls.filter(c => c[0] === 'public-message').length;
+    await callbacks.onWorldChat({ key, enabled: true }); host.receiveWorldMessage({ ...incoming, id: 'two' });
+    for (let i = 0; i < 100 && !calls.some(c => c[0] === 'public-message'); i++) await new Promise(r => setTimeout(r, 10));
+    const generated = calls.filter(c => c[0] === 'generate'), published = calls.filter(c => c[0] === 'public-message');
+    const publicBody = host.getStatus().bodies[0];
+    host.receiveWorldMessage({ ...incoming, id: 'three', peerId: 'impostor', agentId: id, text: 'wrong owner' });
+    const caption = host.getStatus().bodies[0].caption;
+    await callbacks.onWorldChat({ key, enabled: false });
+    host.receiveWorldMessage({ ...incoming, id: 'four' });
+    await host.openConversation(key);
+    return { before, generated, published, publicBody, caption, messages: view.messages, saved: (await agents.get(id)).embodiments[0] };
+  });
+  assert.equal(result.before, 0); assert.equal(result.published.length, 1);
+  assert.equal(result.generated.length, 2); assert.equal(JSON.stringify(result.generated[1][1]).includes('Visitor private secret'), false);
+  assert.match(result.generated[1][1].worldContext, /public-room-chat/);
+  assert.equal(result.publicBody.caption, 'Fixture response (not real inference).');
+  assert.equal(result.caption, result.publicBody.caption); assert.equal(result.saved.respondToWorldChat, false);
+  assert.equal(result.messages.length, 2); assert.equal(result.messages[0].text, 'Visitor private secret');
+});
+
+test('revoking world-chat opt-in waits for active cleanup and never publishes the cancelled response', async t => {
+  const page = await fixture(t);
+  await page.evaluate(async () => {
+    await host.spawn({ name: 'Ada', respondToWorldChat: true }); window.waitWorld = true;
+    host.receiveWorldMessage({ peerId: 'human', id: 'one', name: 'Human', text: 'Hello' });
+  });
+  await page.waitForFunction(() => calls.some(c => c[0] === 'generate'));
+  await page.evaluate(() => {
+    window.disabled = false; window.disabling = callbacks.onWorldChat({ key: host.getStatus().selectedKey, enabled: false }).then(() => { disabled = true; });
+  });
+  await page.waitForFunction(() => window.finishCleanup); assert.equal(await page.evaluate(() => disabled), false);
+  const result = await page.evaluate(async () => {
+    finishCleanup(); await disabling; return { disabled, published: calls.filter(c => c[0] === 'public-message'), saved: (await agents.list())[0] };
+  });
+  assert.equal(result.disabled, true); assert.equal(result.saved.embodiments[0].respondToWorldChat, false); assert.deepEqual(result.published, []);
+});
+
+test('world-chat without a capable model does not pause the resident or create a failed inference turn', async t => {
+  const page = await fixture(t);
+  await page.evaluate(async () => {
+    await host.spawn({ name: 'Ada', respondToWorldChat: true }); window.noTextProvider = true;
+    host.receiveWorldMessage({ peerId: 'human', id: 'one', name: 'Human', text: 'Hello' });
+  });
+  await page.waitForFunction(() => view.status?.startsWith('World chat:'));
+  const result = await page.evaluate(async () => ({ head: (await agents.list())[0], calls }));
+  assert.notEqual(result.head.status, 'paused'); assert.equal(result.calls.filter(c => c[0] === 'generate').length, 0);
+});
+
+test('public resident text arriving before its body is anchored only to its authenticated owner once', async t => {
+  const page = await fixture(t);
+  const result = await page.evaluate(() => {
+    host.receiveWorldMessage({ peerId: 'speaker', agentId: 'new-agent', text: 'First public reply' });
+    const entry = { ownerPeerId: 'other-owner', agentId: 'new-agent', name: 'Resident', position: [0, 3, 0], color: '#aabbcc', status: 'idle' };
+    networkOptions.onDirectory([entry]); const wrong = host.getStatus().bodies[0];
+    networkOptions.onDirectory([{ ...entry, ownerPeerId: 'speaker' }]); const matched = host.getStatus().bodies[0];
+    networkOptions.onDirectory([]); networkOptions.onDirectory([{ ...entry, ownerPeerId: 'speaker' }]);
+    return { wrong, matched, reappeared: host.getStatus().bodies[0] };
+  });
+  assert.equal(result.wrong.caption, undefined); assert.equal(result.matched.caption, 'First public reply');
+  assert.equal(result.reappeared.caption, undefined);
 });

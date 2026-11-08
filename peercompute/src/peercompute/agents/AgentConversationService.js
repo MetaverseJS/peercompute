@@ -1,7 +1,9 @@
 import { channel, encryptedConnection, bytes } from '../networkManager/inference/protocol.js';
 import { waitForPeerConnection } from '../networkManager/inference/waitForPeerConnection.js';
 import { agentIdentifier } from './AgentContracts.js';
-import { normalizePublicAgent, worldAgentText, WORLD_AGENT_LIMITS } from './WorldAgentContracts.js';
+import { normalizePublicAgent, normalizeAgentFace, worldAgentText, WORLD_AGENT_LIMITS } from './WorldAgentContracts.js';
+import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
 
 export const AGENT_CONVERSATION_PROTOCOL = '/peercompute/world-agents/1.0.0';
 export const AGENT_CONVERSATION_LIMITS = Object.freeze({ maximumPeers: 32, maximumRequests: 8,
@@ -16,6 +18,21 @@ const bounded = (value, maximum, minimum = 1) => {
   if (!Number.isSafeInteger(value) || value < minimum || value > maximum) throw new TypeError('Invalid agent conversation limit');
   return value;
 };
+const faceDigest = (data) => bytesToHex(sha256(data));
+const sameFace = (a, b) => a && b && ['sha256', 'width', 'height', 'channels'].every((field) => a[field] === b[field]);
+function facePixels(image, face) {
+  if (!image || !(image.data instanceof Uint8Array) || image.data.length !== face.width * face.height * 4
+      || !sameFace({ ...image, sha256: faceDigest(image.data) }, face)) throw fail('Invalid resident face pixels', 'ERR_AGENT_FACE');
+  return image;
+}
+async function closeFaceStream(stream, signal) {
+  signal.throwIfAborted();
+  const closing = operation([signal], 250);
+  try { await withAbort(stream.close({ signal: closing.signal }), closing.signal); }
+  catch (error) { try { Promise.resolve(stream.abort(asError(error))).catch(() => {}); } catch { /* Best effort after a validated result. */ } }
+  finally { closing.dispose(); }
+  signal.throwIfAborted();
+}
 function operation(signals, timeout) {
   const controller = new AbortController();
   const removers = signals.filter(Boolean).map((signal) => {
@@ -55,16 +72,18 @@ function reply(value) {
 
 /** Private owner-directed conversations. No remote history, authority, model loading or code is accepted. */
 export class AgentConversationService {
-  constructor({ networkManager, worldId, listLocalAgents, respond, onDirectory = () => {},
+  constructor({ networkManager, worldId, listLocalAgents, respond, getAppearance, onDirectory = () => {},
     queryTimeoutMs = L.queryTimeoutMs, requestTimeoutMs = L.requestTimeoutMs, now = () => performance.now() } = {}) {
     if (!networkManager || typeof listLocalAgents !== 'function' || typeof respond !== 'function'
         || typeof onDirectory !== 'function' || typeof now !== 'function') throw new TypeError('Agent conversation callbacks and manager are required');
-    Object.assign(this, { manager: networkManager, listLocalAgents, respond, onDirectory, now });
+    if (getAppearance !== undefined && typeof getAppearance !== 'function') throw new TypeError('Invalid appearance callback');
+    Object.assign(this, { manager: networkManager, listLocalAgents, respond, getAppearance, onDirectory, now });
     this.worldId = worldAgentText(worldId, 240, 'world');
     this.queryTimeoutMs = bounded(queryTimeoutMs, 15000, 100);
     this.requestTimeoutMs = bounded(requestTimeoutMs, L.requestTimeoutMs, 100);
     this.controller = new AbortController(); this.records = new Map(); this.seen = new Map();
     this.inbound = new Map(); this.outbound = new Map(); this.operations = new Set(); this.pending = new Set();
+    this.faceReads = new Map();
     this.closed = false; this.registered = false; this.started = false; this.lastErrors = [];
     this.disconnect = (event) => {
       const peerId = event.detail?.remotePeer?.toString?.() ?? event.detail?.toString?.();
@@ -226,9 +245,47 @@ export class AgentConversationService {
     const entries = [...this.inbound.values(), ...this.outbound.values()];
     return entries.length >= L.maximumRequests || entries.filter((entry) => entry.peerId === peerId).length >= L.maximumPerPeer;
   }
+  _facePeer(peerId) {
+    this._active();
+    const peer = this.manager.peers?.get(peerId);
+    if (!peer || this.manager.bootstrapPeerIds?.has(peerId)
+        || ['gameId', 'roomId', 'topologyId'].some((key) => peer[key] !== this.scope[key])) {
+      throw fail('Appearance owner/requester is not in this world', 'ERR_AGENT_SCOPE');
+    }
+  }
+  async _serveAppearance(io, request, peerId, signal) {
+    fields(request, [...envelopeFields, 'requestId', 'agentId', 'face']);
+    agentIdentifier(request.requestId); agentIdentifier(request.agentId);
+    const face = normalizeAgentFace(request.face); this._facePeer(peerId);
+    const recent = (this.faceReads.get(peerId) ?? []).filter((at) => this.now() - at < 10_000);
+    if (recent.length >= 16) throw fail('Resident appearance request rate exceeded', 'ERR_AGENT_BUSY');
+    if (!this.faceReads.has(peerId) && this.faceReads.size >= L.maximumPeers) this.faceReads.delete(this.faceReads.keys().next().value);
+    recent.push(this.now()); this.faceReads.set(peerId, recent);
+    const current = async () => {
+      this._facePeer(peerId);
+      const body = (await this._local(signal)).find((item) => item.agentId === request.agentId);
+      if (!sameFace(body?.face, face)) throw fail('This face is no longer shared', 'ERR_AGENT_NOT_SHARED');
+    };
+    await current();
+    if (!this.getAppearance) throw fail('Resident appearance is unavailable', 'ERR_AGENT_NOT_SHARED');
+    const image = facePixels(await withAbort(this.getAppearance({ agentId: request.agentId,
+      sha256: face.sha256, requesterPeerId: peerId, signal }), signal), face);
+    await current(); signal.throwIfAborted();
+    await io.write(this._envelope('appearance', peerId, { requestId: request.requestId, face }), signal);
+    for (let offset = 0; ;) {
+      const credit = await io.read(signal); this._check(credit, peerId);
+      fields(credit, [...envelopeFields, 'requestId', 'offset']);
+      if (credit.type !== 'face-credit' || credit.requestId !== request.requestId || credit.offset !== offset) throw fail('Invalid appearance transfer credit');
+      if (offset === image.data.length) break;
+      await current();
+      const end = Math.min(offset + 65536, image.data.length);
+      await io.rpc.write(image.data.subarray(offset, end), { signal }); offset = end;
+    }
+    await io.write(this._envelope('face-done', peerId, { requestId: request.requestId }), signal);
+  }
   async _handle(stream, connection) {
     const peerId = connection.remotePeer.toString(), entry = this._entry(peerId, null, this.requestTimeoutMs), { op } = entry;
-    const io = channel(stream); let request, key, monitor, run, receiptResolve, receiptReject, sendingResult = false;
+    const io = channel(stream); let request, key, monitor, run, receiptResolve, receiptReject, sendingResult = false, releaseFace;
     const abort = () => stream.abort(reason(op.signal)); op.signal.addEventListener('abort', abort, { once: true });
     try {
       const first = operation([op.signal], this.queryTimeoutMs);
@@ -239,6 +296,15 @@ export class AgentConversationService {
         const query = operation([op.signal], this.queryTimeoutMs);
         try { await io.write(this._envelope('directory', peerId, { agents: await this._local(query.signal) }), query.signal);
           await stream.close({ signal: query.signal }); } finally { query.dispose(); }
+        return;
+      }
+      if (request.type === 'face') {
+        if (this._busy(peerId)) throw fail('Appearance transfer is busy', 'ERR_AGENT_BUSY');
+        key = `face:${crypto.randomUUID()}`; this.inbound.set(key, entry);
+        const transfer = operation([op.signal], 15_000);
+        releaseFace = this.manager.retainPeerInferenceConnection?.(connection, { timeoutMs: 16_000 });
+        try { await this._serveAppearance(io, request, peerId, transfer.signal); await closeFaceStream(stream, transfer.signal); }
+        finally { transfer.dispose(); }
         return;
       }
       fields(request, [...envelopeFields, 'requestId', 'agentId', 'prompt']);
@@ -287,8 +353,43 @@ export class AgentConversationService {
       await monitor?.catch(() => {});
       // Keep owner admission counted until its cancellation/cleanup actually settles.
       await run?.catch(() => {});
+      releaseFace?.();
       if (key) this.inbound.delete(key); this._finish(entry);
     }
+  }
+  requestAppearance(ownerPeerId, input, { signal } = {}) {
+    this._active(); this._facePeer(ownerPeerId); fields(input, ['agentId', 'face']);
+    const agentId = agentIdentifier(input.agentId), face = normalizeAgentFace(input.face), requestId = crypto.randomUUID();
+    if (ownerPeerId === this.peerId || this._busy(ownerPeerId)) throw fail('Appearance owner unavailable or busy', 'ERR_AGENT_BUSY');
+    const entry = this._entry(ownerPeerId, signal, 15_000), { op } = entry;
+    this.outbound.set(requestId, entry);
+    return this._track((async () => {
+      let stream, release;
+      const abort = () => stream?.abort(reason(op.signal)); op.signal.addEventListener('abort', abort, { once: true });
+      try {
+        const opened = await this._open(ownerPeerId, op.signal); stream = opened.stream;
+        release = this.manager.retainPeerInferenceConnection?.(opened.connection, { timeoutMs: 16_000 });
+        this._facePeer(ownerPeerId); const io = channel(stream);
+        await io.write(this._envelope('face', ownerPeerId, { requestId, agentId, face }), op.signal);
+        const response = await io.read(op.signal); this._check(response, ownerPeerId);
+        if (response.type === 'error') throw fail(String(response.message).slice(0, 256), response.code);
+        if (response.type !== 'appearance' || response.requestId !== requestId || !sameFace(normalizeAgentFace(response.face), face)) throw fail('Unexpected resident face');
+        const data = new Uint8Array(face.width * face.height * 4);
+        for (let offset = 0; ;) {
+          await io.write(this._envelope('face-credit', ownerPeerId, { requestId, offset }), op.signal);
+          if (offset === data.length) break;
+          const frame = await io.rpc.read({ signal: op.signal });
+          if (!frame.byteLength || frame.byteLength > 65536 || frame.byteLength > data.length - offset) throw fail('Invalid appearance chunk');
+          data.set(frame.subarray(), offset); offset += frame.byteLength;
+          if (offset === data.length && faceDigest(data) !== face.sha256) throw fail('Appearance digest mismatch');
+        }
+        const done = await io.read(op.signal); this._check(done, ownerPeerId); this._facePeer(ownerPeerId);
+        if (done.type !== 'face-done' || done.requestId !== requestId) throw fail('Incomplete appearance transfer');
+        await closeFaceStream(stream, op.signal);
+        return { ...face, data };
+      } catch (error) { stream?.abort(asError(error)); throw error; }
+      finally { release?.(); op.signal.removeEventListener('abort', abort); this.outbound.delete(requestId); this._finish(entry); }
+    })());
   }
   request(ownerPeerId, input, { signal } = {}) {
     this._active(); agentIdentifier(ownerPeerId, 'owner peer'); fields(input, ['agentId', 'prompt']);
@@ -335,7 +436,7 @@ export class AgentConversationService {
       catch (cause) { error = cause; }
       this.node?.removeEventListener('peer:disconnect', this.disconnect);
       await Promise.allSettled([...this.operations]);
-      this.records.clear(); this._publish();
+      this.records.clear(); this.faceReads.clear(); this._publish();
       if (error) throw error;
       if (owners.get(this.node) === this) owners.delete(this.node);
       this.started = false;

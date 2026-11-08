@@ -16,9 +16,10 @@ export function chatFields(value, allowed) {
       || Object.keys(value).some((key) => !allowed.includes(key))) throw chatError('Unexpected room chat fields');
 }
 export function normalizeChatInput(input) {
-  chatFields(input, ['text', 'name']);
+  chatFields(input, ['text', 'name', 'agentId']);
   return { text: chatText(input.text, ROOM_CHAT_LIMITS.textBytes, 'Message'),
-    name: chatText(input.name ?? 'Guest', ROOM_CHAT_LIMITS.nameBytes, 'Display name') };
+    name: chatText(input.name ?? 'Guest', ROOM_CHAT_LIMITS.nameBytes, 'Display name'),
+    ...(input.agentId === undefined ? {} : { agentId: chatIdentifier(input.agentId) }) };
 }
 export function chatScope(config) {
   return Object.fromEntries(['gameId', 'roomId', 'topologyId'].map((key) => [key, chatText(config?.[key], 240, key)]));

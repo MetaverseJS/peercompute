@@ -224,3 +224,16 @@ Per-row Unload and Verify locally remain. Failure/cancellation keeps completed
 deletions completed and retained failed/unstarted selections available for retry.
 Refresh reconciles actual storage before controls unlock. Browsing a catalog or
 Hub result still uses its detail Load button; only stored-row actions change.
+
+## Embedded world model management — November 7 2026
+
+CubeChat now opens the library directly from its hamburger menu. One native
+model dialog contains Stored/Browse, Config, setup help and loading state. Done
+inside Config/setup returns to the same library tab/selection; the final Done or
+Escape awaits the host's close callback and restores focus to the world menu.
+Metadata requests remain paused while a subpage is shown; Browse resumes them
+on return. Config return refreshes Stored residency after explicit unload.
+The panel borrows and preserves the scene runtime. Failed cleanup permits close
+retry without leaving half-disposed mutable controls; a retained model worker
+must be explicitly unloaded/recovered before final disposal. Standalone chat
+and Earth retain their existing default window ownership.

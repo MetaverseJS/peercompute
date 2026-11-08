@@ -7,7 +7,7 @@ import { normalizeAgentTask, packAgentContext } from '../../src/peercompute/agen
 import { AgentRuntime } from '../../src/peercompute/agents/AgentRuntime.js';
 import { AgentRecordStore } from '../../src/peercompute/agents/AgentRecordStore.js';
 
-const binding = { worldId: 'cubechat:lobby', position: [1, 2, 3], color: '#8fffd4', shared: true };
+const binding = { worldId: 'cubechat:lobby', position: [1, 2, 3], color: '#8fffd4', shared: true, respondToWorldChat: false };
 test('world bindings are optional, bounded, validated and copied without executable/private extra fields', () => {
   assert.equal('embodiments' in normalizeAgentInput({ name: 'Old agent' }), false);
   const value = normalizeAgentInput({ name: 'Ada', embodiments: [{ ...binding, callback: 'untrusted' }] });
@@ -63,3 +63,20 @@ test('body bindings and isolated journal events survive acknowledged IndexedDB c
   assert.deepEqual((await runtime.get(head.agentId)).embodiments, []);
   assert.equal((await runtime.events(head.agentId)).filter((event) => event.type === 'result').length, 3);
 });
+
+test('appearance references are private and world-chat replies default off', () => {
+  const face = { sha256: 'a'.repeat(64), width: 256, height: 256, channels: 4, attachmentId: 'private-image' };
+  const value = normalizeAgentInput({ name: 'Ada', embodiments: [{ ...binding, respondToWorldChat: undefined,
+    appearancePrompt: 'A bright robot', appearanceRequestId: 'request-1', face }] });
+  assert.equal(value.embodiments[0].respondToWorldChat, false);
+  assert.deepEqual(value.embodiments[0].face, face);
+  const publicBody = normalizePublicAgent({ ...bodyForFace(), face, appearancePrompt: 'private', respondToWorldChat: true });
+  assert.deepEqual(publicBody.face, { sha256: face.sha256, width: 256, height: 256, channels: 4 });
+  assert.equal('respondToWorldChat' in publicBody, false); assert.equal('appearancePrompt' in publicBody, false);
+  for (const change of [{ width: 257 }, { channels: 3 }, { sha256: 'https://remote/image' }, { height: 0 }]) {
+    assert.throws(() => normalizeAgentInput({ name: 'A', embodiments: [{ ...binding, face: { ...face, ...change } }] }));
+  }
+  assert.throws(() => normalizeAgentInput({ name: 'A', embodiments: [{ ...binding, respondToWorldChat: 'yes' }] }));
+  assert.throws(() => normalizeAgentInput({ name: 'A', embodiments: [{ ...binding, appearancePrompt: 'é'.repeat(1025) }] }));
+});
+function bodyForFace() { return { agentId: 'agent', name: 'Ada', color: '#44ffaa', position: [0, 3, 0], status: 'idle' }; }

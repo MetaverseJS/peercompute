@@ -3,6 +3,10 @@ import { AgentConversationService } from '../../../peercompute/src/peercompute/a
 import { normalizePublicAgent, WORLD_AGENT_LIMITS, worldAgentText } from '../../../peercompute/src/peercompute/agents/WorldAgentContracts.js';
 import { speechChunks } from '../../../peercompute/src/peercompute/inference/speech/chunks.js';
 import { WorldEmbodimentLease } from './WorldEmbodimentLease.js';
+import { createWorldAppearance } from './WorldAppearance.js';
+import { createWorldAppearancePresenter } from './WorldAppearancePresenter.js';
+import { createWorldChatResponder } from './WorldChatResponder.js';
+import { routeAgentTask } from '../../../peercompute/src/peercompute/agents/AgentRouter.js';
 export { speechChunks } from '../../../peercompute/src/peercompute/inference/speech/chunks.js';
 
 const encoder = new TextEncoder();
@@ -19,7 +23,8 @@ export async function worldConversationId(worldId, requester) {
 
 /** Scene-owned bodies and conversations. Closing a window never owns the agent. */
 export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOptions = () => ({}), beforeOpen,
-  exclusiveEmbodiments = false,
+  exclusiveEmbodiments = false, panelOwnsWindow = false, getModelReturnFocus = () => document.activeElement,
+  publishWorldMessage,
   runtimeFactory = defaultRuntime, speechFactory = defaultSpeech, audioFactory = defaultAudio,
   uiFactory = createWorldAgentUi, serviceFactory = (options) => new AgentConversationService(options),
   panelFactory = async (options) => (await import('../../inference/src/agentPanel.js')).mountInferencePanel(options) } = {}) {
@@ -27,10 +32,14 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
   if (!adapter?.upsert || !adapter?.normalizePosition || !adapter?.dispose) throw new Error('A world agent body adapter is required');
   const lifetime = new AbortController(), bodies = new Map(), heads = new Map(), transcripts = new Map();
   let runtime, agents, network, worldManager, speech, audio, ui, selectedKey, disposed = false, closing, unsubscribe;
-  let refreshing, networkStarting, modelStarting, networkTimer, panel, panelOpening, panelShell, embodimentLease;
+  let refreshing, networkStarting, modelStarting, networkTimer, panel, panelOpening, panelClosing, panelShell, panelReturnFocus, embodimentLease;
   let operation, operationDone, voicePreparation, voicePreparationDone, recordingStart, voiceEnabled = false, recording = false;
+  let appearance, appearancePresenter, worldChat;
+  const appearanceStates = new Map();
+  const worldChatDisabled = new Set();
+  const pendingPublicCaptions = new Map();
   const localKey = (id) => `local:${id}`;
-  const bindingOf = (head) => head.embodiments?.find((binding) => binding.worldId === worldId);
+  const bindingOf = (head) => head?.embodiments?.find((binding) => binding.worldId === worldId);
   const fail = (error) => { if (!disposed) ui?.setStatus(error?.name === 'AbortError' ? 'Cancelled.' : error?.message ?? String(error)); };
   const alive = () => { if (disposed) throw new Error('World agents are closed'); };
   const voiceUnavailable = 'Voice models are no longer loaded. Enable voice to prepare them again.';
@@ -53,7 +62,9 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     return position ? { ...body, position: adapter.normalizePosition(position) } : body;
   }
   const list = () => [...bodies.values()].map(liveBody);
-  const updateList = () => { if (!disposed) ui.setAgents(list()); };
+  const updateList = () => {
+    if (!disposed) { const entries = list(); ui.setAgents(entries); appearancePresenter?.sync(entries); worldChat?.sync(); }
+  };
   function setBody(descriptor) {
     // A directory/activity refresh has no new speech. Only an explicit empty
     // caption clears it; the adapter's existing expiry timer remains in charge.
@@ -92,13 +103,17 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
         const key = localKey(head.agentId); current.add(key);
         try {
           setBody({ ...normalizePublicAgent({ agentId: head.agentId, name: head.identity.name,
-            position: binding.position, color: binding.color, status: statusOf(head) }),
+            position: binding.position, color: binding.color, status: statusOf(head),
+            ...(binding.face ? { face: appearance.publicRef(head) } : {}) }),
           key, ownerPeerId: worldNetwork()?.peerId ?? '', local: true,
-          recoveryRequired: !!head.recoveryRequired, shared: binding.shared });
+          recoveryRequired: !!head.recoveryRequired, shared: binding.shared,
+          respondToWorldChat: !!binding.respondToWorldChat, appearancePrompt: binding.appearancePrompt ?? '',
+          appearanceStatus: binding.face ? 'ready' : binding.appearancePrompt ? 'waiting' : '',
+          ...appearanceStates.get(head.agentId) });
         } catch (error) { fail(new Error(`Could not restore ${head.identity.name}: ${error.message}`)); }
       }
       for (const [key, body] of bodies) if (body.local && !current.has(key)) {
-        adapter.remove(key); bodies.delete(key); await embodimentLease?.release(body.agentId);
+        adapter.remove(key); bodies.delete(key); appearanceStates.delete(body.agentId); await embodimentLease?.release(body.agentId);
       }
       if (embodimentLease) for (const id of [...embodimentLease.entries.keys()]) {
         if (!current.has(localKey(id))) await embodimentLease.release(id);
@@ -118,7 +133,12 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     for (const entry of entries.slice(0, 48)) {
       if (embodimentLease && bodies.get(localKey(entry.agentId))?.local) continue;
       const key = `${entry.ownerPeerId}:${entry.agentId}`;
-      try { setBody({ ...normalizePublicAgent(entry), key, ownerPeerId: entry.ownerPeerId, local: false }); current.add(key); }
+      try {
+        const pendingKey = JSON.stringify([entry.ownerPeerId, entry.agentId]), pending = pendingPublicCaptions.get(pendingKey);
+        pendingPublicCaptions.delete(pendingKey);
+        setBody({ ...normalizePublicAgent(entry), key, ownerPeerId: entry.ownerPeerId, local: false,
+          ...(pending && pending.expires > Date.now() ? { caption: pending.text } : {}) }); current.add(key);
+      }
       catch { /* Wrong-world positions never enter the renderer. */ }
     }
     for (const [key, body] of bodies) if (!body.local && !current.has(key)) { adapter.remove(key); bodies.delete(key); }
@@ -158,7 +178,8 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
       lifetime.signal.throwIfAborted();
       const next = serviceFactory({ networkManager: worldNetwork(), worldId,
         listLocalAgents: () => list().filter((body) => body.local && bindingOf(heads.get(body.agentId))?.shared)
-          .map(normalizePublicAgent), respond, onDirectory: directory });
+          .map(normalizePublicAgent), respond, onDirectory: directory,
+        getAppearance: ({ agentId, signal, sha256 }) => appearance.getLocal(agentId, { signal, sha256, sharedOnly: true }) });
       try { await next.start(); lifetime.signal.throwIfAborted(); network = next; }
       catch (error) { await next.close(); throw error; }
       await refreshLocal();
@@ -186,7 +207,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     showMessages(key);
     ui.setStatus(descriptor.status === 'paused' ? 'Paused. Resume to start a new conversation.' : `Talk to ${descriptor.name}.`);
   }
-  async function spawn({ name, goals = [], localOnly = false, shared = true }) {
+  async function spawn({ name, goals = [], localOnly = false, shared = true, appearancePrompt = '', respondToWorldChat = false }) {
     await ready; alive();
     requireConversationIdle();
     if (list().filter((body) => body.local).length >= WORLD_AGENT_LIMITS.agents) throw new Error('This world already has 16 local agents');
@@ -194,8 +215,76 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     const position = adapter.normalizePosition(await adapter.getSpawnPosition());
     const head = await agents.create({ name, goals, inferenceMode: localOnly ? 'local-only' : 'network-assisted',
       instructions: `You inhabit a body in ${worldLabel}. Talk directly with the visitor. World observations describe your surroundings. Do not claim to move or act when no action was executed.`,
-      embodiments: [{ worldId, position, color: '#8fffd4', shared }] });
+      embodiments: [{ worldId, position, color: '#8fffd4', shared, appearancePrompt, respondToWorldChat }] });
     await agents.resume(head.agentId); await refreshLocal(); await select(localKey(head.agentId));
+    if (appearancePrompt.trim()) void generateAppearance({ key: localKey(head.agentId) }).catch(fail);
+  }
+  async function generateAppearance({ key }) {
+    await ready; alive(); requireConversationIdle();
+    const body = bodies.get(key); if (!body?.local) throw new Error('Only the owner can change this appearance');
+    return runOperation(async signal => {
+      const result = await appearance.generate(body.agentId, { signal });
+      await refreshLocal(); if (!disposed) ui.setStatus(result.message ?? 'Resident appearance saved.');
+      return result;
+    });
+  }
+  async function setWorldChat({ key, enabled }) {
+    await ready; alive();
+    const body = bodies.get(key); if (!body?.local) throw new Error('Only the owner can change world-chat responses');
+    if (!enabled) {
+      const responding = worldChat?.getStatus().active === key;
+      worldChatDisabled.add(key); worldChat?.sync();
+      if (responding) await operationDone?.catch(() => {});
+    }
+    try {
+      const head = await agents.get(body.agentId);
+      await agents.update(head.agentId, { embodiments: head.embodiments.map(binding => binding.worldId === worldId
+        ? { ...binding, respondToWorldChat: !!enabled } : binding) }, { expectedRevision: head.revision });
+      await refreshLocal();
+    } finally { worldChatDisabled.delete(key); worldChat?.sync(); }
+  }
+  function receiveWorldMessage(input) {
+    if (disposed) return;
+    if (input?.agentId) {
+      const body = list().find(entry => entry.agentId === input.agentId && entry.ownerPeerId === input.peerId);
+      if (body) caption(body.key, input.text);
+      else if (typeof input.text === 'string' && encoder.encode(input.text).length <= 2048) {
+        // The first reply can arrive before the next bounded body-directory poll.
+        // Keep it only for that authenticated owner and expire it promptly.
+        for (const [key, value] of pendingPublicCaptions) if (value.expires <= Date.now()) pendingPublicCaptions.delete(key);
+        const key = JSON.stringify([input.peerId, input.agentId]);
+        pendingPublicCaptions.delete(key); pendingPublicCaptions.set(key, { text: input.text, expires: Date.now() + 15000 });
+        while (pendingPublicCaptions.size > 48) pendingPublicCaptions.delete(pendingPublicCaptions.keys().next().value);
+      }
+      return;
+    }
+    return worldChat?.receive(input);
+  }
+  async function replyToWorld(body, incoming, { signal, context }) {
+    alive(); requireConversationIdle();
+    return runOperation(async ownedSignal => {
+      const combined = AbortSignal.any([ownedSignal, signal]);
+      const head = await agents.get(body.agentId), binding = bindingOf(head);
+      if (!binding?.respondToWorldChat || !bodies.get(body.key)?.local) throw new Error('World-chat responses are disabled');
+      // Check availability without creating a failed persisted agent turn. A room
+      // message must not pause an otherwise healthy resident when hosts leave.
+      const candidates = await agents.inference.listCandidates({ mode: head.policy.inferenceMode,
+        task: 'text-generation', signal: combined, refresh: true });
+      routeAgentTask({ task: 'text-generation', inferenceMode: head.policy.inferenceMode, candidates });
+      const messages = [...context.messages];
+      const observations = { kind: context.kind, world: worldLabel, position: liveBody(body).position, messages };
+      while (encoder.encode(JSON.stringify(observations)).length > 8192 && messages.length) messages.shift();
+      const result = await agents.run(body.agentId, { task: 'text-generation', signal: combined,
+        conversationId: await worldConversationId(worldId, 'public-room'),
+        prompt: `Reply briefly to this public world-chat message from ${incoming.name}. Your response will be visible to everyone in this room.\n${incoming.text}`,
+        worldContext: JSON.stringify(observations), maxNewTokens: 256 });
+      combined.throwIfAborted();
+      const answer = result.result.text.trim().replaceAll('\0', '');
+      if (encoder.encode(answer).length <= 2048) return answer;
+      let excerpt = '';
+      for (const character of answer) { if (encoder.encode(excerpt + character).length > 2045) break; excerpt += character; }
+      return excerpt + '…';
+    });
   }
   async function remove(key) {
     const body = bodies.get(key); if (!body?.local) throw new Error('Only the owner can remove this body');
@@ -247,7 +336,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     const pending = Promise.resolve().then(() => { signal.throwIfAborted(); return work(signal); })
       .catch((error) => { fail(error); throw error; })
       .finally(() => {
-        if (operation === controller) { operation = null; operationDone = null; if (!disposed) ui.setBusy(false); }
+        if (operation === controller) { operation = null; operationDone = null; if (!disposed) { ui.setBusy(false); worldChat?.sync(); } }
       });
     operationDone = pending; return pending;
   }
@@ -322,37 +411,69 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     }
   }
   async function closePanel() {
-    await panelOpening;
-    await panel?.dispose(); panel = null; panelShell?.remove(); panelShell = null;
-    if (!disposed) refreshVoiceAvailability();
+    if (panelClosing) return panelClosing;
+    panelClosing = (async () => {
+      await panelOpening;
+      await panel?.dispose(); panel = null; panelShell?.remove(); panelShell = null;
+      if (!disposed) {
+        refreshVoiceAvailability();
+        worldChat?.sync();
+        if (panelReturnFocus?.isConnected && panelReturnFocus.getClientRects().length
+            && !panelReturnFocus.closest('[inert]')) panelReturnFocus.focus({ preventScroll: true });
+      }
+    })();
+    try { await panelClosing; } finally { panelClosing = null; }
   }
   async function models() {
     await ready; alive(); if (panel || panelOpening) return;
     requireConversationIdle();
     if (voicePreparation) throw new Error('Wait for voice preparation or cancel it before opening Models');
     beforeOpen?.();
+    panelReturnFocus = getModelReturnFocus();
     panelOpening = (async () => {
-      panelShell = document.createElement('dialog'); panelShell.className = 'world-agent-models';
-      const close = document.createElement('button'); close.textContent = 'Back to world'; close.type = 'button';
-      const content = document.createElement('div'); panelShell.append(close, content); document.body.append(panelShell); panelShell.showModal();
-      close.onclick = () => { void closePanel().catch(fail); };
-      panelShell.addEventListener('cancel', (event) => { event.preventDefault(); void closePanel().catch(fail); });
+      panelShell = document.createElement(panelOwnsWindow ? 'div' : 'dialog');
+      panelShell.className = panelOwnsWindow ? 'world-agent-model-host' : 'world-agent-models';
+      const content = document.createElement('div');
+      if (!panelOwnsWindow) {
+        const close = document.createElement('button'); close.textContent = 'Back to world'; close.type = 'button';
+        panelShell.append(close); close.onclick = () => { void closePanel().catch(fail); };
+        panelShell.addEventListener('cancel', (event) => { event.preventDefault(); void closePanel().catch(fail); });
+      }
+      panelShell.append(content); document.body.append(panelShell);
+      if (!panelOwnsWindow) panelShell.showModal();
       // The panel borrows the scene's runtime. Closing it cancels panel work but
       // does not unload the agent's reasoning or speech services.
       const borrowed = new Proxy(runtime, { get(target, key) { return key === 'dispose' ? async () => {} : Reflect.get(target, key); } });
-      try { panel = await panelFactory({ container: content, runtimeFactory: async () => borrowed, autoConnect: false }); }
+      try { panel = await panelFactory({ container: content, runtimeFactory: async () => borrowed, autoConnect: false,
+        ...(panelOwnsWindow ? { onRequestClose: closePanel } : {}) }); }
       catch (error) { panelShell.remove(); panelShell = null; throw error; }
     })().finally(() => { panelOpening = null; });
     return panelOpening;
   }
   ui = uiFactory({ worldLabel, onOpen: beforeOpen, onSpawn: spawn, onSelect: select, onSend: send, onModels: models,
-    onVoice: enableVoice, onRecord: record, onCancel: cancel, onClose: cancel, onRemove: remove, onResume: resume });
+    onVoice: enableVoice, onRecord: record, onCancel: cancel, onClose: cancel, onRemove: remove, onResume: resume,
+    onAppearance: generateAppearance, onWorldChat: setWorldChat });
   const ready = (async () => {
     const options = await getRuntimeOptions(); worldManager = options.networkManager;
     // World conversations use the room's identity; model discovery uses the
     // global model network so hosts in the standalone console remain eligible.
     runtime = await runtimeFactory({ ...options, networkManager: undefined, residentModelSlots: 3 });
     lifetime.signal.throwIfAborted(); agents = await runtime.getAgentController();
+    appearance = createWorldAppearance({ runtime, agents, worldId, onStatus: event => {
+      if (disposed) return;
+      appearanceStates.set(event.agentId, { appearanceStatus: event.status === 'unavailable' ? 'waiting' : event.status,
+        appearanceError: ['error', 'unavailable'].includes(event.status) ? event.message : '' });
+      void refreshLocal().catch(fail);
+    } });
+    appearancePresenter = createWorldAppearancePresenter({ appearance, adapter, getNetwork: () => network });
+    if (typeof publishWorldMessage === 'function') worldChat = createWorldChatResponder({
+      getResidents: () => list().map(body => ({ ...body,
+        respondToWorldChat: body.respondToWorldChat && !worldChatDisabled.has(body.key),
+        available: !['thinking', 'speaking'].includes(body.status) && !operation && !panel && !panelOpening
+          && !voicePreparation && !recording && !recordingStart && !disposed })),
+      respond: replyToWorld, publish: publishWorldMessage,
+      onStatus: event => { if (!disposed && event.status === 'error') ui.setStatus(`World chat: ${event.error}`); },
+    });
     if (exclusiveEmbodiments) {
       embodimentLease = new WorldEmbodimentLease({ namespace: agents.store?.lockName ?? options.storeName ?? 'inference-models-agents', worldId });
       if (!embodimentLease.supported) ui.setStatus('Cross-tab body ownership is unavailable in this browser. Keep one window open for this world.');
@@ -363,6 +484,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     networkTimer = setInterval(() => {
       void ensureModelNetwork(); void ensureNetwork();
       if (embodimentLease) void refreshLocal().catch(fail);
+      else updateList();
     }, 5000);
   })();
   ready.catch(fail);
@@ -374,17 +496,18 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
       exclusiveEmbodiments: !!embodimentLease, crossTabOwnership: embodimentLease?.supported ?? null }),
     // The scene owns these operations; exposed for embedding and acceptance
     // checks without invoking GPU work through a hidden global test harness.
-    spawn, send, remove, resume, enableVoice, cancel,
+    spawn, send, remove, resume, enableVoice, cancel, generateAppearance, setWorldChat, receiveWorldMessage,
     get runtime() { return runtime; },
     async dispose() {
       if (closing) return closing;
       disposed = true; lifetime.abort(new DOMException('World closed', 'AbortError')); clearInterval(networkTimer); unsubscribe?.();
       closing = (async () => {
         await ready.catch(() => {}); await cancel(); await networkStarting; await modelStarting; await closePanel();
+        await worldChat?.dispose(); await appearancePresenter?.dispose(); await appearance?.dispose();
         await network?.close(); network = null;
         await speech?.dispose(); await audio?.dispose(); await runtime?.dispose();
         await refreshing; await adapter.dispose(); await embodimentLease?.close();
-        ui.dispose(); bodies.clear(); heads.clear(); transcripts.clear();
+        ui.dispose(); bodies.clear(); heads.clear(); transcripts.clear(); pendingPublicCaptions.clear();
       })();
       try { await closing; } finally { closing = null; }
     },

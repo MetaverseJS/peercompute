@@ -9,6 +9,8 @@ import { yamux } from '@libp2p/yamux';
 import { identify } from '@libp2p/identify';
 import { multiaddr } from '@multiformats/multiaddr';
 import { AgentConversationService, AGENT_CONVERSATION_PROTOCOL } from '../../src/peercompute/agents/AgentConversationService.js';
+import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
 import { channel } from '../../src/peercompute/networkManager/inference/protocol.js';
 
 const scope = { gameId: 'world-agents-test', roomId: 'room', topologyId: 'mesh' };
@@ -28,7 +30,8 @@ async function fixture(t, count = 2, options = {}) {
     const entry = { node, manager, agents: [], received: [], updates: [] };
     entry.respond = async (request) => { entry.received.push(request); return { text: 'Hello\nfrom the agent', finishReason: 'stop' }; };
     entry.service = new AgentConversationService({ networkManager: manager, worldId: 'earthgrid:global',
-      listLocalAgents: () => entry.agents, respond: (input) => entry.respond(input), onDirectory: (value) => entry.updates.push(value),
+      listLocalAgents: () => entry.agents, respond: (input) => entry.respond(input),
+      getAppearance: input => entry.getAppearance?.(input), onDirectory: (value) => entry.updates.push(value),
       queryTimeoutMs: 500, requestTimeoutMs: 5000, ...(options.service ?? {}) });
     entries.push(entry); await entry.service.start();
   }
@@ -315,4 +318,47 @@ test('network replacement requires a new service and closes the original handler
   assert(!original.getProtocols().includes(AGENT_CONVERSATION_PROTOCOL));
   assert(owner.node.getProtocols().includes(AGENT_CONVERSATION_PROTOCOL));
   client.manager.libp2p = original;
+});
+
+function shareFace(client, owner, value = 70) {
+  for (const [a, b] of [[client, owner], [owner, client]]) a.manager.peers.set(b.node.peerId.toString(), { ...scope });
+  const data = new Uint8Array(256 * 256 * 4).fill(value);
+  const face = { width: 256, height: 256, channels: 4, sha256: bytesToHex(sha256(data)) };
+  owner.agents = [{ ...body(), face: { ...face, attachmentId: 'private' } }];
+  owner.faceCalls = [];
+  owner.getAppearance = async request => { owner.faceCalls.push(request); return { ...face, data }; };
+  return { face, data };
+}
+test('actual Noise appearance fetch transfers only current advertised pixels with credits and verified digest', { timeout: 15000 }, async t => {
+  const [client, owner] = await fixture(t); const { face, data } = shareFace(client, owner);
+  const records = await client.service.refresh(); assert.deepEqual(records[0].face, face);
+  const result = await client.service.requestAppearance(owner.node.peerId.toString(), { agentId: 'ada', face });
+  assert.deepEqual(result.data, data); assert.deepEqual({ ...result, data: undefined }, { ...face, data: undefined });
+  assert.equal(owner.faceCalls.length, 1); assert.equal(owner.faceCalls[0].requesterPeerId, client.node.peerId.toString());
+  assert.equal('attachmentId' in owner.faceCalls[0], false); assert.equal(owner.received.length, 0);
+  assert.equal(client.node.getConnections()[0].encryption, '/noise');
+});
+test('appearance refuses stale digest, unshared body, private attachment selection and out-of-room requester', { timeout: 15000 }, async t => {
+  const [client, owner] = await fixture(t); const { face } = shareFace(client, owner);
+  await assert.rejects(client.service.requestAppearance(owner.node.peerId.toString(), { agentId: 'ada', face: { ...face, sha256: '0'.repeat(64) } }), { code: 'ERR_AGENT_NOT_SHARED' });
+  const response = await raw(client, owner, envelope(client, owner, { type: 'face', prompt: undefined, face, attachmentId: 'private' }));
+  assert.equal(response.type, 'error'); assert.equal(owner.faceCalls.length, 0);
+  owner.agents = [];
+  await assert.rejects(client.service.requestAppearance(owner.node.peerId.toString(), { agentId: 'ada', face }), { code: 'ERR_AGENT_NOT_SHARED' });
+  owner.agents = [{ ...body(), face }]; owner.manager.peers.get(client.node.peerId.toString()).roomId = 'another';
+  await assert.rejects(client.service.requestAppearance(owner.node.peerId.toString(), { agentId: 'ada', face }), { code: 'ERR_AGENT_SCOPE' });
+  assert.equal(owner.faceCalls.length, 0);
+});
+test('corrupt owner appearance and cancelled reads fail closed without invoking conversation inference', { timeout: 15000 }, async t => {
+  const [client, owner] = await fixture(t); const { face, data } = shareFace(client, owner);
+  owner.getAppearance = async () => ({ ...face, data: new Uint8Array(data.length) });
+  await assert.rejects(client.service.requestAppearance(owner.node.peerId.toString(), { agentId: 'ada', face }), { code: 'ERR_AGENT_FACE' });
+  let started = false, aborted = false;
+  owner.getAppearance = async ({ signal }) => { started = true; await new Promise(resolve => signal.addEventListener('abort', () => { aborted = true; resolve(); }, { once: true })); signal.throwIfAborted(); };
+  const controller = new AbortController();
+  const pending = client.service.requestAppearance(owner.node.peerId.toString(), { agentId: 'ada', face }, { signal: controller.signal });
+  await until(() => started); controller.abort(); await assert.rejects(pending, { name: 'AbortError' });
+  // Stream abort is observed by the owner's credited transfer once its data read settles;
+  // closing its service explicitly cancels a currently pending attachment read.
+  await owner.service.close(); assert.equal(aborted, true); assert.equal(owner.received.length, 0);
 });

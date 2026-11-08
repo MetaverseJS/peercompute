@@ -167,7 +167,8 @@ export class RoomChatService {
       if (ready.type !== 'ready') throw chatError('Invalid room chat handshake');
       chatIdentifier(ready.session); op.signal.throwIfAborted(); committed = true;
       await withAbort(io.write(this._envelope('message', peerId, { session: ready.session, id: message.id,
-        text: message.text, name: message.name }), op.signal), op.signal);
+        text: message.text, name: message.name,
+        ...(message.agentId === undefined ? {} : { agentId: message.agentId }) }), op.signal), op.signal);
       const ack = await withAbort(io.read(op.signal), op.signal); this._check(ack, peerId);
       if (ack.type === 'error') throw Object.assign(chatError(String(ack.message).slice(0, 256)), { rejected: true });
       chatFields(ack, [...baseFields, 'id', 'session']);
@@ -218,13 +219,14 @@ export class RoomChatService {
       if (hello.type !== 'hello') throw chatError('Room chat handshake required');
       await withAbort(io.write(this._envelope('ready', peerId, { session: this.session }), op.signal), op.signal);
       const value = await withAbort(io.read(op.signal), op.signal); this._check(value, peerId);
-      chatFields(value, [...baseFields, 'session', 'id', 'name', 'text']);
+      chatFields(value, [...baseFields, 'session', 'id', 'name', 'text', 'agentId']);
       if (value.type !== 'message' || value.session !== this.session) throw chatError('Room chat session changed; message was not accepted');
-      const id = chatIdentifier(value.id), input = normalizeChatInput({ name: value.name, text: value.text });
+      const id = chatIdentifier(value.id), input = normalizeChatInput({ name: value.name, text: value.text,
+        ...(value.agentId === undefined ? {} : { agentId: value.agentId }) });
       const key = `${peerId}:${id}`, now = this.now();
       for (const [seenKey, entry] of this.seen) if (now - entry.at >= L.replayMs) this.seen.delete(seenKey);
       const previous = this.seen.get(key);
-      if (previous && (previous.text !== input.text || previous.name !== input.name)) throw chatError('Conflicting duplicate room message');
+      if (previous && (previous.text !== input.text || previous.name !== input.name || previous.agentId !== input.agentId)) throw chatError('Conflicting duplicate room message');
       if (!previous) {
         if (this.seen.size >= L.replayEntries) throw chatError('Room chat replay window is full; try later', 'ERR_ROOM_CHAT_BUSY');
         this._rate(peerId); op.signal.throwIfAborted();

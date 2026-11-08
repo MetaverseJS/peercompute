@@ -20,10 +20,8 @@ const editable = (element) => element?.isContentEditable || element?.closest?.('
 /** World-native presentation. Runtime, transport, storage and scene ownership stay with the host. */
 export function createCubeWorldUi({ container = document.body, worldLabel = 'CubeChat', roomLabel = 'global',
   onSpawn, onSelect, onSend, onModels, onVoice, onRecord, onCancel, onClose, onRemove, onResume, onOpen,
-  onRoomSend, onPlayerCaption, onMovement, onSettings } = {}) {
+  onRoomSend, onPlayerCaption, onMovement, onAppearance, onWorldChat, onSettings } = {}) {
   const root = node('section', undefined, 'cube-native-ui');
-  const nav = node('nav', undefined, 'cube-native-nav'); nav.setAttribute('aria-label', 'World controls');
-  const residentsButton = button('Residents'), modelsButton = button('Models'); nav.append(residentsButton, modelsButton);
   const dock = node('section', undefined, 'cube-native-chat'); dock.setAttribute('aria-label', 'World chat');
   const launcher = button('Chat'); launcher.className = 'cube-native-chat-launcher'; launcher.setAttribute('aria-expanded', 'false');
   const chatBody = node('div', undefined, 'cube-native-chat-body'); chatBody.hidden = true;
@@ -58,20 +56,23 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
   const spawnForm = node('form', undefined, 'cube-native-spawn');
   const name = node('input'); name.setAttribute('aria-label', 'Resident name'); name.placeholder = 'Resident name'; name.maxLength = 240; name.required = true;
   const goals = node('textarea'); goals.setAttribute('aria-label', 'Resident goals'); goals.placeholder = 'Goals or context, one per line'; goals.rows = 3; goals.maxLength = 4096;
+  const appearance = node('textarea'); appearance.setAttribute('aria-label', 'Physical appearance'); appearance.placeholder = 'Physical appearance (optional)'; appearance.rows = 3; appearance.maxLength = 1000;
+  const appearanceNote = node('p', 'Describe the image for the front of the cube. The description is saved even when no image model is available.', 'cube-native-note');
   const localOnly = check('Use only models on this device'), shared = check('Let peers talk to this resident', true);
+  const worldChat = check('Respond to world chat');
   const movement = node('select'); movement.setAttribute('aria-label', 'Movement');
   for (const [value, label] of [['roam', 'Roam'], ['stationary', 'Stay here'], ['follow', 'Follow me']]) {
     const option = node('option', label); option.value = value; movement.append(option);
   }
   const spawn = button('Place resident'); spawn.type = 'submit';
-  spawnForm.append(name, goals, localOnly.wrapper,
-    node('p', 'With local-only off, conversation context may go to an inference host.', 'cube-native-note'), shared.wrapper, movement, spawn);
+  spawnForm.append(name, goals, appearance, appearanceNote, localOnly.wrapper,
+    node('p', 'With local-only off, conversation context may go to an inference host.', 'cube-native-note'), shared.wrapper, worldChat.wrapper, movement, spawn);
   spawnDetails.append(spawnForm); residents.dialog.append(residentStatus, list, empty, spawnDetails);
   const voiceEnabled = check('Enable voice'), speak = check('Speak replies');
   const voiceNote = node('p', 'Voice models download about 376 MB on first use. Text chat remains available.', 'cube-native-note');
   const voiceStatus = node('p', '', 'cube-native-status'); voiceStatus.setAttribute('role', 'status');
   voice.dialog.append(voiceEnabled.wrapper, speak.wrapper, voiceNote, voiceStatus);
-  root.append(nav, dock, residents.dialog, voice.dialog); container.append(root);
+  root.append(dock, residents.dialog, voice.dialog); container.append(root);
 
   let enabled = true, disposed = false, expanded = false, selected = null, hostKey = null;
   let agents = [], roomMessages = [], roomStatus = '', agentStatus = '', worldStatus = '', busy = false;
@@ -112,9 +113,8 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
     cancel.hidden = !active() && !cancelling;
     cancel.disabled = locked || cancelling || !active(); cancel.textContent = cancelling ? 'Cancelling…' : 'Cancel';
     voiceButton.disabled = locked || transition;
-    residentsButton.disabled = modelsButton.disabled = locked || transition;
     collapse.disabled = !!closing; collapse.textContent = closing ? 'Closing…' : 'Close chat';
-    name.disabled = goals.disabled = localOnly.input.disabled = shared.input.disabled = movement.disabled = locked || mutating;
+    name.disabled = goals.disabled = appearance.disabled = localOnly.input.disabled = shared.input.disabled = worldChat.input.disabled = movement.disabled = locked || mutating;
     movement.hidden = typeof onMovement !== 'function';
     spawn.disabled = locked || transition || active() || typeof onSpawn !== 'function';
     voiceEnabled.input.checked = voiceState.enabled || voiceState.preparing;
@@ -127,7 +127,7 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
       : `${text(selected.name, 240)} · ${selected.local ? 'resident on this device' : 'peer-hosted resident'} · private conversation.`
         + (paused() ? selected.recoveryRequired ? ' Previous outcome unknown. Acknowledge and resume in Residents.' : ' Paused. Resume in Residents.' : '');
     status.textContent = selected ? agentStatus : roomStatus || worldStatus;
-    for (const control of list.querySelectorAll('button,select')) control.disabled = locked || transition || active();
+    for (const control of list.querySelectorAll('button,select,input')) control.disabled = locked || transition || active() || control.dataset.unavailable === 'true';
     target.value = currentKey();
   }
   function renderTargets() {
@@ -192,7 +192,16 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
     if (!dialog.open) return;
     dialog.close();
     const opener = restores.get(dialog); restores.delete(dialog);
-    if (restore && opener?.isConnected && !opener.disabled) opener.focus();
+    if (restore) {
+      // Menu actions can disappear when their menu closes. Restore a live
+      // external opener when possible, otherwise return to the world chat.
+      for (const candidate of [opener, expanded ? prompt : launcher]) {
+        if (!candidate?.isConnected || candidate.disabled || !candidate.getClientRects().length
+            || candidate.closest('[inert]') || getComputedStyle(candidate).visibility === 'hidden') continue;
+        candidate.focus({ preventScroll: true });
+        if (document.activeElement === candidate) break;
+      }
+    }
   }
   function open() {
     if (disposed || !enabled || closing) return;
@@ -221,7 +230,7 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
     } catch (error) { fail(error); }
     finally { modelOpening = false; update(); }
   }
-  function openResidents() { if (!disposed && enabled && !modelOpening) showDialog(residents.dialog, residentsButton); }
+  function openResidents({ returnFocus } = {}) { if (!disposed && enabled && !modelOpening) showDialog(residents.dialog, returnFocus); }
   async function mutation(callback, argument) {
     if (disposed || mutating || active() || selecting) return;
     mutating = true; update();
@@ -242,6 +251,35 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
       const controls = node('div', undefined, 'cube-native-actions');
       const chat = button('Chat'); chat.setAttribute('aria-label', `Chat with ${text(agent.name, 240)}`); chat.onclick = () => void choose(agent.key); controls.append(chat);
       if (agent.local) {
+        if (typeof onWorldChat === 'function') {
+          const respond = check('Respond to world chat', Boolean(agent.respondToWorldChat));
+          respond.input.setAttribute('aria-label', `Respond to world chat for ${text(agent.name, 240)}`);
+          respond.input.onchange = () => {
+            if (disposed || mutating || active() || selecting || respond.input.disabled) { respond.input.checked = Boolean(agent.respondToWorldChat); return; }
+            const value = respond.input.checked;
+            void mutation(async () => {
+              try { await onWorldChat({ key: agent.key, enabled: value }); agent.respondToWorldChat = value; }
+              catch (error) { respond.input.checked = Boolean(agent.respondToWorldChat); throw error; }
+            });
+          };
+          row.append(respond.wrapper);
+        }
+        if (agent.appearanceStatus || agent.appearanceError) {
+          const appearanceStatus = text(agent.appearanceStatus, 64);
+          const appearanceMessage = appearanceStatus === 'ready' ? 'Appearance ready.'
+            : ['queued', 'generating', 'preparing'].includes(appearanceStatus) ? 'Generating appearance…'
+              : appearanceStatus === 'waiting' ? 'Appearance saved. An image model is needed to generate it.'
+                : appearanceStatus ? `Appearance: ${appearanceStatus}.` : '';
+          const note = node('p', [appearanceMessage, text(agent.appearanceError, 512)].filter(Boolean).join(' '), 'cube-native-appearance-status');
+          note.setAttribute('role', 'status'); row.append(note);
+        }
+        if (typeof onAppearance === 'function' && typeof agent.appearancePrompt === 'string' && agent.appearancePrompt.trim()) {
+          const retry = Boolean(agent.appearanceError) || ['error', 'failed', 'waiting'].includes(agent.appearanceStatus);
+          const generate = button(retry ? 'Retry appearance' : 'Generate appearance');
+          generate.setAttribute('aria-label', `${retry ? 'Retry' : 'Generate'} appearance for ${text(agent.name, 240)}`);
+          generate.dataset.unavailable = String(['queued', 'generating', 'preparing'].includes(agent.appearanceStatus));
+          generate.onclick = () => void mutation(onAppearance, { key: agent.key }); controls.append(generate);
+        }
         if (typeof onMovement === 'function') {
           const mode = movement.cloneNode(true); mode.hidden = false; mode.value = movementByKey.get(agent.key) ?? agent.movement ?? 'roam';
           mode.setAttribute('aria-label', `Movement for ${text(agent.name, 240)}`);
@@ -265,7 +303,7 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
     const keys = new Set(['room', ...agents.map(agent => agent.key)]);
     for (const map of [drafts, histories, movementByKey]) for (const key of map.keys()) if (!keys.has(key)) map.delete(key);
     renderTargets();
-    if (focus) [...list.querySelectorAll('button,select')].find(element => element.closest('[data-agent-key]').dataset.agentKey === focus.key && element.getAttribute('aria-label') === focus.label)?.focus();
+    if (focus) [...list.querySelectorAll('button,select,input')].find(element => element.closest('[data-agent-key]').dataset.agentKey === focus.key && element.getAttribute('aria-label') === focus.label)?.focus();
   }
   function setMessages(next) {
     if (disposed || !hostKey) return;
@@ -313,7 +351,6 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
   };
   target.onchange = () => void choose(target.value);
   launcher.onclick = open; collapse.onclick = () => void close();
-  residentsButton.onclick = openResidents; modelsButton.onclick = () => void openModels();
   cancel.onclick = () => { void cancelWork().catch(fail); };
   voiceButton.onclick = () => showDialog(voice.dialog, voiceButton);
   for (const modal of [residents, voice]) {
@@ -322,15 +359,16 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
   }
   spawnForm.onsubmit = event => {
     event.preventDefault(); if (spawn.disabled) return;
-    const requested = { name: name.value.trim(), goals: goals.value.split('\n').map(value => value.trim()).filter(Boolean), localOnly: localOnly.input.checked, shared: shared.input.checked };
+    const requested = { name: name.value.trim(), goals: goals.value.split('\n').map(value => value.trim()).filter(Boolean), appearancePrompt: appearance.value.trim(), respondToWorldChat: worldChat.input.checked, localOnly: localOnly.input.checked, shared: shared.input.checked };
     if (!requested.name) { residentStatus.textContent = 'Give the resident a name.'; name.focus(); return; }
     if (requested.goals.length > 16) { residentStatus.textContent = 'Use at most 16 goals or context lines.'; return; }
+    if (requested.appearancePrompt.length > 1000) { residentStatus.textContent = 'Use at most 1000 characters for physical appearance.'; appearance.focus(); return; }
     const requestedMode = movement.value;
     void mutation(async () => {
       await onSpawn(requested);
       if (disposed) return;
       if (selected?.local && typeof onMovement === 'function') { await onMovement({ key: selected.key, mode: requestedMode }); movementByKey.set(selected.key, requestedMode); }
-      name.value = goals.value = ''; hideDialog(residents.dialog, false); open();
+      name.value = goals.value = appearance.value = ''; hideDialog(residents.dialog, false); open();
     });
   };
   voiceEnabled.input.onchange = async () => {

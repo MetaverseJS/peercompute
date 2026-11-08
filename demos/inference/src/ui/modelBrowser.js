@@ -20,13 +20,18 @@ const message = (error) => String(error?.message ?? error ?? 'Request failed').s
 /** Metadata-only model browsing. The owner handles every explicit load and its cancellation. */
 export function createModelBrowser({ container, getSources = () => [], getTargets = () => [],
   searchModels, inspectModel, findConversions, getCompatibility, onLoad, onUsePeer, onSetup,
-  storedContent, hasStoredModels = () => false, onStoredOpen } = {}) {
+  storedContent, hasStoredModels = () => false, onStoredOpen, onConfigure, onDismiss, keepOpenOnAction = false } = {}) {
   if (!container?.append) throw new TypeError('A model browser container is required');
   const element = node('dialog', undefined, 'pc-model-browser');
   element.id = `model-browser-dialog-${crypto.randomUUID()}`;
   const title = node('h2', 'Models'); title.id = `model-browser-${crypto.randomUUID()}`;
   element.setAttribute('aria-labelledby', title.id);
-  const header = node('div', undefined, 'pc-browser-header'), done = button('Done'); header.append(title, done);
+  const header = node('div', undefined, 'pc-browser-header'), done = button('Done');
+  const headerActions = node('div', undefined, 'pc-browser-header-actions'), configure = button('Config');
+  configure.hidden = !onConfigure; configure.onclick = () => onConfigure?.();
+  headerActions.append(configure, done); header.append(title, headerActions);
+  const feedback = node('p', '', 'pc-browser-status'); feedback.setAttribute('role', 'status'); feedback.hidden = true;
+  const pageContent = node('section', undefined, 'pc-browser-page'); pageContent.hidden = true; pageContent.tabIndex = -1;
   const tablist = node('div', undefined, 'pc-browser-tabs'); tablist.setAttribute('role', 'tablist'); tablist.setAttribute('aria-label', 'Model library');
   const tabs = {}, panels = {};
   for (const [key, label] of [['stored', 'Stored models'], ['browse', 'Browse models']]) {
@@ -74,7 +79,7 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
   content.append(results, details);
   const more = button('More Hugging Face results'); more.className = 'pc-browser-more'; more.hidden = true;
   panels.browse.append(controls, status, content, more);
-  element.append(header, tablist, ...Object.values(panels)); container.append(element);
+  element.append(header, feedback, tablist, ...Object.values(panels), pageContent); container.append(element);
 
   let disposed = false, busy = false, actionPending = false, desiredKey = null, visibleKey = null;
   let searchTimer, searchController, inspectController, searchSequence = 0, inspectSequence = 0;
@@ -83,17 +88,22 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
   let inspectionError = '', callbackError = '', returnFocus, detailSignature, precisionSignature;
   let stickySelectionKey = null;
   let activeTab = 'browse', mobileDetails = false, resultsScrollTop = 0, storedController, storedSequence = 0;
+  let page, pageReturnFocus, dismissPending = false;
   const inspected = new Map(), variants = new Map();
   const conversions = createConversionDiscovery({ findConversions, onChange: () => render() });
 
   function updateView() {
-    element.classList.toggle('pc-browser-show-details', mobile.matches && activeTab === 'browse' && mobileDetails);
+    element.classList.toggle('pc-browser-show-details', !page && mobile.matches && activeTab === 'browse' && mobileDetails);
+    title.textContent = page?.title ?? 'Models';
+    tablist.hidden = !!page || !storedContent; pageContent.hidden = !page;
+    configure.hidden = !onConfigure || !!page; configure.disabled = busy || actionPending || dismissPending;
+    done.disabled = dismissPending; done.textContent = page?.buttonLabel ?? 'Done';
     for (const [key, panel] of Object.entries(panels)) {
-      const selected = key === activeTab; panel.hidden = !selected;
+      const selected = key === activeTab; panel.hidden = !!page || !selected;
       tabs[key].setAttribute('aria-selected', String(selected)); tabs[key].tabIndex = selected ? 0 : -1;
       tabs[key].disabled = busy || actionPending;
     }
-    done.title = mobile.matches && mobileDetails ? 'Return to model results' : 'Close Models';
+    done.title = page ? 'Return to Models' : mobile.matches && mobileDetails ? 'Return to model results' : 'Close Models';
   }
   function showResults({ focus = true } = {}) {
     mobileDetails = false; updateView(); results.scrollTop = resultsScrollTop;
@@ -428,7 +438,7 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
   }
   async function act(callback) {
     if (disposed || busy || actionPending) return;
-    actionPending = true; closeDialog(); render();
+    actionPending = true; if (!keepOpenOnAction) closeDialog(); render();
     try { await callback(); }
     catch (error) { if (!disposed) callbackError = message(error); }
     finally { actionPending = false; render(); }
@@ -465,7 +475,7 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
   }
   async function runSearch(append = false) {
     clearTimeout(searchTimer);
-    if (disposed || busy || !element.open || activeTab !== 'browse') return;
+    if (disposed || busy || page || !element.open || activeTab !== 'browse') return;
     const query = repositoryQuery(search.value);
     if (query.error) { searchIncomplete = false; searchWarning = query.error; render(); return; }
     if (!canSearch()) return;
@@ -513,7 +523,16 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
     stopRequests(); stopStoredRequest(); mobileDetails = false; updateView();
     if (element.open) element.close();
   }
-  function dismiss() { if (mobile.matches && activeTab === 'browse' && mobileDetails) showResults(); else closeDialog(); }
+  async function dismiss() {
+    if (dismissPending) return;
+    if (!page && mobile.matches && activeTab === 'browse' && mobileDetails) { showResults(); return; }
+    const callback = page?.onBack ?? onDismiss;
+    if (!callback) { closeDialog(); return; }
+    dismissPending = true; updateView();
+    try { await callback(); }
+    catch (error) { if (!disposed) { feedback.textContent = `Could not close: ${message(error)}. Try again.`; feedback.hidden = false; } }
+    finally { dismissPending = false; if (!disposed) updateView(); }
+  }
   done.onclick = dismiss;
   element.addEventListener('cancel', (event) => { event.preventDefault(); dismiss(); });
   element.addEventListener('close', () => {
@@ -533,6 +552,26 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
   });
   return {
     element,
+    setFeedback(text) { if (!disposed) { feedback.textContent = String(text ?? '').slice(0, 2048); feedback.hidden = !feedback.textContent; } },
+    showPage({ title: pageTitle, content: body, onBack, buttonLabel = 'Done' }) {
+      if (disposed) return;
+      if (!page) pageReturnFocus = document.activeElement;
+      stopRequests(); stopStoredRequest();
+      page = { title: pageTitle, onBack, buttonLabel }; pageContent.replaceChildren(body); updateView();
+      if (!element.open) element.showModal();
+      (pageContent.querySelector('[autofocus],button:not(:disabled),input:not(:disabled)') ?? done).focus({ preventScroll: true });
+    },
+    showLibrary({ refreshStored: shouldRefreshStored = false } = {}) {
+      if (disposed) return;
+      page = null; pageContent.replaceChildren(); updateView(); render();
+      if (element.open) {
+        const previous = pageReturnFocus; pageReturnFocus = null;
+        (previous?.isConnected && !previous.disabled && previous.getClientRects().length ? previous
+          : mobileDetails ? done : tabs[activeTab] ?? search).focus({ preventScroll: true });
+        if (activeTab === 'stored' && shouldRefreshStored) refreshStored();
+        else if (activeTab === 'browse' && searchIncomplete && !searchController && !busy) void runSearch(resumeAppend);
+      }
+    },
     open({ selectedKey, tab, refreshStored: shouldRefreshStored = true } = {}) {
       if (disposed) return;
       if (selectedKey !== undefined) { desiredKey = selectedKey; if (stickySelectionKey !== selectedKey) stickySelectionKey = null; }
@@ -547,7 +586,7 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
       if (activeTab === 'browse') search.focus({ preventScroll: true }); else tabs.stored.focus({ preventScroll: true });
     },
     close() { if (!disposed && element.open) closeDialog(); },
-    isStoredOpen: () => !disposed && element.open && activeTab === 'stored',
+    isStoredOpen: () => !disposed && element.open && !page && activeTab === 'stored',
     getActiveTab: () => activeTab,
     refresh: render,
     setBusy(value) {

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { WorldResidentMotion } from '../../../shared/agents/WorldResidentMotion.js';
+import { SpeechBubbleLayer } from '../../../shared/world/SpeechBubbleLayer.js';
 
 const HALF_SIZE = 3;
 const MAX_COORDINATE = 1_000_000;
@@ -36,32 +37,29 @@ function normalizeDescriptor(value) {
     position: normalizeCubeAgentPosition(value.position), caption: value.caption ?? '' };
 }
 
-function textSprite(text, { caption = false } = {}) {
-  const canvas = document.createElement('canvas');
-  canvas.width = 768;
-  canvas.height = caption ? 320 : 160;
-  const context = canvas.getContext('2d');
+function textSprite(text) {
+  const canvas = document.createElement('canvas'), context = canvas.getContext('2d');
   if (!context) throw new Error('Agent labels require a canvas text context');
-  context.fillStyle = '#061613'; context.fillRect(0, 0, canvas.width, canvas.height);
-  context.strokeStyle = '#a0ffce'; context.lineWidth = 4; context.strokeRect(2, 2, canvas.width - 4, canvas.height - 4);
-  context.fillStyle = '#dcffe9'; context.font = `${caption ? 30 : 32}px monospace`;
-  context.textAlign = 'center'; context.textBaseline = 'middle';
-  const maximumLines = caption ? 7 : 3;
-  const lines = [];
-  let line = '';
-  for (const character of Array.from(text.replace(/\s+/g, ' ').slice(0, caption ? 420 : 160))) {
-    if (context.measureText(line + character).width > 704) { lines.push(line); line = ''; }
+  const font = '28px monospace'; context.font = font;
+  const lines = []; let line = '';
+  for (const character of Array.from(text.replace(/\s+/g, ' ').slice(0, 160))) {
+    if (context.measureText(line + character).width > 492) { lines.push(line); line = ''; }
     line += character;
   }
   if (line) lines.push(line);
-  if (lines.length > maximumLines) lines[maximumLines - 1] = lines[maximumLines - 1].slice(0, -3) + '…';
-  const shown = lines.slice(0, maximumLines);
-  shown.forEach((value, index) => context.fillText(value, canvas.width / 2, canvas.height / 2 + (index - (shown.length - 1) / 2) * 38));
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthTest: true, transparent: false }));
-  sprite.scale.set(caption ? 18 : 14, caption ? 7.5 : 3, 1);
-  sprite.position.y = caption ? 13 : 6;
+  if (lines.length > 2) lines[1] = lines[1].slice(0, -3) + '…';
+  const shown = lines.slice(0, 2);
+  canvas.width = Math.ceil(Math.max(...shown.map(value => context.measureText(value).width), 1)) + 20;
+  canvas.height = shown.length * 34 + 20;
+  context.fillStyle = '#061613'; context.fillRect(0, 0, canvas.width, canvas.height);
+  context.strokeStyle = '#a0ffce'; context.lineWidth = 2; context.strokeRect(1, 1, canvas.width - 2, canvas.height - 2);
+  context.fillStyle = '#dcffe9'; context.font = font;
+  context.textAlign = 'center'; context.textBaseline = 'middle';
+  shown.forEach((value, index) => context.fillText(value, canvas.width / 2, canvas.height / 2 + (index - (shown.length - 1) / 2) * 34));
+  const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthTest: false, depthWrite: false, transparent: false }));
+  sprite.scale.set(canvas.width / 64, canvas.height / 64, 1); sprite.renderOrder = 1000;
+  sprite.position.y = 4.5;
   return sprite;
 }
 
@@ -84,6 +82,8 @@ export class CubeAgentLayer {
     if (typeof motionFactory !== 'function') throw new TypeError('A resident motion factory is required');
     Object.assign(this, { scene, physics, getPlayerPosition, onSelect, captionDurationMs, maximumAgents, motionFactory, remoteInterpolationSeconds });
     this.entries = new Map(); this.closed = false; this.selectedKey = null;
+    this.captions = new SpeechBubbleLayer({ scene: scene.scene, camera: scene.camera,
+      getAnchor: key => this.entries.get(key)?.mesh, durationMs: captionDurationMs, maximum: maximumAgents, offsetY: 6 });
     this.group = new THREE.Group(); this.group.name = 'CubeChat agents'; scene.scene.add(this.group);
     this.geometry = new THREE.BoxGeometry(6, 6, 6);
     this.edgeGeometry = new THREE.EdgesGeometry(this.geometry);
@@ -183,6 +183,7 @@ export class CubeAgentLayer {
       if (Math.hypot(next[0] - previous[0], next[2] - previous[2]) > 0.00001) entry.mesh.rotation.y = Math.atan2(next[0] - previous[0], next[2] - previous[2]);
       this.place(entry, this.normalizePosition(next));
     }
+    this.captions.update();
   }
 
   getSpawnPosition() {
@@ -216,8 +217,10 @@ export class CubeAgentLayer {
       mesh.add(outline);
       const body = new CANNON.Body({ type: CANNON.Body.KINEMATIC, mass: 0, fixedRotation: true,
         shape: new CANNON.Box(new CANNON.Vec3(HALF_SIZE, HALF_SIZE, HALF_SIZE)) });
-      entry = { mesh, outline, body, descriptor: null, label: null, caption: null, captionTimer: null,
+      entry = { mesh, baseMaterial: mesh.material, faceMaterial: null, outline, body, descriptor: null, label: null, captionTimer: null,
         target: [...descriptor.position], remoteStart: [...descriptor.position], remoteElapsed: 0, motion };
+      Object.defineProperty(entry, 'caption', { get: () => this.entries.get(descriptor.key) === entry
+        ? this.captions.entries.get(descriptor.key)?.sprite ?? null : null });
       this.group.add(mesh); this.physics.world.addBody(body); this.entries.set(descriptor.key, entry);
     }
     const previous = entry.descriptor;
@@ -227,26 +230,52 @@ export class CubeAgentLayer {
       entry.target = [...descriptor.position];
     }
     const livePosition = previous ? entry.mesh.position.toArray() : descriptor.position;
-    entry.mesh.material.color.set(descriptor.color); entry.mesh.material.emissive.set(descriptor.color);
-    entry.mesh.material.emissiveIntensity = ['thinking', 'speaking'].includes(descriptor.status) ? 0.4 : 0.12;
+    entry.baseMaterial.color.set(descriptor.color); entry.baseMaterial.emissive.set(descriptor.color);
+    entry.baseMaterial.emissiveIntensity = ['thinking', 'speaking'].includes(descriptor.status) ? 0.4 : 0.12;
     entry.outline.material.color.set(this.selectedKey === descriptor.key ? '#ffffff' : descriptor.color);
     if (!previous || previous.name !== descriptor.name || previous.status !== descriptor.status) {
-      const label = textSprite(`${descriptor.name} · AGENT · ${descriptor.status}`);
+      const label = textSprite(`${descriptor.name}${descriptor.status === 'idle' ? '' : ` · ${descriptor.status}`}`);
       disposeSprite(entry.label); entry.label = label; entry.mesh.add(label);
     }
     if (!previous || previous.caption !== descriptor.caption) {
       clearTimeout(entry.captionTimer); entry.captionTimer = null;
-      disposeSprite(entry.caption); entry.caption = null;
+      this.captions.remove(descriptor.key);
       if (descriptor.caption) {
-        entry.caption = textSprite(descriptor.caption, { caption: true }); entry.mesh.add(entry.caption);
+        this.captions.show(descriptor.key, descriptor.caption);
+        // Preserve expiry while the render loop is paused, without owning a
+        // second renderer or letting an old timer remove a replacement body.
         entry.captionTimer = setTimeout(() => {
-          disposeSprite(entry.caption); entry.caption = null; entry.captionTimer = null;
+          if (this.entries.get(descriptor.key) === entry) this.captions.remove(descriptor.key);
+          entry.captionTimer = null;
         }, this.captionDurationMs);
       }
     }
     entry.descriptor = descriptor;
-    this.place(entry, livePosition);
+    this.place(entry, livePosition); this.captions.update();
     return descriptor.key;
+  }
+
+  /** +Z is the fixed cube front; byte-only input keeps URL fetching out of the renderer. */
+  setAppearance(key, image) {
+    const entry = this.entries.get(key);
+    if (!entry || this.closed) return false;
+    if (image != null && (!Number.isInteger(image.width) || !Number.isInteger(image.height)
+        || image.width < 1 || image.height < 1 || image.width > 256 || image.height > 256
+        || image.channels !== 4 || !(image.data instanceof Uint8Array)
+        || image.data.byteLength !== image.width * image.height * 4)) throw new TypeError('Invalid resident face pixels');
+    let material = null;
+    if (image) {
+      const texture = new THREE.DataTexture(image.data.slice(), image.width, image.height, THREE.RGBAFormat);
+      texture.colorSpace = THREE.SRGBColorSpace; texture.flipY = true;
+      texture.needsUpdate = true;
+      material = new THREE.MeshBasicMaterial({ map: texture });
+    }
+    const previous = entry.faceMaterial; entry.faceMaterial = material;
+    entry.mesh.material = material
+      ? [entry.baseMaterial, entry.baseMaterial, entry.baseMaterial, entry.baseMaterial, material, entry.baseMaterial]
+      : entry.baseMaterial;
+    previous?.map?.dispose(); previous?.dispose();
+    return true;
   }
 
   pick(clientX, clientY) {
@@ -298,8 +327,9 @@ export class CubeAgentLayer {
   remove(key) {
     const entry = this.entries.get(key);
     if (!entry) return false;
-    clearTimeout(entry.captionTimer); disposeSprite(entry.caption); disposeSprite(entry.label);
-    entry.mesh.removeFromParent(); entry.mesh.material.dispose(); entry.outline.material.dispose();
+    clearTimeout(entry.captionTimer); this.captions.remove(key); disposeSprite(entry.label);
+    entry.mesh.removeFromParent(); entry.faceMaterial?.map?.dispose(); entry.faceMaterial?.dispose();
+    entry.baseMaterial.dispose(); entry.outline.material.dispose();
     this.physics.world.removeBody(entry.body); this.entries.delete(key);
     if (this.selectedKey === key) this.selectedKey = null;
     return true;
@@ -309,7 +339,7 @@ export class CubeAgentLayer {
 
   dispose() {
     if (this.closed) return;
-    this.closed = true; this.clear(); this.group.removeFromParent();
+    this.closed = true; this.clear(); this.captions.dispose(); this.group.removeFromParent();
     this.canvas.removeEventListener('pointerdown', this.onPointerDown, true);
     this.canvas.removeEventListener('click', this.onClick, true);
     this.canvas.removeEventListener('keydown', this.onKeyDown, true);

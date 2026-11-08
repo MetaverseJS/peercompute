@@ -150,8 +150,9 @@ test('private image input/output use acknowledged attachment records and enforce
   await f.runtime.run(f.id, { prompt: 'Describe', image });
   const request = (await f.runtime.events(f.id)).find((event) => event.inputAttachmentId);
   assert.deepEqual((await f.runtime.getAttachment(f.id, request.inputAttachmentId)).data, image.data);
-  selected = diffusion; await f.runtime.run(f.id, { task: 'text-to-image', prompt: 'Draw' });
+  selected = diffusion; const generated = await f.runtime.run(f.id, { task: 'text-to-image', prompt: 'Draw' });
   const result = (await f.runtime.events(f.id)).find((event) => event.imageAttachmentId);
+  assert.equal(generated.imageAttachmentId, result.imageAttachmentId);
   assert.deepEqual((await f.runtime.getAttachment(f.id, result.imageAttachmentId)).data, image.data);
   f.inference.generate = async () => ({ text: 'No pixels' });
   await assert.rejects(f.runtime.run(f.id, { task: 'text-to-image', prompt: 'Draw' }), /no image/);

@@ -4075,3 +4075,42 @@ This matrix supersedes the preceding ground-primitive/`zIndex` assertions.
   both directions, room switch, receiver reload and phone delivery; final
   annotation check proves readable phone bubbles. Preserve the failed startup
   dial and test-framing receipts alongside the passing runs; see log.md.
+
+### CubeChat resident presentation and Pages — November 7, 2026
+
+- Native model browser and management panel tests cover one dialog, Stored/
+  Browse/Config navigation, paused metadata queries, fresh unload state, loading
+  cancellation and failed-cleanup ownership. world-model-window tests exercise
+  actual WorldAgentHost with a controlled panel: duplicate opens, awaited/retry
+  close, borrowed runtime, focus and teardown during mounting.
+- WorldAppearance tests use actual agent persistence and controlled generation:
+  no-provider prompt retention without pause/load, local-only versus peers,
+  acknowledged image binding, private/shared/digest checks, cancellation and
+  removed-body rejection. Real encrypted AgentConversationService tests fetch
+  bounded faces with credited frames. Presenter tests own concurrency and reject
+  stale/removed/late reads; Cube rendering tests inspect front-only materials,
+  compact labels and no unchanged-name texture churn.
+- WorldChatResponder and RoomChatService tests cover human-only opt-in,
+  authenticated owner+agent IDs, bounded public context, no reply loops, dedup,
+  coalescing, cooldown and disposal. Host tests require isolated public history,
+  no-provider behavior, stored preference and cancellation before publication.
+- Use owned fresh headless profiles for actual production desktop/mobile
+  navigation, appearance restoration and two-peer world chat. Controlled image/
+  text outputs at the managed inference seam must be labeled; transport and
+  persistence remain real. Do not download models or use the user's GPU/store.
+- Build all docs/ demos with Node24 npm run build:all, then inspect every demo
+  route and console/backend connection. Runtime checks must use current UI and
+  block/cancel cold-start model fetches before weight download. After authorized
+  push, verify the actual GitHub Pages deployment and critical links.
+- Release qualification must distinguish compute from screenshot presentation.
+  On this host, headless NVIDIA Vulkan passes default-count compute but produces
+  black captures without a working compositor. A known-color canvas with GPU
+  readback and screenshot pixels diagnoses this before full suites. Owned Xvfb
+  plus software Vulkan provides verified headless presentation; close both owned
+  processes. PPF visuals use defaults; `PAGES_REDUCED_PHYSICS=1` uses native controls
+  and Pause for bounded Toychest/MPM software captures, with exact counts recorded
+  separately from default hardware compute. Do not suppress device-loss messages
+  or treat an FPS label as rendering evidence. MPM requires positive mass.
+- Preserve prior HEAD hashed docs assets after a release build so open pages can
+  still fetch old chunks/workers; verify all new HTML hashes remain unchanged.
+  Retention is limited to deleted assets, never old HTML or new direct outputs.
