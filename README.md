@@ -1014,7 +1014,7 @@ installed; the active IP listener above remains the self-signed development
 handoff.
 
 Multiplayer bot controls:
-- CubeChat, Hyperborea, and SneakyWoods now expose a `Bots` section inside their settings menus.
+- Hyperborea and SneakyWoods expose a `Bots` section in settings. CubeChat uses one native `Residents` roster with a shared Room/resident chat bar, overhead typed speech bubbles, and separate Player, World/Rooms and Media windows. Its automated bot launch URLs remain available for network tests.
 - `Add Bots` spawns hidden same-origin browser peers that join the current room/password and drive themselves through the shared Quake-style bot bridge/runtime.
 
 ### NetViz Attach (Any Demo)

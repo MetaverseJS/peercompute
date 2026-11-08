@@ -399,7 +399,8 @@ export class PlayerController {
   setupEventListeners(canvas) {
     // Keyboard events
     window.addEventListener('keydown', (e) => {
-      if (e.defaultPrevented || e.isComposing || e.ctrlKey || e.metaKey || e.altKey || isEditable(e.target)) return;
+      if (e.defaultPrevented || e.isComposing || e.ctrlKey || e.metaKey || e.altKey || isEditable(e.target)
+          || document.querySelector('dialog[open]')) return;
       const key = e.key.toLowerCase();
       if (!gameplayKeys.has(key)) return;
       // Space on a focused button belongs to that button, not the avatar.

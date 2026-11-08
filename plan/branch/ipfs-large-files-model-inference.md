@@ -1231,3 +1231,11 @@ User requests multi-select saved packages with **Load selected models**, opening
 
 - 2026-11-07 compact conversation UI: one top row with Back/Models/Agents and network glyph/Menu. Click the glyph for discovery details; green needs peers plus shared and hosted models, red means disconnected, yellow covers connecting/incomplete/warning states. Put target, image-generation, spoken-reply and routing text behind a Chat options cog before Attach. Keep progress/errors actionable, silence routine status layout, and update empty guidance for the new controls. Preserve shared console/world routing and lifecycle contracts.
 - November7 stored-library batch follow-up: remove per-row Load/Delete, rename Load selected, and add Delete selected. Shared selection includes loaded/unsupported/verification/cleanup packages; load eligibility remains separate. Keep Unload/Verify locally; sequential deletion preserves acknowledged results, waits for cleanup and supports visible retry of failures.
+
+## November 7 — CubeChat native social follow-up
+
+The requested next integration is world-native human/resident keyboard chat with
+overhead text bubbles, a unified Residents interface, smaller settings windows,
+and one smoothly moving body per resident. Use reusable delivery, ownership,
+motor and presentation components toward homunculus. Keep agent private histories,
+model lifecycle and existing automated peer URLs; no learned-control claim.

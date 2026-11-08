@@ -15,10 +15,22 @@ const defaultAudio = async () => (await import('../../shared/agents/speech/World
 
 /** Shared chat surface; the facade owns storage, inference and networking. */
 export async function mountInferencePanel({ container = document.body, stateManager, computeManager,
-  networkManager, getContext, actions, runtimeBaseUrl, onClose, autoConnect = false,
+  networkManager, getContext, actions, runtimeBaseUrl, onClose, autoConnect = false, managementOnly = false,
   runtimeFactory = createInferenceRuntime, refreshIntervalMs = 5000, pwaInstallController,
   voiceSessionFactory = defaultVoiceSession, audioFactory = defaultAudio, navigate = (url) => location.assign(url) } = {}) {
   const view = createPanelView(container);
+  if (managementOnly) {
+    // Embodied applications already own their conversation. Reuse the library
+    // and lifecycle controls without exposing a second composer or auto-load.
+    view.panel.setAttribute('aria-label', 'Model management');
+    for (const element of [view.back, view.agents, view.transcript, view.proposed, view.attachment,
+      view.prompt, view.resumeAgent, view.send.parentElement, view.clearChat, view.clearChat.nextElementSibling]) {
+      if (element) element.style.display = 'none';
+    }
+    const note = document.createElement('p'); note.className = 'pc-inference-note';
+    note.textContent = 'Manage models for this world. Loaded models remain available to residents when you return to the world.';
+    view.panel.append(note);
+  }
   const generatedImages = createGeneratedImageRenderer(view.panel);
   const directTranscript = document.createElement('div'); directTranscript.hidden = true; view.panel.append(directTranscript);
   const encoder = new TextEncoder(), histories = new Map(), preferenceTasks = new Set();
@@ -660,6 +672,10 @@ export async function mountInferencePanel({ container = document.body, stateMana
         if (!target) {
           showError(new Error('This inference host is no longer available. Refresh the model browser.')); return;
         }
+        if (managementOnly) {
+          setStatus('This peer model is available to residents with network-assisted routing. Return to the world to chat.');
+          return;
+        }
         const speech = ['automatic-speech-recognition', 'text-to-speech'].includes(target.task);
         void selectChat(speech ? 'mixed' : key).then(() => view.prompt.focus()).catch(showError);
         if (speech) setStatus('Mixed routing can use compatible peer speech models. Use Talk or Speak replies.', { quiet: true });
@@ -1086,6 +1102,10 @@ export async function mountInferencePanel({ container = document.body, stateMana
     const listed = await refreshStoredModels();
     if (!alive()) return;
     startupReading = false; updateControls();
+    if (managementOnly) {
+      modelBrowser.open({ tab: !listed || storedRows.length ? 'stored' : 'browse', refreshStored: false, selectedKey: desiredSourceKey });
+      return;
+    }
     if (!listed || storedRows.length) {
       modelBrowser.open({ tab: 'stored', refreshStored: false, selectedKey: desiredSourceKey });
       if (listed) setStatus('Choose stored models to load, or close the library to use peers.', { quiet: true });
@@ -1115,7 +1135,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     } catch (error) { showError(error); }
   })();
   refreshTimer = setInterval(() => { void refreshPeers(); void agentChat?.refresh().catch(showError); }, Math.max(20, refreshIntervalMs));
-  if (runtime.getAgentController) void getAgentChat().catch((error) => { if (alive()) showError(error); });
+  if (!managementOnly && runtime.getAgentController) void getAgentChat().catch((error) => { if (alive()) showError(error); });
   if (autoConnect && !runtime.networkReady) {
     const controller = new AbortController(); connectController = controller;
     connectPromise = runtime.connectBackend({ signal: controller.signal }).then(() => refreshPeers()).catch((error) => {
@@ -1143,5 +1163,5 @@ export async function mountInferencePanel({ container = document.body, stateMana
     })();
     try { await disposingPromise; } finally { disposingPromise = null; }
   }
-  return { element: view.panel, runtime, dispose, refreshPeers, startupReady };
+  return { element: view.panel, runtime, dispose, refreshPeers, startupReady, openModels };
 }

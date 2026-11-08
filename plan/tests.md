@@ -4046,3 +4046,32 @@ This matrix supersedes the preceding ground-primitive/`zIndex` assertions.
   deletes two owned tiny model fixtures via native Delete selected; counts and
   rows reconcile to zero. All test-owned processes close. See log.md for retained
   provider and overview diagnostics; no user data or model execution was tested.
+
+## CubeChat native social acceptance — November 7
+
+- Run room-chat.test.js against real owned Noise/libp2p instances for authenticated
+  authors, exact room scope, bounded UTF-8, replay, partial acknowledgments and
+  cleanup; distinguish these local tests from real SecretWorkshop exchange.
+- Run core waitForPeerConnection.test.js and agentConversation.test.js for a
+  normal dial that is already pending, exact encrypted peer admission, scope
+  changes and cancellation without later dispatch. Live room switching must be
+  checked from scoped presence, without waiting for connectivity in the harness
+  before exercising Send.
+- Run cubechat-social.test.js and cubechat-native-ui.test.js headlessly for native
+  Enter/Escape/focus, room versus private histories, focused dialogs/mobile fit,
+  bubbles following anchors and expiry/disposal, and readable overhead excerpts
+  at the normal camera framing on desktop and portrait screens.
+- Run world-resident-motion.test.js, cubechat-agents.test.js, world-agent-host.test.js
+  and cubechat-input.test.js for one body, ownership takeover, live pose,
+  no jump policy, private visitor context and preserved human controls.
+- Inference panel managementOnly regression must prove no second composer and no
+  automatic download while keeping explicit library operations.
+- Build into an external directory, promote only internal previews, use owned
+  fresh profiles to exchange real room text between two browser peers and inspect
+  both bubbles, connection encryption, console errors and phone/desktop images.
+  No model output quality or GPU residency claim follows from this UI gate.
+- Results:203 distinct relevant test cases pass, plus all three production builds
+  and exact internal preview checks. The real five-phase two-browser run covers
+  both directions, room switch, receiver reload and phone delivery; final
+  annotation check proves readable phone bubbles. Preserve the failed startup
+  dial and test-framing receipts alongside the passing runs; see log.md.

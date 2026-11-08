@@ -14,6 +14,15 @@ The root node should exist on a domain secured with SSL enabling all executable 
 
 ## Project Goals:
 
+November7 CubeChat native social pass (implemented and verified): a single in-world Room or
+resident composer, keyboard messages and overhead human speech bubbles, focused
+Player/World/Media dialogs, and one Residents interface. Shared chat transport,
+body ownership, speech presentation and replaceable motor components support the
+homunculus architecture. Fix duplicate body creation and repeated bot jumping;
+retain private agent histories and model management. Qualified with203 focused
+tests, production builds and real two-browser text/room/reload checks on the
+internal preview. Learned movement remains later work. See demos/cubechat/plan.md.
+
 November7 stored-library batch actions: shared selection with Load selected and
 Delete selected replaces per-row Load/Delete. Any retained CID can be selected;
 load filters compatibility/verification/cleanup status independently. Preserve

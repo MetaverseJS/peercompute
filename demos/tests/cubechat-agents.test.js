@@ -92,24 +92,94 @@ test('agent positions are copied and bounded without accepting strings or nonfin
   }
 });
 
-test('agent cubes have distinct scene and static collision ownership while human peers remain untouched', async t => {
+test('agent cubes have distinct scene and kinematic collision ownership while human peers remain untouched', async t => {
   const page = await fixture(t);
   const result = await page.evaluate(() => {
     layer.upsert(base); layer.upsert({ ...base, key: 'remote-peer:agent-1', ownerPeerId: 'remote-peer', local: false, position: [12, 3, 0] });
     const first = layer.entries.get(base.key);
     layer.upsert({ ...base, name: 'Updated Ada', status: 'thinking', position: [2, 3, 1], color: '#ff8844' });
     return { size: layer.entries.size, children: layer.group.children.length, bodies: physics.world.bodies.length,
-      static: first.body.type === CANNON.Body.STATIC, same: first === layer.entries.get(base.key),
+      kinematic: first.body.type === CANNON.Body.KINEMATIC, same: first === layer.entries.get(base.key),
       position: first.mesh.position.toArray(), collision: first.body.position.toArray(), color: first.mesh.material.color.getHexString(),
       intensity: first.mesh.material.emissiveIntensity, players: [...shell.players.keys()], bodyKeys: [...physics.bodies.keys()] };
   });
-  assert.deepEqual(result, { size: 2, children: 2, bodies: 3, static: true, same: true, position: [2, 3, 1], collision: [2, 3, 1],
+  assert.deepEqual(result, { size: 2, children: 2, bodies: 3, kinematic: true, same: true, position: [0, 3, 0], collision: [0, 3, 0],
     color: 'ff8844', intensity: .4, players: ['real-peer'], bodyKeys: ['real-peer'] });
   assert.equal(await page.evaluate(() => {
-    humanBody.position.set(2, 3, 12); humanBody.velocity.set(0, 0, -10); humanBody.linearDamping = 0;
+    humanBody.position.set(0, 3, 12); humanBody.velocity.set(0, 0, -10); humanBody.linearDamping = 0;
     for (let index = 0; index < 120; index++) physics.world.step(1 / 60);
-    return humanBody.position.z >= 4.8;
+    return humanBody.position.z >= 3.8;
   }), true, 'the stationary agent is an actual Cannon collision body');
+});
+
+test('one local body follows, pauses during thinking, and keeps live pose through metadata refresh', async t => {
+  const page = await fixture(t);
+  const result = await page.evaluate(() => {
+    layer.upsert(base); layer.setMovement(base.key, 'follow');
+    const body = layer.entries.get(base.key).body;
+    for (let index = 0; index < 180; index++) { physics.world.step(1 / 60); layer.update(1 / 60); }
+    const moved = layer.getPosition(base.key);
+    layer.upsert({ ...base, status: 'thinking' });
+    for (let index = 0; index < 180; index++) { physics.world.step(1 / 60); layer.update(1 / 60); }
+    const paused = layer.getPosition(base.key), context = layer.getContext(base);
+    layer.upsert({ ...base, status: 'idle' }); layer.setMovement(base.key, 'stationary'); layer.update(60);
+    return { moved, paused, context, stationary: layer.getPosition(base.key), oneBody: body === layer.entries.get(base.key).body,
+      bodyY: body.position.y, velocityY: body.velocity.y, entries: layer.entries.size, totalBodies: physics.world.bodies.length };
+  });
+  assert(result.moved[2] > 9.9 && result.moved[2] <= 10.00001); assert(Math.abs(result.moved[1] - 3) < 1e-9);
+  assert.deepEqual(result.paused, result.moved); assert.deepEqual(result.stationary, result.moved);
+  assert.deepEqual(result.context.agent.position, result.moved);
+  assert.equal(result.oneBody, true); assert.equal(result.bodyY, 3); assert.equal(result.velocityY, 0);
+  assert.equal(result.entries, 1); assert.equal(result.totalBodies, 2);
+});
+
+test('remote body updates interpolate without running local movement or changing unrelated owner identities', async t => {
+  const page = await fixture(t);
+  const result = await page.evaluate(() => {
+    const remote = { ...base, key: 'other:agent-1', ownerPeerId: 'other', local: false };
+    layer.upsert(base); layer.setMovement(base.key, 'stationary'); layer.upsert(remote);
+    layer.upsert({ ...remote, position: [24, 3, 0] });
+    const before = layer.getPosition(remote.key); layer.update(1 / 60); const first = layer.getPosition(remote.key);
+    for (let index = 0; index < 149; index++) layer.update(1 / 60);
+    const midpoint = layer.getPosition(remote.key);
+    for (let index = 0; index < 151; index++) layer.update(1 / 60);
+    let denied; try { layer.setMovement(remote.key, 'roam'); } catch (error) { denied = error.message; }
+    return { before, first, midpoint, final: layer.getPosition(remote.key), local: layer.getPosition(base.key), denied, count: layer.entries.size };
+  });
+  assert.deepEqual(result.before, [0, 3, 0]); assert(result.first[0] > 0 && result.first[0] < 1);
+  assert(Math.abs(result.midpoint[0] - 12) < 1e-8, 'remote motion spans the full advertised five-second sample interval');
+  assert.deepEqual(result.final, [24, 3, 0]); assert.deepEqual(result.local, [0, 3, 0]);
+  assert.match(result.denied, /owner/); assert.equal(result.count, 2);
+});
+
+test('injected motor policies retain layer speed, grounding and paused-state bounds', async t => {
+  const page = await fixture(t);
+  const result = await page.evaluate(async () => {
+    layer.dispose();
+    const { CubeAgentLayer } = await import('/demos/cubechat/src/agents/CubeAgentLayer.js');
+    const calls = [];
+    layer = new CubeAgentLayer({ scene: shell, physics, getPlayerPosition: () => [0, 3, 20],
+      motionFactory: ({ key }) => ({ setMode: (mode) => calls.push([key, mode]),
+        step: ({ position, dt }) => { calls.push(['step', dt]); return [position[0] + 1000, 500, position[2]]; } }) });
+    layer.upsert(base); layer.setMovement(base.key, 'follow'); layer.update(60);
+    const moved = layer.getPosition(base.key);
+    layer.upsert({ ...base, status: 'thinking' }); layer.update(60);
+    return { moved, paused: layer.getPosition(base.key), calls };
+  });
+  assert(Math.abs(result.moved[0] - 2) < 1e-9); assert(Math.abs(result.moved[1] - 3) < 1e-9);
+  assert.deepEqual(result.paused, result.moved);
+  assert.deepEqual(result.calls, [['local:agent-1', 'follow'], ['step', 0.1]]);
+});
+
+test('terrain visual height stays separate from flat-world collision height without periodic hopping', async t => {
+  const page = await fixture(t);
+  assert.deepEqual(await page.evaluate(() => {
+    shell.getGroundHeight = (x) => 4 + x / 10;
+    layer.upsert({ ...base, position: [0, 7, 0] }); layer.setMovement(base.key, 'stationary');
+    for (let index = 0; index < 100; index++) { physics.world.step(1 / 60); layer.update(1 / 60); }
+    const entry = layer.entries.get(base.key);
+    return { visual: layer.getPosition(base.key), collision: entry.body.position.toArray(), velocity: entry.body.velocity.toArray() };
+  }), { visual: [0, 7, 0], collision: [0, 3, 0], velocity: [0, 0, 0] });
 });
 
 test('spawn positions use rendered floor height and avoid already placed agents', async t => {
@@ -157,6 +227,17 @@ test('labels render plain text into bounded canvases and caption expiry releases
   assert.equal(evidence.captionWidth, 768); assert.equal(evidence.captionHeight, 320); assert.equal(evidence.imageElements, 0);
   await page.clock.runFor(1001);
   assert.deepEqual(await page.evaluate(() => ({ visible: Boolean(layer.entries.get(base.key).caption), disposed: captionDisposed })), { visible: false, disposed: 1 });
+});
+
+test('repeated unchanged speech metadata neither shortens caption expiry nor reopens an expired bubble', async t => {
+  const page = await fixture(t, { captionDurationMs: 1000 }); await page.clock.install();
+  await page.evaluate(() => layer.upsert({ ...base, caption: 'Keep this private reply.' }));
+  await page.clock.runFor(600);
+  await page.evaluate(() => layer.upsert({ ...base, caption: 'Keep this private reply.', status: 'thinking' }));
+  assert.equal(await page.evaluate(() => Boolean(layer.entries.get(base.key).caption)), true);
+  await page.clock.runFor(401);
+  await page.evaluate(() => layer.upsert({ ...base, caption: 'Keep this private reply.', status: 'idle' }));
+  assert.equal(await page.evaluate(() => Boolean(layer.entries.get(base.key).caption)), false);
 });
 
 test('removed caption timers cannot erase a replacement entity and all owned resources dispose once', async t => {

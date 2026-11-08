@@ -134,6 +134,25 @@ test('native gameplay keys move and turn on a coarse desktop without scrolling t
   assert.equal(await page.evaluate(() => observedInput.filter((event) => event.type === 'keydown').every((event) => event.trusted)), true);
 });
 
+test('focused modal buttons never move the player while retaining native activation and escape', async (t) => {
+  const page = await fixture(t);
+  await page.evaluate(() => {
+    const dialog = document.createElement('dialog'), button = document.createElement('button');
+    button.textContent = 'Done'; button.onclick = () => dialog.close(); dialog.append(button);
+    document.body.append(dialog); controller.clearInput(); dialog.showModal();
+  });
+  await page.getByRole('button', { name: 'Done', exact: true }).focus();
+  for (const key of ['w', 'ArrowUp', 'q']) {
+    await page.keyboard.down(key);
+    assert.deepEqual(await movement(page), { forward: 0, strafe: 0 });
+    assert.equal(Boolean(await page.evaluate(key => controller.keys[key.toLowerCase()], key)), false);
+    await page.keyboard.up(key);
+  }
+  await page.keyboard.press('Space'); assert.equal(await page.locator('dialog[open]').count(), 0);
+  await page.locator('#world').focus(); await page.keyboard.down('w');
+  assert.deepEqual(await movement(page), { forward: 1, strafe: 0 }); await page.keyboard.up('w');
+});
+
 test('native touch movement, look and jump work; keyboard switches HUD off and neutralizes touch state', async (t) => {
   const page = await fixture(t, { touch: true });
   await page.touchscreen.tap(300, 300);

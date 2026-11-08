@@ -2,6 +2,7 @@ import { createWorldAgentUi } from './worldAgentUi.js';
 import { AgentConversationService } from '../../../peercompute/src/peercompute/agents/AgentConversationService.js';
 import { normalizePublicAgent, WORLD_AGENT_LIMITS, worldAgentText } from '../../../peercompute/src/peercompute/agents/WorldAgentContracts.js';
 import { speechChunks } from '../../../peercompute/src/peercompute/inference/speech/chunks.js';
+import { WorldEmbodimentLease } from './WorldEmbodimentLease.js';
 export { speechChunks } from '../../../peercompute/src/peercompute/inference/speech/chunks.js';
 
 const encoder = new TextEncoder();
@@ -18,6 +19,7 @@ export async function worldConversationId(worldId, requester) {
 
 /** Scene-owned bodies and conversations. Closing a window never owns the agent. */
 export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOptions = () => ({}), beforeOpen,
+  exclusiveEmbodiments = false,
   runtimeFactory = defaultRuntime, speechFactory = defaultSpeech, audioFactory = defaultAudio,
   uiFactory = createWorldAgentUi, serviceFactory = (options) => new AgentConversationService(options),
   panelFactory = async (options) => (await import('../../inference/src/agentPanel.js')).mountInferencePanel(options) } = {}) {
@@ -25,7 +27,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
   if (!adapter?.upsert || !adapter?.normalizePosition || !adapter?.dispose) throw new Error('A world agent body adapter is required');
   const lifetime = new AbortController(), bodies = new Map(), heads = new Map(), transcripts = new Map();
   let runtime, agents, network, worldManager, speech, audio, ui, selectedKey, disposed = false, closing, unsubscribe;
-  let refreshing, networkStarting, modelStarting, networkTimer, panel, panelOpening, panelShell;
+  let refreshing, networkStarting, modelStarting, networkTimer, panel, panelOpening, panelShell, embodimentLease;
   let operation, operationDone, voicePreparation, voicePreparationDone, recordingStart, voiceEnabled = false, recording = false;
   const localKey = (id) => `local:${id}`;
   const bindingOf = (head) => head.embodiments?.find((binding) => binding.worldId === worldId);
@@ -46,9 +48,21 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     if (panel || panelOpening) throw new Error('Close Models before starting a conversation');
   }
   const worldNetwork = () => worldManager ?? runtime.networkManager;
-  const list = () => [...bodies.values()];
+  function liveBody(body) {
+    const position = body.local ? adapter.getPosition?.(body.key) : null;
+    return position ? { ...body, position: adapter.normalizePosition(position) } : body;
+  }
+  const list = () => [...bodies.values()].map(liveBody);
   const updateList = () => { if (!disposed) ui.setAgents(list()); };
   function setBody(descriptor) {
+    // A directory/activity refresh has no new speech. Only an explicit empty
+    // caption clears it; the adapter's existing expiry timer remains in charge.
+    if (!Object.hasOwn(descriptor, 'caption') && bodies.has(descriptor.key)) {
+      descriptor = { caption: bodies.get(descriptor.key).caption, ...descriptor };
+    }
+    // Metadata/activity updates must not teleport an owner-driven body back to
+    // its saved spawn point. Movement is ephemeral, not a per-frame journal.
+    if (descriptor.local && bodies.get(descriptor.key)?.local) descriptor = liveBody(descriptor);
     descriptor = { ...descriptor, position: adapter.normalizePosition(descriptor.position) };
     adapter.upsert(descriptor); bodies.set(descriptor.key, descriptor);
   }
@@ -73,6 +87,8 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
         const binding = bindingOf(head);
         if (!binding) continue;
         if (current.size >= WORLD_AGENT_LIMITS.agents) break;
+        if (embodimentLease && !await embodimentLease.acquire(head.agentId)) continue;
+        if (disposed) return;
         const key = localKey(head.agentId); current.add(key);
         try {
           setBody({ ...normalizePublicAgent({ agentId: head.agentId, name: head.identity.name,
@@ -81,7 +97,17 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
           recoveryRequired: !!head.recoveryRequired, shared: binding.shared });
         } catch (error) { fail(new Error(`Could not restore ${head.identity.name}: ${error.message}`)); }
       }
-      for (const [key, body] of bodies) if (body.local && !current.has(key)) { adapter.remove(key); bodies.delete(key); }
+      for (const [key, body] of bodies) if (body.local && !current.has(key)) {
+        adapter.remove(key); bodies.delete(key); await embodimentLease?.release(body.agentId);
+      }
+      if (embodimentLease) for (const id of [...embodimentLease.entries.keys()]) {
+        if (!current.has(localKey(id))) await embodimentLease.release(id);
+      }
+      // A former remote owner can remain in the bounded directory TTL during
+      // takeover. Only suppress identities this local store currently owns.
+      if (embodimentLease) for (const [key, body] of bodies) {
+        if (!body.local && current.has(localKey(body.agentId))) { adapter.remove(key); bodies.delete(key); }
+      }
       updateList();
     })().finally(() => { refreshing = null; });
     return refreshing;
@@ -90,6 +116,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     if (disposed) return;
     const current = new Set();
     for (const entry of entries.slice(0, 48)) {
+      if (embodimentLease && bodies.get(localKey(entry.agentId))?.local) continue;
       const key = `${entry.ownerPeerId}:${entry.agentId}`;
       try { setBody({ ...normalizePublicAgent(entry), key, ownerPeerId: entry.ownerPeerId, local: false }); current.add(key); }
       catch { /* Wrong-world positions never enter the renderer. */ }
@@ -101,7 +128,8 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     alive();
     const head = await agents.get(agentId), binding = bindingOf(head);
     if (!binding || (requesterPeerId && !binding.shared)) throw new Error('This agent is not shared in this world');
-    const descriptor = bodies.get(localKey(agentId));
+    const storedBody = bodies.get(localKey(agentId));
+    const descriptor = storedBody && liveBody(storedBody);
     if (!descriptor) throw new Error('This agent has no body in this world');
     if (head.recoveryRequired || head.status === 'paused') throw new Error('This agent is paused; its owner must resume it');
     const conversationId = await worldConversationId(worldId, requesterPeerId || 'owner');
@@ -325,17 +353,25 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     // global model network so hosts in the standalone console remain eligible.
     runtime = await runtimeFactory({ ...options, networkManager: undefined, residentModelSlots: 3 });
     lifetime.signal.throwIfAborted(); agents = await runtime.getAgentController();
+    if (exclusiveEmbodiments) {
+      embodimentLease = new WorldEmbodimentLease({ namespace: agents.store?.lockName ?? options.storeName ?? 'inference-models-agents', worldId });
+      if (!embodimentLease.supported) ui.setStatus('Cross-tab body ownership is unavailable in this browser. Keep one window open for this world.');
+    }
     unsubscribe = agents.subscribe((event) => { if (['changed', 'removed', 'activity'].includes(event.type)) void refreshLocal().catch(fail); });
     await refreshLocal(); lifetime.signal.throwIfAborted();
     void ensureModelNetwork(); void ensureNetwork();
-    networkTimer = setInterval(() => { void ensureModelNetwork(); void ensureNetwork(); }, 5000);
+    networkTimer = setInterval(() => {
+      void ensureModelNetwork(); void ensureNetwork();
+      if (embodimentLease) void refreshLocal().catch(fail);
+    }, 5000);
   })();
   ready.catch(fail);
   return {
     ready,
     open() { ui.open(); },
     openConversation(key) { return select(key).catch(fail); },
-    getStatus: () => ({ worldId, bodies: list(), selectedKey, voiceEnabled, recording, disposed, network: !!network }),
+    getStatus: () => ({ worldId, bodies: list(), selectedKey, voiceEnabled, recording, disposed, network: !!network,
+      exclusiveEmbodiments: !!embodimentLease, crossTabOwnership: embodimentLease?.supported ?? null }),
     // The scene owns these operations; exposed for embedding and acceptance
     // checks without invoking GPU work through a hidden global test harness.
     spawn, send, remove, resume, enableVoice, cancel,
@@ -347,7 +383,8 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
         await ready.catch(() => {}); await cancel(); await networkStarting; await modelStarting; await closePanel();
         await network?.close(); network = null;
         await speech?.dispose(); await audio?.dispose(); await runtime?.dispose();
-        await refreshing; await adapter.dispose(); ui.dispose(); bodies.clear(); heads.clear(); transcripts.clear();
+        await refreshing; await adapter.dispose(); await embodimentLease?.close();
+        ui.dispose(); bodies.clear(); heads.clear(); transcripts.clear();
       })();
       try { await closing; } finally { closing = null; }
     },

@@ -87,231 +87,43 @@ body {
   color: #00cccc;
 }
 
-/* Settings button */
+/* Focused world settings; native dialogs own keyboard focus and scrolling. */
 #settings-button {
-  position: fixed;
-  top: 20px;
-  right: 20px;
-  width: 50px;
-  height: 50px;
-  background: rgba(0, 255, 255, 0.3);
-  border: 2px solid #00ffff;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 24px;
-  cursor: pointer;
-  z-index: 2000;
-  transition: all 0.2s;
+  position:fixed; top:12px; right:12px; width:44px; height:44px;
+  border:1px solid #4aa8bb; border-radius:4px; background:#071c2be8;
+  color:#b8f7ff; font:24px monospace; cursor:pointer; z-index:2200;
 }
-
-#settings-button:hover {
-  background: rgba(0, 255, 255, 0.5);
-  transform: scale(1.1);
+.cube-settings {
+  position:fixed; inset:0; margin:auto; box-sizing:border-box;
+  width:min(460px, calc(100vw - 24px)); max-width:none;
+  max-height:calc(100dvh - 24px); overflow:auto;
+  padding:18px; border:1px solid #4aa8bb; border-radius:6px;
+  background:#071722; color:#c6f7ff; font:14px/1.5 monospace;
 }
-
-/* Settings menu */
-#settings-menu {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  background: rgba(0, 4, 40, 0.95);
-  border: 2px solid #00ffff;
-  border-radius: 10px;
-  padding: 2rem;
-  z-index: 3000;
-  min-width: 300px;
-  box-shadow: 0 0 30px rgba(0, 255, 255, 0.5);
-  max-height: 80vh;
-  overflow-y: auto;
+.cube-settings::backdrop { background:#0009; }
+.cube-settings header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:18px; }
+.cube-settings h2 { margin:0; font-size:17px; }
+.cube-settings label { display:block; margin:14px 0; }
+.cube-settings input, .cube-settings select, .cube-settings button {
+  font:inherit; color:inherit; background:#0c2734; border:1px solid #397a89;
+  border-radius:3px; padding:9px; min-height:40px; max-width:100%;
 }
-
-#settings-close-x {
-  position: absolute;
-  top: 10px;
-  right: 15px;
-  color: #00ffff;
-  font-size: 24px;
-  font-weight: bold;
-  cursor: pointer;
-  transition: all 0.2s;
-  width: 30px;
-  height: 30px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-#settings-close-x:hover {
-  color: #ffffff;
-  transform: scale(1.2);
-}
-
-#settings-menu h3 {
-  margin: 0 0 1.5rem 0;
-  color: #00ffff;
-  text-shadow: 0 0 10px #00ffff;
-  font-size: 1.5rem;
-}
-
-#settings-menu label {
-  display: block;
-  margin-bottom: 1.5rem;
-  color: #00ffff;
-  font-size: 1rem;
-}
-
-#settings-menu input,
-#settings-menu select {
-  display: block;
-  width: 100%;
-  margin-top: 0.5rem;
-  padding: 0.5rem;
-  background: rgba(0, 255, 255, 0.1);
-  border: 1px solid #00ffff;
-  border-radius: 5px;
-  color: #00ffff;
-  font-family: 'Courier New', monospace;
-  font-size: 1rem;
-}
-
-#settings-menu input:focus,
-#settings-menu select:focus {
-  outline: none;
-  border-color: #00ffff;
-  box-shadow: 0 0 10px rgba(0, 255, 255, 0.3);
-}
-
-#settings-menu input[type="color"] {
-  height: 50px;
-  cursor: pointer;
-}
-
-#settings-menu button {
-  margin-top: 1rem;
-  margin-right: 0.5rem;
-  padding: 0.7rem 1.5rem;
-  background: rgba(0, 255, 255, 0.2);
-  border: 1px solid #00ffff;
-  border-radius: 5px;
-  color: #00ffff;
-  font-family: 'Courier New', monospace;
-  font-size: 1rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-#settings-menu button:hover {
-  background: rgba(0, 255, 255, 0.4);
-  transform: scale(1.05);
-}
-
-#settings-menu select {
-  display: block;
-  width: 100%;
-  margin-top: 0.5rem;
-  padding: 0.5rem;
-  background: rgba(0, 255, 255, 0.1);
-  border: 1px solid #00ffff;
-  border-radius: 5px;
-  color: #00ffff;
-  font-family: 'Courier New', monospace;
-  font-size: 1rem;
-}
-
-.settings-section {
-  margin-bottom: 1.5rem;
-  padding-bottom: 1.25rem;
-  border-bottom: 1px solid rgba(0, 255, 255, 0.2);
-}
-
-.settings-section:last-child {
-  border-bottom: none;
-  padding-bottom: 0;
-}
-
-.settings-section h4 {
-  margin-bottom: 0.75rem;
-  color: #00ffff;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-size: 0.9rem;
-}
-
-.room-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
-}
-
-#room-status {
-  margin-top: 0.5rem;
-  font-size: 0.85rem;
-  color: #00cccc;
-}
-
-#room-list {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  background: rgba(0, 4, 40, 0.97);
-  border: 2px solid #00ffff;
-  border-radius: 10px;
-  padding: 1.5rem;
-  z-index: 3500;
-  min-width: 320px;
-  max-width: 520px;
-  max-height: 70vh;
-  overflow-y: auto;
-  box-shadow: 0 0 30px rgba(0, 255, 255, 0.4);
-}
-
-#room-list h3 {
-  margin: 0 0 1rem 0;
-  color: #00ffff;
-  font-size: 1.2rem;
-}
-
-.room-entry {
-  padding: 0.75rem;
-  border: 1px solid rgba(0, 255, 255, 0.25);
-  border-radius: 6px;
-  margin-bottom: 0.75rem;
-  background: rgba(0, 255, 255, 0.05);
-}
-
-.room-entry h4 {
-  margin-bottom: 0.35rem;
-  font-size: 1rem;
-  color: #ffffff;
-}
-
-.room-entry p {
-  margin: 0;
-  font-size: 0.85rem;
-  color: #00cccc;
-}
-
-.room-entry button {
-  margin-top: 0.5rem;
-  padding: 0.35rem 0.75rem;
-  background: rgba(0, 255, 255, 0.2);
-  border: 1px solid #00ffff;
-  border-radius: 5px;
-  color: #00ffff;
-  cursor: pointer;
-}
-
-.room-list-actions {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1rem;
-}
+.cube-settings input, .cube-settings select { display:block; width:100%; margin-top:5px; }
+.cube-settings input[type=color] { height:44px; }
+.cube-settings .cube-check { display:flex; align-items:center; gap:9px; }
+.cube-settings .cube-check input { width:auto; min-height:0; margin:0; }
+.cube-settings button { cursor:pointer; }
+.cube-settings button:hover { background:#17404c; }
+.cube-settings :focus-visible, #settings-button:focus-visible { outline:2px solid #b1f9ff; outline-offset:2px; }
+.cube-settings nav { display:grid; gap:10px; }
+.cube-settings nav button { text-align:left; }
+.cube-settings-note, #room-status { font-size:12px; color:#91c4ce; margin-top:12px; overflow-wrap:anywhere; }
+.room-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+.room-entry { border:1px solid #397a89; border-radius:3px; padding:12px; margin-top:12px; overflow-wrap:anywhere; }
+.room-entry h4 { font-size:14px; }
+.room-entry p { font-size:12px; color:#91c4ce; }
+.room-entry button { margin-top:8px; }
+body:has(dialog[open]) #mobile-controls { visibility:hidden; }
 
 /* VR Button */
 #vr-button {

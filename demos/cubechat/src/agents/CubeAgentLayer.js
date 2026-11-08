@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
+import { WorldResidentMotion } from '../../../shared/agents/WorldResidentMotion.js';
 
 const HALF_SIZE = 3;
 const MAX_COORDINATE = 1_000_000;
@@ -73,12 +74,15 @@ function disposeSprite(sprite) {
 
 /** Scene bodies only. The shared host owns persistence, authority and conversations. */
 export class CubeAgentLayer {
-  constructor({ scene, physics, getPlayerPosition, onSelect, captionDurationMs = 12_000, maximumAgents = 64 } = {}) {
+  constructor({ scene, physics, getPlayerPosition, onSelect, captionDurationMs = 12_000, maximumAgents = 64,
+    motionFactory = (options) => new WorldResidentMotion(options), remoteInterpolationSeconds = 5 } = {}) {
     if (!scene?.scene?.isScene || !scene.camera?.isCamera || !scene.renderer?.domElement
         || !physics?.world || typeof getPlayerPosition !== 'function') throw new TypeError('Cube agent scene dependencies are required');
     if (!Number.isInteger(maximumAgents) || maximumAgents < 1 || maximumAgents > 256
-        || !Number.isInteger(captionDurationMs) || captionDurationMs < 1 || captionDurationMs > 60_000) throw new RangeError('Invalid agent layer limits');
-    Object.assign(this, { scene, physics, getPlayerPosition, onSelect, captionDurationMs, maximumAgents });
+        || !Number.isInteger(captionDurationMs) || captionDurationMs < 1 || captionDurationMs > 60_000
+        || !Number.isFinite(remoteInterpolationSeconds) || remoteInterpolationSeconds < 0.1 || remoteInterpolationSeconds > 15) throw new RangeError('Invalid agent layer limits');
+    if (typeof motionFactory !== 'function') throw new TypeError('A resident motion factory is required');
+    Object.assign(this, { scene, physics, getPlayerPosition, onSelect, captionDurationMs, maximumAgents, motionFactory, remoteInterpolationSeconds });
     this.entries = new Map(); this.closed = false; this.selectedKey = null;
     this.group = new THREE.Group(); this.group.name = 'CubeChat agents'; scene.scene.add(this.group);
     this.geometry = new THREE.BoxGeometry(6, 6, 6);
@@ -111,6 +115,76 @@ export class CubeAgentLayer {
 
   normalizePosition(input) { return normalizeCubeAgentPosition(input); }
 
+  groundHeight(x, z) {
+    if (typeof this.scene.getGroundHeight === 'function') return this.scene.getGroundHeight(x, z);
+    if (!this.scene.floor) return 0;
+    this.scene.floor.updateWorldMatrix(true, true);
+    const ground = new THREE.Raycaster(new THREE.Vector3(x, MAX_COORDINATE, z), new THREE.Vector3(0, -1, 0), 0, MAX_COORDINATE * 2);
+    return ground.intersectObject(this.scene.floor, true)[0]?.point.y ?? 0;
+  }
+
+  getPosition(key) { return this.entries.get(key)?.mesh.position.toArray() ?? null; }
+
+  setMovement(key, mode) {
+    const entry = this.entries.get(key);
+    if (!entry?.descriptor.local) throw new Error('Only the resident owner can control movement');
+    entry.motion.setMode(mode);
+    return mode;
+  }
+
+  place(entry, position) {
+    entry.mesh.position.fromArray(position);
+    // CubeChat simulates humans on a flat plane and contours only their visual
+    // body to themed terrain. Resident collision uses those same coordinates.
+    entry.body.position.set(position[0], HALF_SIZE, position[2]);
+    entry.body.velocity.set(0, 0, 0);
+    entry.body.previousPosition.copy(entry.body.position);
+    entry.body.interpolatedPosition.copy(entry.body.position);
+    entry.body.aabbNeedsUpdate = true;
+    if (this.physics.world.broadphase) this.physics.world.broadphase.dirty = true;
+    entry.descriptor.position = [...position];
+  }
+
+  /** Called after the world's physics step. Only local owners run steering. */
+  update(dt) {
+    if (this.closed) return;
+    if (!Number.isFinite(dt) || dt < 0) throw new TypeError('Invalid resident timestep');
+    const player = this.getPlayerPosition();
+    const target = this.normalizePosition(Array.isArray(player) ? player : [player?.x ?? 0, player?.y ?? 3, player?.z ?? 0]);
+    const humans = [...(this.physics.bodies?.values() ?? [])].slice(0, 192)
+      .map((body) => [body.position.x, body.position.y, body.position.z]);
+    for (const [key, entry] of this.entries) {
+      const previous = entry.mesh.position.toArray();
+      let next;
+      if (entry.descriptor.local) {
+        const obstacles = [...this.entries].filter(([otherKey]) => otherKey !== key)
+          .map(([, other]) => other.mesh.position.toArray()).concat(humans).slice(0, 256);
+        next = entry.descriptor.status === 'idle'
+          ? this.normalizePosition(entry.motion.step({ position: [...previous], target: [...target], dt: Math.min(dt, 0.1), status: entry.descriptor.status, obstacles }))
+          : [...previous];
+        // Replaceable application policies still share the motor's speed and
+        // grounded-body boundary. No network descriptor selects executable code.
+        const distance = Math.hypot(next[0] - previous[0], next[2] - previous[2]), maximum = 20 * Math.min(dt, 0.1);
+        if (distance > maximum) {
+          next[0] = previous[0] + (next[0] - previous[0]) / distance * maximum;
+          next[2] = previous[2] + (next[2] - previous[2]) / distance * maximum;
+        }
+        next[1] = this.groundHeight(next[0], next[2]) + HALF_SIZE;
+      } else {
+        // Interpolate one directory sample behind the owner (five seconds by
+        // default). No extrapolated authority or remote gravity is simulated.
+        entry.remoteElapsed = Math.min(this.remoteInterpolationSeconds, entry.remoteElapsed + Math.min(dt, 0.1));
+        const fraction = entry.remoteElapsed / this.remoteInterpolationSeconds;
+        const desired = entry.remoteStart.map((value, index) => value + (entry.target[index] - value) * fraction);
+        const delta = desired.map((value, index) => value - previous[index]);
+        const distance = Math.hypot(...delta), travel = Math.min(distance, 12 * Math.min(dt, 0.1));
+        next = distance ? previous.map((value, index) => value + delta[index] / distance * travel) : previous;
+      }
+      if (Math.hypot(next[0] - previous[0], next[2] - previous[2]) > 0.00001) entry.mesh.rotation.y = Math.atan2(next[0] - previous[0], next[2] - previous[2]);
+      this.place(entry, this.normalizePosition(next));
+    }
+  }
+
   getSpawnPosition() {
     const raw = this.getPlayerPosition();
     const position = this.normalizePosition(Array.isArray(raw) ? raw : [raw?.x ?? 0, raw?.y ?? HALF_SIZE, raw?.z ?? 0]);
@@ -123,13 +197,7 @@ export class CubeAgentLayer {
       candidate = [position[0] + Math.sin(angle) * distance, position[1], position[2] + Math.cos(angle) * distance];
       if ([...this.entries.values()].every(({ descriptor }) => Math.hypot(descriptor.position[0] - candidate[0], descriptor.position[2] - candidate[2]) >= 9)) break;
     }
-    // Pick the actual rendered floor, including themed terrain, without using renderer internals.
-    if (this.scene.floor) {
-      this.scene.floor.updateWorldMatrix(true, true);
-      const ground = new THREE.Raycaster(new THREE.Vector3(candidate[0], MAX_COORDINATE, candidate[2]), new THREE.Vector3(0, -1, 0), 0, MAX_COORDINATE * 2);
-      const hit = ground.intersectObject(this.scene.floor, true)[0];
-      if (hit) candidate[1] = hit.point.y + HALF_SIZE;
-    }
+    candidate[1] = this.groundHeight(candidate[0], candidate[2]) + HALF_SIZE;
     return this.normalizePosition(candidate);
   }
 
@@ -139,21 +207,29 @@ export class CubeAgentLayer {
     let entry = this.entries.get(descriptor.key);
     if (!entry && this.entries.size >= this.maximumAgents) throw new RangeError('Too many visible agents');
     if (!entry) {
+      const motion = descriptor.local ? this.motionFactory({ key: descriptor.key, position: [...descriptor.position], mode: 'roam' }) : null;
+      if (motion && (typeof motion.step !== 'function' || typeof motion.setMode !== 'function')) throw new TypeError('Resident motion must implement step and setMode');
+      if (descriptor.local && !motion) throw new TypeError('Resident motion is required for the local owner');
       const mesh = new THREE.Mesh(this.geometry, new THREE.MeshStandardMaterial({ color: descriptor.color, emissive: descriptor.color, emissiveIntensity: 0.12 }));
       mesh.userData.agentKey = descriptor.key;
       const outline = new THREE.LineSegments(this.edgeGeometry, new THREE.LineBasicMaterial({ color: descriptor.color }));
       mesh.add(outline);
-      const body = new CANNON.Body({ type: CANNON.Body.STATIC, mass: 0, shape: new CANNON.Box(new CANNON.Vec3(HALF_SIZE, HALF_SIZE, HALF_SIZE)) });
-      entry = { mesh, outline, body, descriptor: null, label: null, caption: null, captionTimer: null };
+      const body = new CANNON.Body({ type: CANNON.Body.KINEMATIC, mass: 0, fixedRotation: true,
+        shape: new CANNON.Box(new CANNON.Vec3(HALF_SIZE, HALF_SIZE, HALF_SIZE)) });
+      entry = { mesh, outline, body, descriptor: null, label: null, caption: null, captionTimer: null,
+        target: [...descriptor.position], remoteStart: [...descriptor.position], remoteElapsed: 0, motion };
       this.group.add(mesh); this.physics.world.addBody(body); this.entries.set(descriptor.key, entry);
     }
     const previous = entry.descriptor;
-    entry.mesh.position.fromArray(descriptor.position);
+    if (previous && previous.local !== descriptor.local) throw new Error('A body cannot change authority in place');
+    if (entry.target.some((value, index) => value !== descriptor.position[index])) {
+      entry.remoteStart = entry.mesh.position.toArray(); entry.remoteElapsed = 0;
+      entry.target = [...descriptor.position];
+    }
+    const livePosition = previous ? entry.mesh.position.toArray() : descriptor.position;
     entry.mesh.material.color.set(descriptor.color); entry.mesh.material.emissive.set(descriptor.color);
     entry.mesh.material.emissiveIntensity = ['thinking', 'speaking'].includes(descriptor.status) ? 0.4 : 0.12;
     entry.outline.material.color.set(this.selectedKey === descriptor.key ? '#ffffff' : descriptor.color);
-    entry.body.position.set(...descriptor.position); entry.body.aabbNeedsUpdate = true;
-    if (this.physics.world.broadphase) this.physics.world.broadphase.dirty = true;
     if (!previous || previous.name !== descriptor.name || previous.status !== descriptor.status) {
       const label = textSprite(`${descriptor.name} · AGENT · ${descriptor.status}`);
       disposeSprite(entry.label); entry.label = label; entry.mesh.add(label);
@@ -169,6 +245,7 @@ export class CubeAgentLayer {
       }
     }
     entry.descriptor = descriptor;
+    this.place(entry, livePosition);
     return descriptor.key;
   }
 

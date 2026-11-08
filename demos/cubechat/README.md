@@ -23,40 +23,52 @@ focus or hiding the tab releases held controls.
 Input regression checks: `node --test demos/tests/cubechat-input.test.js` from
 the repository root (Node24, installed system Chrome).
 
-## Inhabited agents
+## Chat and residents
 
-Choose **Agents → Place an agent**, give it a name and select whether peers can
-talk to it. **Models** opens reasoning-model configuration. **Enable voice**
-downloads the pinned speech packages once (about376 MB); **Talk / Stop** records
-a short message, and voice replies play at the cube's position. The room's
-conversation network is separate from global model discovery, so standalone
-model hosts remain eligible when local-only is off.
+Press **Enter** to open the world chat bar. **Room** sends typed messages to the
+other players in this room and shows the text above your cube. Enter sends,
+Shift+Enter adds a line, and Escape returns to the world. The transcript keeps
+full messages while overhead bubbles show a brief excerpt and expire.
+Delivery status reports peer acknowledgments; it is not a read receipt.
 
-The world agent host places saved agents in labeled cubes. Click or tap an agent
-cube to open its conversation; with the scene focused, Enter selects the agent
-at the center of the view. Mouse look and movement remain available elsewhere.
-An agent's reply appears as a temporary caption above its cube. The conversation
-uses the shared agent host's text and speech controls and reports unavailable
-models or speech capabilities there.
+Choose **Residents**, name a resident and place it in the world. Click its cube
+or select it as the chat target to use the same composer for a direct
+conversation. Direct visitor histories remain separate from public room chat.
+Residents can roam, follow their host's player, or stay stationary. These are
+bounded scripted motor policies with a replaceable controller; learned movement
+and autonomous agent-to-agent dialogue remain later work.
 
-Agent cubes are stationary scene entities owned by their hosting peer, separate
-from human players, camera streams and libp2p identities. Closing a conversation
-does not remove the agent. Room changes await conversation cleanup before
-replacing the network session; private saved identity and conversation records
-remain in the host's local storage. Remote visibility and conversation authority
-are handled by the shared host, not by trusting a player snapshot.
+The native roster replaces the separate bot and agent interfaces. A resident
+uses one mesh and collider. Browser body leases prevent two same-origin tabs
+from simultaneously restoring the same saved resident; the other tab sees it
+through the room network. The saved position is a spawn anchor; moving does not
+write the private agent journal every frame. Remote motion interpolates owner
+updates and may lag the owner by a directory update interval.
 
-The CubeChat adapter owns its meshes, name/caption textures, picking listeners
-and static collision bodies. Spawning samples the current rendered floor. It
-does not implement autonomous movement or a terrain-aware locomotion policy.
+**Models** opens the shared library and runtime configuration without another
+chat interface or automatic downloads. The host keeps loaded models when this
+window closes. Chat voice options prepare the managed speech packages; Talk /
+Stop records a short utterance, and spoken resident replies use positional audio.
+Global model discovery remains separate from the current world's room network.
 
-Adapter checks: `node --test demos/tests/cubechat-agents.test.js`. These use native
-browser input, canvas text, Three.js raycasting and Cannon physics without a GPU
-renderer. Full-scene networking, model and speech qualification are separate
-shared-host acceptance checks.
-The combined checks are available through `npm run test:world-agents` at the
-repository root. Player-to-agent conversations are implemented; automatic
-agent-to-agent dialogue and learned movement are later work.
+**Settings** opens small Player & controls, World & rooms, and Media windows.
+Player microphone/video and screen sharing remain separate from model speech.
+The automated `peercomputeBot` launch URLs remain available for network tests;
+the normal Residents interface does not create hidden bot browser frames.
+
+Reusable components live in `demos/shared`: authenticated `RoomChatService`,
+`SpeechBubbleLayer`, `WorldEmbodimentLease`, `WorldResidentMotion`, and the existing
+`WorldAgentHost`. The Cube scene supplies rendering, placement and input; agents
+retain private IndexedDB identity/history and managed model routing. These seams
+support the homunculus architecture without coupling its future policies to DOM
+controls or CubeChat-specific physics.
+
+Focused tests: `node --test --test-concurrency=1 demos/tests/room-chat.test.js
+ demos/tests/cubechat-social.test.js demos/tests/cubechat-native-ui.test.js
+ demos/tests/world-resident-motion.test.js demos/tests/cubechat-agents.test.js
+ demos/tests/world-agent-host.test.js demos/tests/cubechat-input.test.js`.
+Actual browser-peer delivery and visuals are separate preview acceptance gates;
+see `plan/log.md` for results and limitations.
 
 ## Multiplayer Rooms
 Use the Settings menu to create or join public/private rooms. Private rooms derive their room ID from a password hash (no raw password is shared).

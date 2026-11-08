@@ -1,4 +1,5 @@
 import { channel, encryptedConnection, bytes } from '../networkManager/inference/protocol.js';
+import { waitForPeerConnection } from '../networkManager/inference/waitForPeerConnection.js';
 import { agentIdentifier } from './AgentContracts.js';
 import { normalizePublicAgent, worldAgentText, WORLD_AGENT_LIMITS } from './WorldAgentContracts.js';
 
@@ -145,20 +146,32 @@ export class AgentConversationService {
       .sort((a, b) => Number(b.encryption === 'native') - Number(a.encryption === 'native'));
   }
   async _open(peerId, signal) {
-    signal.throwIfAborted();
+    signal.throwIfAborted(); this._active();
     let connections = this._connections(peerId);
-    if (!connections.length && this.manager.peers?.has(peerId)) {
-      await withAbort(this.manager._maybeDialPeer(peerId, 'world-agents'), signal);
+    if (!connections.length && this.manager.peers?.has(peerId) && this.manager._maybeDialPeer) {
+      // The normal dial policy can return while another dial is still pending.
+      // Wait for its authenticated connection without forcing a second dial.
+      await waitForPeerConnection({ node: this.node, peerId, signal, timeoutMs: this.queryTimeoutMs,
+        dial: () => this.manager._maybeDialPeer(peerId, 'world-agents'),
+        assertAllowed: () => {
+          this._active();
+          const peer = this.manager.peers?.get(peerId);
+          if (!peer || ['gameId', 'roomId', 'topologyId'].some((key) => peer[key] !== this.scope[key])) {
+            throw fail('Agent owner left this world network scope', 'ERR_AGENT_SCOPE');
+          }
+        }
+      });
+      signal.throwIfAborted(); this._active();
       connections = this._connections(peerId);
     }
     const errors = [];
     for (const connection of connections.slice(0, 4)) {
-      signal.throwIfAborted();
+      signal.throwIfAborted(); this._active();
       const op = operation([signal, this.controller.signal], Math.min(2000, this.queryTimeoutMs));
       let opening;
       try {
         opening = Promise.resolve(connection.newStream(AGENT_CONVERSATION_PROTOCOL, { signal: op.signal, runOnLimitedConnection: true }));
-        const stream = await withAbort(opening, op.signal); op.signal.throwIfAborted();
+        const stream = await withAbort(opening, op.signal); op.signal.throwIfAborted(); this._active();
         return { stream, connection };
       } catch (error) {
         opening?.then((late) => late.abort(asError(error)), () => {}).catch(() => {});

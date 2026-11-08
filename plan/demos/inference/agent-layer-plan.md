@@ -540,3 +540,15 @@ one machine, not physical-host migration or a new diffusion qualification. Brows
 cover real IndexedDB/Web Locks, UI persistence and failure paths. A2 learned
 ranking/quality benchmarks and all A3–A6 remain open; this checkpoint does not
 complete AGENT-01 or the embodied Humunculus plan.
+
+## November 7 implementation bridge toward homunculus
+
+CubeChat's native social pass separates presentation from reusable room messages,
+embodiment lifetime and motor policy. RoomChatService accepts only authenticated
+room-scoped live text; SpeechBubbleLayer maps text to a world anchor without
+owning identity. WorldEmbodimentLease arbitrates same-origin body ownership,
+while the Cube adapter supplies live pose to WorldAgentHost. A trusted injected
+motor factory can later replace WorldResidentMotion's bounded scripted steering.
+A future learned controller must keep the same position/action bounds, ownership
+and pause semantics, and obtain its own training/behavior acceptance evidence.
+No inference or storage writes occur inside the per-frame motor loop.

@@ -2775,7 +2775,14 @@ export class TronScene {
     });
   }
 
+  getGroundHeight(x, z) {
+    return this._themeUsesTerrain(this.worldThemeId) ? this._sampleThemeHeight(this.worldThemeId, x, z) : 0;
+  }
+
   createPlayer(id, color, position) {
+    // A repeated same-peer announcement/reconnect owns one visual body.
+    const existing = this.players.get(id);
+    if (existing) return existing;
     // Create cube for player (6x6x6 - twice as big)
     const geometry = new THREE.BoxGeometry(6, 6, 6);
     
@@ -3014,7 +3021,7 @@ export class TronScene {
     const material = new THREE.SpriteMaterial({ map: texture });
     const sprite = new THREE.Sprite(material);
     
-    sprite.position.set(0, 8, 0); // Above the cube
+    sprite.position.set(0, 4.5, 0); // Above the six-unit cube, below its speech bubble
     sprite.scale.set(8, 2, 1);
     
     player.add(sprite);

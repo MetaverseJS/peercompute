@@ -32,7 +32,7 @@ async function fixture(t, count = 2, options = {}) {
       queryTimeoutMs: 500, requestTimeoutMs: 5000, ...(options.service ?? {}) });
     entries.push(entry); await entry.service.start();
   }
-  for (const entry of entries.slice(1)) await entries[0].node.dial(entry.node.getMultiaddrs());
+  if (options.connect !== false) for (const entry of entries.slice(1)) await entries[0].node.dial(entry.node.getMultiaddrs());
   await Promise.all(entries.map(({ service }) => service.refreshing));
   return entries;
 }
@@ -185,14 +185,91 @@ test('directory expires, excludes relays, dials logical peers through manager po
   now = 15000; assert.deepEqual(client.service._publish(), []);
   await client.node.hangUp(owner.node.peerId);
   const peerId = owner.node.peerId.toString(), dialled = [];
-  client.manager.peers.set(peerId, {});
+  client.manager.peers.set(peerId, { ...scope });
   client.manager._maybeDialPeer = async (id, reason) => { dialled.push({ id, reason }); if (id === peerId) await client.node.dial(owner.node.getMultiaddrs()); };
   assert.equal((await client.service.refresh()).length, 1);
   assert.deepEqual(dialled, [{ id: peerId, reason: 'world-agents' }]);
   client.manager.bootstrapPeerIds.add(peerId); await client.node.hangUp(owner.node.peerId);
-  for (let i = 0; i < 40; i++) client.manager.peers.set(`unavailable${i}`, {});
+  for (let i = 0; i < 40; i++) client.manager.peers.set(`unavailable${i}`, { ...scope });
   dialled.length = 0; await client.service.refresh();
   assert.equal(dialled.length, 32); assert(!dialled.some((value) => value.id === peerId));
+});
+
+test('directory waits for a pending normal dial instead of treating its early return as failure', { timeout: 15000 }, async (t) => {
+  const [client, owner] = await fixture(t, 2, { connect: false }); owner.agents = [body()];
+  const peerId = owner.node.peerId.toString(), dialled = [];
+  client.manager.peers.set(peerId, { ...scope });
+  client.manager._maybeDialPeer = (id, reason) => { dialled.push({ id, reason }); }; // Another manager dial owns the work.
+  const pending = client.service.refresh();
+  await until(() => dialled.length === 1);
+  assert.equal(client.service.records.size, 0);
+  await client.node.dial(owner.node.getMultiaddrs());
+  assert.deepEqual(await pending, [{ ...body(), ownerPeerId: peerId }]);
+  assert.deepEqual(client.service.lastErrors, []);
+  assert.deepEqual(dialled, [{ id: peerId, reason: 'world-agents' }]);
+  assert.equal(owner.received.length, 0);
+});
+
+test('resident request waits for a delayed authenticated connection and delivers exactly once', { timeout: 15000 }, async (t) => {
+  const [client, owner] = await fixture(t, 2, { connect: false }); owner.agents = [body()];
+  const peerId = owner.node.peerId.toString(); let dialled = 0;
+  client.manager.peers.set(peerId, { ...scope }); client.manager._maybeDialPeer = () => { dialled++; };
+  const pending = client.service.request(peerId, { agentId: 'ada', prompt: 'Describe a garden.' });
+  await until(() => dialled === 1); assert.equal(owner.received.length, 0);
+  await client.node.dial(owner.node.getMultiaddrs());
+  const result = await pending;
+  assert.equal(result.text, 'Hello\nfrom the agent'); assert.equal(result.ownerPeerId, peerId);
+  assert.equal(owner.received.length, 1); assert.equal(dialled, 1);
+  assert.equal(owner.received[0].requesterPeerId, client.node.peerId.toString());
+  assert.equal(client.node.getConnections()[0].encryption, '/noise');
+});
+
+test('cancelling or closing a pending connection wait never sends a prompt or closes the manager connection', { timeout: 15000 }, async (t) => {
+  for (const action of ['cancel', 'close']) await t.test(action, async (t) => {
+    const [client, owner] = await fixture(t, 2, { connect: false }); owner.agents = [body()];
+    const peerId = owner.node.peerId.toString(), controller = new AbortController(); let dialled = false;
+    client.manager.peers.set(peerId, { ...scope }); client.manager._maybeDialPeer = () => { dialled = true; };
+    const pending = client.service.request(peerId, { agentId: 'ada', prompt: 'Never send this.' }, { signal: controller.signal });
+    const rejected = assert.rejects(pending, (error) => error.committed === false
+      && (action === 'cancel' ? error.name === 'AbortError' : error.code === 'ERR_AGENT_CLOSED'));
+    await until(() => dialled);
+    if (action === 'cancel') controller.abort(); else await client.service.close();
+    await rejected;
+    const connection = await client.node.dial(owner.node.getMultiaddrs());
+    await delay(20);
+    assert.equal(connection.status, 'open'); assert.equal(owner.received.length, 0);
+    assert.equal(client.service.outbound.size, 0); assert.equal(client.service.pending.size, 0);
+  });
+});
+
+test('pending-dial scope is checked before dialing and again when the connection arrives', { timeout: 15000 }, async (t) => {
+  for (const key of ['gameId', 'roomId', 'topologyId']) await t.test(key, async (t) => {
+    const [client, owner] = await fixture(t, 2, { connect: false }); owner.agents = [body()];
+    const peerId = owner.node.peerId.toString(); let dialled = 0;
+    client.manager.peers.set(peerId, { ...scope, [key]: 'different' });
+    client.manager._maybeDialPeer = () => { dialled++; };
+    await assert.rejects(client.service.request(peerId, { agentId: 'ada', prompt: 'Not in this world.' }),
+      (error) => error.code === 'ERR_AGENT_SCOPE' && error.committed === false);
+    assert.equal(dialled, 0);
+    client.manager.peers.set(peerId, { ...scope });
+    const pending = client.service.request(peerId, { agentId: 'ada', prompt: 'Do not cross scopes.' });
+    const rejected = assert.rejects(pending, (error) => error.code === 'ERR_AGENT_SCOPE' && error.committed === false);
+    await until(() => dialled === 1);
+    client.manager.peers.set(peerId, { ...scope, [key]: 'different' });
+    await client.node.dial(owner.node.getMultiaddrs()); await rejected;
+    assert.equal(owner.received.length, 0); assert.equal(dialled, 1);
+  });
+});
+
+test('network scope change during pending dial is rejected before any resident request', { timeout: 15000 }, async (t) => {
+  const [client, owner] = await fixture(t, 2, { connect: false }); owner.agents = [body()];
+  const peerId = owner.node.peerId.toString(); let dialled = false;
+  client.manager.peers.set(peerId, { ...scope }); client.manager._maybeDialPeer = () => { dialled = true; };
+  const pending = client.service.request(peerId, { agentId: 'ada', prompt: 'Stay in the original room.' });
+  const rejected = assert.rejects(pending, (error) => error.code === 'ERR_AGENT_SCOPE' && error.committed === false);
+  await until(() => dialled); client.manager.config.roomId = 'new-room';
+  await client.node.dial(owner.node.getMultiaddrs()); await rejected;
+  assert.equal(owner.received.length, 0);
 });
 
 test('same-peer stream fallback occurs only before prompt delivery; failed unhandle can be retried', { timeout: 15000 }, async (t) => {

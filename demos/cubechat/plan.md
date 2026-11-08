@@ -85,3 +85,39 @@ create a tron themed overworld consisting of a dark infinite grid of blue lines.
   authenticated SecretWorkshop Noise connections; no page/console/HTTP/model/
   cleanup errors. Cube-only build13.05s and internal promotion02:01:55Z preserve
   existing assets; owned browser closed.
+
+## Native social interface — November 7 2026
+
+- One scene composer targets Room or a selected resident. Enter opens/sends,
+  Shift+Enter adds a line, and Escape releases chat focus. Human room text travels
+  over authenticated room-scoped PeerCompute streams and appears in the room
+  transcript and above the authenticated sender's cube. Resident conversations
+  retain isolated visitor histories; their direct prompts are not room broadcasts.
+- Residents replaces the separate normal bot/agent launchers. One persistent
+  identity has one owned body, a movement policy and a conversation endpoint.
+  Default grounded roaming, follow and stationary policies have no periodic jump.
+  Legacy automated peer launch URLs remain available for network testing.
+- Reusable seams: RoomChatService owns delivery/authentication/bounds;
+  SpeechBubbleLayer owns Three.js text presentation; WorldEmbodimentLease owns
+  cross-tab body lifetime; WorldResidentMotion owns bounded motor decisions;
+  WorldAgentHost owns persistence, routing, speech and visitor conversations.
+  CubeWorldUi and CubeSettingsUi contain CubeChat presentation only. This is
+  infrastructure toward homunculus, not a claim of learned movement or training.
+- Split Player, World & Rooms, Media and Residents into focused native dialogs.
+  Models reuses storage/runtime management with its secondary chat hidden and
+  automatic model loading disabled. Existing loaded models stay with the host.
+- Verify native keyboard/focus/touch, text safety and bubble lifecycle, encrypted
+  two-peer delivery and scope/replay rejection, one body per ID, no hop impulses,
+  same-origin ownership/release, private history and cancellation, then actual
+  desktop/phone previews with SecretWorkshop and two-browser text exchange.
+  Record failures and final results in plan/log.md; keep browser artifacts outside
+  Git and do not touch user profiles or download weights for UI acceptance.
+- Qualification complete:203 relevant cases pass; three affected app builds and
+  exact internal desktop/phone checks pass. Actual two-browser text exchange,
+  room change and receiver reload retain authenticated attribution and one
+  delivery to the current receiver. A departed identity may briefly yield an
+  honest partial-delivery status. Final phone captures verify readable overhead
+  annotations even when a foreground body overlaps them. Resident placement and
+  motion preserve one mesh/collider locally and one remote body; remote pose
+  retains the five-second directory cadence. No new GPU/voice/model-quality
+  qualification or public Pages deployment is claimed by this UI pass.

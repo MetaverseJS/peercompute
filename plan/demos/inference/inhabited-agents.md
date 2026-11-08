@@ -32,6 +32,28 @@ flowchart LR
   Visitor[Another player's browser] <-->|authenticated bounded streams| Host
 ```
 
+## CubeChat native social pass — November 7
+
+CubeChat now supplies its own world presentation through WorldAgentHost.uiFactory:
+one Room/resident composer and one Residents roster. Human text is broadcast only
+through RoomChatService's authenticated, same-room live streams; direct agent
+conversations retain the existing private visitor channels. SpeechBubbleLayer
+presents typed human text above the sender's rendered body. Models uses the
+optional managementOnly console mode, with no second composer or startup download.
+
+Cube opts into WorldEmbodimentLease, separate from agent request locks, so a saved
+identity is restored by one same-origin tab at a time. The body adapter exposes
+live pose without updating the identity journal each frame. Its replaceable
+WorldResidentMotion policy supports grounded roaming/follow/stationary control;
+remote bodies interpolate owner directory samples with one sample of lag.
+Earth retains its existing UI and stationary adapter defaults. The reusable
+components are foundations for homunculus observation/action policies, not neural
+movement, agent migration, autonomous training or shared private histories.
+
+Acceptance is tracked in the CubeChat plan and plan/log.md; protocol fixture
+proof, native input/body tests, and actual multi-browser preview checks are
+separate evidence categories.
+
 ## Ownership and persistence
 
 - One general agent can have up to eight world bindings, containing world ID,
@@ -41,13 +63,13 @@ flowchart LR
   StateManager for private storage. Its model runtime owns a separate global
   model connection, so standalone model hosts remain discoverable across game
   rooms without weakening conversation scope checks. Its agent bodies
-  have separate Three.js objects and static Cannon collision bodies; they are
+  have separate Three.js objects and kinematic Cannon collision bodies; they are
   not fake human peers or video participants.
 - EarthGrid uses a separate, lazy Cesium data source for georeferenced bodies.
   Its private GIS StateManager remains network-disabled; the agent model runtime
   connects its own network manager to the configured backend.
 - Removing a body removes its binding, not the agent's identity or memory.
-  Existing agent administration remains available through Models → Agents.
+  Full agent administration remains available in the dedicated model/agent demo.
 - The model console borrows the scene-owned runtime. A closed console must not
   unload a body’s active model or terminate another visitor's request.
 
@@ -121,7 +143,7 @@ categories separate from human listening and the user's unresolved exact path.
 
 1. Unit/browser contracts: durable bindings, private visitor history, authenticated
    directory/request scope, cancellation and acknowledged teardown.
-2. Real scene bodies: desktop/mobile picking, captions, static collisions, Earth
+2. Real scene bodies: desktop/mobile picking, captions, bounded body collisions, Earth
    geodetic placement, audio pose and disposal, with existing input/GIS regressions.
 3. Real hardware speech: transcription of a recorded fixture; synthesis with GPU
    dispatch and PCM evidence; cancellation, zero leases after unload, source-off
@@ -133,8 +155,8 @@ categories separate from human listening and the user's unresolved exact path.
 
 Learned movement/navigation, autonomous training, self-editing meshes, multi-peer
 agent migration, learned model ranking and automatic host provisioning remain
-later work. These first bodies are stationary conversational inhabitants; their
-text must not claim an unexecuted movement or world action.
+later work. CubeChat now has bounded heuristic movement; Earth remains stationary.
+Neither agent's text may claim an unexecuted movement or world action.
 
 ## Existing bot movement survey — November 6 follow-up
 
@@ -153,7 +175,8 @@ vocabulary `{forward, strafe, rotation, pitch, jump}`, preserving analog values.
 Reuse existing physics force/jump and observation math without editing user keys.
 Pause, stale policy output, room changes and authority loss must zero actions.
 
-Movement requires more than the present static body and five-second directory:
+The November 7 pass adds grounded motion and five-second remote interpolation.
+Responsive learned movement still requires more than that directory transport:
 add authenticated sequence/heading/velocity updates, remote interpolation and
 low-rate durable checkpoints. Run policy evaluation at a bounded rate through
 ComputeManager. The existing heuristic can be an explicitly labeled baseline or

@@ -311,6 +311,7 @@ async function fixture(t, scenario = {}) {
     window.panel = await mountInferencePanel({ pwaInstallController, container: document.querySelector('#panel'), runtimeFactory: async () => runtime,
       navigate: (url) => calls.push({ type: 'navigate', url, disposed: state.disposed }),
       autoConnect: !!scenario.connectFailure,
+      managementOnly: !!scenario.managementOnly,
       refreshIntervalMs: scenario.interval ?? 5000,
       ...(scenario.context ? { getContext: (options) => { contextCalls.push(options); return { text: 'Optional embedded scene context', image: { forbidden: true } }; },
         actions: { instructions: 'Suggest an approved action.', invalidate() {}, propose() { return [{ label: 'test action', apply() { calls.push({ type: 'action' }); } }]; } } } : {}) });
@@ -324,6 +325,20 @@ async function fixture(t, scenario = {}) {
   }
   return page;
 }
+
+test('world model management opens the library without a second chat or automatic model load', async (t) => {
+  const page = await fixture(t, { managementOnly: true, keepStartupPicker: true, stored: [] });
+  assert.equal(await libraryDialog(page).isVisible(), true);
+  assert.equal(await libraryDialog(page).getByRole('tab', { name: 'Browse models', exact: true }).getAttribute('aria-selected'), 'true');
+  await closeModels(page);
+  for (const name of ['Message', 'Send', 'Talk', 'Agents', 'Back to demos']) {
+    const candidates = page.getByRole(name === 'Message' ? 'textbox' : 'button', { name, exact: true });
+    if (await candidates.count()) assert.equal(await candidates.isVisible(), false, name);
+  }
+  assert.deepEqual(await page.evaluate(() => calls.filter(call => ['acquire', 'load-stored', 'generate'].includes(call.type))), []);
+  await page.getByRole('button', { name: 'Models', exact: true }).click();
+  assert.equal(await libraryDialog(page).isVisible(), true);
+});
 
 test('Models launcher and menu share one tabbed dialog and reuse the startup stored snapshot', async (t) => {
   const page = await fixture(t, { keepStartupPicker: true, stored: [

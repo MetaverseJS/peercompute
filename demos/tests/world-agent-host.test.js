@@ -29,7 +29,10 @@ async function fixture(t) {
   page.on('pageerror', (error) => errors.push(error.message));
   t.after(async () => { await page.evaluate(() => window.host?.dispose()); await context.close(); assert.deepEqual(errors, []); assert.deepEqual(external, []); });
   await page.goto(origin + '/__world_fixture');
-  await page.evaluate(async () => {
+  await page.evaluate(boot);
+  return page;
+}
+async function boot() {
     const { installWorldAgents, speechChunks, worldConversationId } = await import('/demos/shared/agents/WorldAgentHost.js');
     const { AgentRuntime } = await import('/peercompute/src/peercompute/agents/AgentRuntime.js');
     const { AgentRecordStore } = await import('/peercompute/src/peercompute/agents/AgentRecordStore.js');
@@ -37,12 +40,14 @@ async function fixture(t) {
     const candidate = { key: 'local', local: true, available: true, manifestCid: 'fixture', sessionId: 'fixture', runtime: 'transformers.js',
       task: 'text-generation', modalities: ['text'], outputModalities: ['text'] };
     window.start = async () => {
-      const bodies = new Map();
+      const bodies = new Map(); window.bodyMap = bodies;
       host = installWorldAgents({ worldId: 'cubechat:test', worldLabel: 'CubeChat',
+        exclusiveEmbodiments: window.exclusiveBodies ?? false,
         getRuntimeOptions: () => ({ networkManager: window.roomManager }),
         beforeOpen: () => calls.push('input-release'),
         adapter: { upsert: (body) => bodies.set(body.key, body), remove: (key) => bodies.delete(key), normalizePosition: (value) => [...value],
-          getSpawnPosition: () => [1, 3, 5], getContext: () => ({ position: [1, 3, 5] }), focus: () => {},
+          getSpawnPosition: () => [1, 3, 5], getPosition: (key) => bodies.get(key)?.position,
+          getContext: (body) => ({ position: [...body.position] }), focus: () => {},
           getAudioPose: () => ({}), dispose: () => { calls.push('adapter-dispose'); bodies.clear(); } },
         uiFactory: (callbacks) => { window.callbacks = callbacks; return {
           open: () => { callbacks.onOpen?.(); view.open = true; }, dispose: () => { view.open = false; calls.push('ui-dispose'); },
@@ -64,7 +69,7 @@ async function fixture(t) {
               return { text: 'Fixture response (not real inference).', finishReason: 'stop' };
             }, cancel: async () => {} } });
           window.agents = agents;
-          return { networkReady: true, networkManager: { peerId: 'owner' }, getAgentController: async () => agents,
+          return { networkReady: true, networkManager: { peerId: window.fixturePeerId ?? 'owner' }, getAgentController: async () => agents,
             dispose: async () => { await agents.dispose(); await store.destroy(); calls.push('runtime-dispose'); } };
         },
         serviceFactory: (options) => { window.networkOptions = options; return {
@@ -87,8 +92,6 @@ async function fixture(t) {
       await host.ready; await new Promise((resolve) => setTimeout(resolve, 0));
     };
     await start();
-  });
-  return page;
 }
 
 test('scene lifecycle preserves identity/body/history across close and restart without an automatic model or microphone', async (t) => {
@@ -184,4 +187,81 @@ test('room conversation identity stays separate from global model discovery', as
     return { same: networkOptions.networkManager === roomManager, owner: host.getStatus().bodies[0].ownerPeerId };
   });
   assert.deepEqual(result, { same: true, owner: 'room-owner' });
+});
+
+test('live owner pose survives activity refresh and feeds public directory and private observations without journal writes', async (t) => {
+  const page = await fixture(t);
+  const result = await page.evaluate(async () => {
+    await host.spawn({ name: 'Walking Ada' });
+    const key = host.getStatus().selectedKey, id = view.selected.agentId;
+    const before = await agents.get(id);
+    bodyMap.get(key).position = [17, 3, -8];
+    const publicBody = networkOptions.listLocalAgents()[0];
+    const afterMotion = await agents.get(id);
+    await agents.update(id, { name: 'Still walking Ada' });
+    // update emits a refresh; wait for its acknowledged store read and render.
+    while (view.agents[0]?.name !== 'Still walking Ada') await new Promise((resolve) => setTimeout(resolve, 0));
+    await host.send({ key, text: 'Where are you?' });
+    return { before, afterMotion, publicBody, final: host.getStatus().bodies[0],
+      generated: calls.find((call) => call[0] === 'generate')[1] };
+  });
+  assert.deepEqual(result.publicBody.position, [17, 3, -8]);
+  assert.equal(result.afterMotion.revision, result.before.revision);
+  assert.deepEqual(result.afterMotion.embodiments[0].position, [1, 3, 5]);
+  assert.deepEqual(result.final.position, [17, 3, -8]);
+  assert.match(JSON.stringify(result.generated.messages), /17,3,-8/);
+});
+
+test('metadata and directory polling preserve the last private caption without publishing it', async (t) => {
+  const page = await fixture(t);
+  const result = await page.evaluate(async () => {
+    await host.spawn({ name: 'Ada' }); const id = view.selected.agentId, key = host.getStatus().selectedKey;
+    await host.send({ key, text: 'A private conversation.' });
+    await agents.update(id, { name: 'Still Ada' });
+    for (let count = 0; count < 200 && view.agents[0]?.name !== 'Still Ada'; count++) await new Promise((resolve) => setTimeout(resolve, 0));
+    const local = bodyMap.get(key);
+    const remote = { agentId: 'remote-agent', ownerPeerId: 'visitor-owner', name: 'Visitor', position: [2, 3, 4], color: '#aabbcc', status: 'idle' };
+    networkOptions.onDirectory([remote]); await host.openConversation('visitor-owner:remote-agent');
+    await host.send({ text: 'Another private conversation.' }); networkOptions.onDirectory([remote]);
+    return { name: local.name, localCaption: local.caption, remoteCaption: bodyMap.get('visitor-owner:remote-agent').caption,
+      published: networkOptions.listLocalAgents() };
+  });
+  assert.equal(result.name, 'Still Ada'); assert.equal(result.localCaption, 'Fixture response (not real inference).');
+  assert.equal(result.remoteCaption, 'Remote fixture response');
+  assert.equal(JSON.stringify(result.published).includes('caption'), false);
+});
+
+test('real same-origin tabs grant one local body owner and permit takeover only after owner cleanup', async (t) => {
+  const owner = await fixture(t), context = owner.context();
+  const id = await owner.evaluate(async () => {
+    await host.dispose(); window.exclusiveBodies = true; window.fixturePeerId = 'first-owner';
+    await start(); await host.spawn({ name: 'One identity' }); return view.selected.agentId;
+  });
+  const visitor = await context.newPage(), errors = [];
+  visitor.on('pageerror', (error) => errors.push(error.message));
+  await visitor.goto(origin + '/__world_fixture');
+  await visitor.evaluate(() => { window.exclusiveBodies = true; window.fixturePeerId = 'second-owner'; });
+  await visitor.evaluate(boot);
+  t.after(async () => { if (!visitor.isClosed()) { await visitor.evaluate(() => host.dispose()); await visitor.close(); } assert.deepEqual(errors, []); });
+  assert.equal(await owner.evaluate(() => host.getStatus().crossTabOwnership), true);
+  assert.deepEqual(await visitor.evaluate(() => host.getStatus().bodies), []);
+  const publicBody = await owner.evaluate(() => networkOptions.listLocalAgents()[0]);
+  await visitor.evaluate((entry) => networkOptions.onDirectory([{ ...entry, ownerPeerId: 'first-owner' }]), publicBody);
+  assert.deepEqual(await visitor.evaluate(() => host.getStatus().bodies.map(({ local, ownerPeerId }) => ({ local, ownerPeerId }))),
+    [{ local: false, ownerPeerId: 'first-owner' }]);
+  const denied = await visitor.evaluate(async (agentId) => {
+    try { await networkOptions.respond({ agentId, requesterPeerId: 'guest', prompt: 'Do not run here' }); }
+    catch (error) { return error.message; }
+  }, id);
+  assert.match(denied, /no body/);
+  // Repeated local refresh cannot create a second body while the first tab owns it.
+  await visitor.evaluate(async (agentId) => { const head = await agents.get(agentId); await agents.update(agentId, { name: head.identity.name }); }, id);
+  assert.equal(await visitor.evaluate(() => networkOptions.listLocalAgents().length), 0);
+  await owner.evaluate(() => host.dispose());
+  await visitor.evaluate(async () => { await host.dispose(); await start(); });
+  assert.deepEqual(await visitor.evaluate(() => host.getStatus().bodies.map(({ agentId, local, ownerPeerId }) => ({ agentId, local, ownerPeerId }))),
+    [{ agentId: id, local: true, ownerPeerId: 'second-owner' }]);
+  await visitor.evaluate((entry) => networkOptions.onDirectory([{ ...entry, ownerPeerId: 'first-owner' }]), publicBody);
+  assert.equal(await visitor.evaluate(() => host.getStatus().bodies.length), 1, 'old directory TTL cannot duplicate the newly owned persisted identity');
+  await visitor.evaluate(() => host.dispose()); await visitor.close();
 });
