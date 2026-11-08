@@ -1,5 +1,5 @@
 import { createInferenceRuntime } from './runtime.js';
-import { createPanelView, appendMessage, renderStoredModels, canSelectStoredModel, formatModelBytes, renderModelCompatibilityHelp } from './ui/panelView.js';
+import { createPanelView, appendMessage, renderStoredModels, canSelectStoredModel, canLoadStoredModel, formatModelBytes, renderModelCompatibilityHelp } from './ui/panelView.js';
 import { buildModelCompatibilityHelp, detectModelHelpEnvironment } from './ui/modelCompatibilityHelp.js';
 import { readImageAttachment } from './ui/imageAttachment.js';
 import { bindChatImageInput } from './ui/chatImageInput.js';
@@ -24,7 +24,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
   const encoder = new TextEncoder(), histories = new Map(), preferenceTasks = new Set();
   let runtime, operation, operationDone, requestId, attachment, imageController, imageLoading = false;
   let disposed = false, closing = false, disposingPromise, refreshPromise, refreshController, connectController, connectPromise, connectionFailure;
-  let storedPromise, storedController, storedReadSignal, loadingStoredModel = false;
+  let storedPromise, storedController, storedReadSignal, loadingStoredModel = false, deletingStoredModels = false;
   let storedRows = [], startupReading = true, imageInput, imageTransferPending = false, leaving = false;
   const selectedStored = new Set();
   let refreshTimer, sources = [], targets = [];
@@ -141,9 +141,13 @@ export async function mountInferencePanel({ container = document.body, stateMana
     if (view.configuration.open) renderMemoryUsage();
     view.storedRefresh.disabled = !!operation || !!storedController;
     for (const control of view.storedList.querySelectorAll('button,input')) control.disabled = !!operation || !!storedController || control.dataset.inactive === 'true';
-    view.storedLoadSelected.disabled = !!operation || !!storedController || !selectedStored.size;
-    view.storedSelection.textContent = `${selectedStored.size} model${selectedStored.size === 1 ? '' : 's'} selected.`;
-    view.storedCancel.hidden = !operation || !loadingStoredModel || !!loadingOperation;
+    const selectedRows = storedRows.filter((model) => selectedStored.has(model.manifestCid));
+    const loadableCount = runtime?.loadStoredModel ? selectedRows.filter(canLoadStoredModel).length : 0;
+    view.storedLoadSelected.disabled = !!operation || !!storedController || !loadableCount;
+    view.storedDeleteSelected.disabled = !!operation || !!storedController || !runtime?.deleteStoredModel || !selectedRows.length;
+    view.storedSelection.textContent = `${selectedRows.length} model${selectedRows.length === 1 ? '' : 's'} selected.`
+      + (selectedRows.length !== loadableCount ? ` ${loadableCount} ready to load.` : '');
+    view.storedCancel.hidden = !operation || !(loadingStoredModel || deletingStoredModels) || !!loadingOperation;
     view.storedCancel.disabled = Boolean(operation?.signal.aborted);
   }
   function renderSources() {
@@ -452,6 +456,13 @@ export async function mountInferencePanel({ container = document.body, stateMana
     })();
     await operationDone;
   }
+  function restoreStoredFocus(previous) {
+    if (!alive() || !modelBrowser?.isStoredOpen() || !previous
+        || (document.activeElement !== document.body && document.activeElement?.getClientRects().length)) return;
+    const control = previous.isConnected && !previous.disabled && previous.getClientRects().length
+      ? previous : view.storedContent.querySelector('button:not(:disabled)');
+    control?.focus();
+  }
   async function refreshStoredModels({ signal, preserveStatus = false, quietCancellation = false } = {}) {
     if (!alive()) return false;
     if (storedPromise) {
@@ -465,7 +476,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     const controller = new AbortController(); storedController = controller;
     const readSignal = signal ? AbortSignal.any([controller.signal, signal]) : controller.signal;
     storedReadSignal = readSignal;
-    const focusedRowControl = view.storedList.contains(document.activeElement) ? document.activeElement : null;
+    const focusedStoredControl = view.storedContent.contains(document.activeElement) ? document.activeElement : null;
     if (!preserveStatus) view.storedStatus.textContent = 'Reading stored models…'; updateControls();
     storedPromise = (async () => {
       // Publish ownership before even an already-aborted read can finish.
@@ -478,10 +489,11 @@ export async function mountInferencePanel({ container = document.body, stateMana
           storedRows = models;
           const eligible = new Set(models.filter(canSelectStoredModel).map((model) => model.manifestCid));
           for (const cid of selectedStored) if (!eligible.has(cid)) selectedStored.delete(cid);
-          renderStoredModels(view, models, deleteStoredModel, runtime.loadStoredModel ? loadStoredModel : undefined,
-            runtime.recoverStoredModel ? recoverStoredModel : undefined, unloadStoredModel, { selected: selectedStored,
+          renderStoredModels(view, models, { selected: selectedStored,
+              onRecover: runtime.recoverStoredModel ? recoverStoredModel : undefined, onUnload: unloadStoredModel,
               onSelect: (model, checked) => {
-                if (!alive() || operation || storedController || !canSelectStoredModel(model)) return;
+                if (!alive() || operation || storedController || !canSelectStoredModel(model)
+                    || !storedRows.some((entry) => entry.manifestCid === model.manifestCid)) return;
                 if (checked) selectedStored.add(model.manifestCid); else selectedStored.delete(model.manifestCid);
                 updateControls();
               } });
@@ -500,27 +512,52 @@ export async function mountInferencePanel({ container = document.body, stateMana
         storedPromise = null; storedController = null; storedReadSignal = null;
         if (alive()) {
           updateControls();
-          if (modelBrowser?.isStoredOpen() && focusedRowControl && !focusedRowControl.isConnected && document.activeElement === document.body) {
-            view.storedContent.querySelector('button:not(:disabled)')?.focus();
-          }
+          restoreStoredFocus(focusedStoredControl);
         }
       }
     })();
     return storedPromise;
   }
-  function deleteStoredModel(model) {
-    return run(async (signal) => {
-      view.storedStatus.textContent = `Deleting ${model.name}…`;
-      let result;
-      try { result = await runtime.deleteStoredModel(model.manifestCid, { signal }); }
-      catch (error) { await refreshStoredModels(); throw error; }
-      if (result.unloaded) { histories.delete(`local:${model.manifestCid}`); invalidateActions(); }
-      if (await refreshStoredModels()) {
-        const message = result.deleted ? `Deleted ${model.name}.` : 'This model is no longer stored.';
-        view.storedStatus.textContent = message + (result.freedBytes > 0 ? ` Freed ${formatModelBytes(result.freedBytes)}.` : '');
-        setStatus(message, { quiet: true });
-      }
-    });
+  async function deleteStoredModels(models) {
+    if (!alive() || operation || storedController || !runtime.deleteStoredModel) return;
+    const batch = [...new Map(models.filter(canSelectStoredModel).map((model) => [model.manifestCid, model])).values()];
+    if (!batch.length) return;
+    const previousFocus = view.storedContent.contains(document.activeElement) ? document.activeElement : null;
+    deletingStoredModels = true; view.storedCancel.textContent = 'Stop deleting';
+    try {
+      await run(async (signal) => {
+        let completed = 0, deleted = 0, freedBytes = 0, failure;
+        try {
+          for (const model of batch) {
+            signal.throwIfAborted();
+            view.storedStatus.textContent = `Deleting ${completed + 1} / ${batch.length}: ${model.name}…`;
+            const result = await runtime.deleteStoredModel(model.manifestCid, { signal });
+            // Acknowledged deletion remains completed even if Stop arrives now.
+            completed++; if (result.deleted) deleted++;
+            if (Number.isSafeInteger(result.freedBytes) && result.freedBytes > 0) freedBytes += result.freedBytes;
+            selectedStored.delete(model.manifestCid);
+            if (result.unloaded) { histories.delete(`local:${model.manifestCid}`); invalidateActions(); }
+          }
+        } catch (error) { failure = error; }
+        // Cancellation may leave a tombstone or an unloaded resident. Reconcile
+        // actual storage under a fresh read signal before releasing ownership.
+        if (storedPromise) await storedPromise;
+        const refreshed = await refreshStoredModels({ preserveStatus: true });
+        const freed = freedBytes > 0 ? ` Freed ${formatModelBytes(freedBytes)}.` : '';
+        if (failure) {
+          const error = new Error(`Completed ${completed} of ${batch.length} deletions.${freed} ${failure.message}`
+            + (refreshed ? '' : ' Use Refresh to check the stored library.'), { cause: failure });
+          error.name = failure.name; throw error;
+        }
+        if (!refreshed) throw new Error('Deletion finished, but the stored library could not be refreshed. Use Refresh to check its state.');
+        const message = batch.length === 1 ? deleted ? `Deleted ${batch[0].name}.` : 'This model is no longer stored.'
+          : `Deleted ${deleted} models.` + (deleted < completed ? ` ${completed - deleted} already absent.` : '');
+        view.storedStatus.textContent = message + freed; setStatus(message, { quiet: true });
+      });
+    } finally {
+      deletingStoredModels = false; view.storedCancel.textContent = 'Stop loading';
+      if (alive()) { updateControls(); restoreStoredFocus(previousFocus); }
+    }
   }
   async function unloadStoredModel(model) {
     if (!alive() || operation || storedController || !model.loaded) return;
@@ -548,14 +585,9 @@ export async function mountInferencePanel({ container = document.body, stateMana
       if (alive()) updateControls();
     }
   }
-  function loadStoredModel(model) {
-    if (!alive() || operation || storedController || model.loaded || model.cleanupPending || model.needsVerification) return;
-    if (sourceBlocked(model)) { showCompatibilityHelp(model); return; }
-    return loadStoredModels([model]);
-  }
   async function loadStoredModels(models) {
-    if (!alive() || operation || storedController) return;
-    const batch = [...new Map(models.filter(canSelectStoredModel).map((model) => [model.manifestCid, model])).values()];
+    if (!alive() || operation || storedController || !runtime.loadStoredModel) return;
+    const batch = [...new Map(models.filter(canLoadStoredModel).map((model) => [model.manifestCid, model])).values()];
     if (!batch.length) return;
     loadingStoredModel = true;
     let completed = false, cancelled = false;
@@ -598,7 +630,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
       loadingStoredModel = false;
       if (alive()) {
         updateControls();
-        if (completed) { modelBrowser?.close(); view.prompt.focus(); }
+        if (completed && !selectedStored.size) { modelBrowser?.close(); view.prompt.focus(); }
         else if (cancelled) void refreshStoredModels({ preserveStatus: true });
       }
     }
@@ -704,6 +736,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
   }
   view.storedRefresh.onclick = () => { void refreshStoredModels(); };
   view.storedLoadSelected.onclick = () => { void loadStoredModels(storedRows.filter((model) => selectedStored.has(model.manifestCid))); };
+  view.storedDeleteSelected.onclick = () => { void deleteStoredModels(storedRows.filter((model) => selectedStored.has(model.manifestCid))); };
   view.back.onclick = (event) => {
     event.preventDefault();
     if (alive() && !view.leaveConfirmation.open) {
@@ -858,6 +891,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     operation?.abort(new DOMException('User cancelled', 'AbortError'));
     if (voiceState.active) void voiceSession?.cancel().catch(showError);
     if (loadingStoredModel) view.storedStatus.textContent = 'Cancelling verification… Waiting for cleanup.';
+    if (deletingStoredModels) view.storedStatus.textContent = 'Cancelling deletion… Waiting for cleanup.';
     updateControls();
     if (requestId) void runtime.cancel(requestId).catch(showError);
     if (activeAgentId) void agentChat?.cancel(activeAgentId).catch(showError);

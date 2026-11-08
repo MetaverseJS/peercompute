@@ -145,7 +145,7 @@ try {
   assert.deepEqual(report.storedStartupPicker.residents, [], 'Saved packages must wait for explicit selection before loading');
   assert(Object.values(report.storedStartupPicker.services).every((status) => status === 'idle'));
   assert.equal(report.storedStartupPicker.leases, 0);
-  assert.equal(await library.getByRole('button', { name: 'Load selected models', exact: true }).isDisabled(), true);
+  assert.equal(await library.getByRole('button', { name: 'Load selected', exact: true }).isDisabled(), true);
   await snapshot('stored-startup-desktop');
   // Keep the real saved-library picker open through the normal peer refresh.
   await page.waitForTimeout(5500);
@@ -153,7 +153,7 @@ try {
   assert.equal(report.modelRequests.length, imported, 'Opening the saved-library picker must not fetch model files');
   await row.getByRole('checkbox').check();
   phase = 'explicit-stored-startup-load';
-  await library.getByRole('button', { name: 'Load selected models', exact: true }).click();
+  await library.getByRole('button', { name: 'Load selected', exact: true }).click();
   await loaded();
   report.storedSelectedLoad = await modelStatus();
   assert.equal(report.storedSelectedLoad.manifestCid, report.manifestCid, 'Explicit selection loads the remembered local package');
@@ -169,13 +169,15 @@ try {
   await openModels('Stored models', { fromMenu: true });
   await row.waitFor(); await snapshot('stored-desktop');
   phase = 'stored-load';
-  await row.getByRole('button', { name: /^Load / }).click();
+  await row.getByRole('checkbox').check();
+  await library.getByRole('button', { name: 'Load selected', exact: true }).click();
   if (verifyCancellation) {
     await page.waitForFunction(() => inferencePanel.runtime.service.getStatus().status === 'loading', null, { timeout: 30000 });
     await cancelLoad('escape', 'storedCancellation');
     assert(report.storedCancellation.retained.some((entry) => entry.manifestCid === report.manifestCid));
     assert.equal(report.modelRequests.length, imported, 'Cancelled stored load must keep its verified package and avoid downloads');
-    await row.getByRole('button', { name: /^Load / }).click();
+    await row.getByRole('checkbox').check();
+    await library.getByRole('button', { name: 'Load selected', exact: true }).click();
   }
   await loaded();
   await library.waitFor({ state: 'hidden' });
@@ -196,7 +198,8 @@ try {
   await snapshot('about-mobile'); await page.keyboard.press('Escape');
   await snapshot('loaded-mobile');
   await openModels('Stored models', { fromMenu: true });
-  await row.getByRole('button', { name: /^Delete / }).click();
+  await row.getByRole('checkbox').check();
+  await library.getByRole('button', { name: 'Delete selected', exact: true }).click();
   await page.waitForFunction(async () => (await inferencePanel.runtime.listStoredModels()).length === 0, null, { timeout: 120000 });
   await modelsReady();
   phase = 'deleted-library-fallback'; forbidModelDownloads = false;

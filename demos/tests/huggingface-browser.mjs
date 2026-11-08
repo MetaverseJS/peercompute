@@ -122,10 +122,10 @@ try {
   await retainedRow.waitFor();
   assert.equal(await page.evaluate(() => inferencePanel.runtime.service.getStatus().status), 'idle', 'Saved packages await explicit startup selection');
   await retainedRow.getByRole('checkbox').check();
-  await retainedDialog.getByRole('button', { name: 'Load selected models', exact: true }).click();
+  await retainedDialog.getByRole('button', { name: 'Load selected', exact: true }).click();
   await page.waitForFunction(() => inferencePanel.runtime.service.getStatus().status === 'ready', null, { timeout: 180000 });
   await page.getByRole('dialog', { name: 'Loading model', exact: true }).waitFor({ state: 'hidden', timeout: 30000 });
-  if (await retainedDialog.isVisible()) await retainedDialog.getByRole('button', { name: 'Done', exact: true }).first().click();
+  await retainedDialog.waitFor({ state: 'hidden' });
   report.restart = await page.evaluate(() => inferencePanel.runtime.service.getStatus());
   assert.equal(report.restart.manifestCid, manifestCid);
   report.restartGeneration = await page.evaluate(() => inferencePanel.runtime.generate('local', { messages: [{ role: 'user', content: 'Say hello.' }], maxNewTokens: 8 }));

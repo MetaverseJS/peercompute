@@ -460,7 +460,7 @@ async function runRoute(definition, options, baseUrl, expectedPeers) {
           assert.equal(await row.count(), 1, 'Only the owned, bounded SmolVLM saved package may be selected');
           await row.getByRole('checkbox').check();
           entry.explicitStoredSelection = { modelId: startupModelId, manifestCid: await row.getAttribute('data-model-cid') };
-          await dialog.getByRole('button', { name: 'Load selected models', exact: true }).click();
+          await dialog.getByRole('button', { name: 'Load selected', exact: true }).click();
         } else {
           await dialog.getByRole('button', { name: 'Done', exact: true }).click();
           entry.savedPackagesLeftUnloaded = true;

@@ -223,9 +223,10 @@ packages) opens Stored Models; it never starts a load. A successful empty read
 alone allows the existing compatible default. Read failures expose Refresh and
 never imply missing files. The remembered choice remains a browsing hint.
 
-Stored Models supports accessible per-package checkboxes and Load selected models.
-Selection is reconciled by CID on refresh; loaded, blocked, checking, deleting or
-verification-needed rows cannot be selected. A snapshot runs sequentially through
+Stored Models supports accessible per-package checkboxes and Load selected.
+Selection is reconciled by CID on refresh. All rows remain selectable for deletion;
+loaded, blocked, checking, deleting or verification-needed rows are excluded from
+loading. A snapshot of eligible choices runs sequentially through
 loadStoredModel with one cancellation signal and the existing spinner. Ordinary
 per-model failures continue; cancellation or incomplete cleanup stops remaining
 loads. Completed and preexisting residents stay. Final metadata reads share the
@@ -320,3 +321,27 @@ included in that total. Three external builds and exact internal5189/5176/5187
 desktop/mobile layout and authenticated SecretWorkshop checks pass. Provider
 discovery warnings remain visible in the pending network popup; no remote model
 execution was performed in this presentation-only acceptance.
+
+## November 7 — shared stored-model batch actions
+
+The library footer contains Load selected and Delete selected, with no per-row
+Load, Delete or Retry delete buttons. Any manifest CID is selectable regardless
+of runtime availability or recovery state. Selection displays the ready-to-load
+count when it differs; successful loads clear only the loaded selections, leaving
+ineligible choices and their library window available. Unload and Verify locally
+remain row actions. Cleanup pending rows explain how to retry Delete selected.
+
+Deletion snapshots unique selected CIDs and awaits the existing runtime delete
+operation sequentially under one panel operation owner. It stops on the first
+error or cancellation, records acknowledged results before checking the next
+abort, and reports only returned freedBytes. Stop deleting waits for cleanup;
+deletion is not rolled back. A fresh metadata read follows any older in-flight
+read and uses a fresh signal even after cancellation. Missing rows are pruned;
+failed/unstarted retained rows remain selected. Errors and partial completion
+stay visible. Cross-tab ownership, worker teardown and reference-aware file
+retention remain the runtime's responsibility, with no forced lock release.
+
+Acceptance:136native panel/browser tests pass. Three production builds and exact
+internal5189/5176/5187 desktop/mobile, footer and authenticated SecretWorkshop
+checks pass. The served console deletes two owned tiny retained fixtures through
+the native batch button; no user model data or GPU inference is involved.

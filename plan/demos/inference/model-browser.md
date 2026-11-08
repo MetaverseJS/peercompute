@@ -198,7 +198,7 @@ publication still checks actual blocks before allowing peer reads.
 Legacy retained partial manifests remain visible as Needs local verification.
 The Stored models tab offers Verify locally with streamed byte progress and cancellation,
 independently of device model compatibility. Successful verification returns the
-same CID and enables normal Load; missing/corrupt bytes report a local failure
+same CID and enables Load selected; missing/corrupt bytes report a local failure
 and remain listed. No model HTTP or GPU worker is involved. Startup preserves
 pending last-used models, and catalog/Hub acquisition cannot silently download
 another copy while that retained package needs verification.
@@ -214,3 +214,13 @@ and GPU-disabled Chrome. They cover interrupted publication, reopen, legacy
 recovery/cancel, missing/corrupt blocks, concurrent deletion and sidecar failure
 followed by retry with zero repeated weight requests. Test results and exact
 preview evidence are recorded in plan/log.md.
+
+### November 7 — stored batch action controls
+
+Stored models uses one selection for the footer Load selected and Delete selected
+actions. Loaded, unavailable and pending-verification/cleanup packages can be
+selected for deletion; only compatible complete unloaded packages are loaded.
+Per-row Unload and Verify locally remain. Failure/cancellation keeps completed
+deletions completed and retained failed/unstarted selections available for retry.
+Refresh reconciles actual storage before controls unlock. Browsing a catalog or
+Hub result still uses its detail Load button; only stored-row actions change.

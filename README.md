@@ -312,11 +312,13 @@ local chat. Sharing failures remain visible in **Models → Stored models**.
 Choices are ordered by package size, smallest first, with download size shown
 separately from RAM/GPU estimates. If any packages are stored, startup opens
 **Models** on its **Stored models** tab without loading anything. Select compatible packages and click
-**Load selected models** to add them sequentially; already loaded models stay
+**Load selected** to add them sequentially; already loaded models stay
 resident. Cancel stops the remaining batch and keeps completed loads. Ordinary
 per-model failures leave successful models usable and failed choices selected
 for an explicit retry; incomplete cleanup stops the batch. Packages needing
-verification or cleanup must finish that step before selection.
+verification or cleanup must finish that step before loading. All stored packages
+remain selectable for deletion. The selection count shows how many are ready to
+load; incompatible or already loaded selections are skipped and remain selected.
 Only an empty library downloads and loads Qwen3.5 0.8B Abliterated if supported,
 or the smallest supported catalog model. A storage-read error never starts a
 replacement download. This cancellable default attempt runs once and does not
@@ -336,12 +338,13 @@ sharing serves retained model files; hosting executes requests on the
 loaded models. Both require an active connected browser. These checkboxes
 live in the **Config** modal alongside GGUF GPU layers, connection and unload
 controls. The **Stored models** tab lists local model packages,
-sizes and loaded/shared status. **Load** adds an independent managed worker for a
-complete stored package without downloading it again; loading can be stopped in
+sizes and loaded/shared status. **Load selected** adds independent managed workers for
+complete stored packages without downloading them again; loading can be stopped in
 the dialog. **Unload** releases that model's worker while keeping its saved files.
 Retained packages left incomplete by an interrupted verification stay listed as
 **Needs local verification**. Choose **Verify locally** to check their existing
-CID blocks and file hashes, with byte progress and cancellation, then **Load**.
+CID blocks and file hashes, with byte progress and cancellation, then select the
+package and click **Load selected**.
 Verification needs no GPU or model download. Startup preserves these packages
 and the remembered selection instead of downloading a replacement. A missing or
 damaged block fails verification and leaves the package visible for recovery or
@@ -350,9 +353,14 @@ Package retries also reuse completed local files with the exact pinned SHA256
 and size, even when a catalog does not supply file CIDs. An unfinished file can
 resume during the same running import; its partial HTTP offset is not yet
 persisted across page reloads.
-**Delete** stops sharing/hosting that model,
-unloads it if needed, and frees files unused by other retained packages. Shared
+**Delete selected** processes checked packages in order, stops sharing/hosting
+each model, unloads it if needed, and frees files unused by other retained packages. Shared
 blocks and independently pinned files remain available to their other owners.
+**Stop deleting** waits for cleanup; completed deletions remain completed. An
+error stops the batch and leaves failed or untouched packages selected for retry.
+Rows marked **Cleanup pending** can be retried with **Delete selected**.
+Per-row **Unload** and **Verify locally** remain available; Load and Delete use
+the shared footer actions.
 If another tab is using the package, unload it there before retrying deletion.
 If another tab owns this library's file sharing, delete from that tab or close it
 before retrying.

@@ -49,7 +49,7 @@ async function fixture(t, options = {}) {
     selected: options.selectedKey ?? 'hf:vision', pending: [], conversionPending: [], storedCount: options.storedCount ?? 0 };
     const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const storedContent = options.storedContent ? document.createElement('section') : undefined;
-    if (storedContent) { storedContent.innerHTML = '<p>Stored fixture library</p><button type="button">Load selected models</button>'; }
+    if (storedContent) { storedContent.innerHTML = '<p>Stored fixture library</p><button type="button">Load selected</button>'; }
     window.modelBrowser = createModelBrowser({ container: document.querySelector('#root'), getSources: () => state.sources, getTargets: () => state.targets,
       storedContent, hasStoredModels: () => state.storedCount > 0,
       async onStoredOpen({ signal }) {

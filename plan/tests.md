@@ -4017,3 +4017,32 @@ This matrix supersedes the preceding ground-primitive/`zIndex` assertions.
   deterministic regression coverage. All3external builds and exact trusted
   5189/5176/5187 desktop/mobile/SecretWorkshop checksPASS. Preserve separate
   discovered-provider warnings and overview4173 destination diagnostics in log.md.
+
+### November 7 — stored batch actions
+
+- Native library controls have Load selected and Delete selected in the footer,
+  without per-row Load/Delete/Retry delete. Keep Unload/Verify locally and linked
+  checkboxes. Every retained manifest CID can be selected, including loaded,
+  incompatible, verification-needed and cleanup-pending models; only eligible selections
+  load. Deletion still works when no local load API exists.
+- Batch deletion snapshots unique CIDs, executes serially and stops on error or
+  cancellation. Verify partial success, fresh metadata reconciliation, absent-row
+  pruning, failed/unstarted selection retention, acknowledged deletion just
+  before abort, and disabled controls until delayed cleanup finishes. Repeated or
+  stale handlers must not start duplicate operations. Freed totals use returned
+  bytes, and runtime reference/ownership rules remain intact.
+- Migrate native stored lifecycle and acceptance harnesses through real checkbox
+  selection, preserving startup, verification, cancellation, explicit recovery
+  and load guards. Run focused new cases then final affected suites serially.
+- Rebuild three external previews sequentially. Check desktop/phone footer bounds
+  and exact SecretWorkshop connections; exercise Delete selected only on owned
+  tiny synthetic layout fixtures. No user model data, weight downloads or public
+  publishing. Keep existing provider and overview diagnostics separate.
+
+- Final affected native suite136/136PASS:95panel +41browser. Initial29/30
+  exposed a real footer-focus regression; focused7/7 and final full run pass
+  after bounded focus restoration. Repeated focused tests are not counted twice.
+  All3external builds and exact desktop/mobile previews pass. The real5189 UI
+  deletes two owned tiny model fixtures via native Delete selected; counts and
+  rows reconcile to zero. All test-owned processes close. See log.md for retained
+  provider and overview diagnostics; no user data or model execution was tested.

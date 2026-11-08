@@ -42,6 +42,14 @@ async function openMenuAction(page, name) {
 const rememberedModelKey = (page) => page.evaluate(() => uiState.preferredSourceKey ?? 'hf:vision');
 const libraryDialog = (page) => page.getByRole('dialog', { name: 'Models', exact: true });
 const storedPanel = (page) => libraryDialog(page).getByRole('tabpanel', { name: 'Stored models', exact: true });
+const storedChoice = (page, name) => storedPanel(page).getByRole('checkbox', { name: `Select ${name}`, exact: true });
+const storedLoad = (page) => storedPanel(page).getByRole('button', { name: 'Load selected', exact: true });
+const storedDelete = (page) => storedPanel(page).getByRole('button', { name: 'Delete selected', exact: true });
+async function selectStored(page, names) {
+  for (const name of names) await storedChoice(page, name).check();
+}
+async function loadStored(page, names) { await selectStored(page, names); await storedLoad(page).click(); }
+async function deleteStored(page, names) { await selectStored(page, names); await storedDelete(page).click(); }
 async function openModelsBrowse(page) {
   const modal = libraryDialog(page);
   if (!await modal.isVisible()) await page.getByRole('button', { name: 'Models', exact: true }).click();
@@ -106,7 +114,7 @@ async function fixture(t, scenario = {}) {
   page.on('pageerror', (error) => errors.push(error.message));
   await page.route('https://**/*', (route) => { external.push(route.request().url()); return route.abort(); });
   t.after(async () => {
-    await page.evaluate(() => { window.cleaningUpFixture = true; window.finishLoadCleanup?.(); window.releaseStoredRead?.(); return window.panel?.dispose(); }).catch(() => {});
+    await page.evaluate(() => { window.cleaningUpFixture = true; window.finishLoadCleanup?.(); window.finishDeleteCleanup?.(); window.releaseStoredRead?.(); return window.panel?.dispose(); }).catch(() => {});
     await page.close(); assert.deepEqual(errors, []); assert.deepEqual(external, []);
   });
   await page.goto(origin + '/__ui_fixture');
@@ -128,6 +136,7 @@ async function fixture(t, scenario = {}) {
       rejectLoad: !!scenario.rejectLoad, rejectAcquire: !!scenario.rejectAcquire,
       loadedCid: scenario.loaded ? 'fixture-vision' : null, preferredSourceKey: scenario.preferredSourceKey, sources: scenario.sources,
       residentCids: scenario.loaded ? ['fixture-vision'] : [],
+      failedDeleteCids: scenario.failedDeleteCids ?? [],
       peerCapacity: scenario.peerCapacity ?? {},
       availability: scenario.availability ?? {}, memoryBudgets: scenario.memoryBudgets ?? { cpuBytes: null, gpuBytes: null } };
     const state = window.uiState;
@@ -256,8 +265,19 @@ async function fixture(t, scenario = {}) {
         return state.stored.map((model) => ({ ...model, loaded: state.residentCids.includes(model.manifestCid) }));
       },
       async deleteStoredModel(cid, { signal } = {}) {
-        calls.push({ type: 'delete', cid }); await delay(scenario.deleteDelay ?? 20, signal);
-        if (state.rejectDelete) throw new Error('Model is still in use');
+        calls.push({ type: 'delete', cid });
+        try { await delay(scenario.deleteDelays?.[cid] ?? scenario.deleteDelay ?? 20, signal); }
+        catch (error) {
+          if (scenario.waitForDeleteCleanup && !window.cleaningUpFixture) {
+            state.deletingCleanup = true; calls.push({ type: 'delete-cleanup', cid });
+            await new Promise((resolve) => { window.finishDeleteCleanup = resolve; });
+            state.deletingCleanup = false;
+          }
+          if (scenario.deleteCommitsBeforeAbort) state.stored = state.stored.filter((model) => model.manifestCid !== cid);
+          throw error;
+        }
+        if (state.rejectDelete || state.failedDeleteCids.includes(cid)) throw new Error('Model is still in use');
+        if (!state.stored.some((model) => model.manifestCid === cid)) return { deleted: false, unloaded: false, freedBytes: 0 };
         const unloaded = state.loaded && cid === state.loadedCid;
         state.residentCids = state.residentCids.filter((item) => item !== cid);
         state.loadedCid = state.residentCids.at(-1) ?? null; state.loaded = !!state.loadedCid;
@@ -275,6 +295,7 @@ async function fixture(t, scenario = {}) {
         state.disposed = true;
       },
     };
+    if (scenario.noStoredLoader) delete runtime.loadStoredModel;
     let installListener;
     window.installState = { available: !!scenario.pwaAvailable, installed: false, installing: false, supported: true, instructions: 'Use your browser menu to install this app.' };
     window.emitInstall = (state) => { Object.assign(installState, state); installListener?.({ ...installState }); };
@@ -322,7 +343,7 @@ test('Models launcher and menu share one tabbed dialog and reuse the startup sto
   await models.getByRole('tab', { name: 'Stored models', exact: true }).click();
   await storedPanel(page).getByRole('status').filter({ hasNotText: 'Reading stored models…' }).waitFor();
   assert.equal(await select.isChecked(), true, 'Tab switching preserves explicit batch selections');
-  assert.equal(await models.getByRole('button', { name: 'Load selected models', exact: true }).isEnabled(), true);
+  assert.equal(await models.getByRole('button', { name: 'Load selected', exact: true }).isEnabled(), true);
   await models.getByRole('button', { name: 'Done', exact: true }).click();
   await page.getByRole('button', { name: 'Models', exact: true }).click();
   assert.equal(await models.getByRole('tab', { name: 'Stored models', exact: true }).getAttribute('aria-selected'), 'true');
@@ -375,9 +396,9 @@ test('Stored to Browse to Stored retries an aborted pending read and never prese
     uiState.stored = [{ manifestCid: 'new', name: 'Current package', totalBytes: 2048 }];
     releaseStoredRead();
   });
-  await models.getByRole('button', { name: 'Load Current package', exact: true }).waitFor();
+  await storedChoice(page, 'Current package').waitFor();
   await storedPanel(page).getByRole('status').filter({ hasText: '1 model stored.' }).waitFor();
-  assert.equal(await models.getByRole('button', { name: 'Load Old package', exact: true }).count(), 0);
+  assert.equal(await storedChoice(page, 'Old package').count(), 0);
   assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'stored-list').length), 3);
   assert.equal(await models.getByRole('tab', { name: 'Stored models', exact: true }).getAttribute('aria-selected'), 'true');
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => ['acquire', 'load-stored', 'delete'].includes(call.type))), []);
@@ -1208,23 +1229,24 @@ test('stored models list offers explicit deletion and removes a loaded package w
   await page.getByLabel('Message', { exact: true }).fill('Keep my draft');
   await openMenuAction(page, 'Models');
   const modal = page.getByRole('dialog', { name: 'Models', exact: true });
-  const vision = modal.getByRole('button', { name: 'Delete Fixture vision', exact: true });
+  const vision = storedChoice(page, 'Fixture vision');
   await vision.waitFor();
   assert.match(await modal.textContent(), /1.00 GiB · Loaded · Shared/);
   assert.equal(await page.evaluate(() => calls.some((call) => call.type === 'delete')), false);
-  await vision.click();
-  assert.equal(await modal.getByRole('button', { name: 'Delete Fixture text', exact: true }).isDisabled(), true);
+  await deleteStored(page, ['Fixture vision']);
+  assert.equal(await storedChoice(page, 'Fixture text').isDisabled(), true);
+  assert.equal(await storedDelete(page).isDisabled(), true);
   await page.waitForFunction(() => !uiState.loaded && uiState.stored.length === 1);
-  await modal.getByRole('status').filter({ hasText: 'Deleted Fixture vision.' }).waitFor();
+  await storedPanel(page).getByRole('status').filter({ hasText: /Deleted Fixture vision/ }).waitFor();
   assert.equal(await vision.count(), 0);
-  assert.equal(await modal.getByRole('button', { name: 'Delete Fixture text', exact: true }).isEnabled(), true);
+  assert.equal(await storedChoice(page, 'Fixture text').isEnabled(), true);
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'delete')), [{ type: 'delete', cid: 'fixture-vision' }]);
   await page.keyboard.press('Escape');
   assert.equal(await page.getByLabel('Message', { exact: true }).inputValue(), 'Keep my draft');
   assert.equal(await page.getByRole('button', { name: 'Send', exact: true }).isEnabled(), true, 'Mixed may still use the available peer after local deletion');
   assert.equal(await page.getByLabel('Chat target').inputValue(), 'mixed');
   await openMenuAction(page, 'Models');
-  await modal.getByRole('button', { name: 'Delete Fixture text', exact: true }).click();
+  await deleteStored(page, ['Fixture text']);
   await modal.getByText('No models stored on this device.', { exact: true }).waitFor();
 });
 
@@ -1237,9 +1259,9 @@ test('stored model read and deletion failures stay visible and retryable without
   await modal.getByText('Error: Storage is temporarily unavailable', { exact: true }).waitFor();
   await page.evaluate(() => { uiState.rejectStoredList = false; uiState.rejectDelete = true; });
   await modal.getByRole('button', { name: 'Refresh', exact: true }).click();
-  const remove = modal.getByRole('button', { name: 'Delete Fixture text', exact: true });
-  await remove.click();
-  await modal.getByText('Error: Model is still in use', { exact: true }).waitFor();
+  await selectStored(page, ['Fixture text']);
+  const remove = storedDelete(page); await remove.click();
+  await storedPanel(page).getByRole('status').filter({ hasText: /Model is still in use/ }).waitFor();
   assert.equal(await remove.isEnabled(), true);
   assert.equal(await page.evaluate(() => uiState.stored.length), 1);
   await page.evaluate(() => { uiState.rejectDelete = false; }); await remove.click();
@@ -1256,7 +1278,7 @@ test('retained pending startup guides to local verification without import or au
     availability: { 'hf:vision': pendingStoredModel.localAvailability } });
   await page.getByText(/Choose stored models to load/).waitFor();
   await page.waitForFunction(() => uiState.refreshCalls >= 3);
-  assert.equal(await libraryDialog(page).getByRole('button', { name: 'Load selected models', exact: true }).isDisabled(), true);
+  assert.equal(await libraryDialog(page).getByRole('button', { name: 'Load selected', exact: true }).isDisabled(), true);
   assert.equal(await page.evaluate(() => calls.some((call) => ['acquire', 'load-stored', 'verify-local'].includes(call.type))), false);
   const modal = page.getByRole('dialog', { name: 'Models', exact: true });
   await modal.getByRole('button', { name: 'Verify locally Saved package' }).waitFor();
@@ -1271,10 +1293,10 @@ test('Verify locally shows byte progress, retains the dialog and requires a sepa
   const modal = page.getByRole('dialog', { name: 'Models', exact: true });
   await modal.getByRole('button', { name: 'Verify locally Saved package' }).click();
   await modal.getByText(/Verifying stored model files.*1 KiB.*2 KiB/).waitFor();
-  assert.equal(await modal.getByRole('button', { name: 'Delete Saved package' }).isDisabled(), true);
+  assert.equal(await storedDelete(page).isDisabled(), true);
   await modal.getByText('Verified Saved package from local files. You can now load it.', { exact: true }).waitFor();
   assert.equal(await page.evaluate(() => calls.some((call) => ['acquire', 'load-stored'].includes(call.type))), false);
-  await modal.getByRole('button', { name: 'Load Saved package', exact: true }).click();
+  await loadStored(page, ['Saved package']);
   await page.waitForFunction(() => uiState.loaded);
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => ['verify-local', 'load-stored'].includes(call.type)).map((call) => call.type)),
     ['verify-local', 'load-stored']);
@@ -1304,7 +1326,8 @@ test('local verification cancel waits for cleanup and failed verification remain
   await failureModal.getByRole('button', { name: 'Verify locally Saved package' }).click();
   await failureModal.getByText(/Local verification failed: missing block/).waitFor();
   assert.equal(await failureModal.getByRole('button', { name: 'Verify locally Saved package' }).isEnabled(), true);
-  assert.equal(await failureModal.getByRole('button', { name: 'Delete Saved package' }).isEnabled(), true);
+  await selectStored(failed, ['Saved package']);
+  assert.equal(await storedDelete(failed).isEnabled(), true);
 });
 
 test('stored deletion stays disabled during a request and modal bounds fit mobile and desktop', async (t) => {
@@ -1319,8 +1342,9 @@ test('stored deletion stays disabled during a request and modal bounds fit mobil
       await openMenuAction(page, trigger);
       const modal = page.getByRole('dialog', { name, exact: true });
       if (name === 'Models') {
-        await modal.getByRole('button', { name: 'Delete Fixture vision', exact: true }).waitFor();
-        assert.equal(await modal.getByRole('button', { name: 'Delete Fixture vision', exact: true }).isDisabled(), true);
+        await storedChoice(page, 'Fixture vision').waitFor();
+        assert.equal(await storedChoice(page, 'Fixture vision').isDisabled(), true);
+        assert.equal(await storedDelete(page).isDisabled(), true);
       }
       const bounds = await modal.boundingBox();
       assert.ok(bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= viewport.width && bounds.y + bounds.height <= viewport.height);
@@ -1340,15 +1364,15 @@ test('interrupted deletion refreshes the actual catalog and exposes a cleanup re
   await page.evaluate(() => { uiState.cleanupFails = true; });
   await openMenuAction(page, 'Models');
   const modal = page.getByRole('dialog', { name: 'Models', exact: true });
-  await modal.getByRole('button', { name: 'Delete Fixture vision', exact: true }).click();
-  await modal.getByText('Error: Storage cleanup interrupted', { exact: true }).waitFor();
+  await deleteStored(page, ['Fixture vision']);
+  await storedPanel(page).getByRole('status').filter({ hasText: /Storage cleanup interrupted/ }).waitFor();
   assert.match(await modal.textContent(), /Cleanup pending/);
   assert.doesNotMatch(await modal.textContent(), /Loaded/);
   assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'stored-list').length), 3);
   await page.keyboard.press('Escape');
   await openMenuAction(page, 'Models');
   await page.evaluate(() => { uiState.cleanupFails = false; });
-  await modal.getByRole('button', { name: 'Retry delete Fixture vision', exact: true }).click();
+  await deleteStored(page, ['Fixture vision']);
   await modal.getByText('No models stored on this device.', { exact: true }).waitFor();
 });
 
@@ -1617,11 +1641,12 @@ test('Stored Models adds a package atomically, preserves the chosen target and r
   await selectChatTarget(page, 'peer:fixture');
   await openMenuAction(page, 'Models');
   const modal = page.getByRole('dialog', { name: 'Models', exact: true });
-  const load = modal.getByRole('button', { name: 'Load Small stored', exact: true }); await load.waitFor();
+  await storedChoice(page, 'Small stored').waitFor();
+  await selectStored(page, ['Small stored']); const load = storedLoad(page);
   assert.deepEqual(await modal.locator('.pc-stored-model strong').allTextContents(), ['Small stored', 'Fixture vision']);
   assert.equal(await modal.getByRole('button', { name: 'Unload Fixture vision', exact: true }).isEnabled(), true);
   await load.click();
-  assert.equal(await modal.getByRole('button', { name: 'Delete Fixture vision', exact: true }).isDisabled(), true);
+  assert.equal(await storedDelete(page).isDisabled(), true);
   await load.evaluate((element) => element.onclick());
   await page.waitForFunction(() => uiState.loadedCid === 'small');
   await modal.waitFor({ state: 'hidden' });
@@ -1645,8 +1670,8 @@ test('stored loading failures and cancellation remain retryable without import o
   await page.evaluate(() => { uiState.rejectLoad = true; });
   await openMenuAction(page, 'Models');
   const modal = page.getByRole('dialog', { name: 'Models', exact: true });
-  const load = modal.getByRole('button', { name: 'Load Stored model', exact: true }); await load.click();
-  await modal.getByText('Error: Stored model could not be loaded', { exact: true }).waitFor();
+  await selectStored(page, ['Stored model']); const load = storedLoad(page); await load.click();
+  await storedPanel(page).getByRole('status').filter({ hasText: /Stored model could not be loaded/ }).waitFor();
   assert.equal(await load.isEnabled(), true);
   await page.evaluate(() => { uiState.rejectLoad = false; }); await load.click();
   await page.getByRole('dialog', { name: 'Loading model', exact: true }).getByRole('button', { name: 'Cancel', exact: true }).click();
@@ -1659,7 +1684,7 @@ test('stored loading failures and cancellation remain retryable without import o
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => ['acquire', 'pin', 'unload'].includes(call.type))), []);
 });
 
-test('unavailable, deleting and loaded stored packages cannot start another load', async (t) => {
+test('unavailable, deleting and loaded stored packages are selectable but cannot start another load', async (t) => {
   const page = await fixture(t, { loaded: true, stored: [
     { manifestCid: 'fixture-vision', name: 'Resident', totalBytes: 1024 },
     { manifestCid: 'deleting', name: 'Deleting', totalBytes: 2048, cleanupPending: true },
@@ -1667,14 +1692,14 @@ test('unavailable, deleting and loaded stored packages cannot start another load
   ] });
   await openMenuAction(page, 'Models');
   const modal = page.getByRole('dialog', { name: 'Models', exact: true });
-  for (const name of ['Load Deleting', 'Load Blocked']) {
-    const button = modal.getByRole('button', { name, exact: true }); await button.waitFor();
-    assert.equal(await button.isDisabled(), true);
-    if (name !== 'Load Blocked') await button.evaluate((element) => element.onclick());
-  }
+  await selectStored(page, ['Resident', 'Deleting', 'Blocked']);
+  for (const name of ['Resident', 'Deleting', 'Blocked']) assert.equal(await storedChoice(page, name).isChecked(), true);
+  assert.equal(await storedLoad(page).isDisabled(), true);
+  assert.equal(await storedDelete(page).isEnabled(), true);
+  await storedLoad(page).evaluate((element) => element.onclick());
   assert.match(await modal.textContent(), /Needs more GPU memory/);
-  await modal.getByRole('button', { name: 'Load Blocked', exact: true }).evaluate((element) => element.onclick());
-  await page.getByRole('dialog', { name: 'Model setup', exact: true }).waitFor();
+  assert.equal(await modal.locator('.pc-stored-model').getByRole('button', { name: /^(Load |Delete |Retry delete )/ }).count(), 0);
+  assert.equal(await page.getByRole('dialog', { name: 'Model setup', exact: true }).isVisible(), false);
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => ['load-stored', 'acquire', 'unload'].includes(call.type))), []);
 });
 
@@ -1690,18 +1715,20 @@ test('Stored Models loads speech as an additional capability without dispatching
   await openMenuAction(page, 'Models');
   const modal = page.getByRole('dialog', { name: 'Models', exact: true });
   await modal.getByRole('button', { name: 'Unload Moonshine Tiny', exact: true }).waitFor();
-  assert.equal(await modal.getByRole('button', { name: 'Load Supertonic', exact: true }).isEnabled(), true);
-  assert.equal(await modal.getByRole('button', { name: 'Load Changed voice package', exact: true }).isDisabled(), true);
+  await selectStored(page, ['Changed voice package']);
+  assert.equal(await storedLoad(page).isDisabled(), true);
+  await storedChoice(page, 'Changed voice package').uncheck(); await selectStored(page, ['Supertonic']);
+  assert.equal(await storedLoad(page).isEnabled(), true);
   assert.match(await modal.textContent(), /Speech recognition.*Talk/);
   assert.match(await modal.textContent(), /differs from the pinned voice catalog/);
   assert.doesNotMatch(await modal.textContent(), /Unsupported model runtime/);
-  await modal.getByRole('button', { name: 'Load Supertonic', exact: true }).click();
+  await storedLoad(page).click();
   await modal.waitFor({ state: 'hidden' });
   assert.deepEqual(await page.evaluate(() => uiState.residentCids), ['fixture-vision', 'saved-voice']);
   assert.equal(await page.getByLabel('Chat target').inputValue(), 'mixed');
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => ['generate', 'acquire', 'unload'].includes(call.type))), []);
   await openMenuAction(page, 'Models');
-  await modal.getByRole('button', { name: 'Delete Supertonic', exact: true }).click();
+  await deleteStored(page, ['Supertonic']);
   await page.waitForFunction(() => !uiState.stored.some((model) => model.manifestCid === 'saved-voice'));
   // The storage mutation precedes acknowledged UI cleanup and library refresh.
   await modal.getByRole('button', { name: 'Unload Moonshine Tiny', exact: true }).and(page.locator(':enabled')).waitFor();
@@ -1734,7 +1761,7 @@ test('startup opens stored choices and waits for explicit loading without downlo
   await page.waitForFunction(() => uiState.refreshCalls >= 4);
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => ['acquire', 'load-stored'].includes(call.type))), []);
   await picker.getByRole('checkbox', { name: 'Select Remembered model', exact: true }).check();
-  await picker.getByRole('button', { name: 'Load selected models', exact: true }).click();
+  await picker.getByRole('button', { name: 'Load selected', exact: true }).click();
   await page.waitForFunction(() => uiState.loadedCid === 'fixture');
   await picker.waitFor({ state: 'hidden' });
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => ['load-stored', 'acquire', 'unload', 'pin'].includes(call.type))),
@@ -1780,10 +1807,10 @@ test('failed explicit stored selection reports the error without downloading or 
     startup: { sourceKey: 'hf:vision', manifestCid: 'missing', name: 'Stored model' }, rejectLoad: true, interval: 50 });
   const picker = page.getByRole('dialog', { name: 'Models', exact: true });
   await picker.getByRole('checkbox', { name: 'Select Stored model', exact: true }).check();
-  await picker.getByRole('button', { name: 'Load selected models', exact: true }).click();
+  await picker.getByRole('button', { name: 'Load selected', exact: true }).click();
   await page.waitForFunction(() => document.querySelector('.pc-inference-panel > [role=status]').textContent.includes('Stored model could not be loaded'));
   await page.waitForFunction(() => uiState.refreshCalls >= 4);
-  assert.equal(await picker.getByRole('button', { name: 'Load Stored model', exact: true }).isEnabled(), true);
+  assert.equal(await storedLoad(page).isEnabled(), true);
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => ['load-stored', 'acquire'].includes(call.type))),
     [{ type: 'load-stored', cid: 'missing', gpuLayers: 99999 }]);
   assert.equal(await picker.isVisible(), true);
@@ -1854,7 +1881,7 @@ test('overlays cover selected saved and default loads and Escape waits for cance
     if (manifestCid) {
       const picker = page.getByRole('dialog', { name: 'Models', exact: true });
       await picker.getByRole('checkbox', { name: 'Select Startup model', exact: true }).check();
-      await picker.getByRole('button', { name: 'Load selected models', exact: true }).click();
+      await picker.getByRole('button', { name: 'Load selected', exact: true }).click();
     }
     const overlay = page.getByRole('dialog', { name: 'Loading model', exact: true });
     assert.equal(await overlay.isVisible(), true);
@@ -1876,7 +1903,7 @@ test('overlays cover selected saved and default loads and Escape waits for cance
     assert.match(await page.locator('.pc-inference-panel > [role=status]').textContent(), /Cancelled:/);
     assert.equal(await page.evaluate(() => uiState.loaded), false);
     if (manifestCid) {
-      const retry = libraryDialog(page).getByRole('button', { name: 'Load Startup model', exact: true });
+      const retry = storedLoad(page);
       await retry.and(page.locator(':enabled')).waitFor();
       assert.equal(await retry.isEnabled(), true, 'Stored retry becomes available after canceled-load reconciliation');
       assert.match(await storedPanel(page).getByRole('status').textContent(), /Cancelled:/);
@@ -1890,7 +1917,7 @@ test('stored-library overlay keeps cleanup failures visible without reporting su
     loadStoredDelay: 10000, waitForLoadCleanup: true, cleanupFailure: true });
   await openMenuAction(page, 'Models');
   const library = page.getByRole('dialog', { name: 'Models', exact: true });
-  await library.getByRole('button', { name: 'Load Stored package', exact: true }).click();
+  await loadStored(page, ['Stored package']);
   const overlay = page.getByRole('dialog', { name: 'Loading model', exact: true });
   await overlay.waitFor(); assert.match(await overlay.textContent(), /Stored package/);
   await overlay.getByRole('button', { name: 'Cancel', exact: true }).click();
@@ -1898,10 +1925,12 @@ test('stored-library overlay keeps cleanup failures visible without reporting su
   assert.equal(await overlay.isVisible(), true);
   await page.evaluate(() => finishLoadCleanup()); await overlay.waitFor({ state: 'hidden' });
   assert.equal(await library.isVisible(), true);
-  await library.getByRole('button', { name: 'Load Stored package', exact: true }).and(page.locator(':enabled')).waitFor();
+  await storedLoad(page).and(page.locator(':enabled')).waitFor();
   assert.match(await library.getByRole('status').textContent(), /Error: Model cleanup is incomplete/);
   assert.doesNotMatch(await library.getByRole('status').textContent(), /Cancelled:/);
-  assert.equal(await library.evaluate((element) => element.contains(document.activeElement)), true);
+  const focus = await library.evaluate((element) => ({ inside: element.contains(document.activeElement),
+    active: document.activeElement?.outerHTML.slice(0, 512), open: element.open }));
+  assert.equal(focus.inside, true, JSON.stringify(focus));
   assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'load-stored').length), 1);
 });
 
@@ -1959,8 +1988,118 @@ const batchPackages = ['Alpha', 'Beta', 'Gamma'].map((name, index) => ({ manifes
 async function chooseBatch(page, names = ['Alpha', 'Beta', 'Gamma']) {
   const picker = libraryDialog(page);
   for (const name of names) await picker.getByRole('checkbox', { name: `Select ${name}`, exact: true }).check();
-  await picker.getByRole('button', { name: 'Load selected models', exact: true }).click();
+  await picker.getByRole('button', { name: 'Load selected', exact: true }).click();
 }
+
+test('Load selected adds only eligible packages and preserves incompatible, loaded and pending selections', async (t) => {
+  const page = await fixture(t, { keepStartupPicker: true, loaded: true, stored: [
+    { manifestCid: 'fixture-vision', name: 'Resident', totalBytes: 1 },
+    { manifestCid: 'eligible', name: 'Eligible', totalBytes: 2 },
+    { manifestCid: 'blocked', name: 'Blocked', totalBytes: 3, localAvailability: { status: 'unavailable', reason: 'Unsupported runtime' } },
+    { ...pendingStoredModel, manifestCid: 'partial' },
+    { manifestCid: 'cleanup', name: 'Cleanup', totalBytes: 5, cleanupPending: true },
+    { manifestCid: 'checking', name: 'Checking', totalBytes: 6, localAvailability: { status: 'checking' } },
+  ] });
+  const names = ['Resident', 'Eligible', 'Blocked', 'Saved package', 'Cleanup', 'Checking'];
+  await selectStored(page, names);
+  assert.equal(await storedLoad(page).isEnabled(), true); assert.equal(await storedDelete(page).isEnabled(), true);
+  assert.match(await storedPanel(page).textContent(), /6 models selected.*1 ready to load/);
+  assert.equal(await storedPanel(page).locator('.pc-stored-model').getByRole('button', { name: /^(Load |Delete |Retry delete )/ }).count(), 0);
+  await storedLoad(page).click();
+  await page.waitForFunction(() => uiState.residentCids.includes('eligible') && !document.querySelector('[aria-label="Chat options"]').disabled);
+  assert.equal(await libraryDialog(page).isVisible(), true, 'Ineligible selections remain available for explicit deletion');
+  for (const name of names.filter((item) => item !== 'Eligible')) assert.equal(await storedChoice(page, name).isChecked(), true, name);
+  assert.equal(await storedChoice(page, 'Eligible').isChecked(), false);
+  assert.equal(await storedLoad(page).isDisabled(), true);
+  await storedLoad(page).evaluate((element) => element.onclick());
+  assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'load-stored').map((call) => call.cid)), ['eligible']);
+  assert.deepEqual(await page.evaluate(() => uiState.residentCids), ['fixture-vision', 'eligible']);
+  assert.deepEqual(await page.evaluate(() => calls.filter((call) => ['delete', 'acquire', 'pin', 'unload'].includes(call.type))), []);
+});
+
+test('Delete selected accepts loaded, unsupported and incomplete packages even without a stored-load API', async (t) => {
+  const page = await fixture(t, { keepStartupPicker: true, loaded: true, noStoredLoader: true, stored: [
+    { manifestCid: 'fixture-vision', name: 'Resident', totalBytes: 1 },
+    { manifestCid: 'blocked', name: 'Blocked', totalBytes: 2, localAvailability: { status: 'unavailable' } },
+    { ...pendingStoredModel, manifestCid: 'partial' },
+    { manifestCid: 'cleanup', name: 'Cleanup', totalBytes: 4, cleanupPending: true },
+    { manifestCid: 'keep', name: 'Keep', totalBytes: 5 },
+  ] });
+  await selectStored(page, ['Resident', 'Blocked', 'Saved package', 'Cleanup']);
+  assert.equal(await storedLoad(page).isDisabled(), true); assert.equal(await storedDelete(page).isEnabled(), true);
+  await storedDelete(page).click();
+  await storedPanel(page).getByRole('status').filter({ hasText: /Deleted 4 models/ }).waitFor();
+  assert.equal(await libraryDialog(page).evaluate((element) => element.contains(document.activeElement)), true);
+  assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'delete').map((call) => call.cid)), ['fixture-vision', 'blocked', 'partial', 'cleanup']);
+  assert.deepEqual(await page.evaluate(() => uiState.stored.map((model) => model.manifestCid)), ['keep']);
+  assert.deepEqual(await page.evaluate(() => uiState.residentCids), []);
+  assert.equal(await storedChoice(page, 'Keep').isChecked(), false);
+  assert.equal(await storedDelete(page).isDisabled(), true);
+  assert.equal(await page.evaluate(() => calls.some((call) => ['load-stored', 'acquire', 'verify-local'].includes(call.type))), false);
+});
+
+test('Delete selected stops at the first failure and retries only failed or unstarted packages', async (t) => {
+  const page = await fixture(t, { keepStartupPicker: true, loaded: true, stored: batchPackages,
+    failedDeleteCids: ['beta'], deleteDelays: { alpha: 10, beta: 100 } });
+  await selectStored(page, ['Alpha', 'Beta', 'Gamma']);
+  await storedDelete(page).evaluate((element) => { window.repeatDelete = element.onclick; });
+  await storedDelete(page).click();
+  await page.evaluate(() => { repeatDelete(); repeatDelete(); });
+  const done = libraryDialog(page).getByRole('button', { name: 'Done', exact: true });
+  await done.focus();
+  await storedPanel(page).getByRole('status').filter({ hasText: /Completed 1 of 3 deletions.*Model is still in use/ }).waitFor();
+  assert.equal(await libraryDialog(page).evaluate((element) => element.contains(document.activeElement)), true);
+  assert.equal(await done.evaluate((element) => document.activeElement === element), true, 'Deletion cleanup preserves newer explicit focus');
+  assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'delete').map((call) => call.cid)), ['alpha', 'beta']);
+  assert.equal(await storedChoice(page, 'Alpha').count(), 0);
+  for (const name of ['Beta', 'Gamma']) assert.equal(await storedChoice(page, name).isChecked(), true);
+  assert.deepEqual(await page.evaluate(() => uiState.residentCids), ['fixture-vision']);
+  await page.evaluate(() => { uiState.failedDeleteCids = []; }); await storedDelete(page).click();
+  await storedPanel(page).getByText('No models stored on this device.', { exact: true }).waitFor();
+  await page.evaluate(() => repeatDelete());
+  assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'delete').map((call) => call.cid)), ['alpha', 'beta', 'beta', 'gamma']);
+  assert.equal(await page.evaluate(() => calls.some((call) => ['load-stored', 'acquire', 'unload'].includes(call.type))), false);
+});
+
+for (const committedBeforeAbort of [false, true]) test(`Stop deleting owns cleanup and reconciles actual rows when interrupted deletion ${committedBeforeAbort ? 'committed' : 'did not commit'}`, async (t) => {
+  const page = await fixture(t, { keepStartupPicker: true, loaded: true, stored: batchPackages,
+    deleteDelays: { alpha: 10, beta: 10000 }, waitForDeleteCleanup: true, deleteCommitsBeforeAbort: committedBeforeAbort });
+  await selectStored(page, ['Alpha', 'Beta', 'Gamma']); await storedDelete(page).click();
+  await page.waitForFunction(() => calls.some((call) => call.type === 'delete' && call.cid === 'beta'));
+  const stop = libraryDialog(page).getByRole('button', { name: 'Stop deleting', exact: true });
+  await stop.click(); await page.waitForFunction(() => uiState.deletingCleanup);
+  assert.equal(await stop.isDisabled(), true);
+  assert.match(await storedPanel(page).getByRole('status').textContent(), /Cancelling deletion.*Waiting for cleanup/);
+  assert.equal(await storedChoice(page, 'Gamma').isDisabled(), true);
+  assert.equal(await storedDelete(page).isDisabled(), true); assert.equal(await storedLoad(page).isDisabled(), true);
+  assert.equal(await page.getByRole('button', { name: 'Chat options', exact: true }).isDisabled(), true);
+  await storedDelete(page).evaluate((element) => element.onclick());
+  await page.evaluate(() => finishDeleteCleanup());
+  await storedPanel(page).getByRole('status').filter({ hasText: /^Cancelled:/ }).waitFor();
+  await storedChoice(page, 'Gamma').and(page.locator(':enabled')).waitFor();
+  assert.equal(await libraryDialog(page).evaluate((element) => element.contains(document.activeElement)), true);
+  assert.equal(await storedChoice(page, 'Alpha').count(), 0);
+  assert.equal(await storedChoice(page, 'Beta').count(), committedBeforeAbort ? 0 : 1);
+  if (!committedBeforeAbort) assert.equal(await storedChoice(page, 'Beta').isChecked(), true);
+  assert.equal(await storedChoice(page, 'Gamma').isChecked(), true);
+  assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'delete').map((call) => call.cid)), ['alpha', 'beta']);
+  assert.deepEqual(await page.evaluate(() => uiState.residentCids), ['fixture-vision']);
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'delete-cleanup').length), 1);
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'stored-list').length), 2);
+});
+
+test('a selected package removed elsewhere is reconciled without repeating a stale deletion handler', async (t) => {
+  const page = await fixture(t, { keepStartupPicker: true, stored: batchPackages.slice(0, 2) });
+  await selectStored(page, ['Alpha']);
+  await storedDelete(page).evaluate((element) => { window.staleDelete = element.onclick; });
+  await page.evaluate(() => { uiState.stored = uiState.stored.filter((model) => model.manifestCid !== 'alpha'); });
+  await storedDelete(page).click();
+  await storedPanel(page).getByRole('status').filter({ hasText: /no longer stored/ }).waitFor();
+  assert.equal(await storedChoice(page, 'Alpha').count(), 0); assert.equal(await storedChoice(page, 'Beta').isChecked(), false);
+  await page.evaluate(() => staleDelete());
+  assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'delete').map((call) => call.cid)), ['alpha']);
+  assert.equal(await storedDelete(page).isDisabled(), true);
+});
 
 test('stored startup includes auxiliary and blocked models, and refresh reconciles selection without loading', async (t) => {
   const page = await fixture(t, { keepStartupPicker: true, loaded: true, interval: 30, stored: [
@@ -1973,10 +2112,10 @@ test('stored startup includes auxiliary and blocked models, and refresh reconcil
   const picker = libraryDialog(page);
   assert.equal(await picker.isVisible(), true);
   for (const name of ['Already loaded', 'Saved package', 'Deleting', 'Unsupported', 'Checking']) {
-    assert.equal(await picker.getByRole('checkbox', { name: `Select ${name}`, exact: true }).isDisabled(), true);
+    assert.equal(await picker.getByRole('checkbox', { name: `Select ${name}`, exact: true }).isEnabled(), true);
   }
   assert.equal(await picker.getByRole('checkbox', { name: 'Select Voice', exact: true }).isEnabled(), true);
-  assert.equal(await picker.getByRole('button', { name: 'Load selected models', exact: true }).isDisabled(), true);
+  assert.equal(await picker.getByRole('button', { name: 'Load selected', exact: true }).isDisabled(), true);
   await picker.getByRole('checkbox', { name: 'Select Alpha', exact: true }).check();
   await picker.getByRole('checkbox', { name: 'Select Beta', exact: true }).check();
   await page.evaluate(() => { uiState.stored = uiState.stored.filter((model) => model.manifestCid !== 'beta'); });
@@ -1992,7 +2131,7 @@ test('stored startup includes auxiliary and blocked models, and refresh reconcil
     const box = await picker.boundingBox();
     assert(box.x >= 0 && box.y >= 0 && box.x + box.width <= viewport.width && box.y + box.height <= viewport.height);
     assert.equal(await picker.evaluate((element) => element.scrollWidth <= element.clientWidth), true);
-    await page.screenshot({ path: `/home/cos/.cache/peercompute-picker-inputs-20261107/stored-picker-${viewport.width}.png` });
+    await page.screenshot({ path: `/home/cos/.cache/peercompute-stored-batch-20261107/stored-picker-${viewport.width}.png` });
   }
 });
 
@@ -2003,9 +2142,10 @@ test('sequential batch keeps other residents, continues ordinary failures and re
   await picker.getByRole('status').filter({ hasText: /Loaded 2 of 3 models/ }).waitFor();
   assert.deepEqual(await page.evaluate(() => uiState.residentCids), ['fixture-vision', 'alpha', 'gamma']);
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'load-stored').map((call) => call.cid)), ['alpha', 'beta', 'gamma']);
-  assert.equal(await picker.getByRole('checkbox', { name: 'Select Alpha', exact: true }).isDisabled(), true);
+  assert.equal(await picker.getByRole('checkbox', { name: 'Select Alpha', exact: true }).isEnabled(), true);
+  assert.equal(await picker.getByRole('checkbox', { name: 'Select Alpha', exact: true }).isChecked(), false);
   assert.equal(await picker.getByRole('checkbox', { name: 'Select Beta', exact: true }).isChecked(), true);
-  await picker.getByRole('button', { name: 'Load selected models', exact: true }).click();
+  await picker.getByRole('button', { name: 'Load selected', exact: true }).click();
   await picker.getByText('Error: Stored model could not be loaded', { exact: true }).waitFor();
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'load-stored').map((call) => call.cid)), ['alpha', 'beta', 'gamma', 'beta']);
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => ['acquire', 'unload'].includes(call.type))), []);

@@ -14,6 +14,15 @@ The root node should exist on a domain secured with SSL enabling all executable 
 
 ## Project Goals:
 
+November7 stored-library batch actions: shared selection with Load selected and
+Delete selected replaces per-row Load/Delete. Any retained CID can be selected;
+load filters compatibility/verification/cleanup status independently. Preserve
+Unload and Verify locally, sequential deletion ownership, completed deletions
+and failed/unstarted selections through cancellation or failure. Reconcile actual
+storage before releasing controls, and retain reference-aware runtime deletion.
+Implemented and verified by136native tests,3builds and exact internal previews,
+including actual batch deletion of two owned tiny stored fixtures.
+
 November7 compact chat controls: Back, Models and Agents share the top row;
 an adjacent network glyph opens detailed diagnostics beside Menu. Green requires
 connected peers plus shared and hosted models; disconnected is red and incomplete
@@ -32,8 +41,8 @@ browse details. Phone details occupy the window and Done returns to unchanged
 results. Keep the saved-library batch, cancellation and deletion contracts.
 
 November7 stored-library follow-up: whenever any saved packages exist, open
-Models → Stored models at startup and wait for explicit multi-selection plus Load selected
-models. Empty storage alone permits the supported default. Sequential additions
+Models → Stored models at startup and wait for explicit multi-selection plus Load
+selected. Empty storage alone permits the supported default. Sequential additions
 preserve completed/existing residents through failure or cancellation. Paste and
 drop image bytes into the unified composer; keep text intact and fetch only
 same-origin blob images. Confirm the page back arrow and await cleanup on Leave.

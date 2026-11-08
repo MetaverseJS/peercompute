@@ -156,13 +156,14 @@ export function createPanelView(container) {
   const unload = button('Unload all local models'); settings.body.append(unload);
   const clearChat = button('Clear conversation'); settings.body.append(clearChat);
   settings.body.append(node('p', 'Clear chat history to start a new conversation while keeping the loaded model and stored files.', 'pc-inference-note'));
-  libraryBody.append(node('p', 'Load adds a model using saved files when memory is available. Unload releases that model’s memory and keeps its files. Delete also removes its stored package; shared files needed by other packages are kept.', 'pc-inference-note'));
+  libraryBody.append(node('p', 'Select models, then Load selected or Delete selected. Loading uses compatible saved packages. Deleting also unloads selected models; files needed by other packages are kept. Unload keeps saved files.', 'pc-inference-note'));
   const storedList = node('ul', undefined, 'pc-stored-models'); storedList.setAttribute('aria-label', 'Stored model packages');
   const storedRefresh = button('Refresh'), storedCancel = button('Stop loading'); storedCancel.hidden = true;
-  const storedLoadSelected = button('Load selected models'); storedLoadSelected.disabled = true;
+  const storedLoadSelected = button('Load selected'); storedLoadSelected.disabled = true;
+  const storedDeleteSelected = button('Delete selected'); storedDeleteSelected.disabled = true; storedDeleteSelected.className = 'pc-delete-model';
   const storedSelection = node('p', '0 models selected.', 'pc-inference-note'); storedSelection.setAttribute('aria-live', 'polite');
   const storedFooter = node('div', undefined, 'pc-stored-footer'), storedActions = node('div', undefined, 'pc-stored-footer-actions');
-  storedActions.append(storedLoadSelected, storedRefresh, storedCancel); storedFooter.append(storedSelection, storedActions);
+  storedActions.append(storedLoadSelected, storedDeleteSelected, storedRefresh, storedCancel); storedFooter.append(storedSelection, storedActions);
   libraryBody.append(storedList); storedContent.append(storedFooter, storedStatus);
   const transcript = node('div', undefined, 'pc-inference-transcript');
   transcript.setAttribute('role', 'log'); transcript.setAttribute('aria-label', 'Conversation'); transcript.setAttribute('aria-live', 'polite');
@@ -190,7 +191,7 @@ export function createPanelView(container) {
   const networkInfo = createNetworkStatus({ container: panel }); navigationActions.prepend(networkInfo.trigger);
   container.append(panel);
   return { panel, browse, agents, networkInfo, discoveryStatus: networkInfo.status, modelsMenu, configure, chatConfigure, chatOptions, chatOptionsStatus: chatSettings.status, sharing, hosting, status, configuration,
-    configurationStatus: settings.status, storedContent, storedList, storedRefresh, storedCancel, storedLoadSelected, storedSelection, storedStatus, gpuLayers,
+    configurationStatus: settings.status, storedContent, storedList, storedRefresh, storedCancel, storedLoadSelected, storedDeleteSelected, storedSelection, storedStatus, gpuLayers,
     leaveConfirmation: leaveWindow.element, leaveStatus: leaveWindow.status, stay, leave,
     back, menu, menuWindow, menuStatus: menuDialog.status, about, aboutButton, install,
     loading, loadingModel, loadingStatus: loadingWindow.status, loadingCancel,
@@ -221,11 +222,15 @@ export function renderModelCompatibilityHelp(view, help) {
 }
 
 export function canSelectStoredModel(model) {
-  return !!model.manifestCid && !model.loaded && !model.cleanupPending && !model.needsVerification
+  return !!model.manifestCid;
+}
+
+export function canLoadStoredModel(model) {
+  return canSelectStoredModel(model) && !model.loaded && !model.cleanupPending && !model.needsVerification
     && !['checking', 'unavailable'].includes(model.localAvailability?.status);
 }
 
-export function renderStoredModels(view, models, onDelete, onLoad, onRecover, onUnload, { selected = new Set(), onSelect } = {}) {
+export function renderStoredModels(view, models, { selected = new Set(), onSelect, onRecover, onUnload } = {}) {
   view.storedList.replaceChildren();
   if (!models.length) view.storedList.append(node('li', 'No models stored on this device.', 'pc-stored-empty'));
   for (const model of sortModelPackages(models)) {
@@ -233,7 +238,7 @@ export function renderStoredModels(view, models, onDelete, onLoad, onRecover, on
     row.dataset.modelCid = model.manifestCid;
     if (onSelect) {
       const select = node('input'); select.type = 'checkbox'; select.setAttribute('aria-label', `Select ${model.name}`);
-      select.dataset.inactive = String(!onLoad || !canSelectStoredModel(model)); select.disabled = select.dataset.inactive === 'true';
+      select.dataset.inactive = String(!canSelectStoredModel(model)); select.disabled = select.dataset.inactive === 'true';
       select.checked = !select.disabled && selected.has(model.manifestCid);
       select.onchange = () => onSelect(model, select.checked); row.append(select);
     }
@@ -246,16 +251,17 @@ export function renderStoredModels(view, models, onDelete, onLoad, onRecover, on
     if (model.task === 'automatic-speech-recognition') details.append(node('p', 'Speech recognition · used by Talk.', 'pc-inference-note'));
     if (model.task === 'text-to-speech') details.append(node('p', 'Speech synthesis · used by Speak replies.', 'pc-inference-note'));
     if (blocked) details.append(node('p', String(model.localAvailability.reason || 'This model is unavailable on this device.').slice(0, 512), 'pc-inference-note'));
-    const loadLabel = model.needsVerification ? 'Verify locally' : model.loaded ? 'Unload' : 'Load';
-    const load = button(loadLabel, `${loadLabel} ${model.name}`);
-    load.dataset.inactive = String(model.needsVerification ? Boolean(model.cleanupPending || !onRecover)
-      : model.loaded ? !onUnload : Boolean(model.cleanupPending || blocked || !onLoad));
-    load.disabled = load.dataset.inactive === 'true';
-    load.onclick = () => { if (model.needsVerification) onRecover?.(model); else if (model.loaded) onUnload?.(model); else onLoad?.(model); };
-    const removeLabel = model.cleanupPending ? 'Retry delete' : 'Delete';
-    const remove = button(removeLabel, `${removeLabel} ${model.name}`); remove.className = 'pc-delete-model';
-    const actions = node('div', undefined, 'pc-stored-actions'); actions.append(load, remove);
-    remove.onclick = () => onDelete(model); row.append(details, actions); view.storedList.append(row);
+    row.append(details);
+    if (model.cleanupPending) details.append(node('p', 'Select this model and Delete selected to retry cleanup.', 'pc-inference-note'));
+    if (model.needsVerification || model.loaded) {
+      const actionLabel = model.needsVerification ? 'Verify locally' : 'Unload';
+      const action = button(actionLabel, `${actionLabel} ${model.name}`);
+      action.dataset.inactive = String(Boolean(model.cleanupPending || (model.needsVerification ? !onRecover : !onUnload)));
+      action.disabled = action.dataset.inactive === 'true';
+      action.onclick = () => { if (model.needsVerification) onRecover?.(model); else onUnload?.(model); };
+      const actions = node('div', undefined, 'pc-stored-actions'); actions.append(action); row.append(actions);
+    }
+    view.storedList.append(row);
   }
 }
 
