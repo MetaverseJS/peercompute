@@ -373,3 +373,9 @@ cancelling its transcription. Chat options/mode changes stay disabled during tur
 The same shared console remains borrowed and management-only inside CubeChat.
 
 Verification and deployment results are recorded in plan/log.md and plan/tests.md.
+
+November 8 acceptance complete: 193 focused cases pass; all 15 demos build;
+internal and public inference/Cube Models/Earth layouts and overview pass with
+SecretWorkshop connections. The changed public application files match release
+dc655b02. Voice/prompt tests use controlled audio/inference and real DOM, routing
+and persistence; no new model-quality or GPU-performance claim is made.

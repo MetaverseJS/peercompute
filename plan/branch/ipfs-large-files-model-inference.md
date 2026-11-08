@@ -1260,3 +1260,7 @@ and ear glyphs in the bottom row with mutually exclusive output modes, hold Talk
 recording and default-on concise text/vision prompts. Preserve saved user text and
 local/peer routing. Build/publish the feature-branch Pages output and internal
 previews after native and affected-route visual/console checks. No merge to ulg.
+
+Completed and published November 8 as dc655b02: native tests, full build, internal
+and public layout/connection checks pass. Recovered the interrupted build after
+a workstation reboot without losing source changes. No merge to ulg.

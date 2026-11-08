@@ -4137,3 +4137,10 @@ failures remain in external receipts. Full15-demo production build passes; inter
 SecretWorkshop connections. Headless browser uses software rendering/WebGPU
 disabled; no weights, microphone device or user-profile data used. Public results
 follow in log.md.
+
+Final public acceptance passes the three affected routes and overview, with 26
+reviewed screenshots and actual SecretWorkshop Noise connections. All 114 HTML
+and direct-reference assets match; an additional overlapping 54-file check covers
+every changed JS/MJS/CSS/HTML release asset, including dynamic application chunks.
+Zero accepted-run runtime/request/cleanup errors. Source release dc655b02 is
+published; the evidence-only follow-up preserves its exact docs tree.
