@@ -200,6 +200,15 @@ test('agent A, agent B and direct chat retain separate context; Clear conversati
   assert.doesNotMatch(JSON.stringify(beta.messages), /Alpha secret|Direct secret|Ada private memory/);
   await agent(page, 'Ada'); await transcript(page).getByText('Reply to Alpha secret', { exact: true }).waitFor();
   assert.doesNotMatch(await transcript(page).textContent(), /Beta secret|Direct secret/);
+  const selectedAgent = await page.getByLabel('Chat target').inputValue();
+  await button(page, 'Models').click();
+  const models = page.getByRole('dialog', { name: 'Models', exact: true });
+  await models.getByRole('tab', { name: 'Stored models', exact: true }).click();
+  await models.getByRole('tab', { name: 'Browse models', exact: true }).click();
+  await models.getByRole('button', { name: 'Done', exact: true }).click();
+  assert.equal(await page.getByLabel('Chat target').inputValue(), selectedAgent);
+  assert.match(await transcript(page).textContent(), /Alpha secret/);
+  assert.doesNotMatch(await transcript(page).textContent(), /Beta secret|Direct secret/);
   await menu(page, 'Config');
   assert(await button(page, 'Clear conversation').isDisabled());
   assert.match(await button(page, 'Clear conversation').getAttribute('title'), /agent|persist|memory/i);

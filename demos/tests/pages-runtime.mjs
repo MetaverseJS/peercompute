@@ -152,12 +152,15 @@ export function modelStartupSnapshot() {
     return { name, checked: input?.checked ?? null, disabled: input?.disabled ?? null, wired: typeof input?.onchange === 'function' };
   });
   const message = panel?.querySelector(':scope > [role="status"]')?.textContent ?? '';
+  const startup = runtime?.getStartupModel?.();
+  const storedPickerOpen = [...(panel?.querySelectorAll('dialog[open]') ?? [])].some((dialog) =>
+    [...dialog.querySelectorAll('[role="tab"][aria-selected="true"]')].some((tab) => tab.textContent.trim() === 'Stored models'));
   return { loading: !!panel?.querySelector('.pc-model-loading[open]'), message,
-    sourceKey: panel?.querySelector('[aria-label="Current model"]')?.dataset.sourceKey,
-    controlsReady: [...(panel?.querySelectorAll('button') ?? [])].some((button) => button.textContent === 'Browse models' && !button.disabled),
+    sourceKey: startup?.sourceKey ?? null, startupManifestCid: startup?.manifestCid ?? null, storedPickerOpen,
+    controlsReady: [...(panel?.querySelectorAll('.pc-model-toolbar button') ?? [])].some((button) => button.textContent === 'Models' && !button.disabled),
     toggles, statuses, runtimeExposed: !!runtime, proof: services.length ? 'managed service status' : 'DOM-only embedded readiness',
     preferences: runtime?.getPreferences?.() ?? null,
-    ready: statuses.length ? statuses.some((state) => state.status === 'ready') : /^Loaded .+\. Send a message\./.test(message) };
+    ready: statuses.length ? statuses.some((state) => state.status === 'ready') : /^Loaded .+\. (?:Send a message\.|Compatible tasks can now use it\.)/.test(message) };
 }
 
 // Runs inside the actual page. Keep observations narrow: no user chats, prompts,
@@ -424,7 +427,7 @@ async function runRoute(definition, options, baseUrl, expectedPeers) {
     const budget = Math.min(240000, Math.max(1, remaining() - 20000));
     const deadline = Date.now() + budget;
     const entry = { label, startedAt: timestamp(), modelRequestsBefore: result.modelRequests.length,
-      mode: options.allowModelStartup ? 'load bounded SmolVLM package' : 'cancel automatic loading' };
+      mode: options.allowModelStartup ? 'load bounded SmolVLM package; explicitly select saved package' : 'cancel automatic loading; leave saved packages unloaded' };
     result.modelStartups.push(entry);
     await page.waitForFunction(() => {
       const labels = [...document.querySelectorAll('.pc-inference-panel label')];
@@ -440,12 +443,31 @@ async function runRoute(definition, options, baseUrl, expectedPeers) {
         input.checked = false; input.onchange();
       }
     });
-    let cancellationRequested = false;
+    let cancellationRequested = false, storedChoiceHandled = false;
     do {
       const state = await page.evaluate(modelStartupSnapshot); entry.state = state;
       const preferencesOff = state.toggles.every((input) => !input.checked && !input.disabled);
       if (/^Error:/.test(state.message)) throw new Error(`Automatic model startup failed: ${state.message}`);
       if (state.sourceKey && state.sourceKey !== `hf:${startupModelId}`) throw new Error(`Unexpected startup model ${state.sourceKey}; only ${startupModelId} is authorized by this gate`);
+      if (state.storedPickerOpen && state.controlsReady && preferencesOff && !storedChoiceHandled) {
+        const dialog = page.getByRole('dialog', { name: 'Models', exact: true });
+        assert.equal(await dialog.getByRole('tab', { name: 'Stored models', exact: true }).getAttribute('aria-selected'), 'true');
+        if (options.allowModelStartup) {
+          const row = state.startupManifestCid
+            ? dialog.locator(`[data-model-cid="${state.startupManifestCid}"]`)
+            : dialog.locator('.pc-stored-model').filter({ hasText: MODEL_CATALOG[startupModelId].name });
+          await row.waitFor({ state: 'visible' });
+          assert.equal(await row.count(), 1, 'Only the owned, bounded SmolVLM saved package may be selected');
+          await row.getByRole('checkbox').check();
+          entry.explicitStoredSelection = { modelId: startupModelId, manifestCid: await row.getAttribute('data-model-cid') };
+          await dialog.getByRole('button', { name: 'Load selected models', exact: true }).click();
+        } else {
+          await dialog.getByRole('button', { name: 'Done', exact: true }).click();
+          entry.savedPackagesLeftUnloaded = true;
+        }
+        storedChoiceHandled = true;
+        continue;
+      }
       if (!options.allowModelStartup && state.loading && !cancellationRequested) {
         cancellingModel = true; cancellationRequested = true;
         await page.locator('.pc-model-loading').getByRole('button', { name: 'Cancel', exact: true }).click();
@@ -453,8 +475,8 @@ async function runRoute(definition, options, baseUrl, expectedPeers) {
       if (!state.loading && state.controlsReady && preferencesOff) {
         if (options.allowModelStartup) assert(state.ready, `Automatic model did not become ready: ${state.message}`);
         else {
-          assert(cancellationRequested || state.ready, `No actual startup or cancellation was observed: ${state.message}`);
-          if (cancellationRequested && state.statuses.length) assert(state.statuses.every((status) => status.status === 'idle'), 'Cancellation left a resident model');
+          assert(cancellationRequested || entry.savedPackagesLeftUnloaded || state.ready, `No startup, cancellation, or saved-package choice was observed: ${state.message}`);
+          if ((cancellationRequested || entry.savedPackagesLeftUnloaded) && state.statuses.length) assert(state.statuses.every((status) => status.status === 'idle'), 'Cancellation or saved-package choice left a resident model');
         }
         if (state.preferences) assert.deepEqual(state.preferences, { sharing: false, hostInference: false });
         entry.cancelled = cancellationRequested; entry.finishedAt = timestamp();

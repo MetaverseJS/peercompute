@@ -30,12 +30,32 @@ async function ready() {
     await inferencePanel.runtime.setSharing(false);
   });
 }
-async function selected() { return page.locator('[aria-label="Current model"]').getAttribute('data-source-key'); }
+const modelsDialog = () => page.getByRole('dialog', { name: 'Models', exact: true });
+async function modelsReady() {
+  await page.waitForFunction(() => [...document.querySelectorAll('.pc-model-toolbar button')]
+    .some((button) => button.textContent === 'Models' && !button.disabled));
+}
+async function openModels(tab, { fromMenu = false } = {}) {
+  const dialog = modelsDialog();
+  if (!await dialog.isVisible()) {
+    if (fromMenu) {
+      await page.getByRole('button', { name: 'Menu', exact: true }).click();
+      await page.getByRole('dialog', { name: 'Menu', exact: true }).getByRole('button', { name: 'Models', exact: true }).click();
+    } else await page.locator('.pc-model-toolbar').getByRole('button', { name: 'Models', exact: true }).click();
+  }
+  await dialog.getByRole('tab', { name: tab, exact: true }).click();
+  return dialog;
+}
+async function retryCatalogLoad() {
+  const dialog = await openModels('Browse models');
+  await dialog.locator(`[data-model-key="hf:${modelId}"]`).click();
+  await dialog.getByRole('region', { name: 'Model details', exact: true }).getByRole('button', { name: 'Load', exact: true }).click();
+}
 async function modelStatus() { return page.evaluate(() => inferencePanel.runtime.service.getStatus()); }
 async function loaded() {
   await page.waitForFunction(() => window.inferencePanel?.runtime.service.getStatus().status === 'ready', null, { timeout: 240000 });
   await page.locator('.pc-model-loading').waitFor({ state: 'hidden', timeout: 30000 });
-  await page.waitForFunction(() => ![...document.querySelectorAll('button')].find((button) => button.textContent === 'Browse models').disabled);
+  await modelsReady();
 }
 async function cancelLoad(method, label) {
   const overlay = page.getByRole('dialog', { name: 'Loading model', exact: true });
@@ -46,7 +66,7 @@ async function cancelLoad(method, label) {
   // Cancellation is complete only after the actual runtime promise settles.
   await overlay.waitFor({ state: 'hidden', timeout: 120000 });
   await page.waitForFunction(() => inferencePanel.runtime.service.getStatus().status === 'idle', null, { timeout: 30000 });
-  await page.waitForFunction(() => ![...document.querySelectorAll('button')].find((button) => button.textContent === 'Browse models').disabled);
+  await modelsReady();
   const status = await page.locator('.pc-inference-panel > [role="status"]').innerText();
   assert(!/Error:|cleanup.*incomplete/i.test(status), status);
   report[label] = { status: await modelStatus(), message: status, method,
@@ -81,11 +101,10 @@ try {
   report.defaultStartup = await page.evaluate(() => inferencePanel.runtime.getStartupModel());
   assert.equal(report.defaultStartup.sourceKey, `hf:${modelId}`, 'The actual no-f16 fallback must be the bounded SmolVLM package');
   assert(!['unavailable', 'checking'].includes(report.defaultStartup.localAvailability.status));
-  assert.equal(await selected(), report.defaultStartup.sourceKey);
   if (verifyCancellation) {
     await cancelLoad('button', 'initialCancellation');
     phase = 'manual-retry';
-    await page.getByRole('button', { name: 'Load', exact: true }).click();
+    await retryCatalogLoad();
   }
   await loaded();
   report.initialAutoStart = { ...await modelStatus(), retriedAfterCancellation: verifyCancellation };
@@ -112,10 +131,11 @@ try {
   forbidModelDownloads = true;
   phase = 'retained-startup-picker';
   await page.reload(); await ready();
-  assert.equal(await selected(), `hf:${modelId}`, 'Reload restores the last successfully used stored model');
-  const library = page.getByRole('dialog', { name: 'Stored Models', exact: true });
+  assert.equal(await page.evaluate(() => inferencePanel.runtime.getPreferredModelSourceKey()), `hf:${modelId}`, 'Reload remembers the last successfully used stored model');
+  const library = modelsDialog();
   const row = library.locator('.pc-stored-model').filter({ hasText: 'SmolVLM 256M' });
   await library.waitFor({ state: 'visible' }); await row.waitFor();
+  assert.equal(await library.getByRole('tab', { name: 'Stored models', exact: true }).getAttribute('aria-selected'), 'true');
   const startupState = () => page.evaluate(() => ({
     residents: inferencePanel.runtime.listResidentModels(),
     services: Object.fromEntries(Object.entries(inferencePanel.runtime.services).map(([key, service]) => [key, service.getStatus().status])),
@@ -138,16 +158,15 @@ try {
   report.storedSelectedLoad = await modelStatus();
   assert.equal(report.storedSelectedLoad.manifestCid, report.manifestCid, 'Explicit selection loads the remembered local package');
   assert.equal(report.modelRequests.length, imported, 'Explicit stored selection must not fetch model files');
-  if (await library.isVisible()) await library.getByRole('button', { name: 'Done', exact: true }).click();
+  await library.waitFor({ state: 'hidden' });
   await page.getByRole('button', { name: 'Menu', exact: true }).click();
   await page.getByRole('button', { name: 'Configure model chat', exact: true }).click();
   await page.getByRole('button', { name: 'Unload all local models', exact: true }).click();
   await page.waitForFunction(() => window.inferencePanel.runtime.service.getStatus().status === 'idle');
-  await page.waitForFunction(() => ![...document.querySelectorAll('button')].find((button) => button.textContent === 'Browse models').disabled);
+  await modelsReady();
   await page.keyboard.press('Escape');
   await page.evaluate(() => { inferencePanel.runtime.services.onnx.collectGpuEvidence = true; });
-  await page.getByRole('button', { name: 'Menu', exact: true }).click();
-  await page.getByRole('button', { name: 'Stored Models', exact: true }).click();
+  await openModels('Stored models', { fromMenu: true });
   await row.waitFor(); await snapshot('stored-desktop');
   phase = 'stored-load';
   await row.getByRole('button', { name: /^Load / }).click();
@@ -159,9 +178,9 @@ try {
     await row.getByRole('button', { name: /^Load / }).click();
   }
   await loaded();
-  await library.waitFor({ state: 'hidden', timeout: 120000 });
+  await library.waitFor({ state: 'hidden' });
   assert.equal((await modelStatus()).manifestCid, report.manifestCid);
-  assert.equal(report.modelRequests.length, imported, 'Stored Models Load must not fetch model files');
+  assert.equal(report.modelRequests.length, imported, 'Stored-tab Load must not fetch model files');
   report.reply = await page.evaluate(async () => {
     const runtime = inferencePanel.runtime;
     return runtime.generate('local', { prompt: 'Say hello in one short sentence.', maxNewTokens: 16 });
@@ -176,16 +195,14 @@ try {
   const bounds = await about.boundingBox(); assert(bounds.x >= -1 && bounds.x + bounds.width <= 391);
   await snapshot('about-mobile'); await page.keyboard.press('Escape');
   await snapshot('loaded-mobile');
-  await page.getByRole('button', { name: 'Menu', exact: true }).click();
-  await page.getByRole('button', { name: 'Stored Models', exact: true }).click();
+  await openModels('Stored models', { fromMenu: true });
   await row.getByRole('button', { name: /^Delete / }).click();
   await page.waitForFunction(async () => (await inferencePanel.runtime.listStoredModels()).length === 0, null, { timeout: 120000 });
-  await page.waitForFunction(() => ![...document.querySelectorAll('button')].find((button) => button.textContent === 'Browse models').disabled);
+  await modelsReady();
   phase = 'deleted-library-fallback'; forbidModelDownloads = false;
   await page.reload(); await ready();
   report.deletedStartup = await page.evaluate(() => inferencePanel.runtime.getStartupModel());
   assert.equal(report.deletedStartup.sourceKey, `hf:${modelId}`, 'Deleting the saved model must reselect a supported catalog fallback');
-  assert.equal(await selected(), report.deletedStartup.sourceKey);
   // Prove the fallback actually starts, then cancel instead of downloading it twice.
   await cancelLoad('button', 'deletedFallbackCancellation');
   assert.deepEqual(report.unexpectedModelRequests, []);

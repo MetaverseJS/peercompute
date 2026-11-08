@@ -283,7 +283,7 @@ For an internal preview, run `npm run docs:dev` (overview4173) and
 `SSL_CERT` and `SSL_KEY` to a trusted certificate/key outside the repository for
 cross-device use. The overview's second card opens the console. The standalone
 console connects to the configured Secret Workshop backend automatically.
-Open **Browse models**, choose a catalog, stored, peer or Hugging Face package,
+Open **Models → Browse models**, choose a catalog, peer or Hugging Face package,
 then **Load**. After inspecting an original Hugging Face checkpoint, use
 **Find browser conversions** to discover publisher-linked ONNX/GGUF packages.
 Each conversion is inspected independently and stays a candidate until its
@@ -303,10 +303,10 @@ the page ends this recovery; partial HTTP transfers are not persisted for resume
 **Cancel** (or Escape) stops the load; the overlay stays visible while worker
 cleanup finishes. Completed stored packages remain available for another attempt. File sharing runs
 in the background, so preparing publication does not hold up
-local chat. Sharing failures remain visible in **Stored Models**.
+local chat. Sharing failures remain visible in **Models → Stored models**.
 Choices are ordered by package size, smallest first, with download size shown
 separately from RAM/GPU estimates. If any packages are stored, startup opens
-**Stored Models** without loading anything. Select compatible packages and click
+**Models** on its **Stored models** tab without loading anything. Select compatible packages and click
 **Load selected models** to add them sequentially; already loaded models stay
 resident. Cancel stops the remaining batch and keeps completed loads. Ordinary
 per-model failures leave successful models usable and failed choices selected
@@ -323,14 +323,14 @@ save and attach the file. No arbitrary image URL is fetched.
 The visible back arrow asks **Leave model console?** before returning to the
 demo overview. **Stay here** preserves the draft and running models; **Leave**
 waits for cleanup, keeping stored files. The top-right hamburger
-contains Stored Models, Config, About and installation controls. About opens a
+contains Models, Config, About and installation controls. About opens a
 separate modal with links to Tsotchke's Hugging Face organization,
 [tsotchke.org](https://tsotchke.org/) and [tsotchke.net](https://tsotchke.net/).
 **Share with peers** and **Host inference** start checked and are independent:
 sharing serves retained model files; hosting executes requests on the
 loaded models. Both require an active connected browser. These checkboxes
 live in the **Config** modal alongside GGUF GPU layers, connection and unload
-controls. **Stored Models** opens a separate window listing local model packages,
+controls. The **Stored models** tab lists local model packages,
 sizes and loaded/shared status. **Load** adds an independent managed worker for a
 complete stored package without downloading it again; loading can be stopped in
 the dialog. **Unload** releases that model's worker while keeping its saved files.
@@ -377,12 +377,14 @@ returning a corrupt image. GPU memory estimates describe the model budget, not
 currently free VRAM; close other GPU-heavy workloads and reload after an
 out-of-memory error.
 
-**Browse models** searches names and model-card descriptions on the public Hugging
+The **Browse models** tab searches names and model-card descriptions on the public Hugging
 Face Hub, or accepts a repository URL. Filter by source, task, selected-package
 size, precision and compatibility; results default to smallest package first.
 Search summaries show unknown size until a concrete variant is inspected.
 Details show immutable revision, exact selected files' total size, license and
-estimated RAM/GPU requirements. Metadata browsing does not download full weights.
+estimated RAM/GPU requirements. On phones, selecting a result opens full-window
+details; **Done** returns to the results with search and scroll position preserved.
+The result count shares the **Filters and sorting** row. Metadata browsing does not download full weights.
 GGUF variants inspect one bounded header on demand. **Use peer** selects an
 advertised inference target without importing its model files.
 
@@ -460,7 +462,7 @@ the chosen model/provider. The same registry and router support agent requests.
 
 Use **Talk**, then **Stop recording**, for speech recognition followed by a chat
 reply. **Speak replies** adds speech synthesis and sequential playback. Load
-Moonshine Tiny and Supertonic through Browse models, or use peers hosting those
+Moonshine Tiny and Supertonic through Models → Browse models, or use peers hosting those
 tasks. The voice controls do not download models automatically. Input is limited
 to20 seconds; long spoken responses are split into256-codepoint chunks. Stop
 cancels the entire turn, including owned microphone tracks and playback.

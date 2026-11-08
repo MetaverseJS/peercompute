@@ -3954,3 +3954,34 @@ This matrix supersedes the preceding ground-primitive/`zIndex` assertions.
   inside dialogs and changes1.0→1.1 on the scene canvas. Retain destination-only
   overview4173 development-HMR diagnostics and earlier failed resize/wheel receipts.
   Evidence: /home/cos/.cache/peercompute-picker-inputs-20261107.
+
+
+### November 7 — Models tabs and mobile details
+
+- Native browser/panel tests: one Models dialog and two correctly linked tabs,
+  automatic Stored models tab only when local packages exist, startup snapshot
+  read once, no implicit saved-model activation, and no obsolete main Load/label.
+- Keep exact-CID multi-selection, ordinary per-item failure, cleanup failure,
+  cancellation, verification, deletion and read-error behavior. Tab changes retain
+  checkbox selection and search/filter state without starting model execution.
+- Phone detail selection fills the viewport; Done/Escape returns to results and
+  their scroll/focus before closing. Desktop retains split results/details. Count
+  aligns with Filters and sorting; redundant search/package prose is absent.
+- Validate voice guidance, unified agent/direct history, keyboard focus, loading
+  overlays and existing image/back behavior through actual new Models controls.
+  Run native browser suites serially to avoid host-memory contention.
+- Rebuild console/CubeChat/Earth to new external output directories, then verify
+  exact Tailscale HTTPS URLs, phone/desktop visual bounds and authenticated
+  SecretWorkshop connections. No user profiles, model downloads, public inference
+  or GitHub Pages publication are part of this UI acceptance.
+
+- Regression evidence must include stable native result identity under50ms poll
+  stress and synchronous close/reopen request ownership. A queued old close event
+  cannot cancel the new Stored read; an aborted retained-library read is awaited
+  before a new tab open retries it with its own live signal.
+
+- Final acceptance: browser41/41, panel/voice/unified104/104, image/voice helpers
+  19/19PASS. Three external builds and exact5189/5176/5187 desktop/mobile and
+  authenticated SecretWorkshop checksPASS. Counts exclude focused repeats.
+  Preserve the full diff-size gate264>200 failure separately; the passing behavior
+  gates do not change that policy or erase initial failure receipts.

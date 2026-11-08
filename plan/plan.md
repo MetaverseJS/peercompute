@@ -14,8 +14,15 @@ The root node should exist on a domain secured with SSL enabling all executable 
 
 ## Project Goals:
 
+November7 Models consolidation: a single Models window holds Stored models and
+Browse models tabs. Stored models is the default whenever saved packages exist;
+startup continues to await explicit selection. Remove main-page Load, selected
+model label and duplicate metadata; retain model facts and compatibility help in
+browse details. Phone details occupy the window and Done returns to unchanged
+results. Keep the saved-library batch, cancellation and deletion contracts.
+
 November7 stored-library follow-up: whenever any saved packages exist, open
-Stored Models at startup and wait for explicit multi-selection plus Load selected
+Models → Stored models at startup and wait for explicit multi-selection plus Load selected
 models. Empty storage alone permits the supported default. Sequential additions
 preserve completed/existing residents through failure or cancellation. Paste and
 drop image bytes into the unified composer; keep text intact and fetch only

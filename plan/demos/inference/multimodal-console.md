@@ -259,3 +259,28 @@ hit-tests; Cube camera zoom is unchanged in dialogs and still works on its world
 canvas. No user caches, model downloads, public inference, Pages publication or
 merge occurred. The overview4173 destination has separate development-HMR
 websocket diagnostics; they do not occur on the three changed static previews.
+
+
+## November 7 — unified Models window
+
+Models now opens one browser/library dialog from the toolbar or menu. Stored
+models and Browse models are accessible tabs; saved packages make Stored models
+the default, including the startup picker. The startup snapshot is reused instead
+of issuing a second metadata read. Exact-CID batch loading, cancellation, local
+verification and deletion continue through the same library controller. The main
+page keeps Models and Agents, without a separate Load, selected-package label or
+metadata/help strip. Compatibility and package details remain in Browse models.
+
+Search has an accessible label/placeholder without the redundant visible helper
+paragraphs; result count shares the Filters and sorting row. Phone results and
+full-window details are separate views. Done/Escape returns from details to the
+same filtered results and scroll position before closing the whole dialog.
+Desktop details remain alongside results. Tests and internal previews must cover
+both views, stored startup and tab selection persistence before acceptance.
+
+Acceptance:41browser,104panel/voice/history and19image/voice-helper native tests
+pass without double-counting focused repeats. Three builds and exact internal
+5189/5176/5187 desktop/phone/SecretWorkshop checks pass. Stable keyed rows preserve
+native clicks during discovery; synchronous close ownership protects a reopened
+Stored view. The generic diff-size gate remains flagged and is recorded with
+the reviewed requested removals in log.md; no policy threshold was changed.

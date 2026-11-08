@@ -1226,3 +1226,5 @@ ownership explicit, and qualify this using the actual private vision worker.
 ### November 7 — stored picker, image input and navigation
 
 User requests multi-select saved packages with **Load selected models**, opening this library on startup whenever any saved model exists. Empty storage alone retains compatible default loading. Paste/drop images on Message through the bounded attachment pipeline, preserving draft text and avoiding pasted blob URL strings. Confirm the page back arrow with Stay here/Leave; retain sessions until confirmed cleanup. Keep existing models resident across sequential additions and cancellation.
+
+- 2026-11-07 Models consolidation: replace main Load/current-model label with a single Models entry (also in the menu). Stored models becomes a tab, default when retained packages exist, with existing multi-select/additive loading and deletion preserved; Browse models supplies discovery. Remove crowded search/package helper prose, place count with Filters and sorting, and show phone details full-window with Done returning to results. Internal previews only; no Pages publication requested in this slice.

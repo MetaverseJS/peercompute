@@ -25,7 +25,7 @@ before(async () => {
 after(async () => { await browser?.close(); await server?.close(); });
 
 async function fixture(t, options = {}) {
-  const page = await browser.newPage({ viewport: { width: 1150, height: 950 } });
+  const page = await browser.newPage({ viewport: options.viewport ?? { width: 1150, height: 950 } });
   const errors = [], requests = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.route('https://**/*', (route) => { requests.push(route.request().url()); return route.abort(); });
@@ -46,9 +46,18 @@ async function fixture(t, options = {}) {
     ], targets: [{ key: 'local', local: true, available: false }, { key: 'peer:large', name: 'Large text', local: false, available: true, busy: true, providerCount: 2 }],
     searchMode: options.searchMode, inspectMode: options.inspectMode, extraVariant: options.extraVariant,
     conversionMode: options.conversionMode, unsupportedOriginal: options.unsupportedOriginal,
-    selected: options.selectedKey ?? 'hf:vision', pending: [], conversionPending: [] };
+    selected: options.selectedKey ?? 'hf:vision', pending: [], conversionPending: [], storedCount: options.storedCount ?? 0 };
     const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const storedContent = options.storedContent ? document.createElement('section') : undefined;
+    if (storedContent) { storedContent.innerHTML = '<p>Stored fixture library</p><button type="button">Load selected models</button>'; }
     window.modelBrowser = createModelBrowser({ container: document.querySelector('#root'), getSources: () => state.sources, getTargets: () => state.targets,
+      storedContent, hasStoredModels: () => state.storedCount > 0,
+      async onStoredOpen({ signal }) {
+        calls.push({ type: 'stored-open' });
+        signal.addEventListener('abort', () => calls.push({ type: 'stored-abort' }), { once: true });
+        if (options.pendingStored) await new Promise((resolve) => { window.finishStored = resolve; });
+        if (options.storedError) throw new Error('Stored metadata unavailable');
+      },
       getCompatibility: (source) => source.localAvailability ?? { status: 'unknown', code: 'memory_fit_unverified', cpuBytes: 1024 ** 3, gpuBytes: 2 * 1024 ** 3 },
       findConversions: options.conversions ? async (reference, { signal }) => {
         const repository = reference.startsWith('https://') ? new URL(reference).pathname.split('/').filter(Boolean).slice(0, 2).join('/') : reference;
@@ -99,14 +108,15 @@ async function fixture(t, options = {}) {
             ? variants.map((variant) => variant.key === selectedVariant || variant.key === 'split' ? variant
               : { ...variant, loadable: false, requiresInspection: true, reason: 'Select this variant to inspect its bounded GGUF header.' }) : variants };
       },
-      onLoad: (source) => calls.push({ type: 'load', source }), onUsePeer: (key) => calls.push({ type: 'peer', key }), onSetup: (source) => calls.push({ type: 'setup', key: source.key }),
+      onLoad: (source) => calls.push({ type: 'load', source }), onUsePeer: (key) => calls.push({ type: 'peer', key }),
+      onSetup: (source) => { calls.push({ type: 'setup', key: source.key }); if (options.reopenStoredOnSetup) modelBrowser.open({ tab: 'stored' }); },
     });
     document.querySelector('#browse').onclick = () => modelBrowser.open({ selectedKey: state.selected });
   }, options);
   await page.locator('#browse').click();
   return page;
 }
-const dialog = (page) => page.getByRole('dialog', { name: 'Browse models', exact: true });
+const dialog = (page) => page.getByRole('dialog', { name: 'Models', exact: true });
 const rows = (page) => dialog(page).locator('[data-model-key]');
 async function choose(page, key) { await dialog(page).locator('[data-model-key]').filter({ has: page.locator('strong') }).evaluateAll((items, key) => items.find((item) => item.dataset.modelKey === key)?.click(), key); }
 async function searchFor(page, query) {
@@ -114,6 +124,184 @@ async function searchFor(page, query) {
   await page.getByRole('searchbox', { name: 'Search models' }).press('Enter');
   await page.waitForFunction(() => !document.querySelector('.pc-browser-status').textContent.includes('Searching'));
 }
+
+test('one Models dialog defaults to Stored for a retained library and Browse for empty storage', async (t) => {
+  const stored = await fixture(t, { storedContent: true, storedCount: 2 });
+  assert.equal(await stored.getByRole('dialog').count(), 1);
+  assert.equal(await dialog(stored).getByRole('tab', { name: 'Stored models', exact: true }).getAttribute('aria-selected'), 'true');
+  assert.equal(await dialog(stored).getByRole('tabpanel', { name: 'Stored models', exact: true }).isVisible(), true);
+  assert.equal(await stored.evaluate(() => modelBrowser.isStoredOpen()), true);
+  assert.equal(await stored.evaluate(() => calls.filter((call) => call.type === 'stored-open').length), 1);
+  assert.deepEqual(await stored.evaluate(() => calls.filter((call) => ['search', 'load', 'inspect'].includes(call.type))), []);
+  await dialog(stored).getByRole('tab', { name: 'Browse models', exact: true }).click();
+  assert.equal(await stored.evaluate(() => modelBrowser.getActiveTab()), 'browse');
+  assert.equal(await stored.getByRole('searchbox', { name: 'Search models' }).isVisible(), true);
+  const empty = await fixture(t, { storedContent: true });
+  assert.equal(await empty.evaluate(() => modelBrowser.getActiveTab()), 'browse');
+  assert.equal(await empty.evaluate(() => calls.filter((call) => call.type === 'stored-open').length), 0);
+  assert.equal(await dialog(empty).locator('.pc-browser-summary').textContent(), '4 models');
+  assert.equal(await dialog(empty).locator('.pc-browser-filters summary .pc-browser-summary').count(), 1);
+  assert.doesNotMatch(await dialog(empty).textContent(), /Package bytes are|Search by name or description|Search names, descriptions/);
+  assert.equal(await empty.getByLabel('Package size', { exact: true }).count(), 1);
+});
+
+test('Models tabs use native accessible selection with Arrow, Home and End focus movement', async (t) => {
+  const page = await fixture(t, { storedContent: true });
+  const browse = dialog(page).getByRole('tab', { name: 'Browse models', exact: true });
+  const stored = dialog(page).getByRole('tab', { name: 'Stored models', exact: true });
+  await browse.focus(); await page.keyboard.press('ArrowRight');
+  assert.equal(await stored.evaluate((element) => document.activeElement === element), true);
+  assert.equal(await stored.getAttribute('aria-selected'), 'true'); assert.equal(await browse.getAttribute('tabindex'), '-1');
+  await page.keyboard.press('End'); assert.equal(await browse.getAttribute('aria-selected'), 'true');
+  await page.keyboard.press('Home'); assert.equal(await stored.getAttribute('aria-selected'), 'true');
+  await page.keyboard.press('ArrowLeft'); assert.equal(await browse.getAttribute('aria-selected'), 'true');
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'stored-open').length), 2);
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'search').length), 0);
+});
+
+test('cached stored startup and polling do not repeat stored reads; closing aborts a late stored callback', async (t) => {
+  const page = await fixture(t, { storedContent: true, pendingStored: true, storedError: true });
+  await page.evaluate(() => modelBrowser.open({ tab: 'stored', refreshStored: false }));
+  assert.equal(await page.evaluate(() => modelBrowser.isStoredOpen()), true);
+  await page.evaluate(() => { modelBrowser.refresh(); modelBrowser.setBusy(false); });
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'stored-open').length), 0);
+  await dialog(page).getByRole('tab', { name: 'Browse models', exact: true }).click();
+  await dialog(page).getByRole('tab', { name: 'Stored models', exact: true }).click();
+  await page.waitForFunction(() => typeof finishStored === 'function');
+  await page.evaluate(() => modelBrowser.close());
+  assert.equal(await page.evaluate(() => modelBrowser.isStoredOpen()), false);
+  await page.waitForFunction(() => calls.some((call) => call.type === 'stored-abort'));
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'stored-abort').length), 1);
+  await page.evaluate(() => finishStored()); await page.waitForTimeout(20);
+  assert.equal(await dialog(page).isVisible(), false);
+  await page.evaluate(() => modelBrowser.open({ tab: 'stored', refreshStored: false }));
+  assert.doesNotMatch(await dialog(page).textContent(), /Stored models unavailable/);
+});
+
+test('mobile details fill the window and Done returns to the same results, query, filters, scroll and selection', async (t) => {
+  const page = await fixture(t, { storedContent: true, viewport: { width: 390, height: 844 } });
+  await page.evaluate(() => {
+    state.sources = Array.from({ length: 40 }, (_, index) => ({ key: `entry:${index}`, name: `Entry ${String(index).padStart(2, '0')}`,
+      source: 'hf', task: 'text-generation', totalBytes: 1000 + index, dtype: 'q4', localAvailability: { status: 'unknown' } }));
+    modelBrowser.refresh();
+  });
+  await dialog(page).locator('.pc-browser-filters summary').click();
+  await page.getByLabel('Source', { exact: true }).selectOption('catalog');
+  await page.getByLabel('Sort models', { exact: true }).selectOption('name');
+  await page.getByRole('searchbox', { name: 'Search models' }).fill('Entry');
+  await dialog(page).locator('.pc-browser-filters summary').click();
+  const row = dialog(page).locator('[data-model-key="entry:20"]'); await row.scrollIntoViewIfNeeded();
+  const before = await dialog(page).locator('.pc-browser-results').evaluate((element) => element.scrollTop);
+  await row.click();
+  const details = dialog(page).getByRole('region', { name: 'Model details', exact: true });
+  const box = await dialog(page).boundingBox(), detailBox = await details.boundingBox();
+  assert.equal(box.x, 0); assert.equal(box.y, 0); assert.equal(box.width, 390); assert.equal(box.height, 844);
+  assert(detailBox.height > 650); assert.equal(await page.getByRole('searchbox', { name: 'Search models' }).isVisible(), false);
+  assert.equal(await dialog(page).getByRole('tab', { name: 'Browse models', exact: true }).isVisible(), false);
+  const action = await dialog(page).getByRole('button', { name: 'Load', exact: true }).boundingBox();
+  assert(action.y + action.height <= 844);
+  const directory = process.env.MODEL_BROWSER_SCREENSHOTS || '/tmp/peercompute-model-browser-ui'; await mkdir(directory, { recursive: true });
+  await page.screenshot({ path: `${directory}/mobile-full-details.png` });
+  await dialog(page).getByRole('button', { name: 'Done', exact: true }).click();
+  assert.equal(await dialog(page).isVisible(), true); assert.equal(await details.isVisible(), false);
+  assert.equal(await page.getByRole('searchbox', { name: 'Search models' }).inputValue(), 'Entry');
+  assert.equal(await page.getByLabel('Source', { exact: true }).inputValue(), 'catalog');
+  assert.equal(await page.getByLabel('Sort models', { exact: true }).inputValue(), 'name');
+  assert.equal(await row.getAttribute('aria-pressed'), 'true');
+  assert.equal(await row.evaluate((element) => document.activeElement === element), true);
+  assert(Math.abs(await dialog(page).locator('.pc-browser-results').evaluate((element) => element.scrollTop) - before) <= 1);
+  await page.evaluate(() => { modelBrowser.refresh(); modelBrowser.setBusy(false); });
+  assert.equal(await details.isVisible(), false, 'background refresh must not reopen mobile details');
+  await page.screenshot({ path: `${directory}/mobile-results-return.png` });
+  await row.click(); await page.keyboard.press('Escape');
+  assert.equal(await dialog(page).isVisible(), true); assert.equal(await details.isVisible(), false);
+  await page.keyboard.press('Escape'); assert.equal(await dialog(page).isVisible(), false);
+  assert.equal(await page.locator('#browse').evaluate((element) => document.activeElement === element), true);
+});
+
+test('switching Stored and Browse preserves browse scroll and selection without opening details or starting new searches', async (t) => {
+  const page = await fixture(t, { storedContent: true });
+  await page.evaluate(() => {
+    state.sources.push(...Array.from({ length: 30 }, (_, index) => ({ key: `extra:${index}`, name: `Extra ${index}`, source: 'hf', totalBytes: 10000000 + index })));
+    modelBrowser.refresh();
+  });
+  await choose(page, 'extra:20');
+  const list = dialog(page).locator('.pc-browser-results'); await list.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  const before = await list.evaluate((element) => element.scrollTop);
+  await dialog(page).getByRole('tab', { name: 'Stored models', exact: true }).click();
+  await page.evaluate(() => modelBrowser.refresh());
+  await dialog(page).getByRole('tab', { name: 'Browse models', exact: true }).click();
+  assert.equal(await list.evaluate((element) => element.scrollTop), before);
+  assert.equal(await dialog(page).locator('[data-model-key="extra:20"]').getAttribute('aria-pressed'), 'true');
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'search').length), 0);
+});
+
+test('late mobile inspection updates metadata without reopening details after Done', async (t) => {
+  const page = await fixture(t, { inspectMode: 'pending', viewport: { width: 390, height: 844 } });
+  await searchFor(page, 'https://huggingface.co/fixture/model'); await choose(page, 'hub:fixture/model');
+  await page.waitForFunction(() => typeof finishInspect === 'function');
+  assert.equal(await dialog(page).getByRole('region', { name: 'Model details', exact: true }).isVisible(), true);
+  await dialog(page).getByRole('button', { name: 'Done', exact: true }).click();
+  await page.evaluate(() => finishInspect());
+  await page.waitForFunction(() => !document.querySelector('.pc-browser-status').textContent.includes('Inspecting'));
+  assert.equal(await dialog(page).isVisible(), true);
+  assert.equal(await dialog(page).getByRole('region', { name: 'Model details', exact: true }).isVisible(), false);
+  assert.equal(await dialog(page).locator('[aria-pressed="true"]').getAttribute('data-model-key'), 'hub:fixture/model');
+});
+
+test('Setup help can reopen the same Models dialog on Stored without the old close event aborting its new read', async (t) => {
+  const page = await fixture(t, { storedContent: true, pendingStored: true, reopenStoredOnSetup: true });
+  await choose(page, 'peer:large');
+  await dialog(page).getByRole('button', { name: 'Setup help', exact: true }).click();
+  await page.waitForFunction(() => typeof finishStored === 'function');
+  await page.waitForTimeout(50);
+  assert.equal(await page.evaluate(() => modelBrowser.isStoredOpen()), true);
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'stored-abort').length), 0);
+  assert.equal(await dialog(page).evaluate((element) => element.contains(document.activeElement)), true);
+  await page.evaluate(() => finishStored());
+});
+
+test('same-turn close and reopen cancels the previous metadata owner synchronously without cancelling its replacement', async (t) => {
+  const page = await fixture(t, { storedContent: true, pendingStored: true });
+  await dialog(page).getByRole('tab', { name: 'Stored models', exact: true }).click();
+  await page.waitForFunction(() => typeof finishStored === 'function');
+  const abortsBeforeReopen = await page.evaluate(() => {
+    window.finishFirstStored = finishStored;
+    modelBrowser.close();
+    const count = calls.filter((call) => call.type === 'stored-abort').length;
+    modelBrowser.open({ tab: 'stored' });
+    return count;
+  });
+  assert.equal(abortsBeforeReopen, 1);
+  await page.waitForFunction(() => calls.filter((call) => call.type === 'stored-open').length === 2);
+  await page.waitForTimeout(50);
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'stored-abort').length), 1);
+  assert.equal(await page.evaluate(() => modelBrowser.isStoredOpen()), true);
+  await page.evaluate(() => { finishFirstStored(); finishStored(); });
+});
+
+test('unchanged result nodes stay attached during 50ms polling while changed rows and native mobile selection update', async (t) => {
+  const page = await fixture(t, { viewport: { width: 390, height: 844 } });
+  await page.evaluate(() => {
+    window.originalPeerRow = document.querySelector('[data-model-key="peer:large"]');
+    window.pollBrowser = setInterval(() => modelBrowser.refresh(), 50);
+  });
+  t.after(async () => { if (!page.isClosed()) await page.evaluate(() => clearInterval(pollBrowser)); });
+  await page.waitForTimeout(160);
+  assert.equal(await page.evaluate(() => originalPeerRow.isConnected
+    && originalPeerRow === document.querySelector('[data-model-key="peer:large"]')), true);
+  await dialog(page).locator('[data-model-key="peer:large"]').click();
+  assert.equal(await dialog(page).getByRole('region', { name: 'Model details', exact: true }).isVisible(), true);
+  await dialog(page).getByRole('button', { name: 'Done', exact: true }).click();
+  await page.evaluate(() => {
+    window.selectedPeerRow = document.querySelector('[data-model-key="peer:large"]');
+    state.sources.find((source) => source.key === 'hf:vision').name = 'Updated vision'; modelBrowser.refresh();
+  });
+  assert.equal(await page.evaluate(() => selectedPeerRow === document.querySelector('[data-model-key="peer:large"]')), true);
+  assert.match(await dialog(page).locator('[data-model-key="hf:vision"]').textContent(), /Updated vision/);
+  assert.equal(await page.evaluate(() => document.activeElement === selectedPeerRow), true);
+  await page.evaluate(() => clearInterval(pollBrowser));
+});
 
 test('opening and periodic refresh are metadata-free, size sorted and keep selection and focused result', async (t) => {
   const page = await fixture(t);
@@ -601,7 +789,9 @@ test('conversion publishers and lineage wrap on desktop/mobile while Load remain
   assert.match(await related(page).textContent(), /Offline metadata.*cached conversion metadata/);
   const directory = process.env.MODEL_BROWSER_SCREENSHOTS || '/tmp/peercompute-model-browser-ui'; await mkdir(directory, { recursive: true });
   for (const [name, viewport] of [['desktop', { width: 1440, height: 1000 }], ['mobile', { width: 390, height: 844 }]]) {
-    await page.setViewportSize(viewport); await conversion.scrollIntoViewIfNeeded();
+    await page.setViewportSize(viewport);
+    if (name === 'mobile') await choose(page, 'hub:fixture/original');
+    await conversion.scrollIntoViewIfNeeded();
     assert.equal(await dialog(page).evaluate((element) => element.scrollWidth <= element.clientWidth), true);
     assert.equal(await conversion.evaluate((element) => element.scrollWidth <= element.clientWidth), true);
     const action = await dialog(page).getByRole('button', { name: 'Load', exact: true }).boundingBox(), box = await dialog(page).boundingBox();
@@ -636,6 +826,7 @@ test('desktop/mobile dialog wraps long content, traps focus and produces owned U
     const row = dialog(page).locator('[data-model-key="hf:vision"]');
     assert.equal(await row.evaluate((element) => getComputedStyle(element).whiteSpace), 'normal');
     assert.equal(await row.evaluate((element) => element.scrollWidth <= element.clientWidth), true);
+    if (name === 'mobile') await choose(page, 'hf:vision');
     const action = await dialog(page).getByRole('button', { name: 'Load', exact: true }).boundingBox();
     assert.ok(action && action.y >= box.y && action.y + action.height <= box.y + box.height, 'Load remains visible below scrolling details');
     await dialog(page).getByRole('button', { name: 'Done', exact: true }).focus(); await page.keyboard.press('Shift+Tab');

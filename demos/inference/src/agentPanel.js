@@ -24,7 +24,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
   const encoder = new TextEncoder(), histories = new Map(), preferenceTasks = new Set();
   let runtime, operation, operationDone, requestId, attachment, imageController, imageLoading = false;
   let disposed = false, closing = false, disposingPromise, refreshPromise, refreshController, connectController, connectPromise, connectionFailure;
-  let storedPromise, storedController, loadingStoredModel = false;
+  let storedPromise, storedController, storedReadSignal, loadingStoredModel = false;
   let storedRows = [], startupReading = true, imageInput, imageTransferPending = false, leaving = false;
   const selectedStored = new Set();
   let refreshTimer, sources = [], targets = [];
@@ -40,15 +40,8 @@ export async function mountInferencePanel({ container = document.body, stateMana
   let voiceState = { status: 'idle', active: false, recording: false };
   const alive = () => !disposed && !closing;
   const sourceBlocked = (source) => ['checking', 'unavailable'].includes(source?.localAvailability?.status);
-  const sourceLabel = (source) => source.source === 'hf' ? 'Hugging Face'
-    : source.source === 'stored' ? 'Stored on this device' : 'Peers';
   const sourceReason = (source) => String(source?.localAvailability?.reason
     || (source?.localAvailability?.status === 'checking' ? 'Checking this device…' : 'Unavailable on this device.')).slice(0, 512);
-  const memoryEstimate = (source) => {
-    const amount = (bytes) => Number.isFinite(bytes) && bytes > 0 && bytes <= 1024 ** 4
-      ? `${Number((bytes / 1024 ** 3).toFixed(1))} GiB` : 'unknown';
-    return `est. RAM ${amount(source?.localAvailability?.cpuBytes)} / GPU ${amount(source?.localAvailability?.gpuBytes)}`;
-  };
   const requestTask = () => view.generateImage.checked ? 'text-to-image' : attachment ? 'image-text-to-text' : 'text-generation';
   const agentIdFor = (key) => typeof key === 'string' && key.startsWith('agent:') ? key.slice(6) : null;
   const agentBlockReason = (head) => !head ? 'This agent is unavailable.'
@@ -90,7 +83,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
       + (/context budget/i.test(error.message) ? '. Use Config → Clear conversation to start again, or shorten the prompt.' : '');
     view.status.textContent = message;
     if (view.configuration.open) view.configurationStatus.textContent = message;
-    if (view.storedModels.open) view.storedStatus.textContent = message;
+    if (modelBrowser?.isStoredOpen()) view.storedStatus.textContent = message;
   };
   const scrollTranscript = () => {
     while (view.transcript.children.length > 24 || encoder.encode(view.transcript.textContent).byteLength > 128 * 1024) view.transcript.firstElementChild?.remove();
@@ -99,12 +92,11 @@ export async function mountInferencePanel({ container = document.body, stateMana
   };
   function updateControls() {
     const target = selectedTarget();
-    const source = sources.find((entry) => entry.key === desiredSourceKey);
     view.prompt.placeholder = view.generateImage.checked ? 'Describe an image…' : 'Message…';
-    view.acquire.disabled = startupReading || !!operation || !source || sourceBlocked(source);
-    view.browse.disabled = startupReading || !!operation; modelBrowser?.setBusy(startupReading || !!operation);
+    view.browse.disabled = startupReading || !!operation;
+    view.modelsMenu.disabled = startupReading || !!loadingOperation;
+    modelBrowser?.setBusy(startupReading || !!operation);
     view.agents.disabled = !!operation || !!openingAgents || !runtime?.getAgentController;
-    view.sourceHelp.disabled = !!operation;
     view.cpuBudget.disabled = view.gpuBudget.disabled = !!operation || !runtime?.setMemoryBudgets;
     const attachmentConflict = view.generateImage.checked && !!attachment;
     view.send.disabled = !!operation || historyLoading || imageLoading || imageTransferPending || attachmentConflict || !hasCapacity(target, requestTask()) || (!view.prompt.value.trim() && !attachment);
@@ -144,10 +136,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     if (!desiredSourceKey) desiredSourceKey = runtime.getPreferredModelSourceKey?.()
       ?? sources.find((entry) => entry.modelId === 'smolvlm-256m-q4' && entry.source === 'hf')?.key
       ?? sources.find((entry) => !sourceBlocked(entry))?.key ?? sources[0]?.key;
-    const selected = sources.find((entry) => entry.key === desiredSourceKey);
-    view.currentModel.textContent = selected ? `${selected.name} · ${sourceLabel(selected)}` : 'Choose a model';
-    view.currentModel.dataset.sourceKey = selected?.key ?? '';
-    renderSourceStatus(); modelBrowser?.refresh(); updateControls();
+    modelBrowser?.refresh(); updateControls();
   }
   function renderHelp() {
     if (!helpSource) return;
@@ -159,21 +148,13 @@ export async function mountInferencePanel({ container = document.body, stateMana
   function showCompatibilityHelp(source) {
     if (!alive() || operation) return;
     if (source.needsVerification || source.localAvailability?.code === 'model_verification_required') {
-      view.stored.click(); return;
+      openModels({ tab: 'stored' }); return;
     }
     helpSource = { ...source, localAvailability: source.localAvailability ?? runtime.getModelCompatibility?.(source.package ?? source) };
     const environment = detectModelHelpEnvironment();
     view.helpBrowser.value = environment.browser; view.helpOs.value = environment.os;
-    renderHelp(); view.menuWindow.close(); view.configuration.close(); view.storedModels.close(); view.about.close();
+    renderHelp(); view.menuWindow.close(); view.configuration.close(); modelBrowser?.close(); view.about.close();
     if (!view.compatibility.open) view.compatibility.showModal();
-  }
-  function renderSourceStatus() {
-    const selected = sources.find((entry) => entry.key === desiredSourceKey);
-    const notices = selected ? [`${formatModelBytes(selected.totalBytes)} package · ${memoryEstimate(selected)}. Planning estimates; actual memory use varies.`] : [];
-    if (selected?.localAvailability?.reason) notices.push(String(selected.localAvailability.reason).slice(0, 512));
-    view.sourceStatus.textContent = notices.join(' ');
-    view.sourceStatus.hidden = !notices.length;
-    view.sourceHelp.hidden = !selected || !sourceBlocked(selected);
   }
   function renderLists() {
     const selected = view.target.value || 'mixed';
@@ -399,12 +380,12 @@ export async function mountInferencePanel({ container = document.body, stateMana
     if (key !== progressKey) { progressKey = key; progressStarted = performance.now(); }
     progressLabel = String(label).slice(0, 512); view.status.textContent = progressLabel;
     if (loadingOperation && !loadingOperation.controller.signal.aborted) view.loadingStatus.textContent = progressLabel;
-    if (loadingStoredModel && view.storedModels.open) view.storedStatus.textContent = progressLabel;
+    if (loadingStoredModel && modelBrowser?.isStoredOpen()) view.storedStatus.textContent = progressLabel;
     if (!progressTimer) progressTimer = setInterval(() => {
       if (alive() && operation && !operation.signal.aborted) {
         view.status.textContent = `${progressLabel} (${Math.floor((performance.now() - progressStarted) / 1000)}s)`;
         if (loadingOperation) view.loadingStatus.textContent = view.status.textContent;
-        if (loadingStoredModel && view.storedModels.open) view.storedStatus.textContent = view.status.textContent;
+        if (loadingStoredModel && modelBrowser?.isStoredOpen()) view.storedStatus.textContent = view.status.textContent;
       }
     }, 1000);
   };
@@ -435,7 +416,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     const focus = entry.focus?.isConnected && entry.focus.matches('button,input,select,textarea,a[href],[tabindex]')
       && !entry.focus.disabled && entry.focus.getClientRects().length ? entry.focus
       : entry.previousDialog?.open ? entry.previousDialog.querySelector('button:not(:disabled)')
-        : !view.acquire.disabled ? view.acquire : view.menu;
+        : !view.browse.disabled ? view.browse : view.menu;
     focus?.focus();
   }
   async function run(action, { modelName } = {}) {
@@ -463,16 +444,25 @@ export async function mountInferencePanel({ container = document.body, stateMana
     })();
     await operationDone;
   }
-  async function refreshStoredModels({ signal, preserveStatus = false } = {}) {
-    if (!alive() || storedPromise) return storedPromise;
+  async function refreshStoredModels({ signal, preserveStatus = false, quietCancellation = false } = {}) {
+    if (!alive()) return false;
+    if (storedPromise) {
+      if (!storedReadSignal?.aborted) return storedPromise;
+      // A newly opened tab must not inherit the previous tab's cancelled read.
+      // Wait for that owner to release the storage operation, then read afresh.
+      await storedPromise;
+      if (!alive() || signal?.aborted) return false;
+      return refreshStoredModels({ signal, preserveStatus, quietCancellation });
+    }
     const controller = new AbortController(); storedController = controller;
+    const readSignal = signal ? AbortSignal.any([controller.signal, signal]) : controller.signal;
+    storedReadSignal = readSignal;
     const focusedRowControl = view.storedList.contains(document.activeElement) ? document.activeElement : null;
     if (!preserveStatus) view.storedStatus.textContent = 'Reading stored models…'; updateControls();
     storedPromise = (async () => {
       // Publish ownership before even an already-aborted read can finish.
       await Promise.resolve();
       try {
-        const readSignal = signal ? AbortSignal.any([controller.signal, signal]) : controller.signal;
         readSignal.throwIfAborted();
         const models = await runtime.listStoredModels({ signal: readSignal });
         readSignal.throwIfAborted();
@@ -491,6 +481,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
         }
         return true;
       } catch (error) {
+        if (quietCancellation && (signal?.aborted || controller.signal.aborted)) return false;
         if (!preserveStatus) {
           showError(error);
           if (alive()) view.storedStatus.textContent = 'Error: ' + error.message;
@@ -498,11 +489,11 @@ export async function mountInferencePanel({ container = document.body, stateMana
         return false;
       }
       finally {
-        storedPromise = null; storedController = null;
+        storedPromise = null; storedController = null; storedReadSignal = null;
         if (alive()) {
           updateControls();
-          if (view.storedModels.open && focusedRowControl && !focusedRowControl.isConnected && document.activeElement === document.body) {
-            view.storedModels.querySelector('button:not(:disabled)')?.focus();
+          if (modelBrowser?.isStoredOpen() && focusedRowControl && !focusedRowControl.isConnected && document.activeElement === document.body) {
+            view.storedContent.querySelector('button:not(:disabled)')?.focus();
           }
         }
       }
@@ -599,7 +590,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
       loadingStoredModel = false;
       if (alive()) {
         updateControls();
-        if (completed) { view.storedModels.close(); view.prompt.focus(); }
+        if (completed) { modelBrowser?.close(); view.prompt.focus(); }
         else if (cancelled) void refreshStoredModels({ preserveStatus: true });
       }
     }
@@ -612,6 +603,9 @@ export async function mountInferencePanel({ container = document.body, stateMana
     const preferences = runtime.getPreferences(); view.sharing.checked = preferences.sharing; view.hosting.checked = preferences.hostInference;
     syncMemoryBudgets();
     modelBrowser = createModelBrowser({ container: view.panel,
+      storedContent: view.storedContent,
+      hasStoredModels: () => storedRows.length > 0 || sources.some((entry) => entry.source === 'stored'),
+      onStoredOpen: ({ signal } = {}) => refreshStoredModels({ signal, quietCancellation: true }),
       getSources: () => sources, getTargets: () => targets,
       searchModels: (options) => runtime.searchModelHub(options),
       inspectModel: (repository, options) => runtime.inspectModelHub(repository, options),
@@ -632,29 +626,35 @@ export async function mountInferencePanel({ container = document.body, stateMana
       },
       onSetup: showCompatibilityHelp,
     });
-    view.browse.setAttribute('aria-controls', modelBrowser.element.id);
+    for (const trigger of [view.browse, view.modelsMenu]) trigger.setAttribute('aria-controls', modelBrowser.element.id);
+    modelBrowser.element.addEventListener('close', () => {
+      if (alive() && !view.panel.querySelector('dialog[open]')
+          && (document.activeElement === document.body || !document.activeElement?.getClientRects().length)) view.browse.focus();
+    });
     renderLists(); view.status.textContent = 'Ready.';
   } catch (error) { view.panel.remove(); throw error; }
 
   view.configure.onclick = () => {
     if (!alive() || loadingOperation) return;
-    view.menuWindow.close(); view.about.close(); view.compatibility.close(); view.storedModels.close(); view.configurationStatus.textContent = ''; view.configuration.showModal();
+    view.menuWindow.close(); view.about.close(); view.compatibility.close(); modelBrowser?.close(); view.configurationStatus.textContent = ''; view.configuration.showModal();
   };
-  view.stored.onclick = () => {
-    if (!alive() || loadingOperation) return;
-    view.menuWindow.close(); view.about.close(); view.compatibility.close(); view.configuration.close(); view.storedModels.showModal(); void refreshStoredModels();
-  };
+  function openModels(options = {}) {
+    if (!alive() || startupReading || loadingOperation) return;
+    view.menuWindow.close(); view.about.close(); view.compatibility.close(); view.configuration.close();
+    modelBrowser.open({ selectedKey: desiredSourceKey, ...options });
+  }
+  view.browse.onclick = view.modelsMenu.onclick = () => openModels();
   view.menu.onclick = () => {
     if (!alive() || loadingOperation) return;
-    view.about.close(); view.compatibility.close(); view.configuration.close(); view.storedModels.close(); view.menuWindow.showModal();
+    view.about.close(); view.compatibility.close(); view.configuration.close(); modelBrowser?.close(); view.menuWindow.showModal();
   };
   view.aboutButton.onclick = () => {
     if (!alive() || loadingOperation) return;
     view.menuWindow.close(); view.about.showModal();
   };
-  for (const modal of [view.menuWindow, view.configuration, view.storedModels, view.about]) {
+  for (const modal of [view.menuWindow, view.configuration, view.about]) {
     modal.addEventListener('close', () => {
-      if (alive() && ![view.loading, view.menuWindow, view.configuration, view.storedModels, view.about, view.compatibility].some((entry) => entry.open)
+      if (alive() && ![view.loading, view.menuWindow, view.configuration, view.about, view.compatibility, modelBrowser.element].some((entry) => entry.open)
           && document.activeElement !== view.prompt) view.menu.focus();
     });
   }
@@ -701,16 +701,11 @@ export async function mountInferencePanel({ container = document.body, stateMana
       view.leave.focus();
     }
   };
-  view.browse.onclick = () => { if (alive() && !operation) modelBrowser.open({ selectedKey: desiredSourceKey }); };
-  view.sourceHelp.onclick = () => {
-    const selected = sources.find((entry) => entry.key === desiredSourceKey);
-    if (selected && sourceBlocked(selected)) showCompatibilityHelp(selected);
-  };
   view.helpBrowser.onchange = view.helpOs.onchange = renderHelp;
   view.helpConfig.onclick = () => view.configure.click();
   view.compatibility.addEventListener('close', () => {
     helpVersion++;
-    if (alive() && !view.configuration.open && !view.storedModels.open && !view.about.open && !view.menuWindow.open) view.browse.focus();
+    if (alive() && !view.configuration.open && !modelBrowser?.element.open && !view.about.open && !view.menuWindow.open) view.browse.focus();
   });
   view.helpCopy.onclick = async () => {
     const command = view.helpCommand.value;
@@ -776,10 +771,9 @@ export async function mountInferencePanel({ container = document.body, stateMana
       hubSelection = null;
       renderLists(); updateControls();
       view.status.textContent = runtime.getSharingErrors?.().length
-        ? 'Model ready. Sharing is unavailable for some stored models; see Stored Models.' : 'Model ready. Send a message.';
+        ? 'Model ready. Sharing is unavailable for some stored models; see Models → Stored models.' : 'Model ready. Send a message.';
     }, { modelName: selected.name });
   }
-  view.acquire.onclick = () => loadSelection(desiredSourceKey);
   view.unload.onclick = () => run(async () => {
     invalidateActions(); await runtime.unload();
     for (const key of histories.keys()) if (key === 'local' || key.startsWith('local:')) histories.delete(key);
@@ -879,7 +873,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
       const agentId = target?.agentId;
       const task = requestTask(), createsImage = task === 'text-to-image', selectedImage = attachment;
       if (createsImage && selectedImage) throw new Error('Remove the attached image or uncheck Generate image.');
-      if (!supportsTask(target, task)) throw new Error('No compatible model is available. Load one in Browse models or choose another target.');
+      if (!supportsTask(target, task)) throw new Error('No compatible model is available. Load one in Models or choose another target.');
       if (!hasCapacity(target, task)) throw new Error('Compatible models have no available queue capacity. Wait for capacity or choose another target.');
       if (selectedImage && !target.modalities?.includes('image')) throw new Error('This model accepts text only. Remove the image or choose an image model.');
       invalidateActions();
@@ -963,7 +957,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
             signal.throwIfAborted(); view.status.textContent = 'Ready.';
           } catch (error) {
             signal.throwIfAborted();
-            view.status.textContent = `Text reply received. Voice: ${error.message}. Load a speech-synthesis model in Browse models or use a compatible peer.`;
+            view.status.textContent = `Text reply received. Voice: ${error.message}. Load a speech-synthesis model in Models or use a compatible peer.`;
           }
         }
         return result;
@@ -990,7 +984,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
           onState: (state) => { if (state.status !== 'idle') phase = state.status; showVoiceState(state, signal); } });
       } catch (error) {
         signal.throwIfAborted();
-        if (phase === 'transcribing') throw new Error(`${error.message}. Load a speech-recognition model in Browse models or use a compatible peer.`, { cause: error });
+        if (phase === 'transcribing') throw new Error(`${error.message}. Load a speech-recognition model in Models or use a compatible peer.`, { cause: error });
         throw error;
       }
       signal.throwIfAborted();
@@ -1011,7 +1005,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
             requestAnimationFrame(() => { if (alive()) view.prompt.focus(); });
           },
           onBrowseModels: () => { if (alive()) view.browse.click(); } });
-        view.menuWindow.close(); view.configuration.close(); view.storedModels.close();
+        view.menuWindow.close(); view.configuration.close(); modelBrowser?.close();
         view.about.close(); view.compatibility.close();
         await agentConsole.open({ selectedId: agentIdFor(view.target.value) });
       } catch (error) { showError(error); }
@@ -1028,7 +1022,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     if (!alive()) return;
     startupReading = false; updateControls();
     if (!listed || storedRows.length) {
-      if (!view.storedModels.open) view.storedModels.showModal();
+      modelBrowser.open({ tab: 'stored', refreshStored: false, selectedKey: desiredSourceKey });
       if (listed) view.status.textContent = 'Choose stored models to load, or close the library to use peers.';
       return;
     }
@@ -1042,7 +1036,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
           view.status.textContent = 'The remembered model is no longer in the stored library. Choose a model to load.';
         } else if (sourceBlocked(startup)) {
           view.status.textContent = startup.needsVerification
-            ? `${startup.name} is saved but needs local verification. Open Menu → Stored Models → Verify locally. No model download has started.`
+            ? `${startup.name} is saved but needs local verification. Open Models → Stored models → Verify locally. No model download has started.`
             : `Cannot load ${startup.name}: ${sourceReason(startup)}`;
         } else void run(async (signal) => {
           progress({ stage: 'prepare' });
@@ -1070,7 +1064,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     clearInterval(progressTimer); progressTimer = null;
     if (disposed) return;
     if (disposingPromise) return disposingPromise;
-    closing = true; modelBrowser?.dispose(); unsubscribeInstall?.(); generatedImages.dispose(); view.menuWindow.close(); view.compatibility.close(); view.storedModels.close(); view.configuration.close(); view.about.close(); view.panel.inert = true;
+    closing = true; modelBrowser?.dispose(); unsubscribeInstall?.(); generatedImages.dispose(); view.menuWindow.close(); view.compatibility.close(); view.configuration.close(); view.about.close(); view.panel.inert = true;
     disposingPromise = (async () => {
       clearInterval(refreshTimer); operation?.abort('Chat closed'); historyController?.abort(); imageController?.abort(); refreshController?.abort(); connectController?.abort(); storedController?.abort();
       await imageInput?.dispose();

@@ -58,12 +58,15 @@ export function createPanelView(container) {
   back.setAttribute('aria-label', 'Back to demo overview'); back.title = 'Back to demo overview';
   const menu = button('☰', 'Menu'); menu.title = 'Menu';
   navigation.append(back, menu); panel.append(navigation);
-  const browse = button('Browse models'); browse.setAttribute('aria-haspopup', 'dialog');
+  const browse = button('Models'); browse.setAttribute('aria-haspopup', 'dialog');
   const agents = button('Agents'); agents.setAttribute('aria-haspopup', 'dialog'); agents.disabled = true;
-  const currentModel = node('span', 'Choose a model', 'pc-current-model');
-  currentModel.setAttribute('aria-label', 'Current model');
-  const acquire = button('Load'), stored = button('Stored Models'), configure = button('Config', 'Configure model chat');
-  const settings = dialog('Config'), library = dialog('Stored Models'), help = dialog('Model setup'), aboutWindow = dialog('About PeerCompute');
+  const modelsMenu = button('Models'), configure = button('Config', 'Configure model chat');
+  modelsMenu.setAttribute('aria-haspopup', 'dialog');
+  const settings = dialog('Config'), help = dialog('Model setup'), aboutWindow = dialog('About PeerCompute');
+  const storedContent = node('section', undefined, 'pc-model-library');
+  const libraryBody = node('div', undefined, 'pc-dialog-body');
+  const storedStatus = node('p', '', 'pc-inference-status'); storedStatus.setAttribute('role', 'status');
+  storedContent.append(libraryBody);
   const leaveWindow = dialog('Leave model console?', { dismissible: false });
   const stay = button('Stay here'), leave = button('Leave'); stay.autofocus = true;
   leaveWindow.body.append(node('p', 'Are you sure? Leaving stops the models and inference hosted by this page. Stored model files remain on this device.'), stay, leave);
@@ -79,7 +82,7 @@ export function createPanelView(container) {
   const menuDialog = dialog('Menu'), menuWindow = menuDialog.element;
   menuWindow.classList.add('pc-console-menu');
   const aboutButton = button('About'), install = button('Install'); install.hidden = true;
-  menuDialog.body.append(stored, configure, aboutButton, install);
+  menuDialog.body.append(modelsMenu, configure, aboutButton, install);
   const about = aboutWindow.element;
   aboutWindow.body.append(node('p', 'PeerCompute runs models in your browser using WebGPU. You can chat with a model on this device or use inference hosted by another peer.'));
   aboutWindow.body.append(node('p', 'Model files are identified by their content and shared over IPFS. File sharing and hosted inference are available while the hosting browser stays online.'));
@@ -90,7 +93,7 @@ export function createPanelView(container) {
     const item = node('li'); item.append(anchor); aboutLinks.append(item);
   }
   aboutWindow.body.append(aboutLinks);
-  const configuration = settings.element, storedModels = library.element;
+  const configuration = settings.element;
   const compatibility = help.element;
   const helpModel = node('strong'), helpReason = node('p', '', 'pc-inference-note');
   const helpBrowser = node('select'), helpOs = node('select');
@@ -111,16 +114,11 @@ export function createPanelView(container) {
   help.body.append(helpModel, helpReason, helpEnvironment,
     node('p', 'Browser detection is approximate. Adjust these choices if needed.', 'pc-inference-note'),
     helpDetails, helpCommandGroup, helpConfig);
-  for (const [trigger, modal] of [[configure, configuration], [stored, storedModels], [aboutButton, about], [menu, menuWindow]]) {
+  for (const [trigger, modal] of [[configure, configuration], [aboutButton, about], [menu, menuWindow]]) {
     modal.id = `model-window-${crypto.randomUUID()}`;
     trigger.setAttribute('aria-controls', modal.id); trigger.setAttribute('aria-haspopup', 'dialog');
   }
-  const top = node('div', undefined, 'pc-model-toolbar'); top.append(browse, agents, currentModel, acquire); panel.append(top);
-  const sourceStatus = node('p', '', 'pc-model-availability'); sourceStatus.setAttribute('aria-live', 'polite');
-  sourceStatus.id = `model-availability-${crypto.randomUUID()}`;
-  currentModel.setAttribute('aria-describedby', sourceStatus.id); panel.append(sourceStatus);
-  const sourceHelp = button('Setup help', 'Set up selected model'); sourceHelp.hidden = true;
-  sourceHelp.className = 'pc-source-help'; panel.append(sourceHelp);
+  const top = node('div', undefined, 'pc-model-toolbar'); top.append(browse, agents); panel.append(top);
   const discoveryStatus = node('p', 'Connecting to peer network…', 'pc-network-summary');
   discoveryStatus.setAttribute('aria-live', 'polite'); panel.append(discoveryStatus);
   const sharing = node('input'); sharing.type = 'checkbox'; sharing.checked = true;
@@ -153,14 +151,14 @@ export function createPanelView(container) {
   const unload = button('Unload all local models'); settings.body.append(unload);
   const clearChat = button('Clear conversation'); settings.body.append(clearChat);
   settings.body.append(node('p', 'Clear chat history to start a new conversation while keeping the loaded model and stored files.', 'pc-inference-note'));
-  library.body.append(node('p', 'Load adds a model using saved files when memory is available. Unload releases that model’s memory and keeps its files. Delete also removes its stored package; shared files needed by other packages are kept.', 'pc-inference-note'));
+  libraryBody.append(node('p', 'Load adds a model using saved files when memory is available. Unload releases that model’s memory and keeps its files. Delete also removes its stored package; shared files needed by other packages are kept.', 'pc-inference-note'));
   const storedList = node('ul', undefined, 'pc-stored-models'); storedList.setAttribute('aria-label', 'Stored model packages');
   const storedRefresh = button('Refresh'), storedCancel = button('Stop loading'); storedCancel.hidden = true;
   const storedLoadSelected = button('Load selected models'); storedLoadSelected.disabled = true;
   const storedSelection = node('p', '0 models selected.', 'pc-inference-note'); storedSelection.setAttribute('aria-live', 'polite');
   const storedFooter = node('div', undefined, 'pc-stored-footer'), storedActions = node('div', undefined, 'pc-stored-footer-actions');
   storedActions.append(storedLoadSelected, storedRefresh, storedCancel); storedFooter.append(storedSelection, storedActions);
-  library.body.append(storedList); library.element.insertBefore(storedFooter, library.status);
+  libraryBody.append(storedList); storedContent.append(storedFooter, storedStatus);
   const transcript = node('div', undefined, 'pc-inference-transcript');
   transcript.setAttribute('role', 'log'); transcript.setAttribute('aria-label', 'Conversation'); transcript.setAttribute('aria-live', 'polite');
   const empty = node('p', 'Load a model or choose an available peer to start chatting.', 'pc-chat-empty'); transcript.append(empty); panel.append(transcript);
@@ -183,9 +181,9 @@ export function createPanelView(container) {
   const send = button('Send'), talk = button('Talk'), cancel = button('Stop'); cancel.hidden = true;
   talk.title = 'Record a voice message, then press Stop recording to send. Load a speech-recognition model or use a compatible peer.';
   const composer = node('div', undefined, 'pc-chat-controls'); composer.append(target, attach, imageFile, talk, send, cancel); panel.append(composer);
-  panel.append(configuration, storedModels, compatibility, about, menuWindow, loading, leaveWindow.element); container.append(panel);
-  return { panel, browse, agents, currentModel, sourceStatus, sourceHelp, discoveryStatus, acquire, stored, configure, sharing, hosting, status, configuration,
-    configurationStatus: settings.status, storedModels, storedList, storedRefresh, storedCancel, storedLoadSelected, storedSelection, storedStatus: library.status, gpuLayers,
+  panel.append(configuration, compatibility, about, menuWindow, loading, leaveWindow.element); container.append(panel);
+  return { panel, browse, agents, discoveryStatus, modelsMenu, configure, sharing, hosting, status, configuration,
+    configurationStatus: settings.status, storedContent, storedList, storedRefresh, storedCancel, storedLoadSelected, storedSelection, storedStatus, gpuLayers,
     leaveConfirmation: leaveWindow.element, leaveStatus: leaveWindow.status, stay, leave,
     back, menu, menuWindow, menuStatus: menuDialog.status, about, aboutButton, install,
     loading, loadingModel, loadingStatus: loadingWindow.status, loadingCancel,

@@ -1,16 +1,27 @@
 # MODEL-BROWSER-01 — Hugging Face model browser
 
-Implemented and verified November 5, 2026. Agent-layer work is the separate next TODO.
+Discovery implemented and verified November 5, 2026. The unified Models window
+and mobile details are the November 7 follow-up; agent-layer work has a separate
+plan.
 
 ## User flow
 
-Browse models opens a responsive native dialog. Search local source descriptions,
+Models opens a responsive native dialog with Stored models and Browse models
+tabs. Stored models is the default whenever packages exist on this device;
+otherwise Browse models is selected. The same window opens from the main toolbar
+or menu, and the main page has no separate Load/current-model controls.
+Search local source descriptions,
 public Hub model names and model-card text, or enter a repository URL. Filter by
 source, task, package size, precision and compatibility. Default ordering is
 smallest selected package first; unknown sizes stay explicit and sort last.
 
 Selecting Hugging Face search in Source also browses Hub metadata with no query.
-An untouched All sources view stays network-free and explains how to search.
+An untouched All sources view stays network-free. Search keeps an accessible name
+and placeholder without redundant labels or helper paragraphs. The live result
+count sits on the Filters and sorting row. On phones, a selected result opens
+full-window details; Done or Escape first returns to the same results and scroll
+position. A second Done or Escape closes the window. Tabs retain search, filters,
+selection and stored-package checkboxes. Periodic refresh cannot open details.
 Unknown Hub packages remain in a separate Needs inspection group when size,
 precision or compatibility cannot yet be checked; known mismatches are excluded.
 Filters consider every inspected variant, name a matching alternative and preserve
@@ -28,7 +39,10 @@ ComputeManager worker and remembered startup path. Stored packages reload withou
 Hub access. Use peer changes the chat target without downloading weights. Peer
 inference and shared files remain separate availability states; target identity is
 manifest CID, not a display name or publisher-supplied model ID. Five-second
-refresh preserves an open dialog's selection and keyboard focus.
+refresh preserves an open dialog's selection and keyboard focus. Unchanged result
+rows retain their DOM identity so discovery cannot detach an active click target.
+Closing ends the old metadata requests synchronously; a queued close event cannot
+cancel requests started by a newer opening.
 
 ## Modules and ownership
 
@@ -182,7 +196,7 @@ complete package checks its root identity without repeating every file hash;
 publication still checks actual blocks before allowing peer reads.
 
 Legacy retained partial manifests remain visible as Needs local verification.
-Stored Models offers Verify locally with streamed byte progress and cancellation,
+The Stored models tab offers Verify locally with streamed byte progress and cancellation,
 independently of device model compatibility. Successful verification returns the
 same CID and enables normal Load; missing/corrupt bytes report a local failure
 and remain listed. No model HTTP or GPU worker is involved. Startup preserves

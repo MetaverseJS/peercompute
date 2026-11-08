@@ -110,9 +110,10 @@ try {
   assert(report.reply.text.trim()); assert(report.reply.gpuDispatches > 0);
   for (const viewport of [{ width: 866, height: 900 }, { width: 390, height: 844 }]) {
     await requester.setViewportSize(viewport);
-    await requester.getByRole('button', { name: 'Browse models', exact: true }).click();
-    const browser = requester.getByRole('dialog', { name: 'Browse models', exact: true });
+    await requester.locator('.pc-model-toolbar').getByRole('button', { name: 'Models', exact: true }).click();
+    const browser = requester.getByRole('dialog', { name: 'Models', exact: true });
     await browser.waitFor({ state: 'visible' });
+    await browser.getByRole('tab', { name: 'Browse models', exact: true }).click();
     const boxes = await browser.locator('[data-model-key]').evaluateAll((options) => options.map((option) => {
       const b = option.getBoundingClientRect(); return { x: b.x, right: b.right, width: b.width, height: b.height };
     }));

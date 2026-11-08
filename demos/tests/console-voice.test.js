@@ -111,7 +111,7 @@ test('native Talk/Stop invokes real VoiceSession ASR, routed reasoning and optio
   await page.getByRole('button', { name: 'Talk', exact: true }).click();
   await page.waitForFunction(() => captureActive);
   assert.equal(await page.getByRole('button', { name: 'Send', exact: true }).isDisabled(), true);
-  assert.equal(await page.getByRole('button', { name: 'Browse models', exact: true }).isDisabled(), true);
+  assert.equal(await page.getByRole('button', { name: 'Models', exact: true }).isDisabled(), true);
   await page.getByRole('button', { name: 'Stop recording', exact: true }).click();
   await page.waitForFunction(() => calls.some((entry) => entry.type === 'play'));
   await page.waitForFunction(() => !document.querySelector('[aria-label="Chat target"]').disabled);
@@ -150,7 +150,7 @@ test('cancel during transcription retains operation ownership until cleanup and 
   await page.getByRole('button', { name: 'Stop', exact: true }).click();
   await page.waitForFunction(() => typeof releaseCleanup === 'function');
   assert.equal(await page.getByRole('button', { name: 'Talk', exact: true }).isDisabled(), true);
-  assert.equal(await page.getByRole('button', { name: 'Browse models', exact: true }).isDisabled(), true);
+  assert.equal(await page.getByRole('button', { name: 'Models', exact: true }).isDisabled(), true);
   await page.evaluate(() => releaseCleanup());
   await page.getByText(/Cancelled: User cancelled/).waitFor();
   assert.equal(await page.getByRole('button', { name: 'Talk', exact: true }).isEnabled(), true);
@@ -168,7 +168,7 @@ test('permission rejection and missing speech remain actionable without silently
   await page.getByRole('button', { name: 'Talk', exact: true }).click();
   await page.waitForFunction(() => captureActive);
   await page.getByRole('button', { name: 'Stop recording', exact: true }).click();
-  await page.getByText(/Load a speech-recognition model in Browse models/).waitFor();
+  await page.getByText(/Load a speech-recognition model in Models/).waitFor();
   assert.equal(await page.evaluate(() => calls.some((entry) => entry.type === 'execute' && entry.task === 'text-generation')), false);
   await page.evaluate(() => { control.denied = false; control.missing = 'text-to-speech'; });
   await page.getByLabel('Speak replies', { exact: true }).check();
