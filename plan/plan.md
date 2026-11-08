@@ -14,7 +14,7 @@ The root node should exist on a domain secured with SSL enabling all executable 
 
 ## Project Goals:
 
-November 8 main integration: refresh root/package READMEs for the shipped model, agent and world application; merge feature/ipfs-artifacts-webgpu into main while preserving upstream history, and publish the existing verified docs build from main. Documentation and integration verification are in progress.
+November 8 main integration complete: refreshed root/package READMEs for the shipped model, agent and world application; merged feature/ipfs-artifacts-webgpu into main as de73dfd0 while preserving upstream history. Both branches are pushed, and GitHub Pages now publishes the existing verified docs build from main:/docs. README links/commands, all45 release checks, merge ancestry/tree preservation and public file hashes pass. The feature branch remains available.
 
 November8 chat controls: availability-based network glyph, mutually exclusive image/ear output controls, hold-to-record input and default concise LLM prompts. Implemented and published on the feature branch. 193 focused cases, the full 15-demo build, internal previews, and public inference/Cube/Earth/overview checks pass. New published assets match the release; no merge to ulg.
 

@@ -1273,3 +1273,8 @@ branch into main. Update both application/library documentation, preserve main
 history with a normal merge, verify the resulting application/build tree, push
 main and align GitHub Pages to main:/docs. This supersedes the temporary feature
 publication workflow; it does not request an ulg merge or branch deletion.
+
+Completed: README checkpoint c4430844 and normal merge de73dfd0 are pushed.
+Main retains both histories and the exact feature tree. Pages source is main:/docs,
+and the merge commit built successfully on November8 at22:16:10Z. Documentation,
+release checks and public bytes pass; feature branch retained, no ulg merge.

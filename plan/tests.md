@@ -4155,3 +4155,13 @@ the already tested feature release; no new application changes imply no redundan
 model downloads or full GPU matrix. After push, verify main ancestry/remote SHA,
 Pages source main:/docs, exact deployed commit and representative public asset
 hashes. Prior full15-demo build/native/public acceptance remains linked in log.md.
+
+Results:43 local README links and89 npm-script references pass; all45 existing
+release checks pass after replacing the obsolete CubeChat bot-controls assertion
+with its native Residents entry/callback/form contract. Initial44/45 failure is
+retained. Merge de73dfd0 has the original main and feature checkpoint as parents;
+its full tree equals the feature tree, and docs remains66cce48737e55c075eb589a67d00beb97fc08e39.
+Both refs are pushed. Pages source main:/docs and exact de73dfd0 build are verified;
+four public entry pages and three direct JS assets match all7 hashes/MIME/HTTP200
+(46,032bytes). Evidence under /home/cos/.cache/peercompute-main-merge-20261108.
+The concluding plan/log commit changes no application or deployed file.
