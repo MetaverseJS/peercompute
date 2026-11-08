@@ -133,7 +133,8 @@ async function fixture(t, scenario = {}) {
     const createUrl = URL.createObjectURL.bind(URL), revokeUrl = URL.revokeObjectURL.bind(URL);
     URL.createObjectURL = (blob) => { const url = createUrl(blob); previewUrls.created.push(url); return url; };
     URL.revokeObjectURL = (url) => { previewUrls.revoked.push(url); revokeUrl(url); };
-    window.uiState = { loaded: !!scenario.loaded, providers: [true, false], remote: true, refreshCalls: 0,
+    window.uiState = { loaded: !!scenario.loaded, providers: [true, false], remote: scenario.remote ?? true, refreshCalls: 0,
+      peerDiffusion: scenario.peerDiffusion ?? scenario.diffusion, discovery: scenario.discovery, extraTargets: scenario.extraTargets ?? [],
       refreshActive: 0, refreshPeak: 0, disposed: false, sharing: true, hostInference: true,
       stored: scenario.stored ?? [], rejectStoredList: !!scenario.rejectStoredList,
       rejectLoad: !!scenario.rejectLoad, rejectAcquire: !!scenario.rejectAcquire,
@@ -169,7 +170,7 @@ async function fixture(t, scenario = {}) {
       ...(scenario.retainedCancelledCid ? { getResidentModelStates: () => state.residentCids.map(manifestCid => ({ manifestCid,
         status: state.cleanupRetained && manifestCid === scenario.retainedCancelledCid ? 'lost' : 'ready' })) } : {}),
       networkReady: !scenario.connectFailure,
-      getDiscoveryStatus: () => scenario.discovery,
+      getDiscoveryStatus: () => state.discovery,
       getArtifactNetworkStatus: () => scenario.artifactNetwork,
       store: { maximumBytes: 4 * 1024 ** 3, async importFile() { calls.push({ type: 'pin' }); } },
       getPreferences: () => ({ sharing: state.sharing, hostInference: state.hostInference }),
@@ -190,7 +191,7 @@ async function fixture(t, scenario = {}) {
         task: scenario.diffusion ? 'text-to-image' : 'image-text-to-text', outputModalities: scenario.diffusion ? ['image'] : ['text'] }, ...(state.remote ? [{ key: 'peer:fixture',
         name: 'Peer text model', manifestCid: 'fixture', runtime: 'transformers.js', local: false, available: true, busy: state.providers.every(Boolean), ...state.peerCapacity,
         providerCount: state.providers.length, modalities: scenario.peerVision ? ['text', 'image'] : ['text'],
-        task: scenario.diffusion ? 'text-to-image' : scenario.peerVision ? 'image-text-to-text' : 'text-generation', outputModalities: scenario.diffusion ? ['image'] : ['text'] }] : [])],
+        task: state.peerDiffusion ? 'text-to-image' : scenario.peerVision ? 'image-text-to-text' : 'text-generation', outputModalities: state.peerDiffusion ? ['image'] : ['text'] }] : []), ...state.extraTargets],
       async refreshPeers({ signal }) {
         state.refreshCalls++; state.refreshPeak = Math.max(state.refreshPeak, ++state.refreshActive);
         try { await delay(scenario.refreshDelay ?? 1, signal); if (state.refreshError) throw new Error('Offline'); }
@@ -663,7 +664,7 @@ test('compact navigation and composer preserve native control order at 320 and 3
 });
 
 test('composer glyph toggles expose native checked state, keyboard focus and selected styling', async (t) => {
-  const page = await fixture(t, { loaded: true });
+  const page = await fixture(t, { loaded: true, peerDiffusion: true });
   await page.setViewportSize({ width: 320, height: 844 });
   const image = page.getByRole('checkbox', { name: 'Generate image', exact: true });
   const speech = page.getByRole('checkbox', { name: 'Speak replies', exact: true });
@@ -1258,7 +1259,7 @@ test('peer image generation does not claim vision input capability', async (t) =
 });
 
 test('Generate image requires an explicit choice and never discards a conflicting attached image', async (t) => {
-  const page = await fixture(t, { loaded: true });
+  const page = await fixture(t, { loaded: true, peerDiffusion: true });
   const input = await patternedImage(page, 3);
   await page.getByLabel('Choose image attachment').setInputFiles(input.file);
   await page.getByAltText('Selected image', { exact: true }).waitFor({ state: 'visible' });
@@ -2577,4 +2578,87 @@ test('embedded phone model panel can scroll to its composer instead of clipping 
   });
   assert(bounds.top >= bounds.panelTop && bounds.bottom <= bounds.panelBottom && bounds.bottom <= 844 && bounds.hit, JSON.stringify(bounds));
   await page.screenshot({ path: '/home/cos/.cache/peercompute-picker-inputs-20261107/embedded-composer-mobile.png' });
+});
+
+test('image mode follows peer capability and preserves a drafted image request through provider loss', async (t) => {
+  const page = await fixture(t, { loaded: true, interval: 20 });
+  const image = page.getByRole('checkbox', { name: 'Generate image', exact: true });
+  const prompt = page.getByLabel('Message', { exact: true });
+  assert.equal(await image.isDisabled(), true);
+  await prompt.fill('A blue castle');
+  await page.evaluate(() => { uiState.peerDiffusion = true; });
+  await page.waitForFunction(() => !document.querySelector('[aria-label="Generate image"]').disabled);
+  await image.check();
+  await page.evaluate(() => { uiState.remote = false; });
+  await page.waitForFunction(() => document.querySelector('[aria-label="Generate image"]').disabled);
+  assert.equal(await image.isChecked(), true);
+  assert.equal(await prompt.inputValue(), 'A blue castle');
+  assert.equal(await page.getByRole('button', { name: 'Send', exact: true }).isDisabled(), true);
+  await prompt.press('Enter');
+  assert.equal(await page.evaluate(() => calls.some((call) => call.type === 'generate')), false);
+  await page.setViewportSize({ width: 320, height: 844 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  const screenshots = process.env.CHAT_CONTROLS_SCREENSHOTS;
+  if (screenshots) { await mkdir(screenshots, { recursive: true }); await page.screenshot({ path: `${screenshots}/image-provider-lost-320.png` }); }
+  await page.getByRole('button', { name: 'Use text chat', exact: true }).click();
+  assert.equal(await image.isChecked(), false); assert.equal(await image.isDisabled(), true);
+  assert.equal(await prompt.inputValue(), 'A blue castle');
+  assert.equal(await page.getByRole('button', { name: 'Send', exact: true }).isEnabled(), true);
+  assert.equal(await page.evaluate(() => calls.some((call) => call.type === 'generate')), false);
+});
+
+test('image mode respects local-only selection and keeps loaded local generators usable offline', async (t) => {
+  const page = await fixture(t, { loaded: true, peerDiffusion: true });
+  const image = page.getByRole('checkbox', { name: 'Generate image', exact: true });
+  assert.equal(await image.isEnabled(), true);
+  await selectChatTarget(page, 'local-only'); assert.equal(await image.isDisabled(), true);
+  await selectChatTarget(page, 'mixed'); assert.equal(await image.isEnabled(), true);
+  await selectChatTarget(page, 'local:fixture-vision'); assert.equal(await image.isDisabled(), true);
+  const offline = await fixture(t, { loaded: true, diffusion: true, remote: false, discovery: { connected: false } });
+  assert.equal(await offline.getByRole('checkbox', { name: 'Generate image', exact: true }).isEnabled(), true);
+  await selectChatTarget(offline, 'local-only');
+  assert.equal(await offline.getByRole('checkbox', { name: 'Generate image', exact: true }).isEnabled(), true);
+});
+
+test('busy image peers retain capability while Send waits for queue capacity', async (t) => {
+  const page = await fixture(t, { diffusion: true, peerCapacity: { queueAvailable: false, queuedRequests: 4, queueCapacity: 4 } });
+  const image = page.getByRole('checkbox', { name: 'Generate image', exact: true });
+  assert.equal(await image.isEnabled(), true); await image.check();
+  await page.getByLabel('Message', { exact: true }).fill('A lighthouse');
+  assert.equal(await page.getByRole('button', { name: 'Send', exact: true }).isDisabled(), true);
+  assert.match(await page.locator('.pc-route-policy').textContent(), /no available queue capacity/);
+});
+
+test('disconnect during failed discovery disables cached image peers and restores the same image draft on reconnection', async (t) => {
+  const page = await fixture(t, { diffusion: true, interval: 20, discovery: { connected: true, peerCount: 2 } });
+  const image = page.getByRole('checkbox', { name: 'Generate image', exact: true });
+  await image.check(); await page.getByLabel('Message', { exact: true }).fill('A quiet forest');
+  await page.evaluate(() => { uiState.discovery.connected = false; uiState.refreshError = true; });
+  await page.waitForFunction(() => document.querySelector('[aria-label="Generate image"]').disabled);
+  assert.equal(await image.isChecked(), true);
+  const network = await openNetworkStatus(page);
+  assert.match(await network.textContent(), /offline/i);
+  assert.equal(await network.getByText('Peer text model', { exact: true }).count(), 0);
+  await network.getByRole('button', { name: 'Close network status', exact: true }).click();
+  await page.evaluate(() => { uiState.discovery.connected = true; uiState.refreshError = false; });
+  await page.waitForFunction(() => !document.querySelector('[aria-label="Generate image"]').disabled);
+  assert.equal(await image.isChecked(), true);
+  assert.equal(await page.getByRole('button', { name: 'Use text chat', exact: true }).isVisible(), false);
+  assert.equal(await page.getByLabel('Message', { exact: true }).inputValue(), 'A quiet forest');
+});
+
+test('network window receives all hosted inference tasks and peer counts independently of the chat picker', async (t) => {
+  const page = await fixture(t, { extraTargets: [
+    { key: 'peer:asr', manifestCid: 'asr', name: 'Peer speech recognition', local: false, available: true,
+      task: 'automatic-speech-recognition', modalities: ['audio'], outputModalities: ['text'], providerCount: 3 },
+    { key: 'peer:tts', manifestCid: 'tts', name: 'Peer speech synthesis', local: false, available: true,
+      task: 'text-to-speech', modalities: ['text'], outputModalities: ['audio'], providerCount: 1 },
+  ] });
+  const network = await openNetworkStatus(page);
+  const text = await network.textContent();
+  assert.match(text, /Peer text model[\s\S]*2 peers/);
+  assert.match(text, /Peer speech recognition[\s\S]*3 peers/);
+  assert.match(text, /Peer speech synthesis[\s\S]*1 peer/);
+  assert.equal(await network.getByText('No model loaded', { exact: true }).count(), 0);
+  assert.equal(await page.locator('[aria-label="Chat target"] option').filter({ hasText: 'Peer speech' }).count(), 0);
 });

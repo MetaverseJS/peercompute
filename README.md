@@ -26,9 +26,11 @@ the model.
   inference are separate controls; both require an active, reachable browser.
 - **One chat interface:** type, paste/drop/attach images, or hold **Talk** and release
   to submit speech. Image-generation and spoken-reply glyphs are mutually
-  exclusive. Chat options hold the target selector and default-on **Be concise**
+  exclusive. Image generation is enabled only for a capable provider; a lost
+  provider preserves the drafted image request. Chat options hold the target selector and default-on **Be concise**
   preference. The network glyph opens diagnostics and turns green when connected
-  peers, shared models and hosted models are all available. The console is an
+  peers, shared models and hosted models are all available. Its directory lists
+  peer inference models with hosting peer counts. The console is an
   installable PWA with an offline app shell, not an always-running background host.
 - **Persistent general agents:** identity, instructions, goals, context and bounded
   conversation history survive reloads in private IndexedDB records. Agents use

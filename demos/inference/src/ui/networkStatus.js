@@ -9,6 +9,34 @@ const node = (tag, className, text) => {
 const count = (value) => Number.isSafeInteger(value) && value >= 0 ? value : null;
 const boundedMessage = (value) => String(value?.message ?? value ?? '').trim().slice(0, 256);
 
+function inferenceModelRows(models) {
+  const grouped = new Map();
+  for (const model of Array.isArray(models) ? models : []) {
+    const cid = typeof model?.manifestCid === 'string' ? model.manifestCid.trim() : '';
+    if (!cid || model.local === true || model.available !== true) continue;
+    if (!grouped.has(cid)) grouped.set(cid, { cid, name: boundedMessage(model.name) || 'Unnamed model',
+      hosts: new Map(), hasHostList: false, fallbackCount: 0, fallbackBusy: true });
+    const group = grouped.get(cid);
+    if (Array.isArray(model.hosts)) {
+      group.hasHostList = true;
+      for (const host of model.hosts) {
+        if (host?.local === true || typeof host?.peerId !== 'string' || !host.peerId.trim()) continue;
+        // Repeated directory rows must not inflate the number of hosting peers.
+        group.hosts.set(host.peerId, (group.hosts.get(host.peerId) ?? true) && host.busy === true);
+      }
+    } else {
+      const providers = count(model.providerCount) ?? 0;
+      group.fallbackCount = Math.max(group.fallbackCount, providers);
+      if (providers > 0) group.fallbackBusy &&= model.busy === true;
+    }
+  }
+  return [...grouped.values()].map((group) => ({ cid: group.cid, name: group.name,
+    peerCount: group.hasHostList ? group.hosts.size : group.fallbackCount,
+    busy: group.hasHostList ? [...group.hosts.values()].every(Boolean) : group.fallbackBusy,
+  })).filter((model) => model.peerCount > 0)
+    .sort((a, b) => a.name.localeCompare(b.name) || a.cid.localeCompare(b.cid));
+}
+
 /** Display-only network diagnostics. The owner supplies discovery snapshots. */
 export function createNetworkStatus({ container } = {}) {
   if (!container?.append) throw new TypeError('A network status container is required');
@@ -42,8 +70,12 @@ export function createNetworkStatus({ container } = {}) {
   const status = node('p', 'pc-network-summary'); status.id = `${element.id}-status`;
   status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite'); status.setAttribute('aria-atomic', 'true');
   element.setAttribute('aria-describedby', status.id); element.append(header, stateLabel, status);
+  const modelsHeading = node('h3', 'pc-network-models-heading', 'Peer inference models'); modelsHeading.id = `${element.id}-models`;
+  const modelList = node('ul', 'pc-network-models'); modelList.setAttribute('aria-labelledby', modelsHeading.id);
+  const modelsEmpty = node('p', 'pc-network-models-empty');
+  element.append(modelsHeading, modelList, modelsEmpty);
   container.append(trigger, element);
-  let open = false, disposed = false, lastText = '';
+  let open = false, disposed = false, lastText = '', lastModels = '';
 
   function position() {
     if (!open || disposed) return;
@@ -123,6 +155,22 @@ export function createNetworkStatus({ container } = {}) {
     trigger.setAttribute('aria-description', `Network state: ${label}.`);
     stateLabel.textContent = label;
     if (status.textContent !== lastText) status.textContent = lastText;
+    const models = inferenceModelRows(connected ? info.inferenceModels : []);
+    const signature = JSON.stringify(models);
+    if (signature !== lastModels) {
+      lastModels = signature;
+      const scrollTop = element.scrollTop;
+      modelList.replaceChildren(...models.map((model) => {
+        const row = node('li', 'pc-network-model'); row.dataset.modelCid = model.cid;
+        row.append(node('span', 'pc-network-model-name', model.name), node('span', 'pc-network-model-hosts',
+          `${model.peerCount} peer${model.peerCount === 1 ? '' : 's'}${model.busy ? ' · busy' : ''}`));
+        return row;
+      }));
+      element.scrollTop = scrollTop;
+    }
+    modelList.hidden = models.length === 0; modelsEmpty.hidden = models.length > 0;
+    modelsEmpty.textContent = connected ? 'No peer inference models are available.'
+      : connecting ? 'Waiting for the peer network…' : 'Connect to the peer network to discover models.';
     position(); return lastText;
   }
   update();

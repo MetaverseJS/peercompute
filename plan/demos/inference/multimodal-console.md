@@ -379,3 +379,14 @@ internal and public inference/Cube Models/Earth layouts and overview pass with
 SecretWorkshop connections. The changed public application files match release
 dc655b02. Voice/prompt tests use controlled audio/inference and real DOM, routing
 and persistence; no new model-quality or GPU-performance claim is made.
+
+
+## Provider availability presentation — November 8
+
+Generate image can only be activated when the selected route has a capable
+loaded local or online peer provider. Busy queues retain the capability while
+Send enforces capacity. A disappearing provider disables the toggle and Send
+without changing a drafted image request into text; Use text chat is explicit.
+Network status lists remote inference models across text, vision, diffusion and
+voice tasks with unique peer host counts, and clears stale entries on disconnect.
+Library-only artifacts are not inference providers.

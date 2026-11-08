@@ -187,6 +187,11 @@ export function createPanelView(container) {
   const prompt = node('textarea'); prompt.rows = 2; prompt.maxLength = 16000; prompt.placeholder = 'Message…'; prompt.setAttribute('aria-label', 'Message'); panel.append(prompt);
   const generateImage = node('input'), speakReplies = node('input');
   const imageToggle = glyphToggle(generateImage, 'Generate image', ['M4 3h16a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z', 'M3 17l6-6 4 4 3-3 5 5', 'M16 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z']);
+  const imageUnavailable = node('div', undefined, 'pc-inference-note'); imageUnavailable.hidden = true;
+  imageUnavailable.setAttribute('aria-live', 'polite');
+  const useTextChat = button('Use text chat');
+  imageUnavailable.append(node('span', 'Image generation is unavailable for this chat target. Your image prompt is kept. '), useTextChat);
+  panel.append(imageUnavailable);
   const speechToggle = glyphToggle(speakReplies, 'Speak replies', ['M6 9a6 6 0 0 1 12 0c0 4-4 5-4 8a4 4 0 0 1-8 0', 'M10 10a2 2 0 1 1 4 0c0 2-3 2-3 5']);
   const beConcise = node('input'); beConcise.type = 'checkbox'; beConcise.checked = true;
   const conversationOptions = node('div', undefined, 'pc-model-preferences pc-conversation-options');
@@ -212,7 +217,7 @@ export function createPanelView(container) {
     compatibility, helpModel, helpReason, helpBrowser, helpOs, helpDetails, helpCommandGroup, helpCommand, helpCopy, helpConfig, helpStatus: help.status,
     cpuBudget, gpuBudget, memoryNote, memoryPressure,
     relay, connect, networkStatus, file, unload, clearChat, transcript, empty, proposed, attachment, attachmentImage,
-    attachmentName, removeAttachment, prompt, target, attach, imageFile, send, cancel, talk, generateImage, speakReplies, beConcise, modeStatus, resumeAgent };
+    attachmentName, removeAttachment, prompt, target, attach, imageFile, send, cancel, talk, generateImage, imageUnavailable, useTextChat, speakReplies, beConcise, modeStatus, resumeAgent };
 }
 
 export function renderModelCompatibilityHelp(view, help) {

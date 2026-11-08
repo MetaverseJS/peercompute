@@ -60,15 +60,17 @@ export async function mountInferencePanel({ container = document.body, stateMana
   const sourceReason = (source) => String(source?.localAvailability?.reason
     || (source?.localAvailability?.status === 'checking' ? 'Checking this device…' : 'Unavailable on this device.')).slice(0, 512);
   const requestTask = () => view.generateImage.checked ? 'text-to-image' : attachment ? 'image-text-to-text' : 'text-generation';
+  const networkConnected = () => Boolean(runtime?.getDiscoveryStatus?.()?.connected ?? runtime?.networkReady);
+  const targetAvailable = (target) => target?.available === true && (target.automatic || target.local || networkConnected());
   const agentIdFor = (key) => typeof key === 'string' && key.startsWith('agent:') ? key.slice(6) : null;
   const agentBlockReason = (head) => !head ? 'This agent is unavailable.'
     : head.activity?.unsaved ? 'Agent changes are not saved. Resume to retry saving before another message.'
       : head.recoveryRequired ? 'This agent has an interrupted task. Resume to acknowledge it; it will not replay.'
         : ['queued', 'running', 'cancelling'].includes(head.activity?.status) ? 'This agent is busy.'
           : head.status === 'paused' ? 'This agent is paused. Resume it to chat.' : '';
-  const supportsTask = (target, task) => target?.available === true && (target.agentId
+  const supportsTask = (target, task) => targetAvailable(target) && (target.agentId
     ? targets.some((model) => (target.local || target.inferenceMode === 'local-only' ? model.local : true)
-      && model.available && modelSupportsTask(model, task)) : modelSupportsTask(target, task));
+      && targetAvailable(model) && modelSupportsTask(model, task)) : modelSupportsTask(target, task));
   const selectedTarget = (task = requestTask()) => {
     const key = view.target.value || 'mixed';
     const agentId = agentIdFor(key);
@@ -91,7 +93,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
   const hasCapacity = (target, task) => {
     if (!supportsTask(target, task)) return false;
     return (target.automatic ? targets : [target]).some((model) => (!target.local || model.local)
-      && modelSupportsTask(model, task) && hasInferenceCapacity(model));
+      && supportsTask(model, task) && hasInferenceCapacity(model));
   };
   const invalidateActions = () => { actions?.invalidate?.(); view.proposed.replaceChildren(); };
   function setStatus(message, { quiet = false } = {}) {
@@ -132,7 +134,15 @@ export async function mountInferencePanel({ container = document.body, stateMana
     view.attach.title = view.generateImage.checked ? 'Generate image uses a text prompt. Uncheck it to attach an image.'
       : !supportsTask(selectedTarget('image-text-to-text'), 'image-text-to-text')
         ? 'Choose Mixed or a loaded local or peer vision model to attach an image.' : 'Attach an image for a vision model';
-    view.generateImage.disabled = view.speakReplies.disabled = view.beConcise.disabled = !!operation;
+    const imageAvailable = supportsTask(selectedTarget('text-to-image'), 'text-to-image');
+    view.generateImage.disabled = !!operation || !imageAvailable;
+    view.generateImage.parentElement.title = imageAvailable ? 'Generate image'
+      : 'No image-generation model is available for this chat target. Load one or choose a compatible peer.';
+    // Keep the task and draft intact if its last provider disappears. Switching
+    // to text must be explicit, even though the unavailable toggle is disabled.
+    view.imageUnavailable.hidden = !view.generateImage.checked || imageAvailable || !!operation;
+    view.useTextChat.disabled = !!operation;
+    view.speakReplies.disabled = view.beConcise.disabled = !!operation;
     const capturing = voiceState.recording || voiceState.status === 'requesting-microphone';
     view.talk.textContent = voiceState.recording ? 'Release' : 'Talk';
     view.talk.setAttribute('aria-label', 'Talk');
@@ -328,6 +338,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
       peerCount: discovery?.peerCount,
       sharedModelCount: discovery?.sharedModelCount ?? sources.filter((source) => source.source === 'peers').length,
       hostedModelCount: discovery?.hostedModelCount ?? targets.filter((target) => !target.local && target.available).length,
+      inferenceModels: connected ? runtime.listInferenceTargets().filter((target) => !target.local && target.available) : [],
       issue, artifacts: runtime.getArtifactNetworkStatus?.() });
   }
   function syncMemoryBudgets() {
@@ -383,10 +394,13 @@ export async function mountInferencePanel({ container = document.body, stateMana
           // directory refreshes. The next closed-picker refresh updates its list.
           const pickerOpen = CSS.supports('selector(:open)') && view.target.matches(':open');
           if (!pickerOpen) renderLists();
+          else { targets = runtime.listInferenceTargets(); updateControls(); }
           renderNetworkStatus();
         }
       } catch (error) {
-        if (alive() && !controller.signal.aborted) renderNetworkStatus(error);
+        if (alive() && !controller.signal.aborted) {
+          targets = runtime.listInferenceTargets(); updateControls(); renderNetworkStatus(error);
+        }
       } finally { refreshPromise = null; refreshController = null; }
     })();
     return refreshPromise;
@@ -851,6 +865,11 @@ export async function mountInferencePanel({ container = document.body, stateMana
   view.generateImage.onchange = () => {
     if (view.generateImage.checked) view.speakReplies.checked = false;
     invalidateActions(); updateControls();
+  };
+  view.useTextChat.onclick = () => {
+    if (operation) return;
+    view.generateImage.checked = false;
+    invalidateActions(); updateControls(); view.prompt.focus();
   };
   view.speakReplies.onchange = () => {
     if (view.speakReplies.checked) view.generateImage.checked = false;

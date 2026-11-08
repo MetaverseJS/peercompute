@@ -4165,3 +4165,25 @@ Both refs are pushed. Pages source main:/docs and exact de73dfd0 build are verif
 four public entry pages and three direct JS assets match all7 hashes/MIME/HTTP200
 (46,032bytes). Evidence under /home/cos/.cache/peercompute-main-merge-20261108.
 The concluding plan/log commit changes no application or deployed file.
+
+
+## Model-network availability follow-up — November 8
+
+Cover image provider arrival/loss, no-provider disabled state, selected request
+intent retained, explicit text recovery, offline local generators, local-only
+policy, busy queues, disconnected cached targets and failed refresh. Verify the
+network directory includes all inference tasks (including speech), unique host
+counts, busy/empty states, safe long names, 320px wrapping and stable focus.
+Run affected panel/network and shared voice/agent suites; rebuild inference,
+CubeChat and Earth. Preserve old hashed assets and qualify changed shared UI on
+staging/public, with console errors and authenticated SecretWorkshop connectivity
+checked. Final Pages acceptance requires the Actions deploy job and deployment
+status for the pushed SHA, plus matching public asset hashes.
+
+Results before publication:247distinct cases pass after the secondary hint uses
+aria-live instead of introducing a second primary status region. Initial failures
+and an isolated-retry fixture import failure are preserved in external receipts.
+Three consumer builds pass with101source hashes unchanged. Staging3routes plus
+overview and internal3routes pass (50captures; representative visual review),
+actual SecretWorkshop Noise connections and zero accepted-run runtime errors.
+Public SHA/deployment and54changed-asset qualification follow.

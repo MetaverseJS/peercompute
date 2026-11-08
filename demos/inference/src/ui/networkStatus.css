@@ -10,5 +10,9 @@
 .pc-network-close{display:grid;place-items:center;flex:0 0 auto;width:32px;min-height:32px;padding:3px!important;color:inherit;background:#0b1d15;border:1px solid #365b46;border-radius:4px;font:20px/1 ui-monospace,SFMono-Regular,Consolas,monospace;cursor:pointer}
 .pc-network-state{margin:0 0 7px;color:var(--pc-network-color);font-weight:600}
 .pc-network-popover .pc-network-summary{margin:0;min-height:0;color:#adcbb7;font-size:12px;line-height:1.5;overflow-wrap:anywhere;white-space:normal}
+.pc-network-models-heading{margin:14px 0 7px;font:600 12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace}
+.pc-network-models{list-style:none;padding:0;margin:0}.pc-network-model{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:7px 0;border-top:1px solid #284b38;font-size:12px;line-height:1.5}
+.pc-network-model-name{min-width:0;overflow-wrap:anywhere;white-space:normal}.pc-network-model-hosts{flex:0 0 auto;white-space:nowrap;color:#91e6ac}
+.pc-network-models-empty{margin:0;color:#8eae9a;font-size:12px;line-height:1.5}
 .pc-network-trigger:focus-visible,.pc-network-popover:focus-visible,.pc-network-close:focus-visible{outline:2px solid #9be1b7;outline-offset:2px}
 @media(max-width:540px){.pc-network-popover{padding:12px}}

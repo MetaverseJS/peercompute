@@ -86,6 +86,89 @@ test('popup and Config text retain counts, errors and file-sharing diagnostics w
   assert.match(await details.textContent(), /No peer is currently advertising a loaded model/);
 });
 
+test('peer inference directory groups models, counts distinct remote hosts and includes busy speech specialists', async (t) => {
+  const page = await fixture(t);
+  await page.evaluate(() => updateStatus({ ...healthy, inferenceModels: [
+    { manifestCid: 'dream', name: 'DreamShaper', available: true, hosts: [
+      { peerId: 'a', busy: true }, { peerId: 'a', busy: true }, { peerId: 'b', busy: false }, { peerId: 'self', local: true },
+    ] },
+    { manifestCid: 'dream', name: 'DreamShaper', available: true, hosts: [{ peerId: 'b', busy: false }, { peerId: 'c', busy: true }] },
+    { manifestCid: 'voice', name: 'Moonshine Tiny', task: 'automatic-speech-recognition', available: true, hosts: [{ peerId: 'a', busy: true }] },
+    { manifestCid: 'fallback', name: 'Qwen', available: true, providerCount: 2, busy: true },
+    { manifestCid: 'fallback', name: 'Qwen', available: true, providerCount: 2, busy: true },
+    { manifestCid: 'other-qwen', name: 'Qwen', available: true, providerCount: 1 },
+    { manifestCid: 'local', name: 'Local model', local: true, available: true, providerCount: 1 },
+    { manifestCid: 'self-only', name: 'Self only', available: true, providerCount: 20, hosts: [{ peerId: 'self', local: true }] },
+    { manifestCid: 'missing', name: 'Unavailable', available: false, providerCount: 1 },
+    { manifestCid: 'invalid', name: 'Invalid count', available: true, providerCount: -1 },
+    null,
+  ] }));
+  await trigger(page).click();
+  const list = popup(page).getByRole('list', { name: 'Peer inference models', exact: true });
+  assert.equal(await list.getByRole('listitem').count(), 4);
+  assert.deepEqual(await list.locator('.pc-network-model-name').allTextContents(), ['DreamShaper', 'Moonshine Tiny', 'Qwen', 'Qwen']);
+  assert.equal(await list.locator('[data-model-cid="dream"] .pc-network-model-hosts').textContent(), '3 peers');
+  assert.equal(await list.locator('[data-model-cid="voice"] .pc-network-model-hosts').textContent(), '1 peer · busy');
+  assert.equal(await list.locator('[data-model-cid="fallback"] .pc-network-model-hosts').textContent(), '2 peers · busy');
+  assert.equal(await list.locator('[data-model-cid="other-qwen"] .pc-network-model-hosts').textContent(), '1 peer');
+});
+
+test('directory updates preserve focus and remove departed or offline models without interpreting model names', async (t) => {
+  const page = await fixture(t);
+  await page.evaluate(() => {
+    window.peerModels = [{ manifestCid: 'image', name: '<img src=x onerror=alert(1)>', available: true, hosts: [{ peerId: 'a' }] }];
+    updateStatus({ ...healthy, inferenceModels: peerModels });
+  });
+  await trigger(page).click();
+  const details = popup(page), close = details.getByRole('button', { name: 'Close network status', exact: true });
+  const list = details.getByRole('list', { name: 'Peer inference models', exact: true });
+  assert.equal(await list.locator('.pc-network-model-name').textContent(), '<img src=x onerror=alert(1)>');
+  assert.equal(await details.locator('img').count(), 0);
+  await close.focus();
+  await page.evaluate(() => {
+    peerModels[0].hosts.push({ peerId: 'b' });
+    updateStatus({ ...healthy, inferenceModels: peerModels });
+  });
+  assert.equal(await list.locator('.pc-network-model-hosts').textContent(), '2 peers');
+  assert.equal(await close.evaluate((element) => element === document.activeElement), true);
+  await page.evaluate(() => updateStatus({ ...healthy, inferenceModels: [] }));
+  assert.equal(await list.isVisible(), false);
+  assert.equal(await details.getByText('No peer inference models are available.', { exact: true }).isVisible(), true);
+  await page.evaluate(() => updateStatus({ ...healthy, connected: false, inferenceModels: peerModels }));
+  assert.equal(await details.locator('[data-model-cid]').count(), 0, 'cached targets do not imply online inference');
+  assert.equal(await details.getByText('Connect to the peer network to discover models.', { exact: true }).isVisible(), true);
+  assert.equal(await close.evaluate((element) => element === document.activeElement), true);
+  await page.evaluate(() => updateStatus({ ...healthy, inferenceModels: peerModels }));
+  assert.equal(await list.locator('.pc-network-model-hosts').textContent(), '2 peers');
+  assert.equal(await close.evaluate((element) => element === document.activeElement), true);
+});
+
+test('all model rows remain accessible with wrapped names and stable scrolling on a 320px phone', async (t) => {
+  const page = await fixture(t, { viewport: { width: 320, height: 480 } });
+  await page.evaluate(() => {
+    window.modelSnapshot = { ...healthy, hostedModelCount: 24, inferenceModels: Array.from({ length: 24 }, (_, index) => ({
+      manifestCid: 'model-' + index, name: `Model ${String(index).padStart(2, '0')} ` + 'Long_model_name_without_spaces_'.repeat(5),
+      available: true, providerCount: index + 1, busy: index % 2 === 0,
+    })) };
+    updateStatus(modelSnapshot);
+  });
+  await trigger(page).click();
+  const details = popup(page);
+  assert.equal(await details.getByRole('listitem').count(), 24, 'directory does not truncate the registered models');
+  const box = await details.boundingBox();
+  assert(box.x >= 8 && box.x + box.width <= 312 && box.y >= 8 && box.y + box.height <= 472);
+  assert.equal(await details.evaluate((element) => element.scrollWidth <= element.clientWidth), true);
+  assert.equal(await details.evaluate((element) => element.scrollHeight > element.clientHeight), true);
+  await details.locator('[data-model-cid="model-23"]').scrollIntoViewIfNeeded();
+  const before = await details.evaluate((element) => element.scrollTop); assert(before > 0);
+  await page.evaluate(() => updateStatus(modelSnapshot));
+  assert.equal(await details.evaluate((element) => element.scrollTop), before);
+  assert.equal(await details.locator('[data-model-cid="model-23"] .pc-network-model-hosts').textContent(), '24 peers');
+  const directory = process.env.NETWORK_STATUS_SCREENSHOTS || '/tmp/peercompute-network-status-ui'; await mkdir(directory, { recursive: true });
+  await details.evaluate((element) => { element.scrollTop = 0; });
+  await page.screenshot({ path: `${directory}/mobile-network-models.png` });
+});
+
 test('native button toggles the nonmodal popup, Escape and close return focus, outside click preserves its target', async (t) => {
   const page = await fixture(t);
   await trigger(page).focus(); await page.keyboard.press('Enter');

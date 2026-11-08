@@ -1278,3 +1278,11 @@ Completed: README checkpoint c4430844 and normal merge de73dfd0 are pushed.
 Main retains both histories and the exact feature tree. Pages source is main:/docs,
 and the merge commit built successfully on November8 at22:16:10Z. Documentation,
 release checks and public bytes pass; feature branch retained, no ulg merge.
+
+
+### November 8 — peer inference availability follow-up
+
+Return to this model-demo branch for capability-based Generate image availability
+and a network-status directory of inference models with hosting peer counts.
+Preserve local/Mixed routing, draft task intent, existing publication setup and
+main history. Rebuild affected shared consumers and deploy GitHub Pages.
