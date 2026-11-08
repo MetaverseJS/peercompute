@@ -4114,3 +4114,26 @@ This matrix supersedes the preceding ground-primitive/`zIndex` assertions.
 - Preserve prior HEAD hashed docs assets after a release build so open pages can
   still fetch old chunks/workers; verify all new HTML hashes remain unchanged.
   Retention is limited to deleted assets, never old HTML or new direct outputs.
+
+
+## November 8 chat controls
+
+Run Node24 prompt-style and agent router/runtime/bridge tests, native network
+truth-table/panel tests, HoldToRecord real pointer/keyboard tests and console voice
+plus unified persisted-agent chat tests. Assert styled local/peer text/vision and
+dictated requests, original persisted text, opt-out, exact image/TTS prompts,
+mutual exclusion,320px layout and pending-permission/capture cancellation. Tests
+use controlled inference/audio with real DOM/IndexedDB/routing; no model-quality
+claim. Build all demos; inspect exact inference/Cube Models/Earth preview and
+Pages desktop/390/320 screenshots, runtime errors and SecretWorkshop connections.
+Public source identity/assets must match the published commit. Preserve old hashed
+assets for open pages. Numerical physics is unchanged and uses prior release evidence.
+
+Acceptance so far:193distinct cases pass across focused suites (core36, unified15,
+voice/adapter11, hold/console17, panel/network114). The unified total combines
+14full-suite passes with the corrected PNG-fixture vision case. Initial harness
+failures remain in external receipts. Full15-demo production build passes; internal
+3preview routes pass at1440/390/320 with24screenshots and authenticated
+SecretWorkshop connections. Headless browser uses software rendering/WebGPU
+disabled; no weights, microphone device or user-profile data used. Public results
+follow in log.md.

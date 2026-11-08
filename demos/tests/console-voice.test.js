@@ -35,11 +35,24 @@ async function selectChatTarget(page, target) {
   await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Chat options');
 }
 async function setChatOption(page, name, checked) {
+  if (name === 'Generate image' || name === 'Speak replies') {
+    await page.getByRole('checkbox', { name, exact: true }).setChecked(checked);
+    return;
+  }
   const dialog = await openChatOptions(page);
   await dialog.getByLabel(name, { exact: true }).setChecked(checked);
   await dialog.getByRole('button', { name: 'Done', exact: true }).click();
   await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Chat options');
 }
+
+async function pressTalk(page) {
+  const button = page.getByRole('button', { name: 'Talk', exact: true });
+  const box = await button.boundingBox();
+  assert(box, 'Talk must be visibly available');
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+}
+const releaseTalk = (page) => page.mouse.up();
 
 async function fixture(t, { width = 390, height = 844 } = {}) {
   const context = await browser.newContext({ viewport: { width, height } }), page = await context.newPage();
@@ -50,7 +63,7 @@ async function fixture(t, { width = 390, height = 844 } = {}) {
     external.push(new URL(route.request().url()).origin); return route.abort();
   });
   t.after(async () => {
-    await page.evaluate(async () => { window.releaseCleanup?.(); await panel?.dispose(); }).catch(() => {});
+    await page.evaluate(async () => { window.releaseAudio?.(); window.releaseCleanup?.(); await panel?.dispose(); }).catch(() => {});
     await context.close(); assert.deepEqual(errors, []); assert.deepEqual(external, []);
   });
   await page.goto(origin + '/__console_voice');
@@ -97,6 +110,7 @@ async function fixture(t, { width = 390, height = 844 } = {}) {
     window.panel = await mountInferencePanel({ container: document.querySelector('#app'), runtimeFactory: async () => runtime,
       audioFactory: async () => {
         calls.push({ type: 'create-audio' });
+        if (control.hold === 'audio-init') await new Promise((resolve) => { window.releaseAudio = resolve; });
         return {
           async startRecording({ signal }) { calls.push({ type: 'capture-start' }); await hold('permission', signal);
             if (control.denied) throw new DOMException('Microphone permission denied', 'NotAllowedError'); captureActive = true; },
@@ -124,15 +138,15 @@ test('console defaults Mixed with explicit image and speech opt-ins and no micro
   }
 });
 
-test('native Talk/Stop invokes real VoiceSession ASR, routed reasoning and optional TTS without loading models', async (t) => {
+test('native Talk hold/release invokes real VoiceSession ASR, routed reasoning and optional TTS without loading models', async (t) => {
   const page = await fixture(t);
   await setChatOption(page, 'Speak replies', true);
-  await page.getByRole('button', { name: 'Talk', exact: true }).click();
+  await pressTalk(page);
   await page.waitForFunction(() => captureActive);
-  assert.equal(await page.getByRole('button', { name: 'Send', exact: true }).isDisabled(), true);
+  assert.equal(await page.getByRole('button', { name: 'Send', exact: true, includeHidden: true }).isDisabled(), true);
   assert.equal(await page.getByRole('button', { name: 'Models', exact: true }).isDisabled(), true);
   assert.equal(await page.getByRole('button', { name: 'Chat options', exact: true }).isDisabled(), true);
-  await page.getByRole('button', { name: 'Stop recording', exact: true }).click();
+  await releaseTalk(page);
   await page.waitForFunction(() => calls.some((entry) => entry.type === 'play'));
   await page.waitForFunction(() => !document.querySelector('[aria-label="Chat target"]').disabled);
   const executions = await page.evaluate(() => calls.filter((entry) => entry.type === 'execute'));
@@ -155,8 +169,8 @@ test('explicit local reasoning selection keeps ASR and TTS local and preserves t
   const page = await fixture(t);
   await selectChatTarget(page, 'local:chat');
   await setChatOption(page, 'Speak replies', true);
-  await page.getByRole('button', { name: 'Talk', exact: true }).click(); await page.waitForFunction(() => captureActive);
-  await page.getByRole('button', { name: 'Stop recording', exact: true }).click();
+  await pressTalk(page); await page.waitForFunction(() => captureActive);
+  await releaseTalk(page);
   await page.waitForFunction(() => calls.some((entry) => entry.type === 'play'));
   assert.deepEqual(await page.evaluate(() => calls.filter((entry) => entry.type === 'execute').map((entry) => entry.target)), ['local-only', 'local:chat', 'local-only']);
 });
@@ -164,8 +178,8 @@ test('explicit local reasoning selection keeps ASR and TTS local and preserves t
 test('cancel during transcription retains operation ownership until cleanup and never submits a late reply', async (t) => {
   const page = await fixture(t);
   await page.evaluate(() => { control.hold = 'automatic-speech-recognition'; control.cleanup = true; });
-  await page.getByRole('button', { name: 'Talk', exact: true }).click(); await page.waitForFunction(() => captureActive);
-  await page.getByRole('button', { name: 'Stop recording', exact: true }).click();
+  await pressTalk(page); await page.waitForFunction(() => captureActive);
+  await releaseTalk(page);
   await page.waitForFunction(() => calls.some((entry) => entry.type === 'held'));
   await page.getByRole('button', { name: 'Stop', exact: true }).click();
   await page.waitForFunction(() => typeof releaseCleanup === 'function');
@@ -182,13 +196,14 @@ test('cancel during transcription retains operation ownership until cleanup and 
 test('permission rejection and missing speech remain actionable without silently downloading', async (t) => {
   const page = await fixture(t);
   await page.evaluate(() => { control.denied = true; });
-  await page.getByRole('button', { name: 'Talk', exact: true }).click();
+  await pressTalk(page);
   await page.getByText(/Microphone permission denied/).waitFor();
+  await releaseTalk(page);
   assert.equal(await page.getByRole('button', { name: 'Talk', exact: true }).isEnabled(), true);
   await page.evaluate(() => { control.denied = false; control.missing = 'automatic-speech-recognition'; });
-  await page.getByRole('button', { name: 'Talk', exact: true }).click();
+  await pressTalk(page);
   await page.waitForFunction(() => captureActive);
-  await page.getByRole('button', { name: 'Stop recording', exact: true }).click();
+  await releaseTalk(page);
   await page.getByText(/Load a speech-recognition model in Models/).waitFor();
   assert.equal(await page.evaluate(() => calls.some((entry) => entry.type === 'execute' && entry.task === 'text-generation')), false);
   await page.evaluate(() => { control.denied = false; control.missing = 'text-to-speech'; });
@@ -202,12 +217,13 @@ test('permission rejection and missing speech remain actionable without silently
 
 test('a spoken image prompt uses explicit image generation and never synthesizes the image as speech', async (t) => {
   const page = await fixture(t);
-  await setChatOption(page, 'Generate image', true);
   await setChatOption(page, 'Speak replies', true);
+  await setChatOption(page, 'Generate image', true);
+  assert.equal(await page.getByRole('checkbox', { name: 'Speak replies', exact: true }).isChecked(), false);
   await page.getByLabel('Message', { exact: true }).fill('Retained unsent draft');
-  await page.getByRole('button', { name: 'Talk', exact: true }).click();
+  await pressTalk(page);
   await page.waitForFunction(() => captureActive);
-  await page.getByRole('button', { name: 'Stop recording', exact: true }).click();
+  await releaseTalk(page);
   await page.getByRole('log').locator('img').waitFor();
   assert.deepEqual(await page.evaluate(() => calls.filter((entry) => entry.type === 'execute').map((entry) => entry.task)),
     ['automatic-speech-recognition', 'text-to-image']);
@@ -219,7 +235,7 @@ test('a spoken image prompt uses explicit image generation and never synthesizes
 test('dispose cancels pending microphone permission and waits before releasing the shared runtime', async (t) => {
   const page = await fixture(t);
   await page.evaluate(() => { control.hold = 'permission'; control.cleanup = true; });
-  await page.getByRole('button', { name: 'Talk', exact: true }).click();
+  await pressTalk(page);
   await page.waitForFunction(() => calls.some((entry) => entry.type === 'held'));
   await page.evaluate(() => { window.disposing = panel.dispose(); });
   await page.waitForFunction(() => typeof releaseCleanup === 'function');
@@ -228,4 +244,36 @@ test('dispose cancels pending microphone permission and waits before releasing t
   assert.equal(await page.evaluate(() => captureActive), false);
   assert.equal(await page.evaluate(() => calls.some((entry) => entry.type === 'dispose-audio')), true);
   assert.equal(await page.evaluate(() => calls.some((entry) => entry.type === 'dispose-runtime')), true);
+});
+
+test('release during audio initialization waits for cleanup and never starts a late capture', async (t) => {
+  const page = await fixture(t);
+  await page.evaluate(() => { control.hold = 'audio-init'; });
+  await pressTalk(page);
+  await page.waitForFunction(() => typeof releaseAudio === 'function');
+  await releaseTalk(page);
+  assert.equal(await page.getByRole('button', { name: 'Talk', exact: true }).isDisabled(), true);
+  assert.equal(await page.getByRole('button', { name: 'Models', exact: true }).isDisabled(), true);
+  assert.equal(await page.evaluate(() => calls.some((entry) => entry.type === 'capture-start')), false);
+  await page.evaluate(() => releaseAudio());
+  await page.waitForFunction(() => !document.querySelector('[aria-label="Talk"]').disabled);
+  assert.equal(await page.evaluate(() => captureActive), false);
+  assert.equal(await page.evaluate(() => calls.some((entry) => entry.type === 'capture-start' || entry.type === 'execute')), false);
+  assert.equal(await page.getByRole('log').locator('.pc-chat-message').count(), 0);
+});
+
+test('release during microphone permission aborts without ASR and owns delayed cleanup', async (t) => {
+  const page = await fixture(t);
+  await page.evaluate(() => { control.hold = 'permission'; control.cleanup = true; });
+  await pressTalk(page);
+  await page.waitForFunction(() => calls.some((entry) => entry.type === 'held' && entry.phase === 'permission'));
+  await releaseTalk(page);
+  await page.waitForFunction(() => typeof releaseCleanup === 'function');
+  assert.equal(await page.getByRole('button', { name: 'Talk', exact: true }).isDisabled(), true);
+  assert.equal(await page.getByRole('button', { name: 'Models', exact: true }).isDisabled(), true);
+  await page.evaluate(() => releaseCleanup());
+  await page.waitForFunction(() => !document.querySelector('[aria-label="Talk"]').disabled);
+  assert.equal(await page.evaluate(() => captureActive), false);
+  assert.equal(await page.evaluate(() => calls.some((entry) => entry.type === 'execute')), false);
+  assert.equal(await page.getByRole('log').locator('.pc-chat-message').count(), 0);
 });

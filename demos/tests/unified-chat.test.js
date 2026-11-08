@@ -92,7 +92,8 @@ async function mount(page, options = {}) {
         if (input.task === 'text-to-speech') return { audio: new Float32Array(1600), sampleRate: 16000, route: actualRoute };
         if (input.task === 'text-to-image') return { text: '', finishReason: 'stop', route: actualRoute,
           image: { width: 2, height: 2, channels: 4, data: Uint8Array.from([255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255]) } };
-        const text = `Reply to ${input.messages?.at(-1)?.content ?? input.prompt}`;
+        // Controlled output answers the user portion; calls above retain the exact styled payload.
+        const text = `Reply to ${(input.messages?.at(-1)?.content ?? input.prompt).replace(/\n\nBe concise\.$/, '')}`;
         input.onToken?.(text);
         return { text, finishReason: 'stop', route: actualRoute, ...(candidate.local ? {} : { peerId: 'owned-fixture-peer' }) };
       },
@@ -143,6 +144,7 @@ async function selectChatTarget(page, target) {
   await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Chat options');
 }
 async function setChatOption(page, name, checked) {
+  if (['Generate image', 'Speak replies'].includes(name)) { await page.getByLabel(name, { exact: true }).setChecked(checked); return; }
   const dialog = await openChatOptions(page);
   await dialog.getByLabel(name, { exact: true }).setChecked(checked);
   await dialog.getByRole('button', { name: 'Done', exact: true }).click();
@@ -168,7 +170,7 @@ async function fixture(t, options = {}) {
   await page.goto(origin + '/__unified_chat'); await mount(page, options);
   return page;
 }
-const button = (page, name) => page.getByRole('button', { name, exact: true });
+const button = (page, name) => page.getByRole('button', { name, exact: true, includeHidden: name === 'Send' });
 const transcript = (page) => page.getByRole('log', { name: 'Conversation', exact: true });
 async function agent(page, name = 'Ada') {
   const id = await page.evaluate((name) => ids[name], name);
@@ -242,14 +244,17 @@ test('local-only Talk routes ASR, persisted agent task and TTS locally with one 
   const page = await fixture(t, { ready: true }); const id = await agent(page);
   await setChatOption(page, 'Speak replies', true);
   await page.evaluate(() => { calls.length = 0; });
-  await button(page, 'Talk').click(); await page.waitForFunction(() => captureActive);
-  await button(page, 'Stop recording').click();
+  await button(page, 'Talk').focus(); await page.keyboard.down('Space'); await page.waitForFunction(() => captureActive);
+  await page.keyboard.up('Space');
   await page.waitForFunction(() => calls.some((call) => call.type === 'play'));
   await page.waitForFunction(() => !document.querySelector('[aria-label="Chat target"]').disabled);
   const calls = await page.evaluate(() => window.calls);
   assert.deepEqual(calls.filter((call) => call.type === 'execute').map((call) => call.task),
     ['automatic-speech-recognition', 'text-generation', 'text-to-speech']);
   assert(calls.filter((call) => call.type === 'execute').every((call) => call.local));
+  const executed = calls.filter((call) => call.type === 'execute');
+  assert.equal(executed[1].messages.at(-1).content, 'Recognized private message\n\nBe concise.');
+  assert.equal(executed[2].prompt, 'Reply to Recognized private message');
   assert.equal(calls.filter((call) => call.type === 'discovery').length, 0);
   const events = await page.evaluate((id) => nativeController.events(id, { limit: 100 }), id);
   assert.equal(events.filter((event) => event.type === 'request').length, 1);
@@ -260,8 +265,8 @@ test('local-only Talk routes ASR, persisted agent task and TTS locally with one 
 test('local-only agent cannot send microphone audio to peer-only speech even when Mixed was previously selected', async (t) => {
   const page = await fixture(t, { ready: true, peerSpeechOnly: true }); await agent(page);
   await page.evaluate(() => { calls.length = 0; });
-  await button(page, 'Talk').click(); await page.waitForFunction(() => captureActive);
-  await button(page, 'Stop recording').click();
+  await button(page, 'Talk').focus(); await page.keyboard.down('Space'); await page.waitForFunction(() => captureActive);
+  await page.keyboard.up('Space');
   await page.waitForFunction(() => !document.querySelector('[aria-label="Chat target"]').disabled);
   const calls = await page.evaluate(() => window.calls);
   assert.equal(calls.filter((call) => call.type === 'execute').length, 0);
@@ -273,8 +278,8 @@ test('local-only agent cannot send microphone audio to peer-only speech even whe
 test('network-assisted voice preserves actual remote provider receipts and never changes agent identity', async (t) => {
   const page = await fixture(t, { ready: true, networkAssisted: true, remoteOnly: true }); const id = await agent(page);
   await setChatOption(page, 'Speak replies', true);
-  await button(page, 'Talk').click(); await page.waitForFunction(() => captureActive);
-  await button(page, 'Stop recording').click(); await page.waitForFunction(() => calls.some((call) => call.type === 'play'));
+  await button(page, 'Talk').focus(); await page.keyboard.down('Space'); await page.waitForFunction(() => captureActive);
+  await page.keyboard.up('Space'); await page.waitForFunction(() => calls.some((call) => call.type === 'play'));
   await page.waitForFunction(() => !document.querySelector('[aria-label="Chat target"]').disabled);
   const executions = await page.evaluate(() => calls.filter((call) => call.type === 'execute'));
   assert.equal(executions.length, 3); assert(executions.every((call) => !call.local));
@@ -295,8 +300,8 @@ test('a newly local-only policy prevents remote TTS after an already completed p
     };
   });
   await setChatOption(page, 'Speak replies', true);
-  await button(page, 'Talk').click(); await page.waitForFunction(() => captureActive);
-  await button(page, 'Stop recording').click();
+  await button(page, 'Talk').focus(); await page.keyboard.down('Space'); await page.waitForFunction(() => captureActive);
+  await page.keyboard.up('Space');
   await transcript(page).getByText('Reply to Recognized private message', { exact: true }).waitFor();
   await page.waitForFunction(() => !document.querySelector('[aria-label="Chat target"]').disabled);
   const calls = await page.evaluate(() => window.calls);
@@ -351,6 +356,7 @@ test('reload restores native identity, generated pixels and console history but 
   await page.getByLabel('Message', { exact: true }).fill('A red square'); await button(page, 'Send').click();
   await transcript(page).locator('img').waitFor();
   await page.waitForFunction(() => !document.querySelector('[aria-label="Chat target"]').disabled);
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.task === 'text-to-image').at(-1).prompt), 'A red square');
   await page.evaluate(async (id) => { await nativeController.run(id, { prompt: 'Private world visitor', conversationId: 'world:visitor' }); }, id);
   await page.evaluate(async () => { await panel.dispose(); });
   await page.reload(); await mount(page, { ready: true }); await agent(page);
@@ -470,4 +476,52 @@ test('Chat options shows a failed agent history read without hiding Done or impl
   assert.equal(await status.isVisible(), false);
   assert.equal(await page.evaluate((id) => nativeController.get(id).then((head) => head.status), id), 'paused');
   await options.getByRole('button', { name: 'Done', exact: true }).click();
+});
+
+
+test('default concision reaches direct and persisted agent local/peer requests without polluting user history', async (t) => {
+  for (const remoteOnly of [false, true]) {
+    const page = await fixture(t, { ready: true, networkAssisted: remoteOnly, remoteOnly });
+    assert.equal(await page.getByLabel('Be concise', { exact: true }).isChecked(), true);
+    await send(page, 'Direct question');
+    let latest = await page.evaluate(() => calls.filter((call) => call.type === 'execute').at(-1));
+    assert.equal(latest.messages.at(-1).content, 'Direct question\n\nBe concise.');
+    assert.equal(latest.local, !remoteOnly);
+    assert.doesNotMatch(await transcript(page).textContent(), /Be concise/);
+    const id = await agent(page);
+    await send(page, 'Agent question');
+    latest = await page.evaluate(() => calls.filter((call) => call.type === 'execute').at(-1));
+    assert.equal(latest.messages.at(-1).content, 'Agent question\n\nBe concise.');
+    assert.equal(latest.local, !remoteOnly);
+    const request = await page.evaluate(async (id) => (await nativeController.events(id, { limit: 100 })).find((event) => event.type === 'request'), id);
+    assert.equal(request.text, 'Agent question');
+    await setChatOption(page, 'Be concise', false);
+    await send(page, 'Full explanation');
+    latest = await page.evaluate(() => calls.filter((call) => call.type === 'execute').at(-1));
+    assert.equal(latest.messages.at(-1).content, 'Full explanation');
+    assert.doesNotMatch(JSON.stringify(latest.messages), /Be concise/);
+    await selectChatTarget(page, 'mixed');
+    await send(page, 'Direct full explanation');
+    latest = await page.evaluate(() => calls.filter((call) => call.type === 'execute').at(-1));
+    assert.equal(latest.messages.at(-1).content, 'Direct full explanation');
+    assert.doesNotMatch(JSON.stringify(latest.messages), /Be concise/);
+  }
+});
+
+
+test('concise vision messages carry current pixels through direct and agent peer routing', async (t) => {
+  const page = await fixture(t, { ready: true, remoteOnly: true, networkAssisted: true });
+  const png = await page.evaluate(() => { const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
+    const ctx = canvas.getContext('2d'); ctx.fillStyle = '#f00'; ctx.fillRect(0, 0, 1, 1); return canvas.toDataURL().split(',')[1]; });
+  for (const isAgent of [false, true]) {
+    if (isAgent) await agent(page);
+    await page.getByLabel('Choose image attachment', { exact: true }).setInputFiles({ name: 'pixel.png', mimeType: 'image/png',
+      buffer: Buffer.from(png, 'base64') });
+    await page.locator('.pc-chat-attachment').waitFor();
+    await send(page, isAgent ? 'Agent sees this' : 'Direct sees this');
+    const latest = await page.evaluate(() => calls.filter((call) => call.type === 'execute').at(-1));
+    assert.equal(latest.task, 'image-text-to-text'); assert.equal(latest.local, false);
+    assert.equal(latest.messages.at(-1).content, (isAgent ? 'Agent sees this' : 'Direct sees this') + '\n\nBe concise.');
+    assert.equal(latest.image.length, 4);
+  }
 });

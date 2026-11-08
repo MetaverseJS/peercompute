@@ -1251,3 +1251,12 @@ homunculus plan. Human-only triggering is the current default to prevent loops.
 The user explicitly requests a new GitHub Pages docs/ build and push to origin
 when these changes finish. This supersedes earlier internal-only publication
 limits for this release; no merge to ulg is requested.
+
+
+### November 8 — chat control follow-up
+
+User requests network green on connected+positive peer/shared/hosted counts, image
+and ear glyphs in the bottom row with mutually exclusive output modes, hold Talk
+recording and default-on concise text/vision prompts. Preserve saved user text and
+local/peer routing. Build/publish the feature-branch Pages output and internal
+previews after native and affected-route visual/console checks. No merge to ulg.

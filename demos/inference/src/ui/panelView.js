@@ -13,6 +13,17 @@ const button = (text, label) => {
   return result;
 };
 const label = (text, control) => { const result = node('label', text); result.append(control); return result; };
+const glyphToggle = (control, name, paths) => {
+  const result = node('label', undefined, 'pc-chat-toggle'); result.title = name;
+  control.type = 'checkbox'; control.setAttribute('aria-label', name);
+  const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  icon.setAttribute('viewBox', '0 0 24 24'); icon.setAttribute('aria-hidden', 'true'); icon.setAttribute('focusable', 'false');
+  for (const d of paths) {
+    const shape = document.createElementNS(icon.namespaceURI, 'path'); shape.setAttribute('d', d); icon.append(shape);
+  }
+  const visual = node('span', undefined, 'pc-chat-toggle-glyph'); visual.setAttribute('aria-hidden', 'true'); visual.append(icon);
+  result.append(control, visual); return result;
+};
 
 function dialog(title, { dismissible = true } = {}) {
   const element = node('dialog', undefined, 'pc-model-dialog');
@@ -175,9 +186,11 @@ export function createPanelView(container) {
   attachment.append(attachmentImage, attachmentName, removeAttachment); panel.append(attachment);
   const prompt = node('textarea'); prompt.rows = 2; prompt.maxLength = 16000; prompt.placeholder = 'Message…'; prompt.setAttribute('aria-label', 'Message'); panel.append(prompt);
   const generateImage = node('input'), speakReplies = node('input');
-  generateImage.type = speakReplies.type = 'checkbox';
+  const imageToggle = glyphToggle(generateImage, 'Generate image', ['M4 3h16a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z', 'M3 17l6-6 4 4 3-3 5 5', 'M16 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z']);
+  const speechToggle = glyphToggle(speakReplies, 'Speak replies', ['M6 9a6 6 0 0 1 12 0c0 4-4 5-4 8a4 4 0 0 1-8 0', 'M10 10a2 2 0 1 1 4 0c0 2-3 2-3 5']);
+  const beConcise = node('input'); beConcise.type = 'checkbox'; beConcise.checked = true;
   const conversationOptions = node('div', undefined, 'pc-model-preferences pc-conversation-options');
-  conversationOptions.append(label('Generate image', generateImage), label('Speak replies', speakReplies));
+  conversationOptions.append(label('Be concise', beConcise));
   const modeStatus = node('p', '', 'pc-inference-note pc-route-policy'); modeStatus.setAttribute('aria-live', 'polite');
   const target = node('select'); target.setAttribute('aria-label', 'Chat target');
   chatSettings.body.append(label('Chat target', target), conversationOptions, modeStatus);
@@ -185,8 +198,9 @@ export function createPanelView(container) {
   const imageFile = node('input'); imageFile.type = 'file'; imageFile.accept = 'image/png,image/jpeg,image/webp,image/gif'; imageFile.hidden = true; imageFile.setAttribute('aria-label', 'Choose image attachment');
   const resumeAgent = button('Resume agent'); resumeAgent.hidden = true; panel.append(resumeAgent);
   const send = button('Send'), talk = button('Talk'), cancel = button('Stop'); cancel.hidden = true;
-  talk.title = 'Record a voice message, then press Stop recording to send. Load a speech-recognition model or use a compatible peer.';
-  const composer = node('div', undefined, 'pc-chat-controls'); composer.append(chatConfigure, attach, imageFile, talk, send, cancel); panel.append(composer);
+  send.className = 'pc-chat-send'; cancel.className = 'pc-chat-stop';
+  talk.title = 'Hold to record a voice message; release to send. Load a speech-recognition model or use a compatible peer.';
+  const composer = node('div', undefined, 'pc-chat-controls'); composer.append(chatConfigure, attach, imageFile, imageToggle, speechToggle, talk, send, cancel); panel.append(composer);
   panel.append(configuration, compatibility, about, menuWindow, chatOptions, loading, leaveWindow.element);
   const networkInfo = createNetworkStatus({ container: panel }); navigationActions.prepend(networkInfo.trigger);
   container.append(panel);
@@ -198,7 +212,7 @@ export function createPanelView(container) {
     compatibility, helpModel, helpReason, helpBrowser, helpOs, helpDetails, helpCommandGroup, helpCommand, helpCopy, helpConfig, helpStatus: help.status,
     cpuBudget, gpuBudget, memoryNote, memoryPressure,
     relay, connect, networkStatus, file, unload, clearChat, transcript, empty, proposed, attachment, attachmentImage,
-    attachmentName, removeAttachment, prompt, target, attach, imageFile, send, cancel, talk, generateImage, speakReplies, modeStatus, resumeAgent };
+    attachmentName, removeAttachment, prompt, target, attach, imageFile, send, cancel, talk, generateImage, speakReplies, beConcise, modeStatus, resumeAgent };
 }
 
 export function renderModelCompatibilityHelp(view, help) {

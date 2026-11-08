@@ -9,6 +9,8 @@ import { createModelManagementWindow } from './ui/modelManagementWindow.js';
 import { createAgentConsole } from './agents/agentConsole.js';
 import { createAgentChatSession } from './agents/agentChatSession.js';
 import { supportsTask as modelSupportsTask, hasInferenceCapacity } from '../../../peercompute/src/peercompute/inference/InferenceRouter.js';
+import { styleLanguagePrompt } from '../../../peercompute/src/peercompute/inference/promptStyle.js';
+import { bindHoldToRecord } from '../../shared/inference/HoldToRecord.js';
 import './panel.css';
 
 const defaultVoiceSession = async (options) => (await import('../../shared/inference/VoiceSession.js')).createVoiceSession(options);
@@ -51,7 +53,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
   let agentConsole, openingAgents;
   let agentChat, agentsStarting, agentHeads = [], selectedChat = 'mixed', activeAgentId, voiceAgentId;
   let historyController, historyPromise, historyLoading = false, historyVersion = 0;
-  let voiceSession, voiceStarting, voiceAudio;
+  let voiceSession, voiceStarting, voiceAudio, voiceHold;
   let voiceState = { status: 'idle', active: false, recording: false };
   const alive = () => !disposed && !closing;
   const sourceBlocked = (source) => ['checking', 'unavailable'].includes(source?.localAvailability?.status);
@@ -130,10 +132,12 @@ export async function mountInferencePanel({ container = document.body, stateMana
     view.attach.title = view.generateImage.checked ? 'Generate image uses a text prompt. Uncheck it to attach an image.'
       : !supportsTask(selectedTarget('image-text-to-text'), 'image-text-to-text')
         ? 'Choose Mixed or a loaded local or peer vision model to attach an image.' : 'Attach an image for a vision model';
-    view.generateImage.disabled = view.speakReplies.disabled = !!operation;
+    view.generateImage.disabled = view.speakReplies.disabled = view.beConcise.disabled = !!operation;
     const capturing = voiceState.recording || voiceState.status === 'requesting-microphone';
-    view.talk.textContent = capturing ? 'Stop recording' : 'Talk';
-    view.talk.disabled = !!loadingOperation || (!!operation && !capturing) || historyLoading || imageLoading || imageTransferPending || attachmentConflict || (!!target?.agentId && !target.available);
+    view.talk.textContent = voiceState.recording ? 'Release' : 'Talk';
+    view.talk.setAttribute('aria-label', 'Talk');
+    view.talk.setAttribute('aria-pressed', String(capturing));
+    view.talk.disabled = !!loadingOperation || (!!operation && (!voiceHold || voiceHold.released)) || historyLoading || imageLoading || imageTransferPending || attachmentConflict || (!!target?.agentId && !target.available);
     view.resumeAgent.hidden = !target?.agentId || !target.reason || /busy|unavailable/i.test(target.reason);
     view.resumeAgent.disabled = !!operation || historyLoading;
     view.modeStatus.textContent = attachmentConflict
@@ -149,7 +153,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     view.empty.textContent = target?.agentId && target.reason ? `${target.name}: ${target.reason}`
       : supportsTask(target, requestTask()) ? view.generateImage.checked
         ? 'Describe an image to get started. Use ⚙ for chat options.'
-        : 'Ask a question to get started. Use ⚙ for models, images and voice.'
+        : 'Ask a question to get started. Use ⚙ for chat options.'
       : 'Open Models to load one, or use ⚙ to choose a peer model.';
     view.unload.disabled = !!operation;
     view.clearChat.disabled = !!operation || !!target?.agentId;
@@ -844,8 +848,14 @@ export async function mountInferencePanel({ container = document.body, stateMana
     const id = agentIdFor(view.target.value); if (!id || operation) return;
     void run(async (signal) => { await (await getAgentChat()).resume(id); signal.throwIfAborted(); setStatus('Agent ready. Send a message.', { quiet: true }); });
   };
-  view.generateImage.onchange = () => { invalidateActions(); updateControls(); };
-  view.speakReplies.onchange = updateControls;
+  view.generateImage.onchange = () => {
+    if (view.generateImage.checked) view.speakReplies.checked = false;
+    invalidateActions(); updateControls();
+  };
+  view.speakReplies.onchange = () => {
+    if (view.speakReplies.checked) view.generateImage.checked = false;
+    invalidateActions(); updateControls();
+  };
   view.prompt.oninput = updateControls;
   for (const [control, method] of [[view.sharing, 'setSharing'], [view.hosting, 'setHostInference']]) {
     control.onchange = () => {
@@ -959,7 +969,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     voiceState = state;
     if (!alive()) return;
     if (!signal?.aborted && state.status !== 'idle' && state.status !== 'closed') {
-      setStatus(({ 'requesting-microphone': 'Waiting for microphone permission…', recording: 'Listening… press Stop recording to send.',
+      setStatus(({ 'requesting-microphone': 'Waiting for microphone permission… keep holding Talk.', recording: 'Listening… release Talk to send.',
         transcribing: 'Transcribing voice…', synthesizing: 'Preparing spoken reply…', playing: 'Speaking…' })[state.status] ?? state.status);
     }
     updateControls();
@@ -1008,7 +1018,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
       // Keep the visible transcript; replace model context only after success.
       const history = selectedImage || agentId ? [] : histories.get(targetKey) ?? [], message = text || 'Describe this image.';
       const messages = createsImage ? undefined : [...(contextText || instructions ? [{ role: 'system', content: contextText + '\n' + instructions }] : []),
-        ...history.slice(-6), { role: 'user', content: message }];
+        ...history.slice(-6), { role: 'user', content: styleLanguagePrompt(message, { task, concise: view.beConcise.checked }) }];
       appendMessage(view, 'user', text, { image: selectedImage?.preview });
       const reply = appendMessage(view, 'assistant', '', { targetName: target.automatic ? 'Choosing model…' : target.name });
       const showRoute = (route) => {
@@ -1030,7 +1040,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
             }
           },
           onToken(chunk) { if (alive() && !signal.aborted && !createsImage) { reply.textContent += chunk; scrollTranscript(); } } };
-        const result = agentId ? await agentChat.run(agentId, { signal, task, prompt: message,
+        const result = agentId ? await agentChat.run(agentId, { signal, task, prompt: message, concise: view.beConcise.checked,
           ...(selectedImage ? { image: selectedImage.image } : {}), maxNewTokens: 1024, ...callbacks })
           : await runtime.generate(targetKey, { requestId, signal, task,
             ...(createsImage ? { prompt: text } : { messages, image: selectedImage?.image, maxNewTokens: 1024 }), ...callbacks });
@@ -1088,29 +1098,51 @@ export async function mountInferencePanel({ container = document.body, stateMana
     await run((signal) => submit(signal));
   }
   view.send.onclick = () => { void send(); };
-  view.talk.onclick = () => {
-    if (!alive() || view.talk.disabled) return;
-    if (voiceState.recording || voiceState.status === 'requesting-microphone') {
-      void Promise.resolve().then(() => voiceSession.stop()).catch(showError); return;
-    }
-    void run(async (signal) => {
-      const key = view.target.value || 'mixed'; voiceAgentId = agentIdFor(key);
-      const target = voiceAgentId ? await (await getAgentChat()).speechTarget(voiceAgentId, { signal }) : key;
-      const session = await getVoiceSession(signal);
-      let phase, result;
-      try {
-        result = await session.record({ target, signal, onProgress: voiceProgress,
-          onState: (state) => { if (state.status !== 'idle') phase = state.status; showVoiceState(state, signal); } });
-      } catch (error) {
+  const holdRecorder = bindHoldToRecord({ button: view.talk,
+    onStart() {
+      if (!alive() || view.talk.disabled || operation) return;
+      const hold = { controller: new AbortController(), released: false }; voiceHold = hold;
+      void run(async (operationSignal) => {
+        const signal = AbortSignal.any([operationSignal, hold.controller.signal]);
         signal.throwIfAborted();
-        if (phase === 'transcribing') throw new Error(`${error.message}. Load a speech-recognition model in Models or use a compatible peer.`, { cause: error });
-        throw error;
+        const key = view.target.value || 'mixed'; voiceAgentId = agentIdFor(key);
+        const target = voiceAgentId ? await (await getAgentChat()).speechTarget(voiceAgentId, { signal }) : key;
+        const session = await getVoiceSession(signal);
+        let phase, result;
+        try {
+          result = await session.record({ target, signal, onProgress: voiceProgress,
+            onState: (state) => { if (state.status !== 'idle') phase = state.status;
+              if (state.recording) hold.captureReady = true; showVoiceState(state, signal); } });
+        } catch (error) {
+          signal.throwIfAborted();
+          if (phase === 'transcribing') throw new Error(`${error.message}. Load a speech-recognition model in Models or use a compatible peer.`, { cause: error });
+          throw error;
+        }
+        signal.throwIfAborted();
+        if (!result.text?.trim()) throw new Error('No speech recognized. Try again or type a message.');
+        await submit(signal, { text: result.text.trim(), preserveDraft: true });
+      }).finally(() => {
+        if (voiceHold !== hold) return;
+        voiceHold = null; holdRecorder.reset(); if (alive()) updateControls();
+      });
+    },
+    onRelease() {
+      const hold = voiceHold; if (!hold || hold.released) return;
+      hold.released = true;
+      if (voiceState.recording) {
+        void Promise.resolve().then(() => voiceSession.stop()).catch((error) => { hold.controller.abort(error); showError(error); });
+      } else if (!hold.captureReady) {
+        hold.controller.abort(new DOMException('Microphone was not ready. Hold Talk again to record.', 'AbortError'));
       }
-      signal.throwIfAborted();
-      if (!result.text?.trim()) throw new Error('No speech recognized. Try again or type a message.');
-      await submit(signal, { text: result.text.trim(), preserveDraft: true });
-    });
-  };
+      if (alive()) updateControls();
+    },
+    onCancel() {
+      if (!voiceHold || voiceHold.released) return;
+      voiceHold.released = true;
+      voiceHold.controller.abort(new DOMException('Recording cancelled', 'AbortError'));
+      if (alive()) updateControls();
+    },
+  });
   view.agents.onclick = () => {
     if (!alive() || view.agents.disabled) return;
     openingAgents = (async () => {
@@ -1187,7 +1219,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     clearInterval(progressTimer); progressTimer = null;
     if (disposed) return;
     if (disposingPromise) return disposingPromise;
-    closing = true; view.networkInfo.dispose(); view.chatOptions.close();
+    closing = true; holdRecorder.dispose(); view.networkInfo.dispose(); view.chatOptions.close();
     if (managementWindow) {
       modelBrowser.setBusy(true); modelBrowser.setFeedback('Closing Models… Waiting for cleanup.');
       for (const control of view.storedContent.querySelectorAll('button,input')) control.disabled = true;

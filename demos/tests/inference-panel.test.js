@@ -98,6 +98,9 @@ async function selectChatTarget(page, target) {
   await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Chat options');
 }
 async function setChatOption(page, name, checked) {
+  if (name === 'Generate image' || name === 'Speak replies') {
+    await page.getByRole('checkbox', { name, exact: true }).setChecked(checked); return;
+  }
   const dialog = await openChatOptions(page);
   await dialog.getByLabel(name, { exact: true }).setChecked(checked);
   await dialog.getByRole('button', { name: 'Done', exact: true }).click();
@@ -642,10 +645,77 @@ test('compact navigation and composer preserve native control order at 320 and 3
     const attach = await page.getByRole('button', { name: 'Attach image', exact: true }).boundingBox();
     assert(options.x + options.width <= attach.x + 1 && Math.abs(options.y - attach.y) < 5);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-    for (const name of ['Chat target', 'Generate image', 'Speak replies']) assert.equal(await page.getByLabel(name, { exact: true }).isVisible(), false, name);
+    for (const name of ['Chat target', 'Be concise']) assert.equal(await page.getByLabel(name, { exact: true }).isVisible(), false, name);
+    const composerControls = [page.getByRole('button', { name: 'Chat options', exact: true }),
+      page.getByRole('button', { name: 'Attach image', exact: true }),
+      page.getByRole('checkbox', { name: 'Generate image', exact: true }),
+      page.getByRole('checkbox', { name: 'Speak replies', exact: true }),
+      page.getByRole('button', { name: 'Talk', exact: true }), page.getByRole('button', { name: 'Send', exact: true })];
+    const composerBounds = await Promise.all(composerControls.map((control) => control.boundingBox()));
+    assert(composerBounds.every((box) => box && box.x >= 0 && box.x + box.width <= width && box.height >= 40), JSON.stringify(composerBounds));
+    for (let index = 1; index < composerBounds.length; index++) {
+      assert(composerBounds[index].x >= composerBounds[index - 1].x + composerBounds[index - 1].width - 1, JSON.stringify(composerBounds));
+      assert(Math.abs(composerBounds[index].y - composerBounds[0].y) < 5, JSON.stringify(composerBounds));
+    }
     assert.equal(await page.locator('.pc-route-policy').isVisible(), false);
     assert.equal(await page.locator('.pc-inference-panel > .pc-network-summary').count(), 0);
   }
+});
+
+test('composer glyph toggles expose native checked state, keyboard focus and selected styling', async (t) => {
+  const page = await fixture(t, { loaded: true });
+  await page.setViewportSize({ width: 320, height: 844 });
+  const image = page.getByRole('checkbox', { name: 'Generate image', exact: true });
+  const speech = page.getByRole('checkbox', { name: 'Speak replies', exact: true });
+  const glyphStyle = (control) => control.evaluate((input) => {
+    const visual = input.nextElementSibling;
+    return { background: getComputedStyle(visual).backgroundColor, marker: getComputedStyle(visual, '::after').content,
+      focus: getComputedStyle(visual).outlineStyle, title: input.parentElement.title };
+  });
+  const off = await glyphStyle(image); assert.equal(off.title, 'Generate image');
+  await image.focus(); await page.keyboard.press('Space');
+  assert.equal(await image.isChecked(), true); assert.equal(await speech.isChecked(), false);
+  const on = await glyphStyle(image); assert.notEqual(on.background, off.background); assert.equal(on.marker, '"✓"'); assert.equal(on.focus, 'solid');
+  await speech.check(); assert.equal(await speech.isChecked(), true); assert.equal(await image.isChecked(), false);
+  await image.check(); assert.equal(await image.isChecked(), true); assert.equal(await speech.isChecked(), false);
+  const directory = process.env.CHAT_CONTROLS_SCREENSHOTS || '/tmp/peercompute-chat-controls-ui'; await mkdir(directory, { recursive: true });
+  await page.screenshot({ path: `${directory}/composer-image-320.png` });
+  await image.uncheck(); await speech.check(); await page.screenshot({ path: `${directory}/composer-speech-320.png` });
+  await speech.uncheck();
+  const options = await openChatOptions(page);
+  assert.equal(await options.getByRole('checkbox', { name: 'Be concise', exact: true }).isChecked(), true);
+  assert.equal(await options.getByRole('checkbox').count(), 1);
+  await page.screenshot({ path: `${directory}/chat-options-concise-320.png` });
+});
+
+test('active Stop replaces disabled Send without clipping composer controls at320px', async (t) => {
+  const page = await fixture(t, { loaded: true, generateDelay: 10000 }); await page.setViewportSize({ width: 320, height: 844 });
+  await page.getByLabel('Message', { exact: true }).fill('Wait for cancellation');
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  const stop = page.getByRole('button', { name: 'Stop', exact: true }); await stop.waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Send', exact: true }).isVisible(), false);
+  for (const name of ['Generate image', 'Speak replies']) assert.equal(await page.getByRole('checkbox', { name, exact: true }).isDisabled(), true);
+  const bounds = await page.locator('.pc-chat-controls').evaluate((row) => [...row.children].filter((child) => child.getClientRects().length)
+    .map((child) => { const b = child.getBoundingClientRect(); return { x: b.x, y: b.y, right: b.right }; }));
+  assert(bounds.every((box) => box.x >= 0 && box.right <= 320 && Math.abs(box.y - bounds[0].y) < 5), JSON.stringify(bounds));
+  await stop.click(); await page.waitForFunction(() => !document.querySelector('.pc-chat-stop') || document.querySelector('.pc-chat-stop').hidden);
+  assert.equal(await page.getByRole('button', { name: 'Send', exact: true }).isVisible(), true);
+});
+
+test('Be concise defaults on and styles only the new request while retaining the original visible user text', async (t) => {
+  const page = await fixture(t, { loaded: true });
+  const input = page.getByLabel('Message', { exact: true });
+  await input.fill('Explain stars'); await input.press('Enter');
+  await page.getByText('Reply to Explain stars\n\nBe concise.', { exact: true }).waitFor();
+  assert.equal(await page.locator('.pc-chat-message-user p').last().textContent(), 'Explain stars');
+  assert.equal(await page.evaluate(() => calls.find((call) => call.type === 'generate').messages.at(-1).content), 'Explain stars\n\nBe concise.');
+  await setChatOption(page, 'Be concise', false);
+  await input.fill('Give more details'); await input.press('Enter');
+  await page.getByText('Reply to Give more details', { exact: true }).waitFor();
+  const request = await page.evaluate(() => calls.filter((call) => call.type === 'generate').at(-1));
+  assert.equal(request.messages[0].content, 'Explain stars');
+  assert.equal(request.messages.at(-1).content, 'Give more details');
+  assert.equal(await page.locator('.pc-chat-message-user p').last().textContent(), 'Give more details');
 });
 
 test('Chat options preserves draft and history, routes the selected target, and returns keyboard focus', async (t) => {
@@ -653,14 +723,15 @@ test('Chat options preserves draft and history, routes the selected target, and 
   await selectChatTarget(page, 'peer:fixture');
   const message = page.getByLabel('Message', { exact: true });
   await message.fill('First conversation turn'); await message.press('Enter');
-  await page.getByText('Reply to First conversation turn', { exact: true }).waitFor();
+  await page.getByText('Reply to First conversation turn\n\nBe concise.', { exact: true }).waitFor();
   await message.fill('Retained draft\nsecond line');
   const options = await openChatOptions(page);
   await options.getByLabel('Chat target', { exact: true }).selectOption('peer:fixture');
-  await options.getByLabel('Generate image', { exact: true }).check();
-  await options.getByLabel('Generate image', { exact: true }).uncheck();
-  await options.getByLabel('Speak replies', { exact: true }).check();
-  await options.getByLabel('Speak replies', { exact: true }).uncheck();
+  assert.equal(await options.getByLabel('Be concise', { exact: true }).isChecked(), true);
+  await options.getByLabel('Be concise', { exact: true }).uncheck();
+  await options.getByLabel('Be concise', { exact: true }).check();
+  assert.equal(await options.getByLabel('Generate image', { exact: true }).count(), 0);
+  assert.equal(await options.getByLabel('Speak replies', { exact: true }).count(), 0);
   assert.match(await options.locator('.pc-route-policy').textContent(), /another peer/);
   for (let index = 0; index < 8; index++) {
     await page.keyboard.press('Tab');
@@ -691,7 +762,7 @@ test('routine main status is quiet while errors remain visible and successful re
   await page.waitForFunction(() => document.querySelector('.pc-inference-panel > [role=status]').classList.contains('pc-status-quiet'));
   const quiet = await status.boundingBox(); assert(quiet === null || quiet.height <= 1, JSON.stringify(quiet));
   assert.match(await page.locator('.pc-chat-empty').textContent(), /Ask a question/);
-  assert.match(await page.locator('.pc-chat-empty').textContent(), /⚙.*models, images and voice/);
+  assert.match(await page.locator('.pc-chat-empty').textContent(), /⚙.*chat options/);
   await page.evaluate(() => { uiState.rejectGeneration = true; });
   const message = page.getByLabel('Message', { exact: true });
   await message.fill('Show an actionable error'); await message.press('Enter');
@@ -701,7 +772,7 @@ test('routine main status is quiet while errors remain visible and successful re
   assert.match(await status.textContent(), /Vision fixture generation failed/);
   await page.evaluate(() => { uiState.rejectGeneration = false; });
   await message.fill('Successful retry'); await message.press('Enter');
-  await page.getByText('Reply to Successful retry', { exact: true }).waitFor();
+  await page.getByText('Reply to Successful retry\n\nBe concise.', { exact: true }).waitFor();
   await page.waitForFunction(() => document.querySelector('.pc-inference-panel > [role=status]').textContent === 'Ready.'
     && document.querySelector('.pc-inference-panel > [role=status]').classList.contains('pc-status-quiet'));
   assert.match(await page.getByRole('log', { name: 'Conversation', exact: true }).textContent(), /Successful retry/);
@@ -720,7 +791,7 @@ test('a queued native Chat options close event preserves newer explicit composer
   assert.equal(await page.evaluate(() => closeFocus), 'Message');
   await page.getByLabel('Message', { exact: true }).fill('Keep the composer focus');
   await page.keyboard.press('Enter');
-  await page.getByText('Reply to Keep the composer focus', { exact: true }).waitFor();
+  await page.getByText('Reply to Keep the composer focus\n\nBe concise.', { exact: true }).waitFor();
 });
 
 test('unified import adds local capability and preserves default Mixed routing', async (t) => {
@@ -744,12 +815,12 @@ test('Mixed sends explicit text tasks and labels the actual route; Local only ne
   await page.getByLabel('Message', { exact: true }).fill('First request');
   await page.getByRole('button', { name: 'Send', exact: true }).click();
   await page.waitForFunction(() => calls.some((call) => call.type === 'generate'));
-  await page.getByText('Reply to First request', { exact: true }).waitFor();
+  await page.getByText('Reply to First request\n\nBe concise.', { exact: true }).waitFor();
   assert.match(await page.locator('.pc-chat-message-assistant .pc-chat-speaker').last().textContent(), /Peer · Peer text model/);
   await page.evaluate(() => { uiState.loaded = true; uiState.residentCids = ['fixture-vision']; });
   await page.waitForFunction(() => document.querySelector('[aria-label="Chat target"] option[value="local:fixture-vision"]').textContent.includes('Fixture vision'));
   await page.getByLabel('Message', { exact: true }).fill('Second request'); await page.getByRole('button', { name: 'Send', exact: true }).click();
-  await page.getByText('Reply to Second request', { exact: true }).waitFor();
+  await page.getByText('Reply to Second request\n\nBe concise.', { exact: true }).waitFor();
   assert.match(await page.locator('.pc-chat-message-assistant .pc-chat-speaker').last().textContent(), /Local · Fixture vision/);
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'generate').map((call) => [call.target, call.task])),
     [['mixed', 'text-generation'], ['mixed', 'text-generation']]);
@@ -909,7 +980,7 @@ test('Enter sends, Shift+Enter preserves a newline, optional embedded context st
   const result = await page.evaluate(() => ({ request: calls.find((call) => call.type === 'generate'), contextCalls,
     actions: calls.filter((call) => call.type === 'action').length,
     bottom: document.querySelector('[role=log]').scrollHeight - document.querySelector('[role=log]').clientHeight - document.querySelector('[role=log]').scrollTop }));
-  assert.equal(result.request.messages.at(-1).content, 'First\nSecond'); assert.equal(result.request.image, null);
+  assert.equal(result.request.messages.at(-1).content, 'First\nSecond\n\nBe concise.'); assert.equal(result.request.image, null);
   assert.equal(result.request.maxNewTokens, 1024);
   assert.match(result.request.messages[0].content, /Optional embedded scene context/);
   assert.deepEqual(result.contextCalls, [{ includeImage: false }]); assert.equal(result.actions, 0); assert(result.bottom < 3);
@@ -963,7 +1034,7 @@ test('Config clears conversation context without unloading a model or changing s
   await page.keyboard.press('Escape'); await input.fill('Explain rain.'); await input.press('Enter');
   await page.waitForFunction(() => calls.filter((call) => call.type === 'generate').length === 2);
   const request = await page.evaluate(() => calls.filter((call) => call.type === 'generate')[1]);
-  assert.deepEqual(request.messages, [{ role: 'user', content: 'Explain rain.' }]);
+  assert.deepEqual(request.messages, [{ role: 'user', content: 'Explain rain.\n\nBe concise.' }]);
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => ['unload', 'delete', 'acquire', 'pin'].includes(call.type))), []);
 });
 
@@ -1136,7 +1207,7 @@ test('Mixed and an exact peer accept vision attachments without a compatible loc
     await page.getByAltText('Selected image', { exact: true }).waitFor();
     await page.getByLabel('Message', { exact: true }).fill(`Describe via ${target}`);
     await page.getByLabel('Message', { exact: true }).press('Enter');
-    await page.getByText(`Reply to Describe via ${target}`, { exact: true }).waitFor();
+    await page.getByText(`Reply to Describe via ${target}\n\nBe concise.`, { exact: true }).waitFor();
   }
   const requests = await page.evaluate(() => calls.filter((call) => call.type === 'generate'));
   assert.deepEqual(requests.map(({ target, task }) => [target, task]),
@@ -1172,7 +1243,7 @@ test('busy peer vision keeps attachments and drafts while full queues block send
   assert.equal(await page.getByRole('button', { name: 'Attach image', exact: true }).isDisabled(), true);
   await selectChatTarget(page, 'mixed');
   await page.getByLabel('Message', { exact: true }).press('Enter');
-  await page.getByText('Reply to Keep this draft', { exact: true }).waitFor();
+  await page.getByText('Reply to Keep this draft\n\nBe concise.', { exact: true }).waitFor();
   assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'generate').length), 1);
 });
 
@@ -1200,7 +1271,7 @@ test('Generate image requires an explicit choice and never discards a conflictin
   assert.equal(await page.getByAltText('Selected image', { exact: true }).isVisible(), true);
   await setChatOption(page, 'Generate image', false);
   await page.getByRole('button', { name: 'Send', exact: true }).click();
-  await page.getByText('Reply to Describe my photo', { exact: true }).waitFor();
+  await page.getByText('Reply to Describe my photo\n\nBe concise.', { exact: true }).waitFor();
   assert.equal(await page.evaluate(() => calls.find((call) => call.type === 'generate').task), 'image-text-to-text');
 });
 
@@ -1228,7 +1299,7 @@ test('consecutive different images with the same filename send fresh complete pi
     assert.deepEqual([requests[index].width, requests[index].height, requests[index].channels], [32, 24, 4]);
   }
   const visualCalls = await page.evaluate(() => calls.filter((call) => call.type === 'generate'));
-  for (const request of visualCalls) assert.deepEqual(request.messages, [{ role: 'user', content: 'Describe the attached image.' }]);
+  for (const request of visualCalls) assert.deepEqual(request.messages, [{ role: 'user', content: 'Describe the attached image.\n\nBe concise.' }]);
   assert.equal(await page.locator('.pc-chat-message-user img').count(), 2, 'Earlier images remain in the visible transcript');
   await page.getByLabel('Message', { exact: true }).fill('Now a text-only follow-up.');
   await page.getByRole('button', { name: 'Send', exact: true }).click();
@@ -1237,8 +1308,8 @@ test('consecutive different images with the same filename send fresh complete pi
   assert.equal(followup.image, null);
   assert.deepEqual(followup.messages, [
     { role: 'user', content: 'Describe the attached image.' },
-    { role: 'assistant', content: 'Reply to Describe the attached image.' },
-    { role: 'user', content: 'Now a text-only follow-up.' },
+    { role: 'assistant', content: 'Reply to Describe the attached image.\n\nBe concise.' },
+    { role: 'user', content: 'Now a text-only follow-up.\n\nBe concise.' },
   ], 'Only the latest successful image exchange becomes text follow-up context');
 });
 
@@ -1257,11 +1328,11 @@ for (const target of ['local:fixture-vision', 'peer:fixture']) test(`new vision 
   await send('Explain that latest description.', 4);
   const requests = await page.evaluate(() => calls.filter((call) => call.type === 'generate'));
   const system = { role: 'system', content: 'Optional embedded scene context\nSuggest an approved action.' };
-  assert.deepEqual(requests[1].messages, [system, { role: 'user', content: 'The first image.' }]);
-  assert.deepEqual(requests[2].messages, [system, { role: 'user', content: 'A different second image.' }]);
+  assert.deepEqual(requests[1].messages, [system, { role: 'user', content: 'The first image.\n\nBe concise.' }]);
+  assert.deepEqual(requests[2].messages, [system, { role: 'user', content: 'A different second image.\n\nBe concise.' }]);
   assert.deepEqual(requests[3].messages, [system,
-    { role: 'user', content: 'A different second image.' }, { role: 'assistant', content: 'Reply to A different second image.' },
-    { role: 'user', content: 'Explain that latest description.' }]);
+    { role: 'user', content: 'A different second image.' }, { role: 'assistant', content: 'Reply to A different second image.\n\nBe concise.' },
+    { role: 'user', content: 'Explain that latest description.\n\nBe concise.' }]);
   assert(requests.every((request) => request.target === target));
   const transcript = await page.getByRole('log', { name: 'Conversation', exact: true }).textContent();
   for (const text of ['Reply to Earlier text conversation.', 'Reply to The first image.', 'Reply to A different second image.']) assert(transcript.includes(text));
@@ -1286,10 +1357,10 @@ for (const outcome of ['failed', 'cancelled']) test(`${outcome} new image preser
   await page.getByLabel('Message', { exact: true }).fill('Continue the last completed description.'); await page.getByRole('button', { name: 'Send', exact: true }).click();
   await page.waitForFunction(() => calls.filter((call) => call.type === 'generate').length === 3);
   const requests = await page.evaluate(() => calls.filter((call) => call.type === 'generate'));
-  assert.deepEqual(requests[1].messages, [{ role: 'user', content: 'Uncommitted replacement image.' }]);
+  assert.deepEqual(requests[1].messages, [{ role: 'user', content: 'Uncommitted replacement image.\n\nBe concise.' }]);
   assert.deepEqual(requests[2].messages, [
-    { role: 'user', content: 'Committed original image.' }, { role: 'assistant', content: 'Reply to Committed original image.' },
-    { role: 'user', content: 'Continue the last completed description.' },
+    { role: 'user', content: 'Committed original image.' }, { role: 'assistant', content: 'Reply to Committed original image.\n\nBe concise.' },
+    { role: 'user', content: 'Continue the last completed description.\n\nBe concise.' },
   ]);
   assert.equal(requests[2].image, null);
 });

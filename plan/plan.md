@@ -14,6 +14,8 @@ The root node should exist on a domain secured with SSL enabling all executable 
 
 ## Project Goals:
 
+November8 chat controls: availability-based network glyph, mutually exclusive image/ear output controls, hold-to-record input and default concise LLM prompts. Implemented with193focused cases passing, full15-demo build and internal three-demo checks passing. GitHub Pages publication is the remaining step.
+
 November7 CubeChat presentation follow-up: menu-only Residents/Models, one model
 management window, persistent optional generated front-face portraits, opt-in
 public human-chat replies and compact human/resident names. Reusable appearance

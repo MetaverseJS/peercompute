@@ -48,7 +48,7 @@ async function fixture(t, { viewport = { width: 1100, height: 800 }, fallback = 
 const trigger = (page) => page.getByRole('button', { name: 'Network status', exact: true });
 const popup = (page) => page.getByRole('dialog', { name: 'Network status', exact: true });
 
-test('network health requires known positive counts and clear connection and artifact status', async (t) => {
+test('network health follows connected known-positive counts while retaining independent warnings', async (t) => {
   const page = await fixture(t);
   const states = await page.evaluate(() => [
     {}, { connecting: true }, { connected: true }, { ...healthy, peerCount: 0 },
@@ -57,8 +57,10 @@ test('network health requires known positive counts and clear connection and art
     { ...healthy, hostedModelCount: Number.NaN }, { ...healthy, issue: 'Peer query failed' },
     { ...healthy, artifacts: { status: 'starting' } }, { ...healthy, artifacts: { status: 'error', error: 'Ownership unavailable' } },
     { ...healthy, artifacts: { status: 'offline' } }, { ...healthy, connecting: true }, healthy,
+    { ...healthy, connected: false }, { ...healthy, connected: false, connecting: true },
   ].map((info) => { updateStatus(info); return networkStatus.trigger.dataset.state; }));
-  assert.deepEqual(states, ['offline', ...Array(13).fill('pending'), 'healthy']);
+  assert.deepEqual(states, ['offline', ...Array(8).fill('pending'), ...Array(6).fill('healthy'), 'offline', 'pending']);
+  await page.evaluate(() => updateStatus(healthy));
   assert.equal(await trigger(page).getAttribute('aria-description'), 'Network state: Healthy.');
   assert.equal(await popup(page).isVisible(), false);
   await trigger(page).click();
@@ -75,6 +77,7 @@ test('popup and Config text retain counts, errors and file-sharing diagnostics w
   assert.equal(await details.textContent(), text);
   assert.match(text, /Peer network connected · 2 peers · 3 shared models · 4 hosted models/);
   assert.match(text, /Discovery issue: <img/); assert.match(text, /File sharing unavailable: No storage owner/);
+  assert.equal(await trigger(page).getAttribute('data-state'), 'healthy');
   assert.equal(await details.locator('img').count(), 0); assert(text.length < 500);
   await page.evaluate(() => updateStatus({ connected: true, peerCount: 0, sharedModelCount: 0, hostedModelCount: 0, artifacts: { status: 'starting' } }));
   assert.match(await details.textContent(), /Waiting for other peers/);

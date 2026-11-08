@@ -102,11 +102,11 @@ export function createAgentChatSession({ controller, onChange } = {}) {
     if (image.id !== attachmentId || (image.agentId !== undefined && image.agentId !== id)) throw new Error('Saved image belongs to another agent attachment');
     return normalizeAgentAttachment(image);
   }
-  async function run(id, { task, prompt, image, maxNewTokens, seed, signal, onToken, onProgress } = {}) {
+  async function run(id, { task, prompt, image, maxNewTokens, seed, concise, signal, onToken, onProgress } = {}) {
     agentIdentifier(id); open(); signal?.throwIfAborted();
     // Explicit fields exclude caller-owned direct-chat history or world channels.
     // normalizeAgentTask copies pixels before the first asynchronous read.
-    const input = normalizeAgentTask({ task, prompt, image, maxNewTokens, seed });
+    const input = normalizeAgentTask({ task, prompt, image, maxNewTokens, seed, concise });
     runnable(await get(id, { signal })); signal?.throwIfAborted();
     const outcome = await controller.run(id, { ...input, signal, onEvent(update) {
       if (closed || signal?.aborted || update?.agentId !== id) return;

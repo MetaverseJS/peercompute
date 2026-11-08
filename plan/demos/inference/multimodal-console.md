@@ -345,3 +345,31 @@ Acceptance:136native panel/browser tests pass. Three production builds and exact
 internal5189/5176/5187 desktop/mobile, footer and authenticated SecretWorkshop
 checks pass. The served console deletes two owned tiny retained fixtures through
 the native batch button; no user model data or GPU inference is involved.
+
+
+## November 8 — explicit chat output modes and hold recording
+
+Network color now follows availability only: connected plus known positive peers,
+shared models and hosted models is green; disconnected is red; other states are
+yellow. Discovery/artifact diagnostics remain in the popover but do not veto green.
+This supersedes the additional warning-based veto in the November7 section.
+
+Generate image and Speak replies are native accessible checkbox glyphs in the
+composer (image/ear); selecting one clears the other. Chat options contains target,
+routing explanation and default-checked Be concise. The current language-model
+user message receives an appended “Be concise.” when enabled, including voice,
+vision and agent tasks on local or peer routes. Displayed and saved user text stay
+unchanged; ASR, TTS and image-generation prompts are not styled. Core promptStyle
+and optional normalized agent concise preference keep this reusable beyond the UI.
+Normal byte/context limits include the appended instruction.
+
+HoldToRecord owns a physical pointer or keyboard hold, not audio or inference.
+The console owns the async operation: hold Talk to start, release to stop and send;
+release before capture readiness cancels rather than starting later. Pointercancel,
+lost capture/focus, hidden page and disposal discard capture and await owned audio
+cleanup. Native clicks/repeated keys cannot toggle or duplicate turns. A successful
+20-second recording limit can progress while still held without a later release
+cancelling its transcription. Chat options/mode changes stay disabled during turns.
+The same shared console remains borrowed and management-only inside CubeChat.
+
+Verification and deployment results are recorded in plan/log.md and plan/tests.md.

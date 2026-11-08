@@ -104,9 +104,8 @@ export function createNetworkStatus({ container } = {}) {
     const peers = count(info.peerCount), shared = count(info.sharedModelCount), hosted = count(info.hostedModelCount);
     const issue = boundedMessage(info.issue), artifactError = boundedMessage(info.artifacts?.error);
     const artifactState = info.artifacts?.status;
-    const artifactPending = Boolean(artifactState && artifactState !== 'ready');
     const state = !connected && !connecting ? 'offline'
-      : connected && !connecting && peers > 0 && shared > 0 && hosted > 0 && !issue && !artifactError && !artifactPending ? 'healthy' : 'pending';
+      : connected && peers > 0 && shared > 0 && hosted > 0 ? 'healthy' : 'pending';
     const label = { healthy: 'Healthy', pending: 'Pending', offline: 'Offline' }[state];
     const text = connected ? `Peer network connected${peers !== null ? ` · ${peers} peers` : ' · peer count unknown'}`
       + ` · ${shared !== null ? shared : 'Unknown'} shared models · ${hosted !== null ? hosted : 'Unknown'} hosted models.`

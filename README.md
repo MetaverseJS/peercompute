@@ -467,8 +467,11 @@ selects; other browsers retain their native picker. Applicable browser setup hel
 starts with the launch command, followed by verification and driver/browser updates.
 
 Open **Chat options** with the **⚙** button immediately left of **+** to select
-**Chat target**, **Generate image** or **Speak replies**. These controls and their
-routing explanation live in the small dialog; Done or Escape returns to chat.
+**Chat target** and the default-on **Be concise** preference. Concision appends
+“Be concise.” to text/vision model requests, including dictated and agent messages,
+while saved user messages retain their original text. Done or Escape returns to chat.
+The image and ear glyphs beside **+** toggle **Generate image** and **Speak replies**;
+turning either on turns the other off. Selected glyphs have a checkmark.
 Options cannot change during an active request or voice turn. Routine readiness
 messages no longer take up chat space; progress and actionable errors remain
 visible.
@@ -480,8 +483,9 @@ targets remain selectable. Capability and queue state determine the route;
 this is a deterministic policy, not a learned quality estimate. Responses show
 the chosen model/provider. The same registry and router support agent requests.
 
-Use **Talk**, then **Stop recording**, for speech recognition followed by a chat
-reply. **Speak replies** adds speech synthesis and sequential playback. Load
+Hold **Talk** to record and release it to send for speech recognition followed by a
+chat reply. Keyboard users hold Space or Enter on Talk. Releasing before the
+microphone is ready, losing focus, or cancelling discards the capture. **Speak replies** adds speech synthesis and sequential playback. Load
 Moonshine Tiny and Supertonic through Models → Browse models, or use peers hosting those
 tasks. The voice controls do not download models automatically. Input is limited
 to20 seconds; long spoken responses are split into256-codepoint chunks. Stop
@@ -489,7 +493,7 @@ cancels the entire turn, including owned microphone tracks and playback.
 Explicit local model selection keeps speech local; choosing a specific peer
 conversation model still allows mixed speech routing.
 
-Check **Generate image** and describe the image in the same prompt box.
+Select the **Generate image** glyph and describe the image in the same prompt box.
 The result appears in the conversation; image targets use only the current
 prompt; conflicting image attachments require an explicit choice. Generated
 previews are local and are not automatically published. Private protocol3 adds
