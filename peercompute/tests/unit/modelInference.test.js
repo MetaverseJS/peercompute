@@ -52,9 +52,27 @@ function storeFor(modelManifest = manifest(), overrides = {}) {
   };
 }
 
+function fakeGpuDevice() {
+  const listeners = new Set(), scopes = [];
+  return { features: new Set(), lost: new Promise(() => {}),
+    queue: { async onSubmittedWorkDone() {} }, destroy() {},
+    pushErrorScope(filter) { scopes.push(filter); },
+    async popErrorScope() { assert.ok(scopes.pop()); return null; },
+    addEventListener(type, listener) { assert.equal(type, 'uncapturederror'); listeners.add(listener); },
+    removeEventListener(type, listener) { assert.equal(type, 'uncapturederror'); listeners.delete(listener); } };
+}
+
+function fakeAdapter(library, features = [], fallback = false) {
+  return { info: { vendor: 'test-hardware', architecture: 'test', isFallbackAdapter: fallback }, features: new Set(features),
+    limits: { maxBindGroups: 4, maxComputeWorkgroupStorageSize: 32768, maxComputeWorkgroupsPerDimension: 65535,
+      maxStorageBuffersPerShaderStage: 16, maxStorageBufferBindingSize: 2 ** 31, maxBufferSize: 2 ** 32,
+      maxComputeInvocationsPerWorkgroup: 1024, maxComputeWorkgroupSizeX: 1024, maxComputeWorkgroupSizeY: 1024, maxComputeWorkgroupSizeZ: 64 },
+    async requestDevice() { return library.env.backends.onnx.webgpu.device; } };
+}
+
 function fakeLibrary() {
   return {
-    env: { version: '4.3.2', backends: { onnx: { wasm: {}, webgpu: {} } } },
+    env: { version: '4.3.2', backends: { onnx: { wasm: {}, webgpu: { device: fakeGpuDevice() } } } },
     InterruptableStoppingCriteria: class {
       interrupt() { this.interrupted = true; }
       reset() { this.interrupted = false; }
@@ -106,10 +124,9 @@ function fakeComponents({ inputTokens = 2, outputTokens = [2n], config, generati
 function runtimeFor({ components = fakeComponents(), library = fakeLibrary(), loadModel,
   features = [], fallback = false, adapter = true } = {}) {
   const calls = [];
+  for (const feature of features) library.env.backends.onnx.webgpu.device?.features.add(feature);
   const runtime = createModelTaskRuntime({ assertWorker() {}, baseUrl: `${origin}worker.js`,
-    gpu: { async requestAdapter() { return adapter ? {
-      info: { vendor: 'test-hardware', architecture: 'test', isFallbackAdapter: fallback }, features: new Set(features),
-    } : null; } },
+    gpu: { async requestAdapter() { return adapter ? fakeAdapter(library, features, fallback) : null; } },
     loadLibrary: async () => library,
     loadModel: loadModel ?? (async (options) => { calls.push(options); return components; }),
   });
@@ -213,7 +230,7 @@ test('worker loader pins runtime assets and GPU provider without a CPU fallback'
   const loaded = await loadRuntime(fixture);
   assert.equal(loaded.workerId, 7);
   assert.equal(loaded.adapter.isFallbackAdapter, false);
-  assert.deepEqual(fixture.calls[0].options.session_options.executionProviders, ['webgpu']);
+  assert.deepEqual(fixture.calls[0].options.session_options.executionProviders, [{ name: 'webgpu', device: fixture.library.env.backends.onnx.webgpu.device }]);
   assert.equal(fixture.calls[0].options.device, 'webgpu');
   assert.equal(fixture.library.env.allowRemoteModels, false);
   assert.equal(fixture.library.env.useWasmCache, false);
@@ -644,7 +661,7 @@ test('worker independently rejects substituted memory geometry, custom code and 
     library.AutoTokenizer = { async from_pretrained() { events.push('tokenizer'); } };
     library.AutoModelForCausalLM = { async from_pretrained() { events.push('graph'); } };
     const runtime = createModelTaskRuntime({ loadLibrary: async () => library, assertWorker() {}, baseUrl: origin,
-      gpu: { async requestAdapter() { return { features: new Set(), info: { isFallbackAdapter: false } }; } } });
+      gpu: { async requestAdapter() { return fakeAdapter(library); } } });
     const input = manifest(); input.model.architecture = 'phi3'; input.model.memoryProfile = onnxMemoryProfile(config);
     await assert.rejects(loadRuntime({ runtime }, input), expected);
     assert.deepEqual(events, []);
@@ -664,7 +681,7 @@ test('default loader selects causal versus image-text model classes and cleans f
     library.AutoModelForImageTextToText = { async from_pretrained() { events.push('load-image-text'); return components.model; } };
     const runtime = createModelTaskRuntime({ loadLibrary: async () => library,
       assertWorker() {}, baseUrl: origin,
-      gpu: { async requestAdapter() { return { features: new Set(), info: { isFallbackAdapter: false } }; } },
+      gpu: { async requestAdapter() { return fakeAdapter(library); } },
     });
     const modelManifest = manifest({ vision });
     modelManifest.model.architecture = architecture;
@@ -680,7 +697,7 @@ test('default loader selects causal versus image-text model classes and cleans f
   library.AutoProcessor = { async from_pretrained() { return components.processor; } };
   library.AutoModelForImageTextToText = { async from_pretrained() { throw new Error('Partial load failure'); } };
   const runtime = createModelTaskRuntime({ loadLibrary: async () => library, assertWorker() {}, baseUrl: origin,
-    gpu: { async requestAdapter() { return { features: new Set(), info: { isFallbackAdapter: false } }; } },
+    gpu: { async requestAdapter() { return fakeAdapter(library); } },
   });
   await assert.rejects(loadRuntime({ runtime }, manifest({ vision: true })), /Partial load failure/);
   assert.ok(events.includes('processor-disposed'));
@@ -982,6 +999,7 @@ test('unused metadata responses allocate no host read slots and do not prevent b
 test('opt-in hardware evidence counts each request and restores the owned device methods on unload', async () => {
   const library = fakeLibrary();
   const device = {
+    ...fakeGpuDevice(),
     features: new Set(['timestamp-query']),
     queue: { submit() {}, async onSubmittedWorkDone() {} },
     createCommandEncoder() {
@@ -1050,7 +1068,7 @@ test('Qwen3.5 loader preserves Python normalization defaults and caps processor 
   let options;
   library.AutoModelForImageTextToText = { async from_pretrained(_path, value) { options = value; return components.model; } };
   const runtime = createModelTaskRuntime({ loadLibrary: async () => library, assertWorker() {}, baseUrl: origin,
-    gpu: { async requestAdapter() { return { features: new Set(), info: { isFallbackAdapter: false } }; } } });
+    gpu: { async requestAdapter() { return fakeAdapter(library); } } });
   await loadRuntime({ runtime }, qwen35Manifest());
   assert.equal(options.use_external_data_format, 1);
   assert.equal(components.processor.image_processor.max_pixels, 512 * 512);

@@ -1,5 +1,68 @@
 ## PeerCompute Test Strategy
 
+### Peer vision discovery and execution — November 7, 2026
+
+- `npm run test:peer-inference` includes connection-recovery ownership tests.
+  A stalled open native link must not trap subsequent directory requests. A
+  forced fresh encrypted relay connection must preserve the same peer, honor
+  connection capacity/backoff, coalesce recovery, protect both ends only for a
+  bounded handshake/operation lifetime, and leave existing work untouched.
+  Cancellation/late dial completion and shutdown must release recovery ownership.
+  Recovery is allowed before application headers; committed requests never replay.
+- Private encrypted protocol tests must preserve fully validated vision
+  directories and completed text/image/audio responses after a stream-close
+  failure, with bounded cleanup and no replay. Malformed messages, cancellation
+  and the existing directory TTL remain authoritative.
+- Controller tests exercise expired exact peer selection, same-CID refresh,
+  cached-full queues, missing providers, bounded/cancellable shared polls and
+  immediate routing through fresh eligible cached peers. Local only never
+  queries or substitutes a peer.
+- Native UI tests cover remote vision under Mixed and exact selection despite
+  local WebGPU incompatibility, actual file chooser input, all-full versus busy
+  with queue space, disappearance/recovery preserving drafts, and text-to-image
+  models never claiming vision input. Composer capacity uses the router's shared
+  predicate; execution still validates model identity and task independently.
+- A cached small VLM on an owned GPU host and a GPU-disabled requester exercise
+  real image transfer and inference through the native composer and a private
+  relay. No public requests or model downloads; preserve exact evidence and
+  separately verify the deployed internal preview's TLS and backend connection.
+
+- Final results: `test:peer-inference`166/166, `test:inference`104/104,
+  `test:inference:ui`101/101 and `test:world-agents`85/85 PASS. The peer script
+  includes the five real encrypted recovery regressions in
+  `peerInferenceRecovery.test.js`, alongside the20manager ownership cases.
+- Actual cached SmolVLM native-to-Noise recovery executes exactly one GPU request
+  with identical transferred pixels, preserves the old connection and both-end
+  relay retention, and releases all owned resources. Exact three-demo previews
+  and SecretWorkshop connections pass; public discovery's transient initial
+  errors remain recorded. See the log for timing, evidence paths and limits.
+
+### Combined model memory admission — November 7, 2026
+
+- Use actual DreamShaper/Qwen catalog reservations with the real lease broker to
+  reproduce the old12GiB CPU rejection and admit the pair under owned Auto.
+  Exact16GiB GPU caps allow equality; a further speech reservation must fail
+  atomically and roll back only its new CPU reservation. These tests allocate
+  bookkeeping records, not physical model buffers.
+- Cover explicit combined cap updates, both-field atomic validation, lower-than-
+  current limits without eviction, borrowed-owner ceilings, accidental unbounded
+  initialization rejection, current-use accounting after failed termination and
+  per-CID unload/cancel. Real ModelInferenceService with controlled workers tests
+  load/OOM cleanup; it is not hardware-fit proof.
+- Transformers GPU tests inject actual-device-shaped validation/OOM/internal
+  scopes, uncaptured errors and device loss during load/generation. Require all
+  scopes drained, failed session invalidation, normal failure/cancel reuse and
+  host ownership retention until acknowledged cleanup. Preserve diffusion/speech
+  error-path suites. One cached small-model GPU run can qualify binding/runtime
+  interoperability without putting the user's large resident models at risk.
+- Native Config tests show estimated totals versus effective caps, Auto, borrowed
+  ownership and over-budget state. Refresh totals without overwriting draft
+  inputs; changing budgets does not load, delete or evict models. Exact trusted
+  internal previews may reserve/release synthetic accounting leases in an owned
+  profile, explicitly without model allocations or hardware-fit claims.
+- Build all affected demos externally and check their HTTPS previews. Leave user
+  profiles/model caches and persistent preview services intact; stop owned tests.
+
 ### Unified model and agent chat — November 7, 2026
 
 - `npm run test:agent-layer` includes the management-only Agents modal and

@@ -22,6 +22,7 @@ import { generateKeyPair, privateKeyToProtobuf, publicKeyToProtobuf } from '@lib
 import { multiaddr } from '@multiformats/multiaddr';
 import { NetworkScheduler, DEFAULT_SCHEDULER_PROFILE } from './NetworkScheduler.js';
 import { TopologyController } from './TopologyController.js';
+import { PeerConnectionRecovery } from './inference/PeerConnectionRecovery.js';
 import { isDebugOutputEnabled } from '../utils/debugOutput.js';
 
 const DEFAULT_PUBSUB_TOPIC = 'peercompute-state-sync';
@@ -1064,6 +1065,7 @@ export class NetworkManager {
 
   async connect() {
     if (this.isConnected) return;
+    if (this.peerConnectionRecovery?.closed) this.peerConnectionRecovery = null;
     if (!this.libp2p) {
       throw new Error('NetworkManager not initialized');
     }
@@ -1158,8 +1160,21 @@ export class NetworkManager {
     await this._logLocalAnnounceAddrs('redial-bootstrap');
   }
 
+  _getPeerConnectionRecovery() {
+    return this.peerConnectionRecovery ??= new PeerConnectionRecovery(this);
+  }
+
+  recoverPeerInferenceConnection(peerId, options) {
+    return this._getPeerConnectionRecovery().recover(peerId, options);
+  }
+
+  retainPeerInferenceConnection(connection, options) {
+    return this._getPeerConnectionRecovery().retain(connection, options);
+  }
+
   async disconnect() {
     await this._stopPeerInferenceService();
+    await this.peerConnectionRecovery?.stop();
     await this._stopArtifactTransport();
     this.isConnected = false;
     this._stopScheduler();
@@ -1679,6 +1694,7 @@ export class NetworkManager {
 
     this.libp2p.addEventListener('connection:open', (evt) => {
       const conn = evt.detail;
+      this._getPeerConnectionRecovery().observe(conn, { openedNow: true });
       const peerId = conn?.remotePeer?.toString?.();
       if (!peerId) return;
       const now = Date.now();
@@ -2612,6 +2628,7 @@ export class NetworkManager {
     if (Array.isArray(payload.multiaddrs) && payload.multiaddrs.length > 0) {
       this._rememberPeerAddresses(from, payload.multiaddrs);
     }
+    this.peerConnectionRecovery?.notifyRelayReady(from);
     await this._maybeDialPeer(from, 'relay-assist-ready', payload.multiaddrs || null, { force: true });
   }
 
@@ -3996,6 +4013,7 @@ export class NetworkManager {
   async _maybeDialPeer(peerId, source, addrs = null, options = {}) {
     if (!this.libp2p || !peerId || peerId === this.peerId) return;
     if (this.bootstrapPeerIds.has(peerId)) return;
+    if (this.peerConnectionRecovery?.pending.has(peerId)) return;
     const active = this._getConnectionsForPeer(peerId);
     const hasDirect = active.some((conn) => isTrulyDirectAddr(conn?.remoteAddr));
     const hasRelay = active.some((conn) => isRelayAddr(conn?.remoteAddr));
@@ -4394,6 +4412,13 @@ export class NetworkManager {
     this._clearRelayPruneTimer(peerId);
     relayed.forEach((conn) => {
       if (conn?.status && conn.status !== 'open') return;
+      // Both endpoints allow a new relay to negotiate a protocol before pruning
+      // it. Only that connection's bounded inference lease extends this grace.
+      const protectedMs = this._getPeerConnectionRecovery().protectionMs(conn);
+      if (protectedMs > 0) {
+        this._scheduleRelayPrune(peerId, protectedMs);
+        return;
+      }
       conn.close?.().catch?.(() => {});
     });
   }

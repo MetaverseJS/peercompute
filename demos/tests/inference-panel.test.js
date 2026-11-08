@@ -73,6 +73,7 @@ async function fixture(t, scenario = {}) {
       rejectLoad: !!scenario.rejectLoad, rejectAcquire: !!scenario.rejectAcquire,
       loadedCid: scenario.loaded ? 'fixture-vision' : null, preferredSourceKey: scenario.preferredSourceKey, sources: scenario.sources,
       residentCids: scenario.loaded ? ['fixture-vision'] : [],
+      peerCapacity: scenario.peerCapacity ?? {},
       availability: scenario.availability ?? {}, memoryBudgets: scenario.memoryBudgets ?? { cpuBytes: null, gpuBytes: null } };
     const state = window.uiState;
     const delay = (ms, signal) => new Promise((resolve, reject) => {
@@ -100,6 +101,7 @@ async function fixture(t, scenario = {}) {
       getPreferences: () => ({ sharing: state.sharing, hostInference: state.hostInference }),
       getDeviceCapabilities: () => ({ deviceMemoryGiB: 8 }),
       getMemoryBudgets: () => ({ ...state.memoryBudgets }),
+      getMemoryBudgetStatus: () => state.memoryPressure ?? scenario.memoryPressure,
       setMemoryBudgets(budgets) { state.memoryBudgets = budgets; calls.push({ type: 'budgets', ...budgets }); return budgets; },
       getSharingErrors: () => state.stored.filter((model) => model.shareError).map((model) => ({ manifestCid: model.manifestCid, message: model.shareError })),
       listModelSources: () => (state.sources ?? [
@@ -110,9 +112,9 @@ async function fixture(t, scenario = {}) {
           && state.memoryBudgets.cpuBytes < 4 * 1024 ** 3 ? { status: 'unavailable', reason: 'Needs 4 GiB RAM.' }
           : state.availability[source.key] ?? { status: 'unknown', cpuBytes: 4 * 1024 ** 3, gpuBytes: 8 * 1024 ** 3 } })),
       listInferenceTargets: () => [{ key: 'local:fixture-vision', name: state.loaded ? 'Fixture vision' : 'No model loaded', local: true, manifestCid: 'fixture-vision',
-        available: state.loaded, busy: false, modalities: scenario.diffusion ? ['text'] : ['text', 'image'],
+        runtime: 'transformers.js', available: state.loaded, busy: false, modalities: scenario.diffusion ? ['text'] : ['text', 'image'],
         task: scenario.diffusion ? 'text-to-image' : 'image-text-to-text', outputModalities: scenario.diffusion ? ['image'] : ['text'] }, ...(state.remote ? [{ key: 'peer:fixture',
-        name: 'Peer text model', local: false, available: true, busy: state.providers.every(Boolean),
+        name: 'Peer text model', manifestCid: 'fixture', runtime: 'transformers.js', local: false, available: true, busy: state.providers.every(Boolean), ...state.peerCapacity,
         providerCount: state.providers.length, modalities: scenario.peerVision ? ['text', 'image'] : ['text'],
         task: scenario.diffusion ? 'text-to-image' : scenario.peerVision ? 'image-text-to-text' : 'text-generation', outputModalities: scenario.diffusion ? ['image'] : ['text'] }] : [])],
       async refreshPeers({ signal }) {
@@ -385,6 +387,32 @@ test('Config memory budgets convert GiB, refresh restrictions, clear to auto and
   assert.deepEqual(await page.evaluate(() => calls.filter((call) => call.type === 'acquire' || call.type === 'pin')), []);
 });
 
+test('Config distinguishes estimated combined reservations, Auto and borrowed resource caps without unloading', async (t) => {
+  const GiB = 1024 ** 3;
+  const pool = (reserved, budget, extra = {}) => ({ reservedBytes: reserved * GiB,
+    budgetBytes: budget === null ? null : budget * GiB, configuredBytes: null, brokerBytes: null,
+    overBudget: budget !== null && reserved > budget, ...extra });
+  const page = await fixture(t, { loaded: true, memoryPressure: {
+    owned: true, cpu: pool(16, null), gpu: pool(16, null),
+  } });
+  await openMenuAction(page, 'Configure model chat');
+  const note = page.getByLabel('Estimated model memory reservations');
+  assert.match(await note.textContent(), /RAM: 16(?:\.\d+)? GiB estimated reserved; no application cap/);
+  assert.match(await note.textContent(), /GPU: 16(?:\.\d+)? GiB estimated reserved; no application cap/);
+  assert.match(await note.textContent(), /not measured RAM or VRAM/);
+  const cpu = page.getByLabel('Model RAM budget (GiB)', { exact: true });
+  await cpu.fill('24');
+  await page.evaluate((pressure) => { uiState.memoryPressure = pressure; }, {
+    owned: false, cpu: pool(16, 12, { brokerBytes: 12 * GiB }), gpu: pool(16, 16, { brokerBytes: 16 * GiB }),
+  });
+  await page.waitForFunction(() => document.querySelector('[aria-label="Estimated model memory reservations"]').textContent.includes('over budget'));
+  assert.match(await note.textContent(), /12(?:\.\d+)? GiB combined budget \(over budget/);
+  assert.match(await note.textContent(), /embedding app owns.*cannot be raised here/);
+  assert.equal(await cpu.inputValue(), '24', 'Pressure refresh does not overwrite a draft budget');
+  assert.equal(await page.evaluate(() => uiState.loaded), true);
+  assert.deepEqual(await page.evaluate(() => calls.filter((call) => ['acquire', 'unload', 'pin'].includes(call.type))), []);
+});
+
 test('model filtering and memory budgets are disabled during an active import', async (t) => {
   const page = await fixture(t, { acquireDelay: 10000 });
   await page.getByRole('button', { name: 'Load', exact: true }).click();
@@ -609,6 +637,71 @@ async function patternedImage(page, phase) {
   return { ...result, sha256: createHash('sha256').update(Buffer.from(result.pixels)).digest('hex'),
     file: { name: 'same-name.png', mimeType: 'image/png', buffer: Buffer.from(result.png, 'base64') } };
 }
+
+test('Mixed and an exact peer accept vision attachments without a compatible local GPU or resident', async (t) => {
+  const page = await fixture(t, { peerVision: true, availability: {
+    'hf:vision': { status: 'unavailable', reason: 'WebGPU is unavailable on this device.' },
+    'peer:fixture': { status: 'unavailable', reason: 'WebGPU is unavailable on this device.' },
+  } });
+  for (const target of ['mixed', 'peer:fixture']) {
+    await page.getByLabel('Chat target').selectOption(target);
+    assert.equal(await page.getByRole('button', { name: 'Attach image', exact: true }).isEnabled(), true);
+    const input = await patternedImage(page, target === 'mixed' ? 4 : 5);
+    const chooser = page.waitForEvent('filechooser');
+    await page.getByRole('button', { name: 'Attach image', exact: true }).click();
+    await (await chooser).setFiles(input.file);
+    await page.getByAltText('Selected image', { exact: true }).waitFor();
+    await page.getByLabel('Message', { exact: true }).fill(`Describe via ${target}`);
+    await page.getByLabel('Message', { exact: true }).press('Enter');
+    await page.getByText(`Reply to Describe via ${target}`, { exact: true }).waitFor();
+  }
+  const requests = await page.evaluate(() => calls.filter((call) => call.type === 'generate'));
+  assert.deepEqual(requests.map(({ target, task }) => [target, task]),
+    [['mixed', 'image-text-to-text'], ['peer:fixture', 'image-text-to-text']]);
+  assert.ok(requests.every((request) => request.image.bytes > 0));
+  assert.equal(await page.evaluate(() => calls.some((call) => ['acquire', 'load-stored'].includes(call.type))), false);
+});
+
+test('busy peer vision keeps attachments and drafts while full queues block sends until capacity returns', async (t) => {
+  const page = await fixture(t, { peerVision: true,
+    peerCapacity: { busy: true, queueAvailable: false, queueCapacity: 2, queuedRequests: 2 } });
+  const input = await patternedImage(page, 6);
+  assert.equal(await page.getByRole('button', { name: 'Attach image', exact: true }).isEnabled(), true);
+  await page.getByLabel('Choose image attachment').setInputFiles(input.file);
+  await page.getByAltText('Selected image', { exact: true }).waitFor();
+  await page.getByLabel('Message', { exact: true }).fill('Keep this draft');
+  assert.match(await page.locator('.pc-route-policy').textContent(), /no available queue capacity/);
+  assert.equal(await page.getByRole('button', { name: 'Send', exact: true }).isDisabled(), true);
+  await page.getByLabel('Message', { exact: true }).press('Enter');
+  assert.equal(await page.evaluate(() => calls.some((call) => call.type === 'generate')), false);
+  await page.evaluate(() => { uiState.remote = false; return panel.refreshPeers(); });
+  assert.equal(await page.getByRole('button', { name: 'Attach image', exact: true }).isDisabled(), true);
+  assert.equal(await page.getByAltText('Selected image', { exact: true }).isVisible(), true);
+  await page.evaluate(() => { uiState.remote = true;
+    uiState.peerCapacity = { busy: true, queueAvailable: true, queueCapacity: 2, queuedRequests: 1 };
+    return panel.refreshPeers(); });
+  assert.equal(await page.getByRole('button', { name: 'Send', exact: true }).isEnabled(), true);
+  assert.equal(await page.getByRole('button', { name: 'Attach image', exact: true }).isEnabled(), true);
+  assert.equal(await page.getByLabel('Message', { exact: true }).inputValue(), 'Keep this draft');
+  assert.equal(await page.evaluate(() => calls.some((call) => call.type === 'generate')), false);
+  await page.getByLabel('Chat target').selectOption('local-only');
+  assert.equal(await page.getByRole('button', { name: 'Send', exact: true }).isDisabled(), true);
+  assert.equal(await page.getByRole('button', { name: 'Attach image', exact: true }).isDisabled(), true);
+  await page.getByLabel('Chat target').selectOption('mixed');
+  await page.getByLabel('Message', { exact: true }).press('Enter');
+  await page.getByText('Reply to Keep this draft', { exact: true }).waitFor();
+  assert.equal(await page.evaluate(() => calls.filter((call) => call.type === 'generate').length), 1);
+});
+
+test('peer image generation does not claim vision input capability', async (t) => {
+  const page = await fixture(t, { diffusion: true });
+  await page.getByLabel('Chat target').selectOption('peer:fixture');
+  assert.equal(await page.getByRole('button', { name: 'Attach image', exact: true }).isDisabled(), true);
+  await page.getByLabel('Generate image', { exact: true }).check();
+  await page.getByLabel('Message', { exact: true }).fill('A blue flower');
+  assert.equal(await page.getByRole('button', { name: 'Send', exact: true }).isEnabled(), true);
+  assert.equal(await page.getByRole('button', { name: 'Attach image', exact: true }).isDisabled(), true);
+});
 
 test('Generate image requires an explicit choice and never discards a conflicting attached image', async (t) => {
   const page = await fixture(t, { loaded: true });

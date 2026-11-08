@@ -1342,7 +1342,7 @@ export class ComputeManager {
 
   /** Create a managed model lifecycle with one shared broker per ComputeManager. */
   async createModelInferenceService({ artifactStore, resourceBroker, resourceBudgets,
-    runtime = 'transformers.js', ...options } = {}) {
+    runtime = 'transformers.js', admissionOptions = {}, ...options } = {}) {
     if (this.destroying) throw new Error('ComputeManager is shutting down');
     if (!['transformers.js', 'llama.cpp', 'onnx-diffusion', 'transformers-speech'].includes(runtime)) throw new Error('Unsupported model execution runtime');
     const lifecycle = this.workerLifecycleRevision;
@@ -1363,7 +1363,7 @@ export class ComputeManager {
       this.resourceBroker = resourceBroker || new ResourceLeaseBroker({ capacities: resourceBudgets });
     }
     const service = new ModelInferenceService({ ...options, runtimeDefinition, artifactStore,
-      computeManager: this, admission: new ResidentModelAdmission({ broker: this.resourceBroker }) });
+      computeManager: this, admission: new ResidentModelAdmission({ ...admissionOptions, broker: this.resourceBroker }) });
     this.modelServices.add(service);
     const dispose = service.dispose.bind(service);
     service.dispose = async () => {
@@ -4841,7 +4841,13 @@ export class ComputeManager {
     }
     if (type !== 'result' && type !== 'error') return;
 
-    if (task.control?.cancelRequested) {
+    // Cancellation must discard late successes, but it cannot turn an unusable
+    // resident model into a healthy cancelled request. Preserve explicit fatal
+    // runtime errors so its owner can quarantine and acknowledge worker cleanup.
+    const fatalResidentError = type === 'error'
+      && this.residentWorkerAffinities.has(task.payload?.affinityKey)
+      && ['ERR_MODEL_GPU', 'ERR_MODEL_GPU_OUT_OF_MEMORY', 'ERR_MODEL_RUNTIME', 'MODEL_DISPOSE_FAILED'].includes(message.code);
+    if (task.control?.cancelRequested && !fatalResidentError) {
       this._recordTaskCompletion(task, { ok: false, mode: 'worker' });
       task.reject(Object.assign(new Error('Compute task cancelled'), { name: 'AbortError', code: 'ERR_COMPUTE_TASK_CANCELLED' }));
       this.activeTasks.delete(id);

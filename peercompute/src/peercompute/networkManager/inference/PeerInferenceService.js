@@ -7,6 +7,11 @@ import { describeAudio, writeInputAudio, readInputAudio, writeResultAudio, readR
 const failure = (message, code = 'ERR_PEER_INFERENCE') => Object.assign(new Error(message), { code });
 const asError = (error) => error instanceof Error ? error : failure(String(error ?? 'Peer inference failed'));
 const aborted = (signal) => signal.reason instanceof Error ? signal.reason : new DOMException('Inference cancelled', 'AbortError');
+const transportOpenFailure = (error) => error?.code === 'ERR_INFERENCE_DEADLINE'
+  || ['TimeoutError', 'ConnectionClosedError', 'StreamResetError', 'StreamStateError'].includes(error?.name);
+const transportRecoveryAllowed = (errors) => errors.some(transportOpenFailure)
+  && !errors.some((error) => ['UnsupportedProtocolError', 'TooManyOutboundProtocolStreamsError', 'TooManyInboundProtocolStreamsError',
+    'LimitedConnectionError', 'InvalidParametersError'].includes(error?.name));
 function operation(signals, timeout) {
   const controller = new AbortController();
   const listeners = signals.filter(Boolean).map((signal) => {
@@ -49,6 +54,7 @@ export class PeerInferenceService {
     this.inbound = new Map(); this.outbound = new Map(); this.operations = new Set();
     this.hostingEnabled = true; this.closed = false; this.refreshing = null;
     this.models = []; this.hosts = []; this.lastErrors = [];
+    this.failedConnections = new WeakMap(); this.recoveries = new Map();
     this.disconnectListener = (event) => {
       const peerId = event.detail.toString(); this.records.delete(peerId); this._group();
       for (const item of [...this.inbound.values(), ...this.outbound.values()]) {
@@ -136,8 +142,9 @@ export class PeerInferenceService {
     return this.manager.libp2p.getConnections()
       .filter((item) => item.remotePeer.toString() === peerId && encryptedConnection(item))
       .sort((a, b) => {
-        const score = (item) => item.encryption === 'native' ? 3
-          : item.remoteAddr?.getComponents?.().some(({ name }) => name === 'p2p-circuit') ? 1 : 2;
+        const score = (item) => (item.encryption === 'native' ? 3
+          : item.remoteAddr?.getComponents?.().some(({ name }) => name === 'p2p-circuit') ? 1 : 2)
+          - ((this.failedConnections.get(item) ?? 0) > Date.now() ? 10 : 0);
         return score(b) - score(a);
       });
   }
@@ -153,13 +160,22 @@ export class PeerInferenceService {
     if (!connection) throw failure('No authenticated encrypted connection to inference peer', 'ERR_INFERENCE_UNREACHABLE');
     return connection;
   }
-  async _openStream(peerId, signal, { audio = false } = {}) {
+  _recoverConnection(peerId) {
+    if (this.recoveries.has(peerId)) return this.recoveries.get(peerId);
+    const promise = this.manager.recoverPeerInferenceConnection(peerId, { signal: this.controller.signal });
+    this.recoveries.set(peerId, promise); this.operations.add(promise);
+    const finish = () => { this.operations.delete(promise); if (this.recoveries.get(peerId) === promise) this.recoveries.delete(peerId); };
+    promise.then(finish, finish);
+    return promise;
+  }
+  async _openStream(peerId, signal, { audio = false, backgroundRecovery = false } = {}) {
     const first = await this._connection(peerId, signal);
     const candidates = [...new Set([first, ...this._connections(peerId)])].slice(0, 4);
     const errors = [];
-    for (const connection of candidates) {
+    let recoveryError;
+    const attempt = async (connection) => {
       signal.throwIfAborted();
-      if (!encryptedConnection(connection)) continue;
+      if (connection.remotePeer.toString() !== peerId || !encryptedConnection(connection)) throw failure('Invalid recovered inference connection');
       // Limit stream negotiation, independently of the much longer generation
       // deadline. Never retry after any application header or prompt is written.
       const op = operation([this.controller.signal, signal], Math.min(2000, this.queryTimeoutMs / 2));
@@ -169,27 +185,68 @@ export class PeerInferenceService {
           { signal: op.signal, runOnLimitedConnection: true }));
         const stream = await withAbort(opening, op.signal);
         op.signal.throwIfAborted();
-        return { connection, stream, protocol: stream.protocol ?? PEER_INFERENCE_PROTOCOL };
+        const release = this.manager.retainPeerInferenceConnection?.(connection, { timeoutMs: this.requestTimeoutMs + 1000 });
+        this.failedConnections.delete(connection);
+        return { connection, stream, release, protocol: stream.protocol ?? PEER_INFERENCE_PROTOCOL };
       } catch (cause) {
         const error = asError(cause);
         // A transport that completes after its deadline must not leak a stream.
         opening?.then((late) => late.abort(error), () => {}).catch(() => {});
-        signal.throwIfAborted(); this.controller.signal.throwIfAborted();
+        if (transportOpenFailure(error)) this.failedConnections.set(connection, Date.now() + 15000);
         errors.push(error);
+        throw error;
       } finally { op.dispose(); }
+    };
+    try {
+      for (const connection of candidates) {
+        try { return await attempt(connection); }
+        catch { signal.throwIfAborted(); this.controller.signal.throwIfAborted(); }
+      }
+    } catch (error) {
+      // A directory's short deadline may expire while normal links are stale.
+      // Finish one tracked repair for the next poll, without sending any data.
+      if (backgroundRecovery && signal.reason?.code === 'ERR_INFERENCE_DEADLINE'
+          && transportRecoveryAllowed(errors) && !this.controller.signal.aborted
+          && this.manager.recoverPeerInferenceConnection) this._recoverConnection(peerId).catch(() => {});
+      throw error;
+    }
+    if (transportRecoveryAllowed(errors) && this.manager.recoverPeerInferenceConnection) {
+      try {
+        const connection = await withAbort(this._recoverConnection(peerId), signal);
+        signal.throwIfAborted();
+        return await attempt(connection);
+      } catch (error) {
+        signal.throwIfAborted(); this.controller.signal.throwIfAborted();
+        recoveryError = asError(error);
+      }
     }
     throw Object.assign(new AggregateError(errors,
       `Unable to open an encrypted inference stream: ${String(errors.at(-1)?.message ?? 'connections closed').slice(0, 160)}`,
-      { cause: errors.at(-1) }), { code: 'ERR_INFERENCE_STREAM_UNAVAILABLE', peerId });
+      { cause: errors.at(-1) }), { code: 'ERR_INFERENCE_STREAM_UNAVAILABLE', peerId, recoveryError });
+  }
+  async _closeCompletedStream(stream, signal) {
+    // The authenticated directory or complete result has already been checked.
+    // A FIN/close failure cannot invalidate it, or justify another generation.
+    // Still bound cleanup even when a transport ignores its abort signal.
+    const op = operation([this.controller.signal, signal], Math.min(1000, this.queryTimeoutMs / 2));
+    try {
+      await withAbort(Promise.resolve().then(() => stream.close({ signal: op.signal })), op.signal);
+    } catch (cause) {
+      try { Promise.resolve(stream.abort(asError(cause))).catch(() => {}); } catch { /* Best-effort transport cleanup. */ }
+      // Caller/service cancellation and the original operation deadline retain
+      // priority. Only this final stream-cleanup failure is non-fatal.
+      this.controller.signal.throwIfAborted(); signal.throwIfAborted();
+    } finally { op.dispose(); }
+    this.controller.signal.throwIfAborted(); signal.throwIfAborted();
   }
   async _query(peerId, signal) {
     const op = operation([this.controller.signal, signal], this.queryTimeoutMs);
-    let stream;
+    let stream, release;
     const abort = () => stream?.abort(aborted(op.signal));
     op.signal.addEventListener('abort', abort, { once: true });
     try {
       let protocol;
-      ({ stream, protocol } = await this._openStream(peerId, op.signal));
+      ({ stream, protocol, release } = await this._openStream(peerId, op.signal, { backgroundRecovery: true }));
       const io = channel(stream);
       await io.write(this._envelope('query', peerId), op.signal);
       const response = await io.read(op.signal);
@@ -207,9 +264,9 @@ export class PeerInferenceService {
       this._checkEnvelope(response, peerId);
       if (response.type !== 'directory') throw failure('Invalid inference directory response');
       this._remember(peerId, localState(response.state, true, { protocol }), protocol);
-      await stream.close({ signal: op.signal });
+      await this._closeCompletedStream(stream, op.signal);
     } catch (error) { this.records.delete(peerId); stream?.abort(error); throw error; }
-    finally { op.signal.removeEventListener('abort', abort); op.dispose(); }
+    finally { release?.(); op.signal.removeEventListener('abort', abort); op.dispose(); }
   }
   async refresh({ signal } = {}) {
     if (this.closed) throw failure('Peer inference service is stopped');
@@ -240,7 +297,9 @@ export class PeerInferenceService {
     const io = channel(stream); let key; let monitor; let request;
     let resolveFinished;
     const finished = new Promise((resolve) => { resolveFinished = resolve; });
+    let release;
     try {
+      release = this.manager.retainPeerInferenceConnection?.(connection, { timeoutMs: this.requestTimeoutMs + 1000 });
       const first = operation([op.signal], this.queryTimeoutMs);
       try { request = await io.read(first.signal); } finally { first.dispose(); }
       this._checkEnvelope(request, peerId);
@@ -248,7 +307,7 @@ export class PeerInferenceService {
         const state = await this._state(op.signal);
         await io.write(this._envelope('directory', peerId, { state: protocol === PEER_INFERENCE_PROTOCOL_V2
           ? localState(state, this.hostingEnabled, { protocol }) : state }), op.signal);
-        await stream.close({ signal: op.signal }); return;
+        await this._closeCompletedStream(stream, op.signal); return;
       }
       if (request.type !== 'generate') throw failure('Unknown inference request');
       const input = generation(request);
@@ -335,7 +394,7 @@ export class PeerInferenceService {
       if (result.audio) await writeResultAudio(io, { samples: result.audio, metadata: metadata.audio,
         requestId: input.requestId, controls, signal: op.signal });
       await io.write({ type: 'done', requestId: input.requestId, result: metadata }, op.signal);
-      await stream.close({ signal: op.signal });
+      await this._closeCompletedStream(stream, op.signal);
     } catch (cause) {
       const error = asError(cause);
       if (!op.signal.aborted) {
@@ -349,6 +408,7 @@ export class PeerInferenceService {
       if (key) this.inbound.delete(key);
       op.signal.removeEventListener('abort', abort); op.controller.abort(new Error('Inference stream finished')); op.dispose();
       await monitor?.catch(() => {});
+      release?.();
       resolveFinished();
     }
   }
@@ -395,12 +455,12 @@ export class PeerInferenceService {
     finally { this.operations.delete(task); this.outbound.delete(input.requestId); op.dispose(); }
   }
   async _generateAt(peerId, input, options, signal) {
-    let stream; let committed = false;
+    let stream, release; let committed = false;
     const abort = () => stream?.abort(aborted(signal));
     signal.addEventListener('abort', abort, { once: true });
     try {
       const opened = await this._openStream(peerId, signal, { audio: isSpeechTask(input.task) });
-      const { connection } = opened; stream = opened.stream;
+      const { connection } = opened; stream = opened.stream; release = opened.release;
       const io = channel(stream);
       const header = { ...input, image: input.image ? { width: input.image.width, height: input.image.height, channels: 4 } : undefined,
         audio: input.audio ? Object.fromEntries(Object.entries(input.audio).filter(([key]) => key !== 'samples')) : undefined };
@@ -461,14 +521,14 @@ export class PeerInferenceService {
             if (Object.keys(audio.metadata).some((key) => audio.metadata[key] !== result.audio[key])) throw failure('Generated audio metadata changed during transfer');
             result.audio = audio.audio; result.sampleRate = audio.sampleRate;
           }
-          await stream.close({ signal }); return { ...result, requestId: input.requestId, peerId, manifestCid: input.manifestCid,
+          await this._closeCompletedStream(stream, signal); return { ...result, requestId: input.requestId, peerId, manifestCid: input.manifestCid,
             protocol: opened.protocol, connectionEncryption: connection.encryption, connectionAddress: connection.remoteAddr?.toString() };
         } else throw failure('Unknown inference output frame');
       }
     } catch (cause) { const error = asError(cause); stream?.abort(error); error.committed = committed;
       if (committed) error.remoteCleanupAcknowledged = false;
       throw error; }
-    finally { signal.removeEventListener('abort', abort); }
+    finally { release?.(); signal.removeEventListener('abort', abort); }
   }
   cancel(requestId) {
     const entry = this.outbound.get(requestId);

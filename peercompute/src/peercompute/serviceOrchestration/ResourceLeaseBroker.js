@@ -37,6 +37,12 @@ function normalizeResourceKind(value) {
   return String(value || 'gpu').trim().toLowerCase() || 'gpu';
 }
 
+function memoryBudget(value) {
+  if (value == null) return 0;
+  if (!Number.isSafeInteger(value) || value <= 0) throw new TypeError('Memory budgets must be positive safe integers or null');
+  return value;
+}
+
 function normalizePriorityClass(value) {
   const priorityClass = String(value || 'compute').trim().toLowerCase();
   return Object.hasOwn(PRIORITY_VALUES, priorityClass) ? priorityClass : 'compute';
@@ -86,6 +92,22 @@ export class ResourceLeaseBroker {
     this.preemptionCount = 0;
   }
 
+  /** Owner configuration only. Existing allocations remain counted when a cap
+   * is lowered; admission blocks new allocations instead of evicting owners.
+   * Validate the entire update before changing any pool.
+   */
+  setMemoryBudgets(budgets) {
+    if (!budgets || typeof budgets !== 'object' || Array.isArray(budgets)
+        || ![Object.prototype, null].includes(Object.getPrototypeOf(budgets))) throw new TypeError('Invalid resource memory budgets');
+    const updates = Object.entries(budgets).map(([kind, value]) => {
+      const pool = this.pools.get(kind);
+      if (!pool) throw new Error(`No resource pool configured for ${kind}`);
+      return [pool, memoryBudget(value)];
+    });
+    for (const [pool, bytes] of updates) pool.memoryBytes = bytes;
+    return Object.fromEntries(updates.map(([pool]) => [pool.kind, pool.memoryBytes || null]));
+  }
+
   async requestLease(spec = {}) {
     this.expireLeases();
     if (spec.leaseId && this.leases.has(spec.leaseId)) throw new Error('Resource lease ID already exists');
@@ -112,8 +134,17 @@ export class ResourceLeaseBroker {
     const priority = priorityValue(priorityClass, spec.priority);
     const units = normalizePositiveInteger(spec.units ?? spec.count, 1, 1, pool.units);
     const memoryBytes = normalizeNonNegativeInteger(spec.memoryBytes, 0);
-    if (memoryBytes > 0 && pool.memoryBytes > 0 && this.#activeMemoryBytes(kind) + memoryBytes > pool.memoryBytes) {
-      throw new Error(`Resource memory quota exceeded for ${kind}`);
+    // A caller may tighten a borrowed pool for this request without mutating its
+    // owner's capacity. Both checks and the eventual lease insertion are
+    // synchronous, so concurrent admissions cannot race a separate UI check.
+    const policyBytes = memoryBudget(spec.memoryBudgetBytes);
+    const budgetBytes = Math.min(pool.memoryBytes || Infinity, policyBytes || Infinity);
+    const reservedBytes = this.#activeMemoryBytes(kind);
+    if (memoryBytes > 0 && reservedBytes + memoryBytes > budgetBytes) {
+      const gib = (bytes) => Number((bytes / 1024 ** 3).toFixed(3));
+      throw Object.assign(new Error(`Resource memory quota exceeded for ${kind}: ${gib(reservedBytes)} GiB estimated reserved + ${gib(memoryBytes)} GiB requested exceeds the configured ${gib(budgetBytes)} GiB budget`),
+        { code: 'ERR_RESOURCE_MEMORY_BUDGET', resourceKind: kind, reservedBytes, requestedBytes: memoryBytes,
+          budgetBytes, brokerBytes: pool.memoryBytes || null, policyBytes: policyBytes || null });
     }
 
     const activeUnits = this.#activeUnits(kind);

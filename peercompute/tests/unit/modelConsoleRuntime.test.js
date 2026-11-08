@@ -6,6 +6,7 @@ import { GGUF_MODEL_CATALOG } from '../../src/peercompute/artifacts/ggufModelCat
 import { evaluateModelCompatibility } from '../../../demos/inference/src/modelDeviceCompatibility.js';
 import { createModelPreferences, DEFAULT_MODEL_ID } from '../../../demos/inference/src/modelPreferences.js';
 import { SPEECH_MODEL_CATALOG } from '../../src/peercompute/inference/speech/speechCatalog.js';
+import { PEER_INFERENCE_LIMITS } from '../../src/peercompute/networkManager/inference/protocol.js';
 
 const cid = 'bafkreihbwk7mfabwdamnmxyntvhqc6oc6xyzhz42tjkkx4uh4syxcwp5ou';
 const model = { runtime: 'transformers.js', repository: 'test/model', revision: 'a'.repeat(40), task: 'image-text-to-text', modalities: ['text', 'image'] };
@@ -26,7 +27,7 @@ function fixture({ retained = false, retainedRecords = [], catalogInfo, connecte
     listModels() { return this.models; }, listHosts() { return this.hosts; },
     async refresh(options) { calls.push('refresh'); return await hooks.refresh?.(options, this) ?? { errors: [] }; },
     async setHostingEnabled(value) { this.enabled = value; calls.push(`hosting:${value}`); },
-    async generate(_cid, options) { calls.push('remote'); return hooks.remoteGenerate?.(options) ?? { text: 'Remote answer', image: options.image }; },
+    async generate(_cid, options) { calls.push('remote'); return hooks.remoteGenerate?.(options, _cid) ?? { text: 'Remote answer', image: options.image }; },
     async cancel() { calls.push('cancel-remote'); },
   };
   const network = { isConnected: connected,
@@ -170,6 +171,142 @@ test('automatic peer routing excludes models whose every advertised host queue i
   assert.equal(targets.find((entry) => entry.manifestCid === cid).queueAvailable, false);
   const result = await f.runtime.generate('mixed', { prompt: 'Explain rain.' });
   assert.equal(result.route.manifestCid, secondCid); assert.equal(result.route.local, false);
+  await f.runtime.dispose();
+});
+
+test('an expired explicit peer selection refreshes once and dispatches only that same model CID', async () => {
+  let at = 0, receivedAt = 0, dispatched;
+  const selected = { ...descriptor, hosts: [{ peerId: 'selected-host', local: false, busy: false }] };
+  const another = { ...descriptor, manifestCid: secondCid, hosts: [{ peerId: 'other-host', local: false, busy: false }] };
+  const f = fixture({ now: () => at, hooks: {
+    refresh(_options, peer) { receivedAt = at; peer.hosts = [another, selected]; },
+    remoteGenerate(_options, key) { dispatched = key; return { text: 'Exact selected model' }; },
+  } });
+  await f.controller.initialize();
+  f.peer.hosts = [selected];
+  f.peer.listHosts = () => at - receivedAt > 15000 ? [] : f.peer.hosts;
+  const key = f.runtime.listInferenceTargets().find((entry) => !entry.local).key;
+  at = 16000;
+  const result = await f.runtime.generate(key, { prompt: 'Describe leaves.' });
+  assert.equal(dispatched, cid); assert.equal(result.route.manifestCid, cid);
+  assert.equal(f.calls.filter((call) => call === 'refresh').length, 1);
+  assert.equal(f.calls.filter((call) => call === 'remote').length, 1);
+  await f.runtime.generate(key, { prompt: 'Describe rain.' });
+  assert.equal(f.calls.filter((call) => call === 'refresh').length, 1, 'fresh exact selection needs no controller refresh');
+  await f.runtime.dispose();
+});
+
+test('a missing explicit peer remains unavailable after one refresh even when another model is available', async () => {
+  const f = fixture({ hooks: { refresh(_options, peer) {
+    peer.hosts = [{ ...descriptor, manifestCid: secondCid, hosts: [{ peerId: 'other', local: false, busy: false }] }];
+  } } });
+  await f.controller.initialize();
+  await assert.rejects(f.runtime.generate(`peer:${cid}`, { prompt: 'Describe leaves.' }), /selected model is no longer available/);
+  assert.equal(f.calls.filter((call) => call === 'refresh').length, 1);
+  assert(!f.calls.includes('remote')); assert(!f.calls.includes('local'));
+  await f.runtime.dispose();
+});
+
+test('a selected peer with a full cached queue refreshes capacity once without switching models', async () => {
+  for (const remainsFull of [false, true]) {
+    const selected = { ...descriptor, hosts: [{ peerId: 'selected', local: false, busy: true,
+      queuedRequests: 4, queueCapacity: 4, queueAvailable: false }] };
+    const f = fixture({ hooks: { refresh(_options, peer) {
+      if (!remainsFull) selected.hosts[0] = { peerId: 'selected', local: false, busy: false };
+      peer.hosts = [{ ...descriptor, manifestCid: secondCid,
+        hosts: [{ peerId: 'another', local: false, busy: false }] }, selected];
+    } } });
+    await f.controller.initialize(); f.peer.hosts = [selected];
+    const request = f.runtime.generate(`peer:${cid}`, { prompt: 'Describe leaves.' });
+    if (remainsFull) {
+      await assert.rejects(request, { code: 'ERR_INFERENCE_NO_MODEL' });
+      assert(!f.calls.includes('remote'));
+    } else assert.equal((await request).route.manifestCid, cid);
+    assert.equal(f.calls.filter((call) => call === 'refresh').length, 1);
+    await f.runtime.dispose();
+  }
+});
+
+test('fresh eligible mixed peer targets avoid an unrelated directory refresh; full queues refresh once', async () => {
+  const selected = { ...descriptor, hosts: [{ peerId: 'selected', local: false, busy: true,
+    queuedRequests: 1, queueCapacity: 4 }] };
+  const f = fixture({ hooks: { refresh(_options, peer) {
+    peer.hosts = [{ ...descriptor, hosts: [{ peerId: 'selected', local: false, busy: false }] }];
+  } } });
+  await f.controller.initialize(); f.peer.hosts = [selected];
+  const cached = await f.runtime.generate('mixed', { prompt: 'Describe leaves.' });
+  assert.equal(cached.route.manifestCid, cid); assert(!f.calls.includes('refresh'));
+  selected.hosts[0].queuedRequests = 4;
+  const refreshed = await f.runtime.generate('mixed', { prompt: 'Describe rain.' });
+  assert.equal(refreshed.route.manifestCid, cid);
+  assert.equal(f.calls.filter((call) => call === 'refresh').length, 1);
+  await f.runtime.dispose();
+});
+
+test('local targets never refresh peers and an already aborted peer selection does not start discovery', async () => {
+  const f = fixture({ multi: true, retained: true });
+  await f.controller.initialize(); await f.runtime.loadStoredModel(cid);
+  for (const key of ['local', `local:${cid}`, 'local-only', 'mixed']) {
+    assert.equal((await f.runtime.generate(key, { prompt: 'Describe leaves.' })).route.local, true);
+  }
+  await assert.rejects(f.runtime.generate(`local:${secondCid}`, { prompt: 'Missing local model.' }), /selected model is no longer available/);
+  const signal = AbortSignal.abort(new DOMException('Caller cancelled', 'AbortError'));
+  await assert.rejects(f.runtime.generate(`peer:${secondCid}`, { prompt: 'Do not send.', signal }), { name: 'AbortError' });
+  assert(!f.calls.includes('refresh')); assert(!f.calls.includes('remote'));
+  await f.runtime.dispose();
+});
+
+test('cancelling an explicit peer refresh does not dispatch a late discovered target or cancel an unrelated shared poll', async () => {
+  let release, started;
+  const blocked = new Promise((resolve) => { release = resolve; });
+  const entered = new Promise((resolve) => { started = resolve; });
+  const f = fixture({ hooks: { async refresh(options, peer) {
+    started(options.signal); await blocked;
+    peer.hosts = [{ ...descriptor, hosts: [{ peerId: 'selected', local: false, busy: false }] }];
+  } } });
+  await f.controller.initialize();
+  const poll = f.runtime.refreshPeers();
+  const pollSignal = await entered;
+  const controller = new AbortController();
+  const generation = f.runtime.generate(`peer:${cid}`, { prompt: 'Do not send late.', signal: controller.signal });
+  const rejected = assert.rejects(generation, { name: 'AbortError' });
+  controller.abort(new DOMException('Caller cancelled', 'AbortError'));
+  await rejected;
+  assert.equal(pollSignal.aborted, false); assert(!f.calls.includes('remote'));
+  release(); await poll;
+  assert(!f.calls.includes('remote')); assert.equal(f.calls.filter((call) => call === 'refresh').length, 1);
+  await f.runtime.dispose();
+});
+
+test('an explicit peer refresh has one directory deadline while underlying shared work remains tracked for shutdown', async (t) => {
+  let release, started;
+  const blocked = new Promise((resolve) => { release = resolve; });
+  const entered = new Promise((resolve) => { started = resolve; });
+  const f = fixture({ hooks: { async refresh() { started(); await blocked; } } });
+  await f.controller.initialize();
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const request = f.runtime.generate(`peer:${cid}`, { prompt: 'Describe leaves.' });
+  const rejected = assert.rejects(request, /selected model is no longer available/);
+  try {
+    await entered;
+    t.mock.timers.tick(PEER_INFERENCE_LIMITS.queryTimeoutMs * 2 + 100);
+    await rejected;
+    assert.equal(f.calls.filter((call) => call === 'refresh').length, 1);
+    assert(!f.calls.includes('remote'));
+    let closed = false;
+    const closing = f.runtime.dispose().then(() => { closed = true; });
+    await nextTurn(); assert.equal(closed, false);
+    release(); await closing;
+  } finally { t.mock.timers.reset(); release(); await rejected; await f.runtime.dispose(); }
+});
+
+test('cancellation from a routing callback prevents the selected peer request from being dispatched', async () => {
+  const f = fixture(); await f.controller.initialize();
+  f.peer.hosts = [{ ...descriptor, hosts: [{ peerId: 'selected', local: false, busy: false }] }];
+  const controller = new AbortController();
+  await assert.rejects(f.runtime.generate(`peer:${cid}`, { prompt: 'Do not send.', signal: controller.signal,
+    onProgress() { controller.abort(new DOMException('Caller cancelled', 'AbortError')); } }), { name: 'AbortError' });
+  assert(!f.calls.includes('remote')); assert(!f.calls.includes('refresh'));
   await f.runtime.dispose();
 });
 

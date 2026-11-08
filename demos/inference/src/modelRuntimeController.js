@@ -714,28 +714,41 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
       const signal = AbortSignal.any([combined(options.signal), abort.signal]);
       const request = { abort, remote: false, service: null }; requests.set(requestId, request);
       try {
+        signal.throwIfAborted();
+        const refreshCandidates = async () => {
+          // Join an existing directory poll without inheriting another caller's
+          // cancellation latency. Its tracked work stays owned by the controller.
+          await awaitLoadStep(runtime.refreshPeers({ signal }), signal,
+            PEER_INFERENCE_LIMITS.queryTimeoutMs * 2 + 100).catch(() => signal.throwIfAborted());
+          signal.throwIfAborted();
+          return runtime.listInferenceTargets();
+        };
         const automatic = { mixed: 'mixed', 'local-only': 'local', peers: 'peers', 'peers-only': 'peers' }[target];
         let candidates;
         if (automatic) {
           candidates = runtime.listInferenceTargets();
-          let localReady = false;
-          if (automatic === 'mixed') {
+          let ready = false;
+          if (automatic !== 'local') {
             try { routeInferenceTask({ task: options.task ?? (options.audio ? 'automatic-speech-recognition' : options.image ? 'image-text-to-text' : 'text-generation'),
-              mode: 'local', candidates }); localReady = true; }
+              mode: automatic, candidates }); ready = true; }
             catch (error) { if (error.code !== 'ERR_INFERENCE_NO_MODEL') throw error; }
           }
-          if (automatic !== 'local' && !localReady) {
-            await runtime.refreshPeers({ signal }).catch(() => signal.throwIfAborted());
-            candidates = runtime.listInferenceTargets();
-          }
+          if (automatic !== 'local' && !ready) candidates = await refreshCandidates();
         } else if (target === 'local') {
           const entry = resident();
           if (!entry) throw new Error('Import a model before using local inference');
           candidates = [{ ...entry, key: 'local', local: true, available: true }];
         } else {
           candidates = runtime.listInferenceTargets().filter((entry) => entry.key === target);
+          // A selected CID may outlive its cached row or full-queue snapshot.
+          // Refresh once, then resolve that identity; never choose another model.
+          if ((!candidates.length || candidates[0].queueAvailable === false)
+              && typeof target === 'string' && target.startsWith('peer:')) {
+            candidates = (await refreshCandidates()).filter((entry) => entry.key === target);
+          }
           if (!candidates.length) throw new Error('The selected model is no longer available');
         }
+        signal.throwIfAborted();
         const task = options.task ?? (options.audio ? 'automatic-speech-recognition' : options.image ? 'image-text-to-text'
           : automatic ? 'text-generation' : candidates[0]?.task ?? 'text-generation');
         if (!automatic && options.image && !candidates[0]?.modalities.includes('image')) throw new Error('This model accepts text only');
@@ -747,6 +760,7 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
           options.onProgress?.(['routing', 'accepted'].includes(event.type) ? { ...event, ...route, type: event.type, route: { ...route } } : event);
         };
         onProgress({ type: 'routing', requestId });
+        signal.throwIfAborted();
         const input = { ...options, requestId, signal, onProgress };
         const result = candidate.local ? await generateLocal(input, candidate.manifestCid)
           : await peerService.generate(candidate.manifestCid, { ...input, task: candidate.task });

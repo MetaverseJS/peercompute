@@ -6,7 +6,7 @@ import { createGeneratedImageRenderer } from './ui/generatedImages.js';
 import { createModelBrowser } from './ui/modelBrowser.js';
 import { createAgentConsole } from './agents/agentConsole.js';
 import { createAgentChatSession } from './agents/agentChatSession.js';
-import { supportsTask as modelSupportsTask } from '../../../peercompute/src/peercompute/inference/InferenceRouter.js';
+import { supportsTask as modelSupportsTask, hasInferenceCapacity } from '../../../peercompute/src/peercompute/inference/InferenceRouter.js';
 import './panel.css';
 
 const defaultVoiceSession = async (options) => (await import('../../shared/inference/VoiceSession.js')).createVoiceSession(options);
@@ -73,6 +73,13 @@ export async function mountInferencePanel({ container = document.body, stateMana
       outputModalities: task === 'text-to-image' ? ['image'] : ['text'] };
     return targets.find((target) => target.key === key);
   };
+  // Image capability survives temporary queue saturation; sending uses the
+  // same admission rules as execution, including a selected agent's locality.
+  const hasCapacity = (target, task) => {
+    if (!supportsTask(target, task)) return false;
+    return (target.automatic ? targets : [target]).some((model) => (!target.local || model.local)
+      && modelSupportsTask(model, task) && hasInferenceCapacity(model));
+  };
   const invalidateActions = () => { actions?.invalidate?.(); view.proposed.replaceChildren(); };
   const showError = (error) => {
     if (!alive()) return;
@@ -97,9 +104,12 @@ export async function mountInferencePanel({ container = document.body, stateMana
     view.sourceHelp.disabled = !!operation;
     view.cpuBudget.disabled = view.gpuBudget.disabled = !!operation || !runtime?.setMemoryBudgets;
     const attachmentConflict = view.generateImage.checked && !!attachment;
-    view.send.disabled = !!operation || historyLoading || imageLoading || attachmentConflict || !supportsTask(target, requestTask()) || (!view.prompt.value.trim() && !attachment);
+    view.send.disabled = !!operation || historyLoading || imageLoading || attachmentConflict || !hasCapacity(target, requestTask()) || (!view.prompt.value.trim() && !attachment);
     view.cancel.hidden = !operation || !!loadingOperation; view.target.disabled = !!operation;
     view.attach.disabled = !!operation || view.generateImage.checked || !supportsTask(selectedTarget('image-text-to-text'), 'image-text-to-text');
+    view.attach.title = view.generateImage.checked ? 'Generate image uses a text prompt. Uncheck it to attach an image.'
+      : !supportsTask(selectedTarget('image-text-to-text'), 'image-text-to-text')
+        ? 'Choose Mixed or a loaded local or peer vision model to attach an image.' : 'Attach an image for a vision model';
     view.generateImage.disabled = view.speakReplies.disabled = !!operation;
     const capturing = voiceState.recording || voiceState.status === 'requesting-microphone';
     view.talk.textContent = capturing ? 'Stop recording' : 'Talk';
@@ -114,9 +124,12 @@ export async function mountInferencePanel({ container = document.body, stateMana
           : 'This target runs on another peer. Messages and attachments go to that host; voice uses available local or peer speech models.';
     if (!attachmentConflict && target && !target.reason && !supportsTask(target, requestTask())) view.modeStatus.textContent +=
       ` No compatible ${view.generateImage.checked ? 'image-generation' : attachment ? 'vision' : 'text'} model is available for this choice. Load one or choose another target.`;
+    else if (!attachmentConflict && target && !target.reason && !hasCapacity(target, requestTask())) view.modeStatus.textContent +=
+      ' Compatible models have no available queue capacity. You can keep drafting; sending resumes when capacity is available.';
     view.unload.disabled = !!operation;
     view.clearChat.disabled = !!operation || !!target?.agentId;
     view.clearChat.title = target?.agentId ? 'Agent history and memory are persistent. Manage this agent through Agents.' : '';
+    if (view.configuration.open) renderMemoryUsage();
     view.storedRefresh.disabled = !!operation || !!storedController;
     for (const button of view.storedList.querySelectorAll('button')) button.disabled = !!operation || !!storedController || button.dataset.inactive === 'true';
     view.storedCancel.hidden = !operation || !loadingStoredModel || !!loadingOperation;
@@ -304,7 +317,22 @@ export async function mountInferencePanel({ container = document.body, stateMana
     view.gpuBudget.value = budgets.gpuBytes == null ? '' : String(budgets.gpuBytes / 1024 ** 3);
     const ram = runtime.getDeviceCapabilities?.()?.deviceMemoryGiB;
     view.memoryNote.textContent = (Number.isFinite(ram) && ram > 0 ? `Browser-reported RAM: approximately ${ram} GiB. ` : '')
-      + 'Optional estimates for future model loads. Leave blank for automatic checks. Your browser cannot report free GPU memory. Storage and loaded models are unchanged.';
+      + 'Optional combined limits for all loaded models, using conservative estimates. Auto sets no application byte cap; an embedding app’s limits still apply. Your browser cannot report free GPU memory. Actual allocations may fail. Lowering a limit keeps loaded models and restricts future loads.';
+    renderMemoryUsage();
+  }
+  function renderMemoryUsage() {
+    const pressure = runtime?.getMemoryBudgetStatus?.();
+    view.memoryPressure.hidden = !pressure;
+    if (pressure) {
+      const describe = (kind, label) => {
+        const pool = pressure[kind];
+        return `${label}: ${formatModelBytes(pool.reservedBytes)} estimated reserved; ${pool.budgetBytes === null
+          ? 'no application cap' : `${formatModelBytes(pool.budgetBytes)} combined budget`}${pool.overBudget ? ' (over budget; unload a model or raise the limit before adding another)' : ''}.`;
+      };
+      view.memoryPressure.textContent = describe('cpu', 'RAM') + ' ' + describe('gpu', 'GPU')
+        + (!pressure.owned ? ' The embedding app owns the shared resource pool; its limits cannot be raised here.' : '')
+        + ' These totals are estimates, not measured RAM or VRAM use.';
+    }
   }
   function changeMemoryBudgets() {
     if (!alive() || operation || !runtime.setMemoryBudgets) return;
@@ -322,7 +350,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
       });
       runtime.setMemoryBudgets({ cpuBytes: values[0], gpuBytes: values[1] });
       syncMemoryBudgets(); sources = runtime.listModelSources(); renderSources();
-      view.configurationStatus.textContent = 'Memory budgets updated for future loads.';
+      view.configurationStatus.textContent = 'Combined memory budgets updated for future loads.';
     } catch (error) { showError(error); }
   }
   async function refreshPeers() {
@@ -754,6 +782,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
       const task = requestTask(), createsImage = task === 'text-to-image', selectedImage = attachment;
       if (createsImage && selectedImage) throw new Error('Remove the attached image or uncheck Generate image.');
       if (!supportsTask(target, task)) throw new Error('No compatible model is available. Load one in Browse models or choose another target.');
+      if (!hasCapacity(target, task)) throw new Error('Compatible models have no available queue capacity. Wait for capacity or choose another target.');
       if (selectedImage && !target.modalities?.includes('image')) throw new Error('This model accepts text only. Remove the image or choose an image model.');
       invalidateActions();
       if (agentId) {

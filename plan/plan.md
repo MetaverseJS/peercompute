@@ -14,6 +14,23 @@ The root node should exist on a domain secured with SSL enabling all executable 
 
 ## Project Goals:
 
+November7 resident-memory correction: the default fixed12GiB CPU pool rejects
+DreamShaper8GiB plus Qwen2B8GiB before a second GPU allocation. Owned-console Auto
+should track estimates without an invented byte cap; explicit combined budgets
+and borrowed owner limits remain enforced atomically. Keep worker/slot/package
+bounds, truthful usage/cap display and GPU-failure cleanup. Do not lower estimated
+model envelopes without evidence or claim co-residency from separate model runs.
+
+November7 peer follow-up: preserve a fully validated directory or inference
+result when stream shutdown alone fails. Keep authenticated discovery expiry and
+explicit model choice; refresh expired choices before dispatch. Image attachment
+capability is independent of transient queue capacity, while Send follows the
+same capacity rules as routing. Image generation does not imply image input.
+The concrete two-browser report also exposed stalled open WebRTC connections:
+add bounded authenticated same-peer relay recovery before an application header,
+with connection ownership and active-stream protection. A ready connection flag
+alone is insufficient evidence that a new inference stream can be opened.
+
 November7 unified conversation correction: agents and direct models share the
 main transcript/composer, voice, attachment and explicit image-generation
 controls. Chat target chooses the persistent identity or direct model policy;

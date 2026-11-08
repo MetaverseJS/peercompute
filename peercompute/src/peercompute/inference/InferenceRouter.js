@@ -14,19 +14,25 @@ export function supportsTask(candidate, task) {
   return output.includes(task === 'text-to-image' ? 'image' : task === 'text-to-speech' ? 'audio' : 'text');
 }
 
+/** Scheduling readiness shared by the composer and the execution router. */
+export function hasInferenceCapacity(candidate) {
+  if (candidate?.available !== true || candidate.queueAvailable === false) return false;
+  const queued = candidate.queuedRequests ?? 0, capacity = candidate.queueCapacity ?? MODEL_POLICY.maxQueued;
+  return Number.isSafeInteger(queued) && queued >= 0 && Number.isSafeInteger(capacity) && capacity >= 0
+    && (!candidate.busy || queued < capacity);
+}
+
 export function routeInferenceTask({ task, mode = 'local', candidates = [] } = {}) {
   if (!INFERENCE_TASKS.includes(task) || !['mixed', 'local', 'peers'].includes(mode) || !Array.isArray(candidates)) {
     throw new Error('Invalid inference routing policy');
   }
   const eligible = candidates.filter((candidate) => {
-    if (!candidate || candidate.available !== true || !supportsTask(candidate, task)
+    if (!hasInferenceCapacity(candidate) || !supportsTask(candidate, task)
         || typeof candidate.manifestCid !== 'string' || !candidate.manifestCid
         || typeof candidate.key !== 'string' || !candidate.key || typeof candidate.runtime !== 'string'
-        || ![true, false].includes(candidate.local) || candidate.queueAvailable === false
+        || ![true, false].includes(candidate.local)
         || (mode === 'local' && !candidate.local) || (mode === 'peers' && candidate.local)) return false;
-    const queued = candidate.queuedRequests ?? 0, capacity = candidate.queueCapacity ?? MODEL_POLICY.maxQueued;
-    return Number.isSafeInteger(queued) && queued >= 0 && Number.isSafeInteger(capacity) && capacity >= 0
-      && (!candidate.busy || queued < capacity);
+    return true;
   });
   eligible.sort((a, b) => Number(!a.local) - Number(!b.local)
     || Number(Boolean(a.busy)) - Number(Boolean(b.busy))

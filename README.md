@@ -179,6 +179,28 @@ Chrome155/NVIDIA595.91.07 Vulkan tests explicitly use the diagnosed NVIDIA f16
 override; it is not enabled by the application. Browser/driver correctness must
 be qualified on the chosen device.
 
+Config memory budgets apply to the combined estimated reservations of all loaded
+models. **Auto** has no application byte cap in the standalone console; it tracks
+estimates and lets the runtime attempt allocations. A host application's existing
+limits still apply when embedding the console. Config shows estimated reserved
+RAM/GPU bytes and effective caps, which are not physical memory measurements.
+Explicit budgets reject additional loads above their total; lowering a budget
+keeps current models loaded. Actual GPU allocations can still fail. This replaces
+the old fixed12GiB RAM/16GiB GPU ceiling that rejected DreamShaper plus Qwen2B on
+estimated system RAM before attempting the second GPU allocation.
+
+Mixed can use a peer-hosted vision model for attachments even on a device without
+WebGPU. Attachments stay available while a vision host's queue is full; Send
+waits for capacity. Image-generation models such as DreamShaper accept text
+prompts, not image attachments. Peer directories expire normally, and selecting
+an expired peer model triggers a bounded refresh of that same model. A stream
+shutdown error no longer discards an already validated directory or response.
+If an open peer connection cannot start a stream, the networking manager can
+recover through a fresh encrypted relay connection to that same peer. Recovery
+happens before sending application data; an accepted prompt is never replayed.
+Connection limits and bounded retention protect both new negotiation and active
+inference while leaving older active connections alone.
+
 The model menu checks browser features independently of memory budgets. A 16 GiB
 GPU can still have GGUF and diffusion disabled when Chrome withholds `shader-f16`.
 On this machine, Chrome157/NVIDIA595.91.7 reproduces that condition without the

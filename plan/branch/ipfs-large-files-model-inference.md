@@ -1189,3 +1189,35 @@ local-only speech and cancellation across the whole turn. New identities use
 Mixed; existing policies remain unchanged. See the multimodal console plan and
 repository log for implementation and acceptance evidence. No public deployment
 or merge is included in this correction.
+
+
+### November 7 — truthful combined memory admission
+
+User reports a16GB GPU cannot load DreamShaper and Qwen2B together. The code
+reserves8GiB RAM/GPU per model but caps aggregate RAM at12GiB. Correct the
+artificial default and Config's disconnected per-model-only limits. Owned Auto
+tracks estimates without an invented byte cap; explicit combined budgets and
+borrowed-host limits remain authoritative. Expose estimated residency and effective
+caps, preserve already loaded models when limits change, and cleanly invalidate
+GPU-failed sessions. Do not equate package bytes, configured reservations or a
+browser memory hint with actual/freeVRAM. Actual co-resident hardware qualification
+is separate from deterministic admission tests and individual model success.
+
+
+### November 7 — reliable peer discovery and vision attachments
+
+User reports intermittent missing peer models, execution failures and unavailable
+attachments. Preserve valid authenticated replies despite close-only transport
+errors, refresh expired exact selections without changing CID, and avoid waiting
+for unrelated discovery when an eligible cached provider exists. Separate image
+input capability from transient queue capacity; maintain Mixed/local-only and
+explicit target behavior. Validate real private peer vision from a GPU-disabled
+client, and keep text-to-image input restrictions accurate.
+
+The user's two-browser screenshot adds a concrete stream-opening timeout before
+a directory is received. Investigate and repair nominally open but unusable
+connections with a bounded authenticated relay path to the same peer. Protect
+new negotiation and active inference on both ends without closing older active
+connections. Recovery must happen before application data; committed prompts
+never replay. Keep connection capacity, cancellation, cooldown and shutdown
+ownership explicit, and qualify this using the actual private vision worker.

@@ -44,9 +44,15 @@ flowchart TD
   capacity takes precedence; otherwise a capable peer host is selected.
   Local only prohibits remote dispatch. Explicit model targets remain available.
   The actual selected model/provider is shown with the response.
+  An open connection that cannot create an inference stream gets bounded
+  same-peer relay recovery before any prompt is sent. Existing streams stay
+  untouched, and a request already sent to a model is never replayed automatically.
 - An attachment selects image understanding. **Generate image** explicitly
   selects text-to-image; unsupported attachment combinations are explained.
   Image generation is not guessed from a sentence or mixed with chat history.
+  A remote vision model enables attachments even when this device cannot run it.
+  Full queues keep attachments/drafts available but disable Send until capacity
+  returns. Local only and explicit model selections retain their restrictions.
 - **Talk** explicitly opens the microphone; **Stop recording** ends the utterance
   and routes ASR, then the conversation task. **Speak replies** routes short TTS
   chunks and plays them sequentially. Voice is usable through loaded local or
@@ -63,8 +69,12 @@ retains one worker/session. Multiple models using the same backend remain
 independent. A selected-model compatibility accessor must not determine which
 service receives cancellation after a request has already started.
 
-Aggregate CPU/GPU reservations remain enforced. Additional worker slots do not
-increase the configured memory envelope or prove hardware fit. Admission failure
+Aggregate CPU/GPU estimates remain tracked. Explicit combined limits are enforced
+atomically, including a caller's stricter cap on a borrowed broker. Owned-console
+Auto imposes no application byte cap; it does not claim automatic hardware fit.
+An injected manager's existing limits remain authoritative. Lowering a cap keeps
+current/cleanup-pending reservations and rejects additional loads until policy
+permits them. Additional worker slots do not prove hardware fit. Admission failure
 leaves existing residents usable; unload/delete affects only the selected model.
 Startup reuses the remembered compatible conversational model and preserves
 pending retained-package recovery. It does not automatically reload every saved
@@ -165,3 +175,41 @@ exact internal TLS desktop/mobile/SecretWorkshop checks pass. Native model-load
 focus restoration and post-deletion cleanup were included in the final regressions.
 The earlier external Earth tile-network failure and generic ICC deletion-size
 failure remain in the log; neither was hidden by modifying an acceptance rule.
+
+
+### November 7 residency and peer recovery qualification
+
+The standalone default now accounts for estimated residency without imposing the
+old12GiB CPU/16GiB GPU ceiling. Explicit Config budgets constrain combined
+reservations; borrowed manager limits remain authoritative. Actual GPU errors
+invalidate the managed session and retain resource ownership until cleanup is
+acknowledged, including an error racing with cancellation. Browser memory hints
+and estimates do not establish actual free VRAM.
+
+Validated peer directories and completed results survive stream-close errors.
+Expired explicit targets refresh the same CID, and Mixed can use a fresh cached
+provider immediately. Image-input capability remains available while a queue is
+full, with Send using the execution router's shared capacity predicate.
+
+A stalled open WebRTC connection now permits a bounded fresh authenticated relay
+path before any application header. Both endpoints protect negotiation and active
+inference through bounded connection holds; existing active links remain intact.
+An accepted request is never replayed. Manager policy constrains trusted routes,
+capacity, coalescing, deadlines, cooldown, cancellation and shutdown ownership.
+
+Validation:166peer,104inference,101native UI/voice and85world aggregate tests pass;
+67manager/network tests and49private protocol tests are overlapping focused
+evidence. Actual cached Gemma verifies managed native WebGPU binding and healthy
+cancellation. Actual SmolVLM256 verifies Mixed/exact-peer red/blue image transfer
+and correct GPU replies from a requester without WebGPU. A separate controlled
+stalled-direct-link test recovers over Noise and executes exactly once, preserving
+the old connection and both-end relay holds. Final leases and owned cleanup are
+zero; no model downloads or public inference requests were used.
+
+Three production builds and exact5189/5176/5187 TLS, desktop/mobile and
+SecretWorkshop/noise checks pass. The Config gate reserves two8GiB accounting
+records per resource; it proves admission/UI behavior, not physical co-residency.
+A fresh two-client production discovery run receives the live hosted models and
+mutual v3 directories, retaining transient startup errors as evidence. Concurrent
+DreamShaper plus Qwen2B physical allocation remains unqualified. Detailed receipts
+and corrected fixture failures are recorded in plan/log.md.

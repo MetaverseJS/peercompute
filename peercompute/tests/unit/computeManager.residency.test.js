@@ -3,6 +3,13 @@ import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
 import { ComputeManager } from '../../src/peercompute/computeManager/ComputeManager.js';
 import { installComputeWorkerHost } from '../../src/peercompute/computeManager/workerTaskHost.js';
+import { ModelInferenceService } from '../../src/peercompute/inference/ModelInferenceService.js';
+import { ResidentModelAdmission } from '../../src/peercompute/serviceOrchestration/ResidentModelAdmission.js';
+import { ResourceLeaseBroker } from '../../src/peercompute/serviceOrchestration/ResourceLeaseBroker.js';
+import { CID } from 'multiformats/cid';
+import { sha256 } from 'multiformats/hashes/sha2';
+
+const modelCid = CID.createV1(0x55, await sha256.digest(new Uint8Array([1]))).toString();
 
 function setup(t, config = {}) {
   const previous = globalThis.Worker;
@@ -99,7 +106,116 @@ test('cooperative cancellation waits for worker cleanup and preserves residency'
   await rejected;
   assert.equal(workers[0].terminated, undefined);
   assert.ok(manager.getWorkerAffinityState('model').workerId);
+  assert.equal(await manager.submitTask({ affinityKey: 'model', requireWorker: true, fn: () => 23 }), 23);
   await manager.releaseWorkerAffinity('model');
+});
+
+test('cancellation still discards late results, commit deltas and nonfatal errors', async (t) => {
+  const { manager } = setup(t, { maxWorkers: 1 });
+  await manager.reserveWorkerAffinity('model');
+  const worker = manager.workerAffinities.get('model'); worker.ignore = true;
+  let commits = 0;
+  manager.commitDelta = () => { commits++; };
+  for (const [index, reply] of [
+    { type: 'result', result: { value: 'too late', commitDelta: { changed: true } } },
+    { type: 'error', error: 'Ordinary model input error', code: 'ERR_MODEL_INPUT' },
+    { type: 'error', error: 'Cancelled', name: 'AbortError' },
+  ].entries()) {
+    const id = `cancel-reply-${index}`;
+    const task = manager.submitTask({ id, affinityKey: 'model', requireWorker: true, fn: () => 1 });
+    const rejected = assert.rejects(task, { name: 'AbortError', code: 'ERR_COMPUTE_TASK_CANCELLED' });
+    const cancellation = manager.cancelTask(id);
+    // Simulate a reply already in transit when cancellation reaches the worker.
+    worker.onmessage({ data: { id, ...reply } });
+    await Promise.all([rejected, cancellation]);
+  }
+  assert.equal(commits, 0);
+  assert.equal(worker.terminated, undefined);
+  worker.ignore = false;
+  assert.equal(await manager.submitTask({ affinityKey: 'model', requireWorker: true, fn: () => 23 }), 23);
+  await manager.releaseWorkerAffinity('model');
+});
+
+test('cancelled resident inference preserves fatal GPU/native errors through the worker protocol and acknowledges cleanup before releasing leases', async (t) => {
+  for (const code of ['ERR_MODEL_GPU_OUT_OF_MEMORY', 'ERR_MODEL_GPU', 'ERR_MODEL_RUNTIME', 'MODEL_DISPOSE_FAILED']) {
+    await t.test(code, async (t) => {
+      const { manager } = setup(t, { maxWorkers: 1 });
+      const broker = new ResourceLeaseBroker({ capacities: {
+        cpu: { units: 1, memoryBytes: 1024 }, gpu: { units: 1, memoryBytes: 2048 },
+      } });
+      const message = `Model session lost: synthetic ${code}`;
+      // A trusted synthetic runtime exercises the real worker host, error
+      // serialization, manager cancellation and service/admission lifecycle.
+      const moduleUrl = `data:text/javascript,${encodeURIComponent(`
+        export async function handleModelTask(data, context) {
+          if (data.command === 'load') {
+            data.artifactPort.close();
+            return { sessionId: data.sessionId, status: 'ready' };
+          }
+          if (data.command === 'generate') {
+            context.emitProgress({ type: 'started' });
+            await new Promise(resolve => context.signal.addEventListener('abort', resolve, { once: true }));
+            throw Object.assign(new Error(${JSON.stringify(message)}), { code: ${JSON.stringify(code)} });
+          }
+          return { status: 'unloaded' };
+        }
+      `)}`;
+      const service = new ModelInferenceService({ computeManager: manager,
+        artifactStore: { async stat() { return { status: 'complete' }; }, async *openRead() {} },
+        admission: new ResidentModelAdmission({ broker }), resourceEstimate: { cpuBytes: 1024, gpuBytes: 2048 },
+        runtimeAssets: {}, moduleUrl,
+        runtimeDefinition: { id: 'test', validateRuntimeAssets: (assets) => assets,
+          validateManifest: (manifest) => ({ manifest, resourcePolicy: { minimumCpuBytes: 1, minimumGpuBytes: 1 } }) },
+      });
+      manager.modelServices.add(service);
+      await service.loadModel({ sessionId: 'cancel-fatal', manifestCid: modelCid,
+        manifest: { model: { runtime: 'test' }, files: [] } });
+      const affinity = service.session.affinityKey;
+      const worker = manager.workerAffinities.get(affinity);
+      const terminate = worker.terminate.bind(worker);
+      let acknowledged = false;
+      const failCleanup = code === 'ERR_MODEL_RUNTIME';
+      worker.terminate = () => {
+        assert.equal(service.getStatus().status, 'lost', 'the host must not advertise ready during cleanup');
+        assert.equal(broker.reportPressure().activeLeaseCount, 2, 'both reservations survive until worker termination');
+        assert.equal(manager.getWorkerAffinityState(affinity).reserved, true);
+        if (failCleanup) throw new Error('Synthetic worker termination failure');
+        terminate(); acknowledged = true;
+      };
+      const controller = new AbortController();
+      let started;
+      const ready = new Promise((resolve) => { started = resolve; });
+      const request = service.generate({ requestId: 'fatal', prompt: 'A benign prompt', signal: controller.signal,
+        onProgress: started });
+      const rejected = assert.rejects(request, (error) => {
+        const original = failCleanup ? error.errors?.[0] : error;
+        assert.equal(original?.code, code);
+        assert.equal(original?.message, message);
+        assert.notEqual(original?.name, 'AbortError');
+        return true;
+      });
+      await ready;
+      const queued = assert.rejects(service.generate({ requestId: 'queued', prompt: 'Another benign prompt' }));
+      controller.abort('Caller cancelled');
+      await Promise.all([rejected, queued]);
+      assert.equal(controller.signal.aborted, true);
+      if (failCleanup) {
+        assert.equal(service.getStatus().status, 'cleanup-failed');
+        assert.equal(broker.reportPressure().activeLeaseCount, 2);
+        assert.ok(manager.getWorkerAffinityState(affinity).workerId);
+        await assert.rejects(service.generate({ prompt: 'Must not run' }), /not ready/);
+        worker.terminate = terminate;
+        await service.dispose();
+      } else {
+        assert.equal(acknowledged, true);
+        assert.equal(service.getStatus().status, 'idle');
+        await service.dispose();
+      }
+      assert.equal(broker.reportPressure().activeLeaseCount, 0);
+      assert.equal(manager.getWorkerAffinityState(affinity).reserved, false);
+      assert.equal(manager.activeTasks.size, 0);
+    });
+  }
 });
 
 test('hard cancellation terminates only the owning worker before releasing the task', async (t) => {

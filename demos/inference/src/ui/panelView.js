@@ -138,6 +138,8 @@ export function createPanelView(container) {
   }
   limits.append(label('Model RAM budget (GiB)', cpuBudget), label('Model GPU memory budget (GiB)', gpuBudget));
   const memoryNote = node('p', '', 'pc-inference-note'); settings.body.append(limits, memoryNote);
+  const memoryPressure = node('p', '', 'pc-inference-note'); memoryPressure.setAttribute('aria-label', 'Estimated model memory reservations');
+  settings.body.append(memoryPressure);
   const gpuLimits = node('div', undefined, 'pc-config-grid');
   gpuLimits.append(label('GGUF GPU layers', gpuLayers)); settings.body.append(gpuLimits);
   settings.body.append(node('p', '99999 uses all GPU layers. The 27B model was tested with 56 layers on an RTX 5060 Ti (16 GB), with a compatible browser.', 'pc-inference-note'));
@@ -180,7 +182,7 @@ export function createPanelView(container) {
     back, menu, menuWindow, menuStatus: menuDialog.status, about, aboutButton, install,
     loading, loadingModel, loadingStatus: loadingWindow.status, loadingCancel,
     compatibility, helpModel, helpReason, helpBrowser, helpOs, helpDetails, helpCommandGroup, helpCommand, helpCopy, helpConfig, helpStatus: help.status,
-    cpuBudget, gpuBudget, memoryNote,
+    cpuBudget, gpuBudget, memoryNote, memoryPressure,
     relay, connect, networkStatus, file, unload, clearChat, transcript, empty, proposed, attachment, attachmentImage,
     attachmentName, removeAttachment, prompt, target, attach, imageFile, send, cancel, talk, generateImage, speakReplies, modeStatus, resumeAgent };
 }

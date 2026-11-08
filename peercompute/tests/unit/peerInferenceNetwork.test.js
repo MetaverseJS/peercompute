@@ -9,7 +9,7 @@ import { yamux } from '@libp2p/yamux';
 import { identify } from '@libp2p/identify';
 import { multiaddr } from '@multiformats/multiaddr';
 import { NetworkManager } from '../../src/peercompute/networkManager/NetworkManager.js';
-import { PEER_INFERENCE_PROTOCOL, PEER_INFERENCE_PROTOCOL_V2, LEGACY_MAX_NEW_TOKENS, encryptedConnection, channel, descriptor, localState, generation, resultData } from '../../src/peercompute/networkManager/inference/protocol.js';
+import { PEER_INFERENCE_PROTOCOL, PEER_INFERENCE_PROTOCOL_V2, PEER_INFERENCE_LIMITS, LEGACY_MAX_NEW_TOKENS, encryptedConnection, channel, descriptor, localState, generation, resultData } from '../../src/peercompute/networkManager/inference/protocol.js';
 import { imageDigest } from '../../src/peercompute/networkManager/inference/imageResult.js';
 import { MODEL_POLICY } from '../../src/peercompute/inference/modelManifest.js';
 
@@ -44,6 +44,135 @@ async function until(check) {
   for (let i = 0; i < 150; i++) { if (check()) return; await delay(10); }
   throw new Error('Condition did not settle');
 }
+
+function interceptStreamClose(t, service, close) {
+  const open = service._openStream;
+  const calls = { closed: 0, aborted: 0 };
+  service._openStream = async function (...args) {
+    const result = await open.apply(this, args), abort = result.stream.abort.bind(result.stream);
+    result.stream.close = (...options) => { calls.closed++; return close(...options); };
+    result.stream.abort = (error) => { calls.aborted++; return abort(error); };
+    return result;
+  };
+  t.after(() => { service._openStream = open; });
+  return calls;
+}
+
+test('validated vision advertisements survive close-only failure, expire normally and still reject failed directory queries', { timeout: 15000 }, async (t) => {
+  const [requestor, host] = await fixture(t, 2);
+  host.state = { ...empty(), sharedModels: [model], hostedModels: [model], hostedModel: model };
+  const closes = interceptStreamClose(t, requestor.service, async () => { throw new Error('FIN failed after directory'); });
+  const directory = await requestor.service.refresh();
+  assert.deepEqual(directory.errors, []);
+  assert.equal(directory.hosts.length, 1);
+  assert.equal(directory.hosts[0].task, 'image-text-to-text');
+  assert.deepEqual(directory.hosts[0].modalities, ['text', 'image']);
+  assert.deepEqual(directory.hosts[0].outputModalities, ['text']);
+  assert.equal(directory.hosts[0].hosts[0].peerId, host.node.peerId.toString());
+  assert.equal(closes.closed, 1); assert.equal(closes.aborted, 1);
+  const record = requestor.service.records.get(host.node.peerId.toString());
+  record.receivedAt = Date.now() - PEER_INFERENCE_LIMITS.recordTtlMs - 1;
+  assert.equal(requestor.service.listHosts().length, 0, 'close recovery does not extend the directory TTL');
+  assert.equal(requestor.service.listModels().length, 0);
+  assert.equal((await requestor.service.refresh()).hosts.length, 1);
+  // Failed/malformed updates must still invalidate the previous record. Only
+  // closure after a fully checked directory receives the new tolerance.
+  host.state.hostedModels = [{ ...model, outputModalities: ['image'] }];
+  const invalid = await requestor.service.refresh();
+  assert.equal(invalid.hosts.length, 0); assert.equal(invalid.models.length, 0);
+  assert.match(invalid.errors[0].message, /output modalities/);
+  assert.equal(closes.closed, 2, 'invalid response never reaches completed-stream cleanup');
+  assert.equal(host.received.length, 0);
+});
+
+test('completed remote vision replies preserve received pixels and provider identity after close failure without replay', { timeout: 15000 }, async (t) => {
+  const [requestor, host, fallback] = await fixture(t);
+  host.state = { ...empty(), hostedModels: [{ ...model, idleForMs: 100 }] };
+  fallback.state = { ...empty(), hostedModels: [{ ...model, idleForMs: 1 }] };
+  await requestor.service.refresh();
+  const closes = interceptStreamClose(t, requestor.service, () => { throw new Error('FIN failed after vision reply'); });
+  const pixels = new Uint8Array([255, 0, 0, 255, 0, 0, 255, 255]);
+  const result = await requestor.service.generate(manifestCid, { prompt: 'Describe these pixels.',
+    image: { width: 2, height: 1, channels: 4, data: pixels } });
+  assert.equal(result.text, 'Hello'); assert.equal(result.peerId, host.node.peerId.toString());
+  assert.equal(result.manifestCid, manifestCid); assert.equal(result.connectionEncryption, '/noise');
+  assert.deepEqual(host.received[0].image.data, pixels);
+  assert.equal(host.received.length, 1); assert.equal(fallback.received.length, 0);
+  assert.equal(closes.closed, 1); assert.equal(closes.aborted, 1);
+  await until(() => host.service.inbound.size === 0);
+});
+
+test('complete credited image results survive close failure after digest validation and are never rerun', { timeout: 15000 }, async (t) => {
+  const [requestor, host, fallback] = await fixture(t);
+  host.state = { ...empty(), hostedModels: [{ ...imageModel, idleForMs: 100 }] };
+  fallback.state = { ...empty(), hostedModels: [{ ...imageModel, idleForMs: 1 }] };
+  const pixels = Uint8Array.from({ length: 256 * 256 * 4 }, (_, i) => i % 251);
+  host.run = async (input) => { host.received.push(input); return { text: '', seed: 42,
+    image: { width: 256, height: 256, channels: 4, data: pixels } }; };
+  await requestor.service.refresh();
+  const closes = interceptStreamClose(t, requestor.service, async () => { throw new Error('FIN failed after image'); });
+  const result = await requestor.service.generate(manifestCid, { prompt: 'A mountain.', seed: 42 });
+  assert.equal(result.peerId, host.node.peerId.toString()); assert.equal(result.seed, 42);
+  assert.equal(result.connectionEncryption, '/noise');
+  assert.equal(result.image.sha256, imageDigest(pixels)); assert.deepEqual(result.image.data, pixels);
+  assert.equal(host.received.length, 1); assert.equal(fallback.received.length, 0);
+  assert.equal(closes.closed, 1); assert.equal(closes.aborted, 1);
+  await until(() => host.service.inbound.size === 0);
+});
+
+test('a transport ignoring close cancellation cannot hang a completed directory or inference result', { timeout: 15000 }, async (t) => {
+  const [requestor, host] = await fixture(t, 2);
+  host.state = { ...empty(), hostedModels: [model] };
+  const lateRejects = [];
+  const closes = interceptStreamClose(t, requestor.service, () => new Promise((_resolve, reject) => { lateRejects.push(reject); }));
+  const before = performance.now();
+  assert.equal((await requestor.service.refresh()).hosts.length, 1);
+  assert.equal((await requestor.service.generate(manifestCid, { prompt: 'One answer.' })).text, 'Hello');
+  assert.ok(performance.now() - before < 3000, 'cleanup has its own short deadline, not the generation deadline');
+  assert.equal(closes.closed, 2); assert.equal(closes.aborted, 2);
+  assert.equal(host.received.length, 1);
+  assert.equal(requestor.service.outbound.size, 0);
+  for (const reject of lateRejects) reject(new Error('Late close rejection'));
+  await delay(0);
+});
+
+test('host completion cleanup releases inbound slots even if its transport close never settles', { timeout: 15000 }, async (t) => {
+  const [requestor, host] = await fixture(t, 2);
+  host.state = { ...empty(), hostedModels: [model] };
+  const handle = host.service._handle;
+  let aborted = 0;
+  host.service._handle = function (stream, ...args) {
+    const abort = stream.abort.bind(stream);
+    stream.close = () => new Promise(() => {});
+    stream.abort = (error) => { aborted++; return abort(error); };
+    return handle.call(this, stream, ...args);
+  };
+  t.after(() => { host.service._handle = handle; });
+  assert.equal((await requestor.service.refresh()).hosts.length, 1);
+  assert.equal((await requestor.service.generate(manifestCid, { prompt: 'Finish once.' })).text, 'Hello');
+  await until(() => host.service.inbound.size === 0 && host.service.operations.size === 0);
+  assert.ok(aborted >= 2, 'both completed directory and result streams receive bounded cleanup');
+  assert.equal(host.received.length, 1);
+});
+
+for (const kind of ['directory', 'result']) test(`caller cancellation during completed ${kind} cleanup still wins`, { timeout: 15000 }, async (t) => {
+  const [requestor, host, fallback] = await fixture(t);
+  host.state = { ...empty(), hostedModels: [{ ...model, idleForMs: 100 }] };
+  fallback.state = { ...empty(), hostedModels: [{ ...model, idleForMs: 1 }] };
+  if (kind === 'result') await requestor.service.refresh();
+  const caller = new AbortController();
+  const closes = interceptStreamClose(t, requestor.service, async () => { caller.abort(); throw new Error('close failed while caller cancelled'); });
+  if (kind === 'directory') {
+    await assert.rejects(requestor.service._query(host.node.peerId.toString(), caller.signal), { name: 'AbortError' });
+    assert.equal(requestor.service.records.has(host.node.peerId.toString()), false);
+  } else {
+    await assert.rejects(requestor.service.generate(manifestCid, { prompt: 'Do not replay.', signal: caller.signal }),
+      (error) => error.name === 'AbortError' && error.committed === true);
+    assert.equal(host.received.length, 1);
+  }
+  assert.equal(closes.closed, 1); assert.ok(closes.aborted >= 1);
+  assert.equal(fallback.received.length, 0);
+});
 
 test('failed preferred WebRTC stream opens through the same host\'s encrypted relay before sending inference', { timeout: 15000 }, async (t) => {
   const [requestor, host, unrelated] = await fixture(t);

@@ -1,15 +1,32 @@
 /** Keep explicit CPU/GPU envelopes admitted for the complete model lifetime. */
 export class ResidentModelAdmission {
-  constructor({ broker } = {}) {
+  constructor({ broker, allowUnboundedMemory = false, getMemoryBudgets } = {}) {
     if (!broker?.requestLease || !broker.releaseLease || !broker.get || !broker.expireLeases) {
       throw new TypeError('ResourceLeaseBroker is required');
     }
-    for (const kind of ['cpu', 'gpu']) {
-      if (!(broker.reportPressure().pools[kind]?.memoryBytes > 0)) {
-        throw new Error(`An explicit ${kind} memory budget is required for inference`);
-      }
+    if (typeof allowUnboundedMemory !== 'boolean' || (getMemoryBudgets !== undefined && typeof getMemoryBudgets !== 'function')) {
+      throw new TypeError('Invalid resident memory admission policy');
     }
     this.broker = broker;
+    this.allowUnboundedMemory = allowUnboundedMemory;
+    this.getMemoryBudgets = getMemoryBudgets;
+    for (const kind of ['cpu', 'gpu']) this._budget(kind);
+  }
+
+  _budget(kind) {
+    const budgets = this.getMemoryBudgets?.() ?? {};
+    if (!budgets || typeof budgets !== 'object' || Array.isArray(budgets)
+        || ![Object.prototype, null].includes(Object.getPrototypeOf(budgets))
+        || Object.keys(budgets).some((key) => !['cpuBytes', 'gpuBytes'].includes(key))) throw new TypeError('Invalid resident memory budgets');
+    for (const value of Object.values(budgets)) {
+      if (value != null && (!Number.isSafeInteger(value) || value <= 0)) throw new TypeError('Invalid resident memory budget');
+    }
+    const limit = budgets[`${kind}Bytes`] ?? null;
+    const pool = this.broker.reportPressure().pools[kind];
+    if (!pool || (!(pool.memoryBytes > 0) && limit === null && !this.allowUnboundedMemory)) {
+      throw new Error(`An explicit ${kind} memory budget is required for inference; unbounded tracking must be enabled by the owner`);
+    }
+    return limit;
   }
 
   async acquire({ sessionId, manifestCid, estimatedCpuBytes, estimatedGpuBytes }) {
@@ -19,7 +36,9 @@ export class ResidentModelAdmission {
     const leases = [];
     try {
       for (const [resourceKind, memoryBytes] of [['cpu', estimatedCpuBytes], ['gpu', estimatedGpuBytes]]) {
+        const memoryBudgetBytes = this._budget(resourceKind);
         leases.push(await this.broker.requestLease({ resourceKind, memoryBytes,
+          memoryBudgetBytes,
           rootTaskId: sessionId, serviceId: 'model-inference', units: 1,
           resident: true, preemptable: false, priorityClass: 'interactive', lifetime: 'owner',
           metadata: { manifestCid, policy: 'configured-resident-envelope' } }));

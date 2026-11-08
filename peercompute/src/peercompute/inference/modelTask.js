@@ -79,6 +79,130 @@ function generationFinishReason(model, generated, maximum) {
   return generated.length >= maximum ? 'length' : 'unknown';
 }
 
+function gpuFailure(kind, cause, stage) {
+  const detail = kind === 'out-of-memory'
+    ? 'GPU out of memory. Close GPU-heavy apps or unload other models, then reload this model.'
+    : `GPU ${kind}: ${String(cause?.message ?? cause ?? 'operation failed').slice(0, 240)}`;
+  const error = new Error(`Model session lost: ${stage} ${detail}`, { cause });
+  error.code = kind === 'out-of-memory' ? 'ERR_MODEL_GPU_OUT_OF_MEMORY' : 'ERR_MODEL_GPU';
+  return error;
+}
+
+// Queue completion alone does not reject invalid GPU commands. Keep scopes on
+// ORT's actual device, including allocations made during its first session load.
+// The independent listener survives ORT assigning device.onuncapturederror.
+function createModelGpuGuard(entry) {
+  let device, frame, disposed = false;
+  const markLost = (error) => {
+    if (disposed) return;
+    entry.lost = true;
+    if (!entry.gpuFailure || error.code === 'ERR_MODEL_GPU_OUT_OF_MEMORY') entry.gpuFailure = error;
+    entry.active?.abort(error);
+  };
+  const uncaptured = ({ error }) => markLost(gpuFailure(
+    error?.constructor?.name === 'GPUOutOfMemoryError' ? 'out-of-memory' : 'uncaptured error', error, frame?.stage ?? 'resident model'));
+  const pushScopes = () => {
+    if (!frame || frame.device) return;
+    frame.device = device;
+    for (const filter of ['validation', 'out-of-memory', 'internal']) {
+      device.pushErrorScope(filter);
+      frame.filters.push(filter);
+    }
+  };
+  return {
+    attach(actual) {
+      if (device && device !== actual) throw gpuFailure('device changed', null, 'load');
+      if (!device) {
+        if (!actual || typeof actual.pushErrorScope !== 'function' || typeof actual.popErrorScope !== 'function'
+            || typeof actual.queue?.onSubmittedWorkDone !== 'function'
+            || typeof actual.addEventListener !== 'function' || typeof actual.removeEventListener !== 'function'
+            || typeof actual.destroy !== 'function'
+            || typeof actual.lost?.then !== 'function') {
+          throw gpuFailure('device unavailable', null, 'load');
+        }
+        device = actual;
+        entry.runtimeDevice = device;
+        device.addEventListener('uncapturederror', uncaptured);
+        device.lost.then((cause) => markLost(gpuFailure('device lost', cause, frame?.stage ?? 'resident model')),
+          (cause) => markLost(gpuFailure('device lost', cause, frame?.stage ?? 'resident model')));
+      }
+      try { pushScopes(); }
+      catch (cause) { const error = gpuFailure('error scope failure', cause, frame?.stage ?? 'load'); markLost(error); throw error; }
+    },
+    async run(stage, operation) {
+      if (entry.lost) throw entry.gpuFailure ?? gpuFailure('device lost', null, stage);
+      if (frame) throw new Error('Overlapping model GPU operations are not allowed');
+      const current = { stage, filters: [], device: null };
+      frame = current;
+      let result, failure;
+      try {
+        if (device) this.attach(device);
+        result = await operation();
+        if (!device) throw gpuFailure('device unavailable', null, stage);
+      } catch (error) { failure = error; }
+      // Fence and drain even when model execution or cancellation throws. Retain
+      // ordinary input/model errors only when the GPU checks themselves are clean.
+      if (device) {
+        try { await device.queue.onSubmittedWorkDone(); }
+        catch (cause) { markLost(gpuFailure('queue failure', cause, stage)); }
+      }
+      const captured = await Promise.all(current.filters.reverse().map(async (filter) => {
+        try { return { filter, error: await current.device.popErrorScope() }; }
+        catch (error) { return { filter, error, scopeFailed: true }; }
+      }));
+      frame = null;
+      for (const item of captured) if (item.scopeFailed) markLost(gpuFailure('error scope failure', item.error, stage));
+      const failedScope = ['out-of-memory', 'internal', 'validation'].map((filter) =>
+        captured.find((item) => item.filter === filter && item.error && !item.scopeFailed)).find(Boolean);
+      if (failedScope) markLost(gpuFailure(failedScope.filter, failedScope.error, stage));
+      // Native ORT can consume its own validation scope before rejecting OrtRun;
+      // the outer scopes are then clean, but Transformers' native run chain is
+      // no longer reusable. Keep benign pre-native model/input errors separate.
+      if (failure instanceof WebAssembly.RuntimeError || /^failed to call OrtRun\(\)\./.test(failure?.message ?? '')) {
+        const error = new Error('Model session lost: native inference runtime failed', { cause: failure });
+        error.code = 'ERR_MODEL_RUNTIME';
+        markLost(error);
+      }
+      if (typeof failure?.code === 'string' && failure.code.startsWith('ERR_MODEL_GPU')) markLost(failure);
+      if (entry.gpuFailure) throw entry.gpuFailure;
+      if (failure) throw failure;
+      return result;
+    },
+    dispose() {
+      disposed = true;
+      device?.removeEventListener('uncapturederror', uncaptured);
+    },
+  };
+}
+
+function modelDeviceDescriptor(adapter) {
+  // Match the native WebGPU EP's GetRequiredLimits/GetAvailableRequiredFeatures
+  // at the installed ORT commit 8d85527a0. Browser defaults can otherwise cap an
+  // externally supplied device at 256 MiB even on capable hardware.
+  const limits = ['maxBindGroups', 'maxComputeWorkgroupStorageSize', 'maxComputeWorkgroupsPerDimension',
+    'maxStorageBuffersPerShaderStage', 'maxStorageBufferBindingSize', 'maxBufferSize',
+    'maxComputeInvocationsPerWorkgroup', 'maxComputeWorkgroupSizeX', 'maxComputeWorkgroupSizeY', 'maxComputeWorkgroupSizeZ'];
+  const requiredLimits = {};
+  for (const key of limits) {
+    const value = adapter.limits?.[key];
+    if (!Number.isSafeInteger(value) || value <= 0) throw new Error(`WebGPU adapter has an invalid ${key} limit`);
+    requiredLimits[key] = value;
+  }
+  const requiredFeatures = ['chromium-experimental-subgroup-matrix', 'timestamp-query',
+    'shader-f16', 'subgroups', 'subgroup-size-control'].filter((feature) => adapter.features.has(feature));
+  return { requiredLimits, requiredFeatures };
+}
+
+async function disposeModelEntry(entry) {
+  await disposeComponents(entry.components);
+  entry.restoreGpuEvidence?.();
+  entry.gpuGuard?.dispose();
+  // The native EP accepts an external device but does not own its lifetime.
+  // Release it only after every model component acknowledges disposal.
+  entry.ownedDevice?.destroy();
+  entry.ownedDevice = null;
+}
+
 async function loadComponents({ library, modelPath, options, manifest, adapterFeatures = [] }) {
   const components = {};
   try {
@@ -213,11 +337,26 @@ export function createModelTaskRuntime({
         },
       };
       entry.library = library;
-      entry.components = await loadModel({ library, modelPath: sessionId, options, manifest, adapterFeatures: [...adapter.features] });
-      // A non-abortable ORT load can finish after cancellation. Dispose before acknowledging failure.
-      throwIfAborted(context.signal);
-      const runtimeDevice = await env.backends.onnx.webgpu?.device;
-      entry.runtimeDevice = runtimeDevice;
+      entry.gpuGuard = createModelGpuGuard(entry);
+      await entry.gpuGuard.run('load', async () => {
+        const webgpu = env.backends.onnx.webgpu;
+        if (!webgpu) throw new Error('The WebGPU runtime is unavailable');
+        webgpu.adapter = adapter;
+        // Transformers 4.3.2 uses native ORT/asyncify, which can bypass
+        // env.webgpu.adapter when creating its device. Use the supported native
+        // provider option so all sessions use this exact guarded owned device.
+        entry.ownedDevice = await adapter.requestDevice(modelDeviceDescriptor(adapter));
+        entry.gpuGuard.attach(entry.ownedDevice);
+        options.session_options.executionProviders = [{ name: 'webgpu', device: entry.ownedDevice }];
+        // Own returned handles before checking GPU errors, for failed-load cleanup.
+        entry.components = await loadModel({ library, modelPath: sessionId, options, manifest, adapterFeatures: [...adapter.features] });
+        for (const feature of features) if (!entry.runtimeDevice.features.has(feature)) {
+          throw new Error(`ORT device is missing required GPU feature: ${feature}`);
+        }
+        // A non-abortable ORT load can finish after cancellation. Dispose before acknowledging failure.
+        throwIfAborted(context.signal);
+      });
+      const runtimeDevice = entry.runtimeDevice;
       entry.runtimeFeatures = [...(runtimeDevice?.features ?? [])];
       if (entry.collectGpuEvidence && runtimeDevice) {
         // Acceptance instrumentation is confined to this ORT-owned worker/device.
@@ -254,18 +393,13 @@ export function createModelTaskRuntime({
         entry.runtimeAdapter = { vendor: runtimeInfo.vendor, architecture: runtimeInfo.architecture,
           isFallbackAdapter: runtimeInfo.isFallbackAdapter ?? false };
       }
-      if (runtimeDevice?.lost) runtimeDevice.lost.then(() => {
-        if (sessions.get(sessionId) !== entry) return;
-        entry.lost = true;
-        entry.active?.abort('GPU device lost');
-      });
       throwIfAborted(context.signal);
+      if (entry.lost) throw entry.gpuFailure;
       entry.status = 'ready';
       return summary(entry);
     } catch (error) {
       try {
-        await disposeComponents(entry.components);
-        entry.restoreGpuEvidence?.();
+        await disposeModelEntry(entry);
         sessions.delete(sessionId);
       } catch (disposeError) {
         // Keep the handle for a retry; the host must retain admission until cleanup succeeds.
@@ -369,11 +503,12 @@ export function createModelTaskRuntime({
           } catch (error) { streamFailure = error; controller.abort(error); }
         },
       });
-      output = await model.generate({ ...inputs, max_new_tokens: maxNewTokens,
-        do_sample: false, streamer, stopping_criteria: [stop] });
-      await entry.runtimeDevice?.queue.onSubmittedWorkDone();
+      await entry.gpuGuard.run('generation', async () => {
+        output = await model.generate({ ...inputs, max_new_tokens: maxNewTokens,
+          do_sample: false, streamer, stopping_criteria: [stop] });
+      });
       if (streamFailure) throw streamFailure;
-      if (entry.lost) throw new Error('GPU device lost; model session is unavailable');
+      if (entry.lost) throw entry.gpuFailure;
       throwIfAborted(controller.signal);
       const rows = output.tolist();
       if (rows.length !== 1 || rows[0].length < inputTokens || rows[0].length > inputTokens + maxNewTokens) {
@@ -387,12 +522,28 @@ export function createModelTaskRuntime({
         outputTokens: generated.length, finishReason: generationFinishReason(model, generated, maxNewTokens), contextTruncated,
         workerId: entry.workerId, gpuDispatches: (entry.gpuDispatches ?? 0) - initialDispatches,
         gpuSubmissions: (entry.gpuSubmissions ?? 0) - initialSubmissions, gpuProfileSamples: entry.gpuProfileSamples ?? 0 };
+    } catch (error) {
+      // Device loss may abort preprocessing before the scoped model call starts.
+      // Propagate session loss, rather than a reusable request cancellation.
+      throw entry.gpuFailure ?? error;
     } finally {
       context.signal?.removeEventListener('abort', abort);
       try {
         const visited = new Set();
-        disposeTensors(inputs, visited);
-        disposeTensors(output, visited);
+        let cleanupError;
+        for (const tensors of [inputs, output]) {
+          try { disposeTensors(tensors, visited); }
+          catch (error) { cleanupError ??= error; }
+        }
+        if (cleanupError) {
+          entry.lost = true;
+          // A disposal exception must neither mask a detected GPU failure nor
+          // make an incompletely cleaned session available for another request.
+          const error = entry.gpuFailure ?? new Error('Model session lost: tensor cleanup failed', { cause: cleanupError });
+          error.code ??= 'MODEL_DISPOSE_FAILED';
+          entry.gpuFailure = error;
+          throw error;
+        }
       } finally {
         entry.active = null;
         entry.requestId = null;
@@ -415,7 +566,7 @@ export function createModelTaskRuntime({
       if (!entry) return { sessionId: data.sessionId, status: 'absent' };
       if (entry.status !== 'ready') throw new Error('Cancel and await active model work before unloading');
       entry.status = 'unloading';
-      try { await disposeComponents(entry.components); entry.restoreGpuEvidence?.(); }
+      try { await disposeModelEntry(entry); }
       catch (cause) {
         entry.status = 'ready';
         entry.lost = true;

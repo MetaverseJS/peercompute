@@ -8,8 +8,8 @@ import { GGUF_MODEL_CATALOG, ggufModelFileUrl } from '../../../peercompute/src/p
 import { DIFFUSION_MODEL_CATALOG, diffusionModelFileUrl } from '../../../peercompute/src/peercompute/artifacts/diffusionModelCatalog.js';
 import { artifactCID, decodeArtifactManifest, normalizeArtifactManifest, ARTIFACT_MANIFEST_MAXIMUM_BYTES } from '../../../peercompute/src/peercompute/artifacts/ArtifactManifest.js';
 import { sha256 } from '@noble/hashes/sha2.js';
-import { collectModelDeviceCapabilities, evaluateModelCompatibility, modelMemoryEstimate,
-  normalizeModelMemoryBudgets } from './modelDeviceCompatibility.js';
+import { collectModelDeviceCapabilities, evaluateModelCompatibility, modelMemoryEstimate } from './modelDeviceCompatibility.js';
+import { createModelMemoryBudgets } from './modelMemoryBudgets.js';
 import { importModelPackage } from './modelLibrary.js';
 import { createModelPreferences } from './modelPreferences.js';
 import { loadInferenceRelayConfig } from './relayConfig.js';
@@ -56,7 +56,6 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
   storeName = 'inference-models', runtimeBaseUrl, collectGpuEvidence = false,
   memoryBudgets, preferenceStorage, residentModelSlots = 8, probeDeviceCapabilities = collectModelDeviceCapabilities,
   ggufRuntimeOptions = { n_ctx: 2048, n_batch: 64, n_gpu_layers: 99999, n_threads: 1 } } = {}) {
-  let localMemoryBudgets = normalizeModelMemoryBudgets(memoryBudgets);
   if (!Number.isInteger(residentModelSlots) || residentModelSlots < 1 || residentModelSlots > 8) {
     throw new Error('Managed model slots must be between one and eight');
   }
@@ -69,6 +68,8 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
   const compute = computeManager ?? new ComputeManager({ requireWorkers: true, enableWorkers: true,
     enableWebGPU: true, minWorkers: 1, targetWorkers: 1, maxWorkers: residentModelSlots, autoScaleWorkers: false,
     workerBootstrapTimeoutMs: 60_000 });
+  const memoryPolicy = createModelMemoryBudgets({ computeManager: compute, owned: ownsCompute, initial: memoryBudgets });
+  const admissionOptions = memoryPolicy.admissionOptions;
   const existingTransport = networkManager?.getArtifactTransport?.();
   const existingStore = existingTransport?.store ?? state.getArtifactStore(storeName);
   const store = existingStore
@@ -103,16 +104,13 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
     } });
   try {
     await store.open();
-  // Configured admission envelopes, not claims about hardware capacity or observed model peaks.
-  const cpuBytes = 12 * 1024 ** 3;
-  const gpuBytes = 16 * 1024 ** 3;
     service = await compute.createModelInferenceService({ artifactStore: store,
-    resourceBudgets: { cpu: { units: residentModelSlots, memoryBytes: cpuBytes }, gpu: { units: residentModelSlots, memoryBytes: gpuBytes } },
-    resourceEstimate: modelMemoryEstimate, runtimeAssets: trustedRuntimeAssets(runtimeBaseUrl),
+      resourceBudgets: memoryPolicy.initialResourceBudgets(residentModelSlots), admissionOptions,
+      resourceEstimate: modelMemoryEstimate, runtimeAssets: trustedRuntimeAssets(runtimeBaseUrl),
       collectGpuEvidence, generationTimeoutMs: 300_000 });
     ggufService = await createGgufService(ggufRuntimeOptions);
     diffusionService = await compute.createModelInferenceService({ artifactStore: store, runtime: 'onnx-diffusion',
-      runtimeAssets: trustedDiffusionRuntimeAssets(), runtimeOptions: {}, collectGpuEvidence,
+      runtimeAssets: trustedDiffusionRuntimeAssets(), runtimeOptions: {}, collectGpuEvidence, admissionOptions,
       resourceEstimate: modelMemoryEstimate,
       loadTimeoutMs: 300_000, generationTimeoutMs: 300_000 });
     activeService = service;
@@ -128,7 +126,7 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
           const assets = kind === 'llama.cpp' ? trustedGgufRuntimeAssets()
             : kind === 'onnx-diffusion' ? trustedDiffusionRuntimeAssets() : trustedRuntimeAssets(runtimeBaseUrl);
           candidate = await compute.createModelInferenceService({ artifactStore: store, runtime: kind,
-            runtimeAssets: assets, resourceEstimate: modelMemoryEstimate, collectGpuEvidence,
+            runtimeAssets: assets, resourceEstimate: modelMemoryEstimate, collectGpuEvidence, admissionOptions,
             ...(kind === 'llama.cpp' ? { runtimeOptions: { ...ggufRuntimeOptions,
               ...(runtimeOptions.ggufGpuLayers !== undefined ? { n_gpu_layers: runtimeOptions.ggufGpuLayers } : {}) }, loadTimeoutMs: 30 * 60_000 }
               : { loadTimeoutMs: 300_000 }), generationTimeoutMs: 300_000 });
@@ -152,7 +150,7 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
 
   async function createGgufService(runtimeOptions) {
     return compute.createModelInferenceService({ artifactStore: store, runtime: 'llama.cpp',
-      runtimeAssets: trustedGgufRuntimeAssets(), runtimeOptions, collectGpuEvidence,
+      runtimeAssets: trustedGgufRuntimeAssets(), runtimeOptions, collectGpuEvidence, admissionOptions,
       resourceEstimate: modelMemoryEstimate, loadTimeoutMs: 30 * 60_000, generationTimeoutMs: 300_000 });
   }
 
@@ -227,16 +225,14 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
       });
       return deviceCheck;
     },
-    getMemoryBudgets: () => ({ ...localMemoryBudgets }),
-    setMemoryBudgets(value) {
-      localMemoryBudgets = normalizeModelMemoryBudgets(value);
-      return { ...localMemoryBudgets };
-    },
+    getMemoryBudgets: memoryPolicy.get,
+    setMemoryBudgets: memoryPolicy.set,
+    getMemoryBudgetStatus: memoryPolicy.status,
     getModelCompatibility(entry) {
       // Configured aggregate capacity, not free physical VRAM. Admission checks
       // the remaining pool without evicting an existing resident.
       const pools = compute.resourceBroker?.reportPressure().pools;
-      const budgets = { ...localMemoryBudgets };
+      const budgets = memoryPolicy.get();
       for (const [key, kind] of [['cpuBytes', 'cpu'], ['gpuBytes', 'gpu']]) {
         const limit = pools?.[kind]?.memoryBytes;
         if (Number.isSafeInteger(limit) && limit > 0) budgets[key] = Math.min(budgets[key] ?? limit, limit);
