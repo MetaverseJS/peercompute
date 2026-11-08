@@ -390,3 +390,7 @@ without changing a drafted image request into text; Use text chat is explicit.
 Network status lists remote inference models across text, vision, diffusion and
 voice tasks with unique peer host counts, and clears stale entries on disconnect.
 Library-only artifacts are not inference providers.
+
+Published913af7f4: availability, locality, loss/recovery, directory counts and
+mobile rendering are covered by the247-case accepted regression evidence;
+canonical inference/CubeChat/Earth builds and public UI/network checks pass.

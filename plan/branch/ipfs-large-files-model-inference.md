@@ -1286,3 +1286,8 @@ Return to this model-demo branch for capability-based Generate image availabilit
 and a network-status directory of inference models with hosting peer counts.
 Preserve local/Mixed routing, draft task intent, existing publication setup and
 main history. Rebuild affected shared consumers and deploy GitHub Pages.
+
+Completed and published as913af7f4:247distinct cases, three consumer builds,
+staging/internal/public UI and network checks pass;54changed public assets
+match. Main:/docs remains the publication source and both branches retain the
+change. Image intent is preserved during provider loss with explicit text recovery.

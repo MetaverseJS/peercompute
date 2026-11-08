@@ -14,7 +14,7 @@ The root node should exist on a domain secured with SSL enabling all executable 
 
 ## Project Goals:
 
-November8 model-network follow-up: disable image generation without an eligible provider while preserving image draft intent on provider loss; show every peer inference model with host counts in network status. Implemented on the model-demo feature branch;247distinct cases, three consumer builds and staging/internal visual/network checks pass. Publishing through main:/docs is next.
+November8 model-network follow-up: disable image generation without an eligible provider while preserving image draft intent on provider loss; show every peer inference model with host counts in network status. Implemented and published as913af7f4 through main:/docs;247distinct cases, three consumer builds and staging/internal/public visual/network checks pass. All54changed public assets match. The model-demo branch remains available.
 
 November 8 main integration complete: refreshed root/package READMEs for the shipped model, agent and world application; merged feature/ipfs-artifacts-webgpu into main as de73dfd0 while preserving upstream history. Both branches are pushed, and GitHub Pages now publishes the existing verified docs build from main:/docs. README links/commands, all45 release checks, merge ancestry/tree preservation and public file hashes pass. The feature branch remains available.
 

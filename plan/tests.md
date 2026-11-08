@@ -4187,3 +4187,12 @@ Three consumer builds pass with101source hashes unchanged. Staging3routes plus
 overview and internal3routes pass (50captures; representative visual review),
 actual SecretWorkshop Noise connections and zero accepted-run runtime errors.
 Public SHA/deployment and54changed-asset qualification follow.
+
+Final public acceptance passes inference/CubeChat/EarthGrid and overview with
+26accepted captures and representative visual review.54changed assets
+(14,674,757bytes) match exact913af7f4Git content, HTTP and MIME. Zero accepted-run
+console/page/request/model/cleanup errors; actual SecretWorkshop Noise connections.
+An initial Earth harness check raced the scheduled network refresh; preserve its
+receipt and use bounded12s snapshot convergence. Timed retry waits169/2/2ms.
+No application changes were needed. Final evidence-only documentation preserves
+docs tree8e3e3e85063ebf32a9c6734245908c2ca84b6749.
