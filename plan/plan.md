@@ -18,9 +18,9 @@ November7 CubeChat presentation follow-up: menu-only Residents/Models, one model
 management window, persistent optional generated front-face portraits, opt-in
 public human-chat replies and compact human/resident names. Reusable appearance
 and response components preserve private history, bounded peer transfer and
-cleanup ownership. Implementation and internal previews are qualified; publication evidence is
-tracked in log.md. The user authorizes rebuilding docs/ and pushing the feature
-branch for GitHub Pages.
+cleanup ownership. Implemented and published on the feature branch. Internal peer checks and all
+23public Pages UI/runtime routes pass, with60reviewed screenshots; numerical and
+headless-rendering limitations remain documented in log.md. No merge to ulg.
 
 November7 CubeChat native social pass (implemented and verified): a single in-world Room or
 resident composer, keyboard messages and overhead human speech bubbles, focused
