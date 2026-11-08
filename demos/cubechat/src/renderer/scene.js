@@ -2775,7 +2775,14 @@ export class TronScene {
     });
   }
 
+  getGroundHeight(x, z) {
+    return this._themeUsesTerrain(this.worldThemeId) ? this._sampleThemeHeight(this.worldThemeId, x, z) : 0;
+  }
+
   createPlayer(id, color, position) {
+    // A repeated same-peer announcement/reconnect owns one visual body.
+    const existing = this.players.get(id);
+    if (existing) return existing;
     // Create cube for player (6x6x6 - twice as big)
     const geometry = new THREE.BoxGeometry(6, 6, 6);
     
@@ -2984,41 +2991,36 @@ export class TronScene {
   setPlayerName(id, name) {
     const player = this.players.get(id);
     if (!player) return;
-
-    // Remove existing name label if any
-    if (player.userData.nameLabel) {
-      player.remove(player.userData.nameLabel);
+    const text = typeof name === 'string' ? Array.from(name.replace(/[\u0000-\u001f]/g, ' ').trim()).slice(0, 80).join('') : '';
+    if (player.userData.playerName === text && player.userData.nameLabel
+        && player.userData.renderedNameColor === (player.userData.nameColor || '#ffffff')) return;
+    const previous = player.userData.nameLabel;
+    previous?.removeFromParent();
+    if (previous) this._disposeMaterial(previous.material);
+    player.userData.nameLabel = null; player.userData.playerName = text;
+    if (!text) return;
+    player.userData.nameColor ||= '#ffffff';
+    const canvas = document.createElement('canvas'), context = canvas.getContext('2d');
+    const font = 'Bold 28px monospace'; context.font = font;
+    const lines = []; let line = '';
+    for (const character of Array.from(text)) {
+      if (context.measureText(line + character).width > 492) { lines.push(line); line = ''; }
+      line += character;
     }
-
-    if (!name) return;
-
-    // Store the name for potential color changes
-    player.userData.playerName = name;
-    player.userData.nameColor = player.userData.nameColor || '#ffffff';
-
-    // Create canvas for text
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d');
-    canvas.width = 256;
-    canvas.height = 64;
-
-    // Draw text
-    context.fillStyle = player.userData.nameColor;
-    context.font = 'Bold 32px Arial';
-    context.textAlign = 'center';
-    context.textBaseline = 'middle';
-    context.fillText(name, 128, 32);
-
-    // Create texture from canvas
-    const texture = new THREE.CanvasTexture(canvas);
-    const material = new THREE.SpriteMaterial({ map: texture });
-    const sprite = new THREE.Sprite(material);
-    
-    sprite.position.set(0, 8, 0); // Above the cube
-    sprite.scale.set(8, 2, 1);
-    
-    player.add(sprite);
-    player.userData.nameLabel = sprite;
+    if (line) lines.push(line);
+    if (lines.length > 2) lines[1] = lines[1].slice(0, -3) + '…';
+    const shown = lines.slice(0, 2);
+    canvas.width = Math.ceil(Math.max(...shown.map(value => context.measureText(value).width))) + 20;
+    canvas.height = shown.length * 34 + 12;
+    context.fillStyle = '#061613'; context.fillRect(0, 0, canvas.width, canvas.height);
+    context.strokeStyle = '#a0ffce'; context.lineWidth = 2; context.strokeRect(1, 1, canvas.width - 2, canvas.height - 2);
+    context.font = font; context.fillStyle = player.userData.nameColor;
+    context.textAlign = 'center'; context.textBaseline = 'middle';
+    shown.forEach((value, index) => context.fillText(value, canvas.width / 2, canvas.height / 2 + (index - (shown.length - 1) / 2) * 34));
+    const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace;
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthTest: false, depthWrite: false }));
+    sprite.position.set(0, 4.5, 0); sprite.scale.set(canvas.width / 64, canvas.height / 64, 1); sprite.renderOrder = 1000;
+    player.add(sprite); player.userData.nameLabel = sprite; player.userData.renderedNameColor = player.userData.nameColor;
   }
 
   setPlayerNameColor(id, color) {

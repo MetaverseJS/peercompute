@@ -12,6 +12,19 @@ Demonstrate the key innovation from the root README in real time: a compute netw
 - The network reconfigures as peers join/leave and as task demand changes.
 - Users can see how topology and placement decisions affect throughput and latency.
 
+## Deno Root Node Alignment
+- Detailed root-node service todo: `plan/root-node-todo.md`.
+- Keystone may start with a browser-hosted root for visual iteration, but the
+  real root-node target is a Deno authority/control-plane service that can
+  create/resume sessions, sign topology/scheduler policy, assign roles/leases,
+  save checkpoints, and replay state.
+- The demo should eventually expose both modes:
+  - `browser-root`: a room host acts as root for local/demo validation.
+  - `deno-root`: a deployed root node owns session policy, saving, and
+    authority while browser peers keep running compute/render workloads.
+- Keystone should make the distinction visible in the HUD/NetViz metadata so
+  users can tell whether the root is a browser peer or a server-side root.
+
 ## Visual Goals
 - Tron-style grid with nodes as glowing cubes and connections as curved links.
 - Live metrics overlay: peer count, RTT, throughput, queue depth, task completion rate.

@@ -5,12 +5,16 @@ import { chromium } from "playwright";
 import http from "http";
 import path from "path";
 import { fileURLToPath } from "url";
-import { createReadStream, statSync } from "fs";
+import { createReadStream, existsSync, statSync } from "fs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
 const PORT = 4182;
 const URL = `http://localhost:${PORT}/demos/ppf-cubic-barrier.html`;
+const CHROME_BIN = process.env.CHROME_BIN
+  || process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+  || process.env.CHROME_EXECUTABLE_PATH
+  || (existsSync("/bin/google-chrome") ? "/bin/google-chrome" : undefined);
 
 const MIME = {
   ".html": "text/html",
@@ -45,6 +49,7 @@ function startServer() {
 async function main() {
   const server = await startServer();
   const browser = await chromium.launch({
+    ...(CHROME_BIN ? { executablePath: CHROME_BIN } : {}),
     headless: true,
     args: ["--enable-features=WebGPU", "--enable-unsafe-webgpu"],
   });

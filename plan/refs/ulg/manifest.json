@@ -1,0 +1,22 @@
+{
+  "title": "ULG-Star Runtime Spec",
+  "version": "0.4",
+  "date": "2026-06-05",
+  "markdown": "ULG_PeerCompute_Star_Spec_v0.4.md",
+  "diagrams": [
+    "diagram_01_v04_foundation_execution_contract.jpg",
+    "diagram_02_microphysics_to_closure_pipeline.jpg",
+    "diagram_03_quantum_statistical_eos.jpg",
+    "diagram_04_webgpu_pass_dag.jpg",
+    "diagram_05_gpu_buffer_layout.jpg",
+    "diagram_06_material_response_derivatives.jpg",
+    "diagram_06_peercompute_validation.jpg",
+    "diagram_07_star_activation_graph.jpg",
+    "diagram_07_validation_provenance_loop.jpg",
+    "diagram_08_emergent_dynamo.jpg",
+    "diagram_08_emergent_dynamo_passes.jpg",
+    "diagram_09_adaptive_refinement.jpg",
+    "diagram_09_regime_escalation_matrix.jpg",
+    "diagram_10_validation_matrix.jpg"
+  ]
+}

@@ -15,11 +15,13 @@ NetViz connects when you click the "Connect" button (after selecting topology, t
 - `NodeKernel` now publishes these debug telemetry deltas by default in every PeerCompute demo.
 - Demos publish NetViz session beacons on pubsub topic `peercompute-netviz-sessions`; NetViz consumes those beacons to attach across different demo ports/origins.
 - NetViz still listens on `BroadcastChannel("peercompute-netviz-debug-v1")` for same-origin instant attach hints.
+- Attach session metadata is preserved in the console. The Session Runtime panel renders worker counts, manager task totals, top task families, solver pressure, autoscale state, and warm-delta counts when a demo publishes structured metadata such as Multiscale Ladder's `peercompute.multiscale.netviz-session.v0`.
 
 ## UI Notes
 - Click a node or edge to open an inspector panel with RTT, throughput, and traffic counters.
 - Topology selection sits above rooms; hierarchical view groups hosts/clients in the layout.
 - Use "Attach demo" to target a running demo without manually typing topology/room values (connect NetViz first so it can discover session beacons).
+- The Session Runtime panel follows the selected/latest attach session and shows runtime metadata without requiring console access.
 - In distributed topology, drag your local cube to move its metric position and trigger neighbor recomputation.
 - Use the "Hide ghosts" toggle to hide inferred nodes that have no telemetry yet.
 - Orbit controls are enabled for pan/zoom; optional auto-rotate can be toggled on.
@@ -29,3 +31,9 @@ NetViz connects when you click the "Connect" button (after selecting topology, t
 - Edge colors reflect transport truth per link (`webrtc` direct, `relay-webrtc`, `relay`, `unknown`) and avoid coercing unknown or relay-scoped states into direct.
 - Add `?chaosApi=/chaos-api` (or `?chaosApi=http://127.0.0.1:8866`) to show live chaos-lab topology + scenario behavior in the NetViz console and 3D graph overlay.
 - Add `&autoConnect=0` to watch chaos-lab without immediately dialing relay bootstrap endpoints.
+
+## Tests
+```bash
+npm --prefix demos/netviz run build
+env NETVIZ_SMOKE_URL=https://localhost:4173/netviz/?render=off npm --prefix demos/netviz run test:session
+```

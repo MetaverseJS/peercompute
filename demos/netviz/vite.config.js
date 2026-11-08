@@ -34,6 +34,7 @@ const writeChaosApiFallback = (res, req) => {
 export default defineConfig(({ command }) => ({
   root: '.',
   base: './',
+  worker: { format: 'es' },
   server: {
     port: 5182,
     https: command === 'serve' ? ensureDevHttpsCert() : undefined,

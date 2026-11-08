@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-labelledby="title desc">
+  <title id="title">Multiscale ladder schematic</title>
+  <desc id="desc">A retro terminal schematic showing nested physics scales from supergalactic structure to electron orbital cloud.</desc>
+  <rect width="640" height="360" fill="#020409"/>
+  <g fill="none" stroke="#41ff9d" stroke-width="2" opacity="0.35">
+    <path d="M60 180c80-90 130 90 220 0s150-70 300 20"/>
+    <path d="M40 240c120-70 170 40 260-20s160-40 300 50"/>
+    <path d="M80 110c110 80 170-30 250 30s160 80 250-20"/>
+  </g>
+  <g font-family="Consolas, monospace" font-size="18" fill="#7dffb1">
+    <text x="34" y="42">PEERCOMPUTE MULTISCALE LADDER</text>
+    <text x="68" y="316">SUPERGALACTIC</text>
+    <text x="230" y="316">PLANET</text>
+    <text x="350" y="316">SURFACE</text>
+    <text x="475" y="316">ORBITAL</text>
+  </g>
+  <g transform="translate(110 168)">
+    <circle r="70" fill="#08150f" stroke="#41ff9d" stroke-width="3"/>
+    <circle cx="-22" cy="-10" r="5" fill="#ff5b8d"/>
+    <circle cx="28" cy="18" r="4" fill="#54dfff"/>
+    <circle cx="4" cy="-34" r="3" fill="#fff2a6"/>
+    <path d="M-22-10L28 18M4-34L28 18" stroke="#41ff9d" opacity="0.55"/>
+  </g>
+  <g transform="translate(292 168)">
+    <circle r="56" fill="#0c1e32" stroke="#54dfff" stroke-width="3"/>
+    <path d="M-50-6c34-18 74-16 105 2M-48 16c28 16 70 18 102 0" stroke="#ffffff" opacity="0.65"/>
+    <path d="M-16-52c22 32 20 75-5 105" stroke="#41ff9d" opacity="0.65"/>
+  </g>
+  <g transform="translate(442 168)">
+    <circle cx="-38" cy="8" r="34" fill="#23495c" stroke="#54dfff" stroke-width="3" opacity="0.7"/>
+    <path d="M8 38c30-42 64-42 90 0" stroke="#ffaf43" stroke-width="8" stroke-linecap="round"/>
+    <path d="M36 40c10-42 32-60 42-2" stroke="#ff5b8d" stroke-width="7" stroke-linecap="round"/>
+  </g>
+  <g transform="translate(548 166)">
+    <circle r="8" fill="#fff2a6"/>
+    <ellipse rx="58" ry="24" stroke="#54dfff" stroke-width="3"/>
+    <ellipse rx="24" ry="58" stroke="#ff5b8d" stroke-width="3" transform="rotate(28)"/>
+  </g>
+</svg>

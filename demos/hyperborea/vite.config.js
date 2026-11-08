@@ -10,6 +10,7 @@ const docsRoot = path.resolve(__dirname, '../../docs');
 export default defineConfig(({ command }) => ({
   root: '.',
   base: './',
+  worker: { format: 'es' },
   server: {
     port: 5175,
     https: command === 'serve' ? ensureDevHttpsCert() : undefined,

@@ -19,6 +19,14 @@ This file and the arch folder contain a description of the current and future ar
 - Component docs: plan/arch/compute-node.md, plan/arch/nodekernel.md, plan/arch/stateman.md, plan/arch/datastate.md, plan/arch/stateworker.md, plan/arch/netman.md, plan/arch/compman.md, plan/arch/gpuhub.md, plan/arch/cpuworker.md, plan/arch/wasmworker.md, plan/arch/wgpuworker.md, plan/arch/main-thread.md, plan/arch/ioman.md, plan/arch/input-handler.md, plan/arch/render-state.md, plan/arch/node-roles.md, plan/arch/topology.md.
 
 ###Future arch
+- In-progress [IPFS artifact and inference layer](../branch/ipfs-large-files-model-inference.md):
+  optional StateManager-owned ArtifactService and local persistent verified block
+  store, NetworkManager-owned IPFS transport, and resident model services using
+  the existing ComputeManager. NodeKernel wires their lifecycles. Publish compact
+  descriptors only; blocks and
+  private inference streams remain outside Yjs/pubsub. Persistent storage,
+  authenticated peer serving and managed model lifecycles are implemented;
+  actual-model and full release acceptance remain in progress.
 - Expand topology modes (authority-hosted, mesh snapshots, hybrid) with clear authority election rules.
 - Add interest management, backpressure, and optional binary encoding (CBOR).
 - Expose metrics/telemetry feeds for topology visualization and debugging (Keystone demo).

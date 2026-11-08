@@ -1,0 +1,306 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
+import { ResidentModelAdmission } from '../../src/peercompute/serviceOrchestration/ResidentModelAdmission.js';
+import {
+  ComputeServiceRegistry,
+  RESOURCE_LEASE_SCHEMA,
+  RESOURCE_PRESSURE_SCHEMA,
+  ResourceLeaseBroker,
+  WorkerSupervisor
+} from '../../src/peercompute/serviceOrchestration/index.js';
+
+class CapturingHost extends EventEmitter {
+  constructor() {
+    super();
+    this.messages = [];
+  }
+
+  postMessage(message) {
+    this.messages.push(message);
+  }
+
+  terminate() {
+    this.terminated = true;
+  }
+}
+
+function createRegistry() {
+  return new ComputeServiceRegistry([
+    {
+      serviceId: 'gpu-service',
+      version: '0.1.0',
+      runtime: 'js',
+      capabilities: ['gpu-task'],
+      taskKinds: ['gpu-task'],
+      entry: { adapter: 'test' }
+    }
+  ]);
+}
+
+test('owner-lifetime model admission survives suspended timers and stays counted until disposal acknowledgement', async () => {
+  let now = 1000;
+  const broker = new ResourceLeaseBroker({ now: () => now,
+    capacities: { cpu: { units: 1, memoryBytes: 1024 }, gpu: { units: 1, memoryBytes: 1024 } } });
+  const admission = new ResidentModelAdmission({ broker });
+  const lease = await admission.acquire({ sessionId: 'resident', manifestCid: 'test', estimatedCpuBytes: 500, estimatedGpuBytes: 600 });
+  try {
+    lease.assertActive();
+    await assert.rejects(broker.requestLease({ kind: 'gpu', priorityClass: 'render' }), /quota exceeded/);
+    for (const entry of broker.list()) { assert.equal(entry.lifetime, 'owner'); assert.equal(entry.expiresAt, null); }
+    now += 24 * 60 * 60_000;
+    assert.deepEqual(broker.expireLeases(), []);
+    lease.assertActive();
+    assert.equal(broker.reportPressure().pools.gpu.activeMemoryBytes, 600);
+    await assert.rejects(broker.requestLease({ kind: 'gpu' }), /quota exceeded/);
+  } finally { await lease.release(); }
+  assert.equal(broker.reportPressure().pools.gpu.activeMemoryBytes, 0);
+  assert.equal((await broker.requestLease({ kind: 'gpu' })).status, 'active');
+});
+
+test('TTL resident grants still expire without freeing resident allocations', async () => {
+  let now = 100;
+  const broker = new ResourceLeaseBroker({ now: () => now, capacities: { gpu: { units: 1, memoryBytes: 1000 } } });
+  const lease = await broker.requestLease({ resident: true, memoryBytes: 400, ttlMs: 10 });
+  now += 20;
+  assert.equal(broker.expireLeases()[0].leaseId, lease.leaseId);
+  assert.equal(broker.get(lease.leaseId).status, 'expired');
+  assert.equal(broker.reportPressure().pools.gpu.activeMemoryBytes, 400);
+  await assert.rejects(broker.renewLease(lease.leaseId), /no longer active/);
+  await assert.rejects(broker.requestLease({ kind: 'gpu' }), /quota exceeded/);
+  await broker.releaseLease(lease.leaseId);
+  assert.equal(broker.reportPressure().pools.gpu.activeMemoryBytes, 0);
+});
+
+test('owner lifetime cannot be applied to ordinary or preemptable work and cannot hide explicit expiry', async () => {
+  const broker = new ResourceLeaseBroker();
+  for (const spec of [{}, { resident: true }, { resident: true, preemptable: false, ttlMs: 30_000 },
+    { resident: true, preemptable: false, expiresAt: 100 }]) {
+    await assert.rejects(broker.requestLease({ ...spec, lifetime: 'owner' }), /Owner lifetime requires/);
+  }
+  await assert.rejects(broker.requestLease({ lifetime: 'forever' }), /Invalid resource lease lifetime/);
+  assert.deepEqual(broker.list(), []);
+});
+
+test('owner-lifetime admission never revives revoked or quarantined leases and retains capacity until release', async () => {
+  for (const invalidation of ['revoke', 'root', 'quarantine']) {
+    let now = 1000;
+    const broker = new ResourceLeaseBroker({ now: () => now,
+      capacities: { cpu: { units: 1, memoryBytes: 1024 }, gpu: { units: 1, memoryBytes: 1024 } } });
+    const admission = await new ResidentModelAdmission({ broker }).acquire({ sessionId: 'resident',
+      manifestCid: 'test', estimatedCpuBytes: 500, estimatedGpuBytes: 600 });
+    const gpu = broker.list({ resourceKind: 'gpu' })[0];
+    if (invalidation === 'revoke') await broker.revokeLease(gpu.leaseId);
+    if (invalidation === 'root') await broker.revokeByRootTask('resident');
+    if (invalidation === 'quarantine') { broker.quarantineResource(); broker.clearQuarantine(); }
+    now += 86400_000; broker.expireLeases();
+    assert.throws(() => admission.assertActive(), { code: 'ERR_RESIDENT_ADMISSION_INACTIVE' });
+    await assert.rejects(broker.renewLease(gpu.leaseId), /no longer active/);
+    assert.equal(broker.reportPressure().pools.gpu.activeMemoryBytes, 600);
+    await assert.rejects(broker.requestLease({ kind: 'gpu' }), /quota exceeded/);
+    await admission.release(); await admission.release();
+    assert.equal(broker.reportPressure().pools.gpu.activeMemoryBytes, 0);
+    assert.equal(broker.reportPressure().pools.cpu.activeMemoryBytes, 0);
+  }
+});
+
+test('resident admission rolls back CPU reservation when GPU memory is unavailable', async () => {
+  const broker = new ResourceLeaseBroker({ capacities: {
+    cpu: { units: 2, memoryBytes: 1024 }, gpu: { units: 1, memoryBytes: 100 }
+  } });
+  const admission = new ResidentModelAdmission({ broker });
+  await assert.rejects(admission.acquire({ sessionId: 'model', estimatedCpuBytes: 500, estimatedGpuBytes: 200 }), /memory quota/);
+  assert.equal(broker.reportPressure().pools.cpu.activeMemoryBytes, 0);
+});
+
+test('resident revocation and quarantine retain capacity, and lease renewal preserves ownership', async () => {
+  let now = 100;
+  const broker = new ResourceLeaseBroker({ now: () => now, capacities: { gpu: { units: 1, memoryBytes: 1000 } } });
+  const lease = await broker.requestLease({ resident: true, memoryBytes: 400, ttlMs: 10 });
+  now += 5;
+  await broker.renewLease(lease.leaseId, { ttlMs: 100 });
+  now += 20;
+  assert.equal(broker.expireLeases().length, 0);
+  await broker.revokeLease(lease.leaseId);
+  assert.equal(broker.reportPressure().pools.gpu.activeMemoryBytes, 400);
+  await broker.releaseLease(lease.leaseId);
+  const other = await broker.requestLease({ resident: true, memoryBytes: 500 });
+  broker.quarantineResource();
+  broker.clearQuarantine();
+  assert.equal(broker.reportPressure().pools.gpu.activeMemoryBytes, 500);
+  await broker.releaseLease(other.leaseId);
+  assert.equal(broker.reportPressure().pools.gpu.activeMemoryBytes, 0);
+});
+
+test('ResourceLeaseBroker preempts lower-priority GPU leases for render work', async () => {
+  let now = 1_000;
+  const broker = new ResourceLeaseBroker({
+    capacities: { gpu: { units: 1, memoryBytes: 1024, deviceIds: ['gpu:0'] } },
+    now: () => now
+  });
+
+  const background = await broker.requestLease({
+    resourceKind: 'gpu',
+    rootTaskId: 'task-background',
+    priorityClass: 'background',
+    units: 1,
+    memoryBytes: 128,
+    deviceId: 'gpu:0'
+  });
+  assert.equal(background.schema, RESOURCE_LEASE_SCHEMA);
+  assert.equal(background.status, 'active');
+
+  now += 1;
+  const render = await broker.requestLease({
+    resourceKind: 'gpu',
+    rootTaskId: 'task-render',
+    priorityClass: 'render',
+    units: 1,
+    memoryBytes: 256,
+    deviceId: 'gpu:0'
+  });
+
+  assert.equal(render.status, 'active');
+  assert.equal(broker.get(background.leaseId).status, 'preempted');
+  assert.equal(broker.get(background.leaseId).preemptedByPriority, 100);
+  const pressure = broker.reportPressure();
+  assert.equal(pressure.schema, RESOURCE_PRESSURE_SCHEMA);
+  assert.equal(pressure.preemptionCount, 1);
+  assert.equal(pressure.pools.gpu.activeUnits, 1);
+  assert.equal(pressure.pools.gpu.activeMemoryBytes, 256);
+  assert.equal(pressure.leaseCounts.preempted, 1);
+});
+
+test('ResourceLeaseBroker respects non-preemptable leases, expiry, release, and root revocation', async () => {
+  let now = 2_000;
+  const broker = new ResourceLeaseBroker({
+    capacities: { gpu: { units: 2 } },
+    defaultTtlMs: 50,
+    now: () => now
+  });
+
+  const fixed = await broker.requestLease({
+    resourceKind: 'gpu',
+    rootTaskId: 'root-fixed',
+    priorityClass: 'background',
+    units: 2,
+    preemptable: false
+  });
+  await assert.rejects(
+    () => broker.requestLease({ resourceKind: 'gpu', rootTaskId: 'root-render', priorityClass: 'render' }),
+    /Resource quota exceeded for gpu/
+  );
+  await broker.releaseLease(fixed.leaseId);
+  assert.equal(broker.get(fixed.leaseId).status, 'released');
+
+  const expiring = await broker.requestLease({ resourceKind: 'gpu', rootTaskId: 'root-expiring', ttlMs: 10 });
+  now += 11;
+  const expired = broker.expireLeases();
+  assert.equal(expired.length, 1);
+  assert.equal(broker.get(expiring.leaseId).status, 'expired');
+
+  const revocable = await broker.requestLease({ resourceKind: 'gpu', rootTaskId: 'root-revoke' });
+  const revoked = await broker.revokeByRootTask('root-revoke');
+  assert.equal(revoked.length, 1);
+  assert.equal(revoked[0].leaseId, revocable.leaseId);
+  assert.equal(broker.get(revocable.leaseId).status, 'revoked');
+});
+
+test('ResourceLeaseBroker quarantines device-lost GPU leases and blocks new claims', async () => {
+  const broker = new ResourceLeaseBroker({
+    capacities: { gpu: { units: 1, deviceIds: ['gpu:0'] } }
+  });
+  const lease = await broker.requestLease({
+    resourceKind: 'gpu',
+    rootTaskId: 'root-device-lost',
+    deviceId: 'gpu:0'
+  });
+  const quarantine = broker.quarantineResource({
+    resourceKind: 'gpu',
+    deviceId: 'gpu:0',
+    reason: 'device-lost',
+    retryable: true
+  });
+
+  assert.equal(quarantine.reason, 'device-lost');
+  assert.equal(broker.get(lease.leaseId).status, 'quarantined');
+  assert.equal(broker.get(lease.leaseId).retryable, true);
+  assert.equal(broker.reportPressure().quarantined.length, 1);
+  await assert.rejects(
+    () => broker.requestLease({ resourceKind: 'gpu', rootTaskId: 'root-new', deviceId: 'gpu:0' }),
+    /Resource gpu:0 is quarantined for gpu/
+  );
+});
+
+test('WorkerSupervisor cancels root-task resource leases through ResourceLeaseBroker', async () => {
+  const host = new CapturingHost();
+  const broker = new ResourceLeaseBroker({ capacities: { gpu: { units: 1 } } });
+  const supervisor = new WorkerSupervisor({
+    registry: createRegistry(),
+    resourceBroker: broker,
+    serviceFactory: () => host
+  });
+
+  supervisor.submitTask({
+    taskKind: 'gpu-task',
+    rootTaskId: 'root-cancel',
+    resources: {
+      resourceKind: 'gpu',
+      priorityClass: 'compute'
+    }
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const active = broker.list({ status: 'active', rootTaskId: 'root-cancel' });
+  assert.equal(active.length, 1);
+  const cancelled = await supervisor.cancelTree('root-cancel');
+  assert.equal(cancelled.status, 'cancelling');
+  assert.equal(broker.get(active[0].leaseId).status, 'revoked');
+  assert.equal(supervisor.getTreeTelemetry().resources.leaseCounts.revoked, 1);
+  assert.deepEqual(
+    host.messages.filter((message) => message.type === 'cancel-task').map((message) => message.rootTaskId),
+    ['root-cancel']
+  );
+});
+
+test('WorkerSupervisor releases completed task resource leases in telemetry', async () => {
+  const host = new CapturingHost();
+  const broker = new ResourceLeaseBroker({ capacities: { gpu: { units: 1 } } });
+  const supervisor = new WorkerSupervisor({
+    registry: createRegistry(),
+    resourceBroker: broker,
+    serviceFactory: () => host
+  });
+
+  const taskPromise = supervisor.submitTask({
+    taskKind: 'gpu-task',
+    rootTaskId: 'root-complete',
+    resources: {
+      resourceKind: 'gpu',
+      priorityClass: 'compute',
+      metadata: {
+        schema: 'peercompute.test.resource-request.v0'
+      }
+    }
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const active = broker.list({ status: 'active', rootTaskId: 'root-complete' });
+  assert.equal(active.length, 1);
+
+  host.emit('message', {
+    type: 'task-result',
+    rootTaskId: 'root-complete',
+    result: {
+      status: 'accepted',
+      ready: true
+    }
+  });
+  await taskPromise;
+
+  const telemetry = supervisor.getTreeTelemetry();
+  assert.equal(broker.get(active[0].leaseId).status, 'released');
+  assert.equal(telemetry.resources.leaseCounts.released, 1);
+  assert.equal(telemetry.resources.activeLeaseCount, 0);
+  assert.equal(telemetry.tasks[0].resourceLease.status, 'released');
+  assert.equal(telemetry.tasks[0].resourceLease.metadata.schema, 'peercompute.test.resource-request.v0');
+});

@@ -1238,6 +1238,51 @@ test('NetworkManager presence payload reports non-bootstrap active peers', () =>
   assert.equal(payload.activeConnections, 2);
 });
 
+test('NetworkManager presence advertises and records peer capabilities', () => {
+  const manager = new NetworkManager({
+    presenceCapabilitiesProvider: () => ({
+      schema: 'test.capabilities.v0',
+      compute: {
+        workerCount: 3,
+        targetWorkers: 4,
+        gpuCount: 1
+      }
+    })
+  });
+  manager.peerId = 'peer-self';
+
+  const payload = manager._buildPresencePayload();
+
+  assert.equal(payload.capabilities.schema, 'test.capabilities.v0');
+  assert.equal(payload.capabilities.compute.workerCount, 3);
+  assert.equal(payload.capabilities.compute.targetWorkers, 4);
+  assert.equal(payload.capabilities.compute.gpuCount, 1);
+
+  manager._shouldDialDiscoveredPeer = () => false;
+  manager._handlePresence({
+    type: 'presence',
+    from: 'peer-a',
+    gameId: manager.config.gameId,
+    roomId: manager.config.roomId,
+    topologyId: manager.config.topologyId,
+    topologyType: manager.config.topology,
+    capabilities: {
+      schema: 'test.capabilities.v0',
+      compute: {
+        workerCount: 7,
+        targetWorkers: 8,
+        gpuCount: 2
+      }
+    }
+  });
+
+  const peer = manager.getConnectedPeers().find((entry) => entry.peerId === 'peer-a');
+  assert.equal(peer.capabilities.schema, 'test.capabilities.v0');
+  assert.equal(peer.capabilities.compute.workerCount, 7);
+  assert.equal(peer.capabilities.compute.targetWorkers, 8);
+  assert.equal(peer.capabilities.compute.gpuCount, 2);
+});
+
 test('NetworkManager reserves inbound topology accepts against logical maxConnections', () => {
   const manager = new NetworkManager({ maxConnections: 3 });
   manager.bootstrapPeerIds = new Set();

@@ -1,0 +1,438 @@
+Instructions: Append per-demo implementation notes here. Root `plan/log.md` remains the authoritative cross-project log.
+
+# Schrodinger Demo Log
+
+## 2026-05-29
+- Started implementation after approval.
+- Scaffold target: standalone local visualizer first, PeerCompute attach optional.
+- Added Vite scaffold, terminal UI, Three.js orbital/material visualizer, CPU quantum references, water/material property packets, optional PeerCompute warm-delta publication, and deterministic tests.
+- Passing commands:
+  - `npm --prefix demos/schrodinger run test`
+  - `npm --prefix demos/schrodinger run build`
+  - `node --test demos/tests/demo-ports.test.js`
+- Known unrelated verification issue: `node demos/tests/demo-release.test.js` currently fails on the existing backend TURN systemd assertion, not on the Schrodinger docs/gallery checks.
+
+## 2026-05-29 10:57:28 AKDT
+- Addressed visual review feedback that water looked like a single atom and orbital points had grid/RNG clumping.
+- Changed the default view to the water material cell, moved the viewport into the central layout column, and added explicit H2O molecule geometry with one oxygen, two hydrogens, and two O-H bonds.
+- Replaced the orbital sampler's LCG/random cube jitter with seeded sfc32-style RNG, stratified CDF sampling, and spherical jitter.
+- Added deterministic tests for H2O molecule geometry and orbital point spread.
+- Verified with host-run Playwright/Chrome screenshots:
+  - `/tmp/schrodinger-fixed-default.png`
+  - `/tmp/schrodinger-fixed-orbital.png`
+- Passing commands:
+  - `npm --prefix demos/schrodinger run test`
+  - `node --test demos/tests/demo-ports.test.js`
+  - `npm --prefix demos/schrodinger run build`
+
+## 2026-05-29 11:03:12 AKDT
+- Reviewed the sedenion periodic-table paper and existing Fano Reactor exact model as possible inputs to the Schrodinger/materials simulation.
+- Decided the sedenion/Fano layer should be treated as a symbolic reaction-channel prefilter and bond-event taxonomy, not as the source of validated physical properties.
+- Updated the per-demo plan to keep this boundary explicit before any later `chemical.bondEvents` bridge is implemented.
+- Passing command:
+  - `npm --prefix demos/schrodinger run test`
+
+## 2026-05-29 11:10:51 AKDT
+- Prompt: user requested visible ionic/covalent bonds and molecule structure in the Schrodinger demo.
+- Added `src/data/molecularStructures.js` as the shared reference-template source for molecule atoms, bond classes, bond order, and packet `chemical.bondEvents`.
+- Refactored the material-cell renderer so water/NaCl/reference molecules render colored bond cylinders named by class (`bond:covalent`, `bond:ionic`) and expose bond metadata in `userData`.
+- Updated water and non-water material packets so the displayed bond structure and JSON packet agree.
+- Added a retro bond legend/readout in the stats panel, including structure formula, bond counts, and bond details.
+- Added tests for H2O covalent bond events/meshes and NaCl ionic bond events/meshes.
+- Files touched:
+  - `src/data/molecularStructures.js`
+  - `src/visualization/waterPhaseView.js`
+  - `src/materials/waterProperties.js`
+  - `src/materials/materialProperties.js`
+  - `src/main.js`
+  - `src/styles.css`
+  - `tests/materials.test.mjs`
+  - `README.md`
+  - `plan/plan.md`
+  - `plan/log.md`
+- Commands run:
+  - `node -v`
+  - `npm --prefix demos/schrodinger run test`
+  - `npm --prefix demos/schrodinger run build`
+  - `curl -k -I --max-time 5 https://127.0.0.1:5184/`
+  - `curl -k -I --max-time 5 https://127.0.0.1:4173/`
+  - Playwright/Chrome smoke against `https://127.0.0.1:5184/`, saving `/tmp/schrodinger-bonds-water.png` and `/tmp/schrodinger-bonds-nacl.png`
+  - `node --test demos/tests/demo-ports.test.js`
+  - `node --test demos/tests/demo-release.test.js`
+  - `git diff --check -- ...`
+  - `git status --short`
+  - `git diff --stat`
+  - `curl -skI --max-time 5 https://100.86.83.35:5184/`
+  - `curl -skI --max-time 5 https://100.86.83.35:4173/schrodinger/`
+- Test results:
+  - PASS: Node version is `v24.15.0`.
+  - PASS: `npm --prefix demos/schrodinger run test` with 12/12 tests passing.
+  - PASS: `npm --prefix demos/schrodinger run build`; Vite emitted the existing non-fatal chunk-size warning.
+  - PASS: Playwright smoke confirmed water packet has two O-H covalent events and NaCl packet has one ionic event; screenshots show visible bond cylinders and matching stats-panel legends.
+  - PASS: `node --test demos/tests/demo-ports.test.js` with 19/19 tests passing.
+  - PASS: `git diff --check` on touched files.
+  - PASS: VPN-facing demo/docs checks returned `HTTP/2 200` for `https://100.86.83.35:5184/` and `https://100.86.83.35:4173/schrodinger/`.
+  - FAIL unrelated: `node --test demos/tests/demo-release.test.js` still fails on the existing TURN systemd assertion (`relay systemd installer does not enable TURN service`).
+- Open questions:
+  - Bond classes are still reference templates, not predicted quantum bond formation. The future Fano/sedenion bridge should remain symbolic until validated against physical chemistry gates.
+
+## 2026-05-29 11:14:58 AKDT
+- Prompt: user shared `https://chatgpt.com/s/t_6a0746216780819192d922f7c324431c` and asked to read it and consider how it impacts the approach.
+- Read the shared conversation. The static web fetch exposed only the ChatGPT login shell, so I used a headless Playwright/Chrome browser to extract the visible shared conversation text.
+- Main planning impact: the Schrodinger/materials work should be framed as a microphysics/closure provider inside a solver-agnostic multiscale physics runtime, not as a direct SPH-only lowest layer.
+- Updated the demo plan to say current packets are warm material-property deltas that should evolve into closure results with units, validity ranges, provenance, uncertainty, optional Jacobians, and conservation-impact reports.
+- Files touched:
+  - `demos/schrodinger/plan/plan.md`
+  - `demos/schrodinger/plan/log.md`
+  - `plan/branch/schrodinger-simulation.md`
+  - `plan/branch/chem.md`
+  - `plan/tests.md`
+  - `plan/plan.md`
+  - `plan/log.md`
+- Commands run:
+  - `sed -n '1,220p' AGENTS.md`
+  - `sed -n '1,180p' plan/plan.md`
+  - `tail -n 180 plan/log.md`
+  - `date '+%Y-%m-%d %H:%M:%S %Z'`
+  - `curl -L --max-time 20 -A 'Mozilla/5.0 ...' 'https://chatgpt.com/s/t_6a0746216780819192d922f7c324431c' | sed -n '1,220p'`
+  - Playwright/Chrome body-text extraction for the shared ChatGPT conversation, with screenshot saved at `/tmp/chatgpt-schrodinger-share.png`
+  - `sed -n '1,360p' plan/branch/schrodinger-simulation.md`
+  - `sed -n '1,220p' demos/schrodinger/plan/plan.md`
+  - `sed -n '1,120p' plan/tests.md`
+  - `sed -n '1,180p' plan/branch/chem.md`
+  - `apply_patch` on the files listed above
+  - `git diff --check -- plan/branch/schrodinger-simulation.md demos/schrodinger/plan/plan.md plan/tests.md plan/plan.md plan/branch/chem.md`
+  - `git diff -- plan/branch/schrodinger-simulation.md demos/schrodinger/plan/plan.md plan/tests.md plan/plan.md plan/branch/chem.md | sed -n '1,280p'`
+  - `rg -n "Schrodinger/materials simulation|Schrodinger Materials Console" plan/plan.md plan/branch/chem.md demos/schrodinger/plan/plan.md plan/tests.md plan/branch/schrodinger-simulation.md`
+  - `git diff --check -- plan/branch/schrodinger-simulation.md demos/schrodinger/plan/plan.md plan/tests.md plan/plan.md plan/branch/chem.md demos/schrodinger/plan/log.md plan/log.md`
+  - `git status --short`
+- Test results:
+  - PASS: `git diff --check` on touched planning files.
+  - No runtime tests were run because this was a planning/documentation update only.
+- Open questions:
+  - The closure contract still needs a concrete schema/test slice before macro solver integration.
+  - We should avoid renaming the current packet API until a compatibility path exists for the standalone demo and existing tests.
+
+## 2026-05-29 11:19:12 AKDT
+- Prompt: user pasted the full Schrodinger/materials chat log, including sections on predicting material properties from the Schrodinger equation, quantum-informed SPH closures, hybrid phase-change/reaction modeling, free-energy-based material state, active learning, and the multiscale PeerCompute runtime framing.
+- Added the missing full-log details to planning docs: material constants should become state-dependent fields; reactive material closures should center on a free-energy/EOS model; material state should include density, internal energy, temperature, strain/deformation, phase fractions, species fractions, reaction progress, and local structure descriptors.
+- Added the recommended fidelity ladder: fast closure/table/surrogate, atomistic/reactive solver for representative state clusters, and DFT/AIMD/DFPT/NEB as sparse high-fidelity labelers.
+- Added active-refinement trigger examples: phase boundary, high reaction affinity, high uncertainty, out-of-domain state, unusual shock/strain/temperature/composition, rapid energy release, nucleation/decomposition/radiation/charge-transfer events.
+- Added test-planning gates for free-energy closure behavior: smooth phase fractions, latent-heat accounting, species/reaction stoichiometry, continuity across transition bands, uncertainty flags, and no heat creation without corresponding free-energy/species updates.
+- Files touched:
+  - `plan/branch/schrodinger-simulation.md`
+  - `demos/schrodinger/plan/plan.md`
+  - `plan/tests.md`
+  - `plan/plan.md`
+  - `demos/schrodinger/plan/log.md`
+  - `plan/log.md`
+- Commands run:
+  - `sed -n '1,220p' AGENTS.md`
+  - `sed -n '1,180p' plan/plan.md`
+  - `tail -n 180 plan/log.md`
+  - `date '+%Y-%m-%d %H:%M:%S %Z'`
+  - `sed -n '1,260p' plan/branch/schrodinger-simulation.md`
+  - `sed -n '260,560p' plan/branch/schrodinger-simulation.md`
+  - `sed -n '1,180p' demos/schrodinger/plan/plan.md`
+  - `sed -n '1,70p' plan/tests.md`
+  - `apply_patch` on the files listed above
+  - `git diff --check -- plan/branch/schrodinger-simulation.md demos/schrodinger/plan/plan.md plan/tests.md plan/plan.md`
+  - `git diff -- plan/branch/schrodinger-simulation.md demos/schrodinger/plan/plan.md plan/tests.md plan/plan.md | sed -n '1,320p'`
+- Test results:
+  - PASS: `git diff --check` on touched planning files.
+  - No runtime tests were run because this was a planning/documentation update only.
+- Open questions:
+  - The next implementation slice should decide whether to prototype a `ClosureState`/`ClosureResult` module beside the existing property packet or evolve the current packet schema in place.
+  - Reference data/source selection for the first free-energy/EOS closure remains open.
+
+## 2026-05-29 11:30:40 AKDT
+- Prompt: user requested environment controls and a periodic-table atom sandbox where they can add counts such as 5 oxygen atoms and 10 hydrogen atoms and watch them bond/interact in real time.
+- Added a pure `toy-reactive-atoms-v0` simulation engine with deterministic seeded atom placement, environment inputs for temperature/pressure/gravity, heuristic valence limits, covalent/ionic/metallic bond rules, spring-like bonded motion, thermal breakup, molecule summaries, and JSON snapshots.
+- Added a Three.js `ReactiveAtomView` that renders dynamic atom spheres, class-colored bond cylinders, and a sandbox boundary.
+- Added a `Reactive atoms` view mode, gravity slider, higher temperature range, periodic-table atom/count controls, add/clear buttons, and a `add 5 H2O` shortcut that inserts 5 O + 10 H.
+- Added reactive-mode stats and packet readout showing atoms, bonds, composition, molecule summaries, environment values, and the toy-model warning.
+- Added `window.__schrodingerDemo` hooks: `addAtoms`, `addWaterMix`, `clearAtoms`, `getReactiveState`, and `setConditions({ gravityMps2 })`.
+- Added deterministic tests for H2O formation, NaCl ionic pairing, inert unsupported atoms, and high-temperature water bond breakup.
+- Files touched:
+  - `src/simulation/reactiveAtoms.js`
+  - `src/visualization/reactiveAtomView.js`
+  - `src/visualization/orbitalCloud.js`
+  - `src/main.js`
+  - `tests/reactiveAtoms.test.mjs`
+  - `../tests/demo-ports.test.js`
+  - `README.md`
+  - `plan/plan.md`
+  - `plan/log.md`
+  - root `README.md`
+  - root `plan/branch/schrodinger-simulation.md`
+  - root `plan/tests.md`
+  - root `plan/plan.md`
+- Commands run:
+  - `sed -n '1,220p' AGENTS.md`
+  - `sed -n '1,180p' plan/plan.md`
+  - `tail -n 160 plan/log.md`
+  - `sed -n '1,260p' demos/schrodinger/src/data/elements.js`
+  - `sed -n '1,360p' demos/schrodinger/src/main.js`
+  - `sed -n '1,320p' demos/schrodinger/src/visualization/orbitalCloud.js`
+  - `sed -n '1,260p' demos/schrodinger/src/core/random.js`
+  - `sed -n '1,360p' demos/schrodinger/src/styles.css`
+  - `apply_patch` on code, tests, README, and plan/log files
+  - Node smoke importing `ReactiveAtomSimulation` and running 5 O + 10 H for 240 frames
+  - `node -v`
+  - `npm --prefix demos/schrodinger run test`
+  - `npm --prefix demos/schrodinger run build`
+  - `node --test demos/tests/demo-ports.test.js`
+  - `curl -k -I --max-time 5 https://127.0.0.1:5184/`
+  - `curl -k -I --max-time 5 https://127.0.0.1:4173/schrodinger/`
+  - Playwright/Chrome smoke against `https://127.0.0.1:5184/`, saving `/tmp/schrodinger-reactive-water.png` and `/tmp/schrodinger-reactive-hot.png`
+  - `curl -skI --max-time 5 https://100.86.83.35:5184/`
+  - `curl -skI --max-time 5 https://100.86.83.35:4173/schrodinger/`
+  - `git diff --check -- ...`
+  - `date '+%Y-%m-%d %H:%M:%S %Z'`
+- Test results:
+  - PASS: `node -v` reported `v24.15.0`.
+  - PASS: `npm --prefix demos/schrodinger run test` with 16/16 tests passing.
+  - PASS: `npm --prefix demos/schrodinger run build`; Vite emitted the existing non-fatal chunk-size warning.
+  - PASS: `node --test demos/tests/demo-ports.test.js` with 19/19 tests passing.
+  - PASS: browser smoke confirmed 5 O + 10 H forms five H2O groups with 10 covalent bonds, and 6000 K breaks bonds in the toy model.
+  - PASS: VPN-facing checks returned `HTTP/2 200` for `https://100.86.83.35:5184/` and `https://100.86.83.35:4173/schrodinger/`.
+  - PASS: `git diff --check` on touched implementation files.
+- Open questions:
+  - The sandbox is intentionally heuristic. It should not feed scientific-mode closure consumers until replaced or wrapped by a validated free-energy/reaction closure.
+  - PeerCompute publication still sends the material property packet, not the toy reactive snapshot.
+
+## 2026-05-29 15:58:23 AKDT
+- Prompt: continued implementation of the multiscale runtime; closure scout recommended adapting Schrodinger property packets into the shared `ClosureState -> ClosureResult` shape without replacing the existing UI packet.
+- Added shared closure adapters in `demos/shared/closureContract.js`:
+  - `closureResultFromMaterialPacket(packet, options)`
+  - `materialPacketFromClosureResult(result, options)`
+  - existing reactive/SPH closure adapters are now shared with Multiscale.
+- Updated Schrodinger PeerCompute session publication:
+  - existing property packet still publishes under `materials`;
+  - normalized closure result now also publishes under `multiscale-closures`.
+- Added `demos/shared/package.json` with `type: module` so Node treats shared helper modules as ES modules without warnings.
+- Updated Schrodinger Vite FS allow-list to include `demos/shared`.
+- Added material packet closure adapter tests in `tests/materials.test.mjs`.
+- Files touched:
+  - `../shared/closureContract.js`
+  - `../shared/package.json`
+  - `src/peercompute/session.js`
+  - `tests/materials.test.mjs`
+  - `vite.config.js`
+  - `README.md`
+  - `plan/plan.md`
+  - `plan/log.md`
+  - root `README.md`
+  - root `plan/plan.md`
+  - root `plan/branch/schrodinger-simulation.md`
+  - root `plan/tests.md`
+  - root `plan/log.md`
+- Commands run:
+  - `npm --prefix demos/schrodinger run test`
+  - `npm --prefix demos/schrodinger run build`
+  - `npm --prefix demos/multiscale run test`
+  - `npm --prefix demos/multiscale run build`
+  - `node --test demos/tests/demo-ports.test.js`
+  - `env MULTISCALE_SMOKE_URL=https://localhost:5185/ npm --prefix demos/multiscale run test:visual`
+  - `env MULTISCALE_SMOKE_URL=https://localhost:4173/multiscale/ npm --prefix demos/multiscale run test:visual`
+- Test results:
+  - PASS: Schrodinger tests 17/17.
+  - PASS: Schrodinger build; existing Vite chunk-size warning remains non-fatal.
+  - PASS: Multiscale tests 28/28.
+  - PASS: Multiscale build; existing Vite chunk-size warning remains non-fatal.
+  - PASS: demo scaffold tests 22/22.
+  - PASS: Multiscale visual smoke on dev and docs with closure summaries present in packet output.
+- Open questions:
+  - Closure schema still needs explicit unit/dimension metadata, Jacobian hooks, and stronger conservation-impact audits before scientific-mode consumers rely on it.
+
+## 2026-06-04 19:22:30 AKDT (-0800)
+- Prompt: user asked whether the work had actually advanced the Schrodinger simulation or drifted into contracts/handshakes. Prompt time/date recorded from the local machine during this turn: `2026-06-04 19:22:30 AKDT (-0800)`.
+- Added `src/quantum/finiteDifferenceSolver.js` with `peercompute.schrodinger.radial-finite-difference-eigensolver.v0`, a CPU-reference one-electron radial finite-difference Schrodinger eigensolver using shift-invert iteration over a tridiagonal Hamiltonian.
+- Wired the eigensolver into `src/main.js` so the live stats panel reports finite-difference solver status, numerical energy, analytic-energy error, residual L2, radial node count, and mean radius for the active orbital.
+- Added tests in `tests/reference.test.mjs` for hydrogen 1s, 2s, and 2p finite-difference energies, residuals, node counts, and a screened oxygen 2p diagnostic path.
+- Updated `README.md` and `plan/plan.md` to describe the new one-electron radial solver while preserving the boundary that this is not many-electron ab initio chemistry.
+- Also wired the solver into Multiscale closure and worker summaries so standalone Schrodinger and the ladder use the same low-level numerical diagnostic.
+- Files touched:
+  - `src/quantum/finiteDifferenceSolver.js`
+  - `src/main.js`
+  - `tests/reference.test.mjs`
+  - `README.md`
+  - `plan/plan.md`
+  - `plan/log.md`
+  - `../multiscale/src/simulation/quantumOrbitalClosure.js`
+  - `../multiscale/src/compute/quantumOrbitalGridTasks.js`
+  - `../multiscale/src/simulation/multiscaleModel.js`
+  - `../multiscale/tests/multiscaleModel.test.mjs`
+  - `../multiscale/README.md`
+  - root `README.md`
+  - root `plan/plan.md`
+  - root `plan/tests.md`
+  - root `plan/branch/schrodinger-simulation.md`
+  - root `plan/log.md`
+- Commands run:
+  - `node --input-type=module -e "... solveRadialSchrodingerEigenstate ..."` for hydrogen/oxygen numerical probes
+  - `node --check demos/schrodinger/src/quantum/finiteDifferenceSolver.js`
+  - `node --check demos/schrodinger/src/main.js`
+  - `node --check demos/multiscale/src/simulation/quantumOrbitalClosure.js`
+  - `node --check demos/multiscale/src/compute/quantumOrbitalGridTasks.js`
+  - `npm --prefix demos/schrodinger run test`
+  - `npm --prefix demos/multiscale run test -- --test-name-pattern="quantum orbital"`
+  - `npm --prefix demos/schrodinger run build`
+  - `npm --prefix demos/multiscale run build`
+  - Playwright/Chrome smoke against `https://127.0.0.1:5184/`, saving `/tmp/peercompute-schrodinger-radial.png`
+  - Playwright/Chrome API smoke against `https://127.0.0.1:5185/`, saving `/tmp/peercompute-multiscale-radial.png`
+  - HTTPS endpoint checks for `https://127.0.0.1:5184/`, `https://127.0.0.1:5185/`, `https://127.0.0.1:4173/`, `https://100.86.83.35:4173/`, and `https://100.86.83.35:5184/`
+- Test results:
+  - PASS: Schrodinger tests 19/19.
+  - PASS: Multiscale tests 158/158.
+  - PASS: Schrodinger and Multiscale builds; existing Vite chunk-size warnings only.
+  - PASS: visual smoke confirmed the Schrodinger stats panel shows FD solver rows and the browser API reports an active radial eigensolver result.
+  - PASS: Multiscale API smoke confirmed `getQuantumOrbital()` exposes the radial eigensolver schema/status and packet closure energy field.
+- Failures / open questions:
+  - First numerical probe found a new-solver `null` fallback bug that produced a collapsed radial extent; fixed before integration.
+  - Playwright's bundled Chromium was unavailable, so the browser smoke used system Chrome at `/bin/google-chrome`.
+  - The eigensolver is still CPU reference and one-electron. WebGPU eigensolver parity, stable time propagation, many-electron molecular methods, calibrated force surfaces, and reaction dynamics remain future work.
+
+## 2026-06-04 19:45:15 AKDT
+- Prompt: user challenged the CPU-reference/fallback direction and explicitly said not to use CPU fallback. Prompt time/date recorded from the local machine during this turn: `2026-06-04 19:45:15 AKDT`.
+- Implemented a standalone WebGPU-first radial Schrodinger path in `src/quantum/webgpuWaveSolver.js` with schema `peercompute.schrodinger.radial-webgpu-eigensolver.v0`.
+- The WebGPU routine samples the selected radial basis, applies the radial Hamiltonian, performs workgroup partial reductions, and reports energy, analytic error, Hamiltonian residual, radial nodes, radius moments, samples, and backend status.
+- Removed the CPU finite-difference radial import/call from `src/main.js`; standalone regeneration now produces either `webgpu-radial-schrodinger` or an explicit `webgpu-unavailable` record with no CPU fallback.
+- Renamed stats/HUD rows from `FD`/`cpu-reference` to `GPU radial`/`webgpu-radial-schrodinger`.
+- Increased the live WebGPU radial grid to 512 points after the first browser smoke returned a near-threshold `webgpu-watch`.
+- Updated `README.md`, this plan, root `README.md`, root `plan/plan.md`, root `plan/tests.md`, and root `plan/branch/schrodinger-simulation.md` to reflect the WebGPU-only standalone radial path.
+- Files touched:
+  - `src/quantum/webgpuWaveSolver.js`
+  - `src/main.js`
+  - `tests/reference.test.mjs`
+  - `README.md`
+  - `plan/plan.md`
+  - `plan/log.md`
+  - root `README.md`
+  - root `plan/plan.md`
+  - root `plan/tests.md`
+  - root `plan/branch/schrodinger-simulation.md`
+  - root `plan/log.md`
+  - `../../docs/schrodinger/` build assets
+- Commands run:
+  - ICC search/index/find-file commands against `/home/cos/projects/infinite_context_coder/scripts/codebase_tool.py`
+  - `node --check demos/schrodinger/src/quantum/webgpuWaveSolver.js`
+  - `node --check demos/schrodinger/src/main.js`
+  - `npm --prefix demos/schrodinger run test`
+  - `npm --prefix demos/schrodinger run build`
+  - `ss -ltnp | rg ':(5184|5185|4173)\b' || true`
+  - `ps -eo pid,cmd | rg 'vite|npm --prefix demos/(schrodinger|multiscale)|preview --host|relay|coturn|turnserver' | rg -v 'rg ' || true`
+  - Playwright/Chrome smoke against `https://127.0.0.1:5184/`, saving `/tmp/peercompute-schrodinger-webgpu-radial.png`
+  - Playwright/Chrome smoke after the 512-point grid bump, saving `/tmp/peercompute-schrodinger-webgpu-radial-512.png`
+  - `rg -n "cpu-reference|visualizer should report|CPU-only|CPU Reference|finiteDifferenceSolver|solveRadialSchrodingerEigenstate|FD solver|FD energy|FD residual" ...`
+  - `git diff --check -- demos/schrodinger/src/quantum/webgpuWaveSolver.js demos/schrodinger/src/main.js demos/schrodinger/tests/reference.test.mjs demos/schrodinger/README.md demos/schrodinger/plan/plan.md demos/schrodinger/plan/log.md README.md plan/plan.md plan/tests.md plan/branch/schrodinger-simulation.md plan/log.md`
+  - Final rerun: `npm --prefix demos/schrodinger run test`
+- Test results:
+  - PASS: syntax checks produced no output.
+  - PASS: `npm --prefix demos/schrodinger run test`, 20/20.
+  - PASS: final rerun of `npm --prefix demos/schrodinger run test`, 20/20.
+  - PASS: `npm --prefix demos/schrodinger run build`; only the existing Vite chunk-size warning appeared.
+  - PASS: `git diff --check` on touched files.
+  - PASS: browser smoke reported schema `peercompute.schrodinger.radial-webgpu-eigensolver.v0`, backend `webgpu-radial-schrodinger`, status `webgpu-converged`, energy `-71.8268 eV`, energy error `-0.00910 eV`, residual `9.19e-4`, node count `0/0`, mean radius `1.0881 bohr`, grid point count `512`, and HUD backend `webgpu-radial-schrodinger`.
+  - PASS: existing local stack remains live on `*:5184`, `*:5185`, and `*:4173`, with coturn and relay running.
+- Failures / open questions:
+  - Initial 336-point WebGPU run returned `webgpu-watch` at residual `0.002032`; increasing the GPU radial grid to 512 points produced `webgpu-converged`.
+  - Headless Chrome emitted non-fatal WebGL software/ReadPixels warnings and one 404 resource warning during smoke.
+  - The 3D orbital cloud sampler is still CPU visualization code; next Schrodinger work should move orbital-grid sampling to WebGPU and migrate the Multiscale radial diagnostic off the legacy CPU finite-difference solver.
+
+## 2026-06-04 19:54:55 AKDT
+- Prompt: goal continuation to keep building the PeerCompute multiscale realtime physics runtime. Prompt time/date recorded from the local machine during this turn: `2026-06-04 19:54:55 AKDT`.
+- Added `peercompute.schrodinger.orbital-grid-webgpu.v0` and `buildOrbitalGridGpu()` in `src/quantum/webgpuWaveSolver.js`.
+- The new WebGPU orbital-grid kernel evaluates the selected hydrogenic/effective-charge probability grid into packed `(x,y,z,p)` storage-buffer records, reduces normalization/radius/boundary telemetry, normalizes probability values on GPU, and returns the compact grid used by the existing Three.js cloud.
+- Rewired `src/main.js` so standalone orbital regeneration calls `buildOrbitalGridGpu()` before the radial WebGPU pass. If WebGPU is unavailable, both the orbital grid and radial solve report unavailable without CPU fallback.
+- Added `orbital backend` stats-panel telemetry and schema contract coverage in `tests/reference.test.mjs`.
+- Updated `README.md`, `plan/plan.md`, root `README.md`, root `plan/plan.md`, root `plan/tests.md`, and root `plan/branch/schrodinger-simulation.md` so the current standalone bottom-layer path is documented as WebGPU orbital grid plus WebGPU radial Hamiltonian.
+- Files touched:
+  - `src/quantum/webgpuWaveSolver.js`
+  - `src/main.js`
+  - `tests/reference.test.mjs`
+  - `README.md`
+  - `plan/plan.md`
+  - `plan/log.md`
+  - root `README.md`
+  - root `plan/plan.md`
+  - root `plan/tests.md`
+  - root `plan/branch/schrodinger-simulation.md`
+  - root `plan/log.md`
+  - `../../docs/schrodinger/` build assets
+- Commands run:
+  - `sed -n '1,140p' AGENTS.md`
+  - `sed -n '1,120p' plan/plan.md`
+  - `tail -140 plan/log.md`
+  - `sed -n '1,260p' demos/schrodinger/src/quantum/orbitals.js`
+  - `sed -n '1,220p' demos/schrodinger/src/visualization/orbitalCloud.js`
+  - `sed -n '260,560p' demos/schrodinger/src/quantum/webgpuWaveSolver.js`
+  - `sed -n '560,920p' demos/schrodinger/src/quantum/webgpuWaveSolver.js`
+  - `sed -n '430,525p' demos/schrodinger/src/main.js`
+  - `node --check demos/schrodinger/src/quantum/webgpuWaveSolver.js`
+  - `node --check demos/schrodinger/src/main.js`
+  - `rg -n "buildOrbitalGrid\\(|buildOrbitalGridGpu|ORBITAL_GRID_WEBGPU_SCHEMA|cpu-reference|CPU fallback|No CPU fallback" demos/schrodinger/src demos/schrodinger/tests demos/schrodinger/README.md demos/schrodinger/plan/plan.md`
+  - `npm --prefix demos/schrodinger run test`
+  - `npm --prefix demos/schrodinger run build`
+  - Playwright/Chrome smoke against `https://127.0.0.1:5184/`, saving `/tmp/peercompute-schrodinger-webgpu-orbital-grid.png`
+  - `git diff --check -- demos/schrodinger/src/quantum/webgpuWaveSolver.js demos/schrodinger/src/main.js demos/schrodinger/tests/reference.test.mjs demos/schrodinger/README.md demos/schrodinger/plan/plan.md demos/schrodinger/plan/log.md README.md plan/plan.md plan/tests.md plan/branch/schrodinger-simulation.md plan/log.md`
+  - `git diff --stat -- demos/schrodinger/src/quantum/webgpuWaveSolver.js demos/schrodinger/src/main.js demos/schrodinger/tests/reference.test.mjs demos/schrodinger/README.md demos/schrodinger/plan/plan.md demos/schrodinger/plan/log.md README.md plan/plan.md plan/tests.md plan/branch/schrodinger-simulation.md plan/log.md docs/schrodinger`
+  - `git status --short -- demos/schrodinger/src/quantum/webgpuWaveSolver.js demos/schrodinger/src/main.js demos/schrodinger/tests/reference.test.mjs demos/schrodinger/README.md demos/schrodinger/plan/plan.md demos/schrodinger/plan/log.md README.md plan/plan.md plan/tests.md plan/branch/schrodinger-simulation.md plan/log.md docs/schrodinger`
+  - `ss -ltnp | rg ':(5184|5185|4173)\b' || true`
+  - Final rerun: `git diff --check -- demos/schrodinger/src/quantum/webgpuWaveSolver.js demos/schrodinger/src/main.js demos/schrodinger/tests/reference.test.mjs demos/schrodinger/README.md demos/schrodinger/plan/plan.md demos/schrodinger/plan/log.md README.md plan/plan.md plan/tests.md plan/branch/schrodinger-simulation.md plan/log.md`
+- Test results:
+  - PASS: syntax checks produced no output.
+  - PASS: `npm --prefix demos/schrodinger run test`, 20/20.
+  - PASS: `npm --prefix demos/schrodinger run build`; only the existing Vite chunk-size warning appeared.
+  - PASS: `git diff --check` on touched files.
+  - PASS: final rerun of `git diff --check` on touched files.
+  - PASS: server status check showed existing Vite listeners on `*:5184`, `*:5185`, and `*:4173`.
+  - PASS: browser smoke reported orbital schema `peercompute.schrodinger.orbital-grid-webgpu.v0`, backend `webgpu-orbital-grid-density`, status `webgpu-grid-ready`, grid `28^3`, normalization `1.0000000252`, boundary mass `0.00001753795`, `Zeff 4.595`, and kernel mode `webgpu-orbital-grid-density`.
+  - PASS: same browser smoke reported radial schema `peercompute.schrodinger.radial-webgpu-eigensolver.v0`, backend `webgpu-radial-schrodinger`, status `webgpu-converged`, residual `9.19e-4`, and energy `-71.8268 eV`.
+- Failures / open questions:
+  - Headless Chrome emitted non-fatal WebGL software/ReadPixels warnings and one 404 resource warning during smoke.
+  - The point-cloud CDF sampling step remains CPU-side after GPU probability-grid readback; next standalone target is GPU-side sampling or direct GPU-buffer rendering.
+  - Multiscale still carries the legacy CPU radial diagnostic path and should migrate to the standalone WebGPU radial/orbital contracts.
+
+## 2026-06-04 20:02:29 AKDT
+- Prompt: goal continuation to keep building the PeerCompute multiscale realtime physics runtime. Prompt time/date recorded from the local machine during this turn: `2026-06-04 20:02:29 AKDT`.
+- Extended `buildOrbitalGridGpu()` in `src/quantum/webgpuWaveSolver.js` with a `samplePoints` compute entry point that consumes the normalized GPU orbital grid and emits visual point/shade records.
+- The sampler uses deterministic hash-based importance candidate selection and spherical jitter on GPU, then returns `points`, `colors`, `pointSampleCount`, `pointSamplingMode`, and `webgpuStatus.pointKernelMode`.
+- Rewired `src/main.js` to pass `sampleCount` and deterministic `sampleSeed` into the WebGPU orbital builder, then render `grid.points` and `grid.colors` directly instead of calling the CPU `sampleOrbitalPoints()` path.
+- Added `point sampler` stats-panel telemetry so the live UI shows `webgpu-hash-importance-sampling / 70,000`.
+- Updated `README.md`, `plan/plan.md`, root `README.md`, root `plan/plan.md`, root `plan/tests.md`, and root `plan/branch/schrodinger-simulation.md` to document that the standalone orbital grid and point cloud are both WebGPU-generated.
+- Files touched:
+  - `src/quantum/webgpuWaveSolver.js`
+  - `src/main.js`
+  - `README.md`
+  - `plan/plan.md`
+  - `plan/log.md`
+  - root `README.md`
+  - root `plan/plan.md`
+  - root `plan/tests.md`
+  - root `plan/branch/schrodinger-simulation.md`
+  - root `plan/log.md`
+  - `../../docs/schrodinger/` build assets
+- Commands run:
+  - `sed -n '1,120p' demos/schrodinger/src/core/random.js`
+  - `sed -n '1,80p' demos/schrodinger/src/quantum/webgpuWaveSolver.js`
+  - `sed -n '565,1015p' demos/schrodinger/src/quantum/webgpuWaveSolver.js`
+  - `sed -n '1,40p' demos/schrodinger/src/main.js && sed -n '500,575p' demos/schrodinger/src/main.js`
+  - `sed -n '245,310p' demos/schrodinger/src/main.js && sed -n '485,510p' demos/schrodinger/src/main.js`
+  - `node --check demos/schrodinger/src/quantum/webgpuWaveSolver.js`
+  - `node --check demos/schrodinger/src/main.js`
+  - `rg -n "sampleOrbitalPoints|pointSamplingMode|pointKernelMode|webgpu-hash-importance-sampling|buildOrbitalGridGpu" demos/schrodinger/src demos/schrodinger/tests`
+  - `npm --prefix demos/schrodinger run test`
+  - `npm --prefix demos/schrodinger run build`
+  - Playwright/Chrome smoke against `https://127.0.0.1:5184/`, saving `/tmp/peercompute-schrodinger-webgpu-point-sampler.png`
+- Test results:
+  - PASS: syntax checks produced no output.
+  - PASS: `npm --prefix demos/schrodinger run test`, 20/20.
+  - PASS: `npm --prefix demos/schrodinger run build`; only the existing Vite chunk-size warning appeared.
+  - PASS: browser smoke reported `pointKernelMode: webgpu-orbital-grid-point-sampling`, `pointSamplingMode: webgpu-hash-importance-sampling`, `pointSampleCount: 70000`, `finitePointTriples: 70000`, and `maxAbsPointCoordinate: 4.1153`.
+  - PASS: same browser smoke reported orbital normalization `1.0000000252`, radial status `webgpu-converged`, radial residual `9.19e-4`, and stats-panel text containing `point sampler webgpu-hash-importance-sampling / 70,000`.
+- Failures / open questions:
+  - The GPU point sampler is deterministic and parallel but uses visual hash-importance candidate selection rather than an exact GPU prefix-sum inverse CDF. The grid-derived physics telemetry remains measured from the full normalized GPU probability grid.
+  - Headless Chrome emitted non-fatal WebGL software/ReadPixels warnings and one 404 resource warning during smoke.
+  - The legacy CPU `sampleOrbitalPoints()` remains in `orbitals.js` and tests as reference/compatibility scaffolding, but the standalone live path no longer imports it.
+  - Multiscale still carries the legacy CPU radial diagnostic path and should migrate to the standalone WebGPU radial/orbital contracts.

@@ -14,14 +14,865 @@ The root node should exist on a domain secured with SSL enabling all executable 
 
 ## Project Goals:
 
+November 8 main integration: refresh root/package READMEs for the shipped model, agent and world application; merge feature/ipfs-artifacts-webgpu into main while preserving upstream history, and publish the existing verified docs build from main. Documentation and integration verification are in progress.
+
+November8 chat controls: availability-based network glyph, mutually exclusive image/ear output controls, hold-to-record input and default concise LLM prompts. Implemented and published on the feature branch. 193 focused cases, the full 15-demo build, internal previews, and public inference/Cube/Earth/overview checks pass. New published assets match the release; no merge to ulg.
+
+November7 CubeChat presentation follow-up: menu-only Residents/Models, one model
+management window, persistent optional generated front-face portraits, opt-in
+public human-chat replies and compact human/resident names. Reusable appearance
+and response components preserve private history, bounded peer transfer and
+cleanup ownership. Implemented and published on the feature branch. Internal peer checks and all
+23public Pages UI/runtime routes pass, with60reviewed screenshots; numerical and
+headless-rendering limitations remain documented in log.md. No merge to ulg.
+
+November7 CubeChat native social pass (implemented and verified): a single in-world Room or
+resident composer, keyboard messages and overhead human speech bubbles, focused
+Player/World/Media dialogs, and one Residents interface. Shared chat transport,
+body ownership, speech presentation and replaceable motor components support the
+homunculus architecture. Fix duplicate body creation and repeated bot jumping;
+retain private agent histories and model management. Qualified with203 focused
+tests, production builds and real two-browser text/room/reload checks on the
+internal preview. Learned movement remains later work. See demos/cubechat/plan.md.
+
+November7 stored-library batch actions: shared selection with Load selected and
+Delete selected replaces per-row Load/Delete. Any retained CID can be selected;
+load filters compatibility/verification/cleanup status independently. Preserve
+Unload and Verify locally, sequential deletion ownership, completed deletions
+and failed/unstarted selections through cancellation or failure. Reconcile actual
+storage before releasing controls, and retain reference-aware runtime deletion.
+Implemented and verified by136native tests,3builds and exact internal previews,
+including actual batch deletion of two owned tiny stored fixtures.
+
+November7 compact chat controls: Back, Models and Agents share the top row;
+an adjacent network glyph opens detailed diagnostics beside Menu. Green requires
+connected peers plus shared and hosted models; disconnected is red and incomplete
+or warning states are yellow. A cog left of Attach opens Chat options containing
+target routing, image generation and spoken replies. Keep one composer, preserve
+draft/history and task ownership, hide routine readiness text and retain visible
+errors/progress. Updated guidance,134native tests,3builds and exact phone/desktop
+embedded previews pass. SecretWorkshop relay connections are authenticated;
+discovered-provider errors remain visible separately from relay health.
+
+November7 Models consolidation: a single Models window holds Stored models and
+Browse models tabs. Stored models is the default whenever saved packages exist;
+startup continues to await explicit selection. Remove main-page Load, selected
+model label and duplicate metadata; retain model facts and compatibility help in
+browse details. Phone details occupy the window and Done returns to unchanged
+results. Keep the saved-library batch, cancellation and deletion contracts.
+
+November7 stored-library follow-up: whenever any saved packages exist, open
+Models → Stored models at startup and wait for explicit multi-selection plus Load
+selected. Empty storage alone permits the supported default. Sequential additions
+preserve completed/existing residents through failure or cancellation. Paste and
+drop image bytes into the unified composer; keep text intact and fetch only
+same-origin blob images. Confirm the page back arrow and await cleanup on Leave.
+Native UI119/119, retained library172/172, world85/85, layout4/4 and Cube input14/14 checks pass. All three internal previews pass visual and SecretWorkshop checks; see the multimodal console plan.
+
+November7 resident-memory correction: the default fixed12GiB CPU pool rejects
+DreamShaper8GiB plus Qwen2B8GiB before a second GPU allocation. Owned-console Auto
+should track estimates without an invented byte cap; explicit combined budgets
+and borrowed owner limits remain enforced atomically. Keep worker/slot/package
+bounds, truthful usage/cap display and GPU-failure cleanup. Do not lower estimated
+model envelopes without evidence or claim co-residency from separate model runs.
+
+November7 peer follow-up: preserve a fully validated directory or inference
+result when stream shutdown alone fails. Keep authenticated discovery expiry and
+explicit model choice; refresh expired choices before dispatch. Image attachment
+capability is independent of transient queue capacity, while Send follows the
+same capacity rules as routing. Image generation does not imply image input.
+The concrete two-browser report also exposed stalled open WebRTC connections:
+add bounded authenticated same-peer relay recovery before an application header,
+with connection ownership and active-stream protection. A ready connection flag
+alone is insufficient evidence that a new inference stream can be opened.
+
+November7 unified conversation correction: agents and direct models share the
+main transcript/composer, voice, attachment and explicit image-generation
+controls. Chat target chooses the persistent identity or direct model policy;
+Agents manages identities only. Saved agent history remains isolated from direct
+chat and world visitor channels. Explicit Resume, durable checkpoints, local-only
+speech, cancellation and reload recovery remain required. New agents use Mixed;
+existing locality policies are preserved. See the multimodal console plan below.
+
+November7 multimodal console is implemented after user-confirmed model recovery:
+concurrent managed model residents, shared capability routing with Mixed
+local-first/peer fallback as the default, explicit image generation and reusable
+microphone/transcription/synthesis orchestration. Preserve aggregate admission,
+per-model lifecycle and storage recovery; extend peer hosting to multiple models
+and bounded audio while retaining legacy text/vision/image peers. This supplies
+Humunculus specialist execution, with learned routing and motor training still
+separate. Four actual GPU workers and private peer voice pass acceptance;
+internal console/CubeChat/Earth previews are updated. See
+[architecture and acceptance](demos/inference/multimodal-console.md).
+
+November7 model retention correction: preserve complete package metadata when
+background sharing or local verification is interrupted. Keep retained partial
+packages visible with explicit local-only verification, preserve startup
+selection, and prevent automatic HF replacement downloads. Reuse completed
+files by pinned SHA256/size when a later package file fails. Validate navigation,
+cancellation, corruption and concurrent deletion with native IndexedDB/Web Locks
+and synthetic files; no user model/GPU work is required. Cross-navigation
+checkpointing of an unfinished HTTP file remains deferred. Evidence and preview
+status are recorded in log.md and the model browser plan.
+
+November6 inhabited-agent correction is implemented in both CubeChat and
+EarthGrid: actual selectable scene bodies, persistent identity and isolated
+visitor conversations, typed and managed spoken interaction, and authenticated
+shared-world discovery. The model console becomes secondary configuration.
+This explicitly brings speech adapters forward from the original deferral;
+learned movement, training and migration remain later work.
+See [inhabited-agent architecture and acceptance](demos/inference/inhabited-agents.md).
+Actual managed peer conversations and three-resident reasoning/ASR/TTS playback
+pass; both complete production scenes pass internal HTTPS visual/persistence and
+SecretWorkshop checks. Tiny Gemma reply quality remains inconsistent; direct
+native upgrade timed out in one fixture, with encrypted relay conversation
+success recorded separately. Agent-to-agent initiation is not implemented.
+
+November7 voice follow-up: correct auxiliary speech compatibility labels and
+protect microphone capture, transcription and generation from overlapping UI
+actions. Reconcile voice controls after a speech package is unloaded; an enabled
+speech request must not silently become text-only. CubeChat audio distance must
+follow the player body rather than orbit-camera zoom. Native Talk/Stop, managed
+ASR/reasoning/TTS playback and corrected internal previews pass; focused
+regression evidence and remaining user-specific diagnosis are recorded in log.md.
+
+November6 CubeChat input correction: native mouse activation on a touch-capable
+(coarse-pointer) desktop previously selected touch-only controls and discarded
+keyboard movement. Use the actual input to select the HUD, preserve keyboard
+controls independently and respect editable UI/focus boundaries. Eleven native
+controller tests and five full-app desktop/hybrid/mobile/denied-pointer-lock
+scenarios pass; the corrected internal preview is available on HTTPS5176.
+
+### Next model demo TODOs — November 5 2026
+
+1. [x] **MODEL-BROWSER-01 — complete:** replace the model select list with a responsive
+   browser modal and wider Hugging Face discovery. Search names and descriptions;
+   filter task, selected-package size, precision, source and compatibility. Resolve
+   exact supported variants and preserve stored/peer loading, cancellation and
+   preferences. Scope: [model browser plan](branch/ipfs-large-files-model-inference.md#november-5--model-browser-design-discussion).
+2. [ ] **AGENT-01 — in progress after MODEL-BROWSER-01:** spawn instances of one general agent with
+   identity, goals and compact context persisted in private IndexedDB. Route tasks
+   through a small learned selector to eligible local/network models; support strict
+   local-only and optional peer-hosted ML routing. Add separately consented host
+   model loading, cloning and same-identity migration. Dedicated agent types and
+   new 3D generation adapters are deferred; world conversation speech is now an
+   explicitly requested integration slice. [One-page summary](demos/inference/agentlayer.pdf) ·
+   [Detailed implementation and training plan](demos/inference/agent-layer-plan.md).
+
+MODEL-BROWSER-01 is implemented and verified on November 5: [implementation and checks](demos/inference/model-browser.md).
+November6 GGUF admission follow-up: Q4/Q8 weight storage still requires FP16
+kernels in the pinned engine. Keep the correct feature gate; clarify its reason
+and retain Setup help. Current Chrome adapter/app comparison agrees with and
+without the NVIDIA startup override; this is not a new FP32 backend.
+November 5 follow-up: live HF searches returned HTTP200; missing results came from
+filters excluding uninspected metadata. Keep those candidates explicitly labeled,
+support empty-query HF browsing and resume interrupted searches on reopening.
+AGENT-01 foundation is implemented on the feature branch: private acknowledged
+IndexedDB identity/context/history, one general-agent console, cancellable direct
+text/vision/image tasks, strict local-only and explicit peer-assisted baseline
+routing through existing managed inference. Real local WebGPU, browser restart,
+private-memory reuse and two-browser native WebRTC inference pass. Learned routing, optional peer ranking, requested
+model loads, cloning and migration retain their later acceptance gates.
+Deletion follow-up: a denied sharing-owner lock or queued cancellation no longer
+marks an untouched model as partially deleted. Real browser UI/IndexedDB/WebLock
+rejection followed by successful retry passes; the user's original error still
+needs confirmation. Existing cleanup failures retain their retry state.
+Vision follow-up: SmolVLM256M can repeat an earlier image description when that
+answer is replayed as text beside a new image. Actual equal-pixel with/without-history
+GPU comparison reproduces this. New attachments start fresh visual context in
+chat/agents; keep transcript/private records, system instructions and explicit
+agent memory. Text follow-ups use the latest successful visual exchange; failed
+or cancelled replacements preserve the previous committed context.
+November 5 authorized follow-up: widen existing engine architecture admission,
+replace the generic text ONNX1.5GiB ceiling with bounded package/config-aware
+profiles, and discover related ONNX/GGUF conversions from publisher lineage.
+Implementation and internal preview checks pass; Gemma270M ONNX and StableLM1.6B
+GGUF pass actual managed GPU lifecycles. OpenReasoning-Nemotron1.5B and Nano4B q4
+also pass after more resources became available. Nano4B gives coherent garden/ocean
+answers and passes reset, cancellation/recovery and source-off restart without
+shader-f16. OpenReasoning's general-chat output remains off-topic/repetitive at
+256tokens; its simple math response recognizes4 but reaches the length limit
+without the requested final answer. Keep that quality follow-up separate from
+successful execution; Nano4B passes the basic chat screening.
+November5 suggested-list follow-up: promote the verified Nano4B q4 package into
+the built-in catalog as **Nemotron 3 Nano 4B (q4)**. Preserve its exact tested
+revision/files/profile so existing downloaded packages can be recognized and
+loaded directly. Verify catalog visibility in the internal preview.
+Split GGUF remains deferred; the agent foundation is now underway as described above.
+November5 download follow-up: recover interrupted HTTP model transfers within
+the active load using validated byte ranges and pinned digests. Five retries,
+network inactivity deadlines, visible recovery progress and immediate cancellation
+preserve the single content-addressed import. Cross-reload partial-transfer
+journaling remains deferred. Native Chrome disconnect/recovery and integrity
+regressions pass; internal preview verification accompanies this slice.
+AGENT-01 is a first step toward Humunculus, not completion of learned embodiment
+or the older IPFS-01 acceptance gates.
+
+### IPFS Large Files And Model Inference TODO - 2026-11-03 AKST
+
+- [ ] **IPFS-01:** Add generic persistent IPFS file storage, verified streaming
+  transfer, explicit pins, and peer hosting; use it to distribute a complete,
+  revision-pinned small Qwen package and execute inference through an existing
+  ComputeManager worker. Follow with whole-request remote inference on an
+  explicitly selected capable peer.
+- The [implementation plan](branch/ipfs-large-files-model-inference.md) defines
+  IPFS-01.0–.6, source seams, dependency/runtime spikes, ownership, bounded memory,
+  durable seed hosts, model provenance, cancellation, and acceptance tests.
+- November3 18:11 AKST revision: implemented the requested compact console and
+  real remote inference. Independent-browser managed WebGPU text/image, streaming,
+  cancellation, host disable/disconnect and model transfer pass. Unified HF/peer import auto-loads; default-on file sharing/inference
+  hosting; five-second model-level discovery and longest-idle host scheduling;
+  private prompt/image streams; Config hides storage/GGUF settings. Remove the
+  Close button, explicit CID field and sample scene. This advances IPFS-01.5.
+  November3 18:36 follow-up: standalone chat fills the available window; remove
+  remaining layout caps and verify fresh navigation removes the old sample shell.
+- November3 18:49 revision: modal Config contains sharing/hosting preferences;
+  Stored Models lists local packages and deletes them safely. Remove console
+  capacity selectors and hard rejection from advisory browser quota estimates;
+  allow storage until actual browser writes fail, preserving per-operation bounds.
+- November3 19:18 revision: add small abliterated chat choices and Stable
+  Diffusion image generation, including a broader-content image model. Reuse
+  managed worker admission and IPFS packages; distinguish text-to-image output
+  from vision input, and return generated pixels through private peer streams.
+  Model behavior is publisher-described, not a guarantee of zero refusals.
+- Image generation checkpoint: SD-Turbo and DreamShaper8LCM pass actual managed
+  WebGPU generation and native encrypted WebRTC output to an independent
+  GPU-disabled browser, including source-off restart and local cancellation/
+  unload. The new console passes production startup and image-preview UI tests.
+  Qwen3.5 0.8B Abliterated passes actual GPU lifecycle and arithmetic checks.
+  Qwen3 0.6B Abliterated runs but fails the quality gate; retain it as an
+  experimental choice with the observed limitation documented.
+- November3 20:19 revision: defer abliterated multimodal2B conversion. Add a
+  searchable Import Model list and disable unsupported or over-budget local
+  loads with readable reasons. Unknown browser memory remains explicit; Config
+  allows inference memory budgets without restoring a disk-storage quota.
+  Local limitations must not disable inference hosted by other peers.
+- Search/admission checkpoint: policy and runtime checks pass91/91; UI23/23.
+  Cold browser startup, search/selection, explicit budget rejection before
+  downloads, bounded peer metadata verification and desktop/mobile layout pass
+  on the production preview. A bounded adapter retry fixes transient cold-Chrome
+  null results; actual free memory remains unverified. IPFS-01 parent gates remain open.
+- November3 20:43 follow-up: distinguish missing browser FP16 support from memory
+  rejection. Default Chrome157/NVIDIA595.91.7 lacks shader-f16 even on the16GB
+  GPU; earlier hardware runs used an explicit override. Keep real runtime feature
+  requirements and document the normal-browser limitation rather than bypass it.
+- November3 20:57 revision: choosing an unavailable model opens setup help.
+  Keep import blocked, with browser/OS-specific instructions, copyable verified
+  workarounds and Config guidance for budget limits. Preserve peer chat and
+  local model residency while the user reads help.
+- November3 21:12 follow-up: replace the silent128-token chat cutoff with a
+  bounded1,024-token request and2,048-token GGUF context. Preserve completion
+  metadata from local/peer workers and display actual length limits. Verify
+  benign longer output in a managed WebGPU worker; retain existing cancellation,
+  deadlines and distinct27B512-context measurement scope.
+- November3 21:19 follow-up: show estimated RAM/GPU reservations in each model
+  choice, with unknown/measured-capacity distinctions. Import status separates
+  file bytes, manifest verification and GPU initialization. Local loading does not
+  wait for background publication; sharing failures remain discoverable in the library.
+- First prove generic file reseeding: A supplies B, A exits, and a fresh C obtains
+  the same file from B with origin/gateway fallback blocked. Separate storage
+  contexts prevent a shared browser cache from masquerading as peer hosting.
+  Verified model packages retain immutable CIDs and persist in the IPFS block
+  store; hosting-enabled peers serve and reannounce them after restart.
+- November3 21:38–22:05 revision: separate application discovery from artifact
+  restoration/publication and same-store ownership. Surface real query failures
+  and separate shared-package/loaded-host counts; preserve private routing and
+  host freshness. Native customizable pickers wrap within the viewport, and
+  applicable setup help starts with the browser command. Actual separate-browser
+  GPU inference and same-library second-tab discovery pass against SecretWorkshop.
+- Conversation audit: IPFS-01 still needs full27B browser persistence/peer
+  transfer and2048-context qualification, physical-machine acceptance, durable
+  seed/seed-loss operation, GPU-loss/render contention, NetViz model telemetry,
+  and real-model CubeChat/Earth action acceptance. Ordinary disk-file storage is
+  a discussed follow-up; abliterated multimodal2B remains explicitly deferred.
+  Merge into ulg remains pending user review.
+- November3 22:14 revision: add requested9B GGUF variants (BowmanQ5, DavidAU
+  via a disclosedQ4 conversion, Mradermacher EvilQ8 andQ4) with immutable source
+  and license provenance. Add Coder0.5B and SmolLM2-360M ONNXq4 choices for
+  devices without shader-f16. Preserve runtime budgets; disambiguate variants
+  sharing a repository/revision throughout admission, storage and peer display.
+  Hardware acceptance for these ONNX additions must prove actual GPU dispatches
+  with shader-f16 absent; new9B entries remain explicitly unqualified candidates.
+- Ownership: StateManager manages artifact storage/manifests/pins/availability;
+  NetworkManager discovers providers and transfers blocks; ComputeManager runs
+  inference in its managed WebGPU worker. NodeKernel wires these managers.
+- Initial model candidate: Qwen3-0.6B ONNX q4 through Transformers.js (q4f16 only
+  on adapters exposing shader-f16), with the
+  whole model resident on one WebGPU peer. Actual inference must execute inside
+  a WebGPU-capable compute worker owned and managed by ComputeManager;
+  Transformers.js/ONNX Runtime initialize in that worker and dispatch GPU work
+  there. Distributed storage is separate from
+  multi-GPU tensor parallelism. Preserve existing small local artifact caches;
+  large blocks and private inference content stay outside Yjs/pubsub.
+- Status: **implementation in progress** on `feature/ipfs-artifacts-webgpu`.
+  Verified UnixFS storage, independent-browser WebRTC transfer/reseeding, and
+  actual Qwen3-0.6B / SmolVLM256M / SmolVLM500M / Qwen3.5-2B generation in managed NVIDIA
+  workers. All three vision models distinguish image inputs. Local demo-agent panels
+  add bounded scene context and explicitly applied typed actions. November3 user
+  steering adds the fully four-bit multimodal Qwen2B (now hardware verified) and
+  the exact 14.2GB GeoRefine27B GGUF. The GGUF passes full durable import, pinned
+  manifest verification and persistent reopen/ranges. A November3 follow-up
+  reproduced shader-f16 availability and correct worker FP16 arithmetic with an
+  isolated Dawn NVIDIA override; the earlier absence was a browser policy gate,
+  not a missing hardware capability. The authorized managed GGUF adapter now
+  runs pinned wllama3.8.1 inside the existing ComputeManager worker with bounded
+  CID reads. Qwen3.5-0.8B Q4_K_M passes actual GPU generation, arithmetic, warm
+  reuse, cancellation, unload and browser restart with its source blocked.
+  The exact27B also passes real generation, arithmetic and warm reuse with56
+  GPU layers on RTX5060Ti16GB, using bounded ranges from the verified Node store.
+  Cancellation uses acknowledged worker termination and releases residency.
+  Its full14GB browser peer transfer/persistence remain separate open gates.
+  Physical-host remote inference acceptance and the broader parent gates remain open. The September
+  baseline is historical.
+
+### Overall Roadmap Assessment - 2026-09-14 AKDT
+
+- Current survey: [project state and roadmap](reports/2026-09-14-project-state-survey.md).
+  The browser runtime, local compute, and EarthGrid/RoadVector implementation
+  are substantial. Original roadmap stages 1–2 are substantially implemented;
+  stage 3 (scale/self-organization) is partial, while much of stage 4's local
+  worker/WASM/WebGPU runtime already exists. General distributed placement and
+  scientifically validated multiscale coupling remain unfinished.
+- Fresh baseline: 873 passing tests and one failure across 11 commands.
+  The core staged Eshkol/ULG artifact test rejects mismatched tensor outputs
+  and 16 changed bytes versus 64 expected. Multiscale and all eight Earth/game
+  Node suites pass. Browser/network/chaos/headset evidence was not rerun.
+- Read older TODOs against the survey: topology IDs, snapshot sharding,
+  warm-delta publishing, scheduling, GPU-hub paths, and the Fano scaffold already
+  exist. General per-shard Yjs synchronization and measured resource-driven
+  clustering are still open; implemented primitives do not close those goals.
+- Recommended next core milestone: restore the reproducible handoff/network
+  baseline, then prove one measured, validated workload across LAN/WAN peers
+  with placement, peer-loss recovery, warm-state result admission, and NetViz
+  evidence. This assessment does not authorize or start that implementation.
+
+### Active Earth Platform And Motorcycle Roadmap - 2026-08-23 AKDT
+
+- Build `services/geodata`, a bounded generic real-data service for source
+  catalog/provenance plus local OpenStreetMap roads, buildings, and directed
+  road graphs. Use fixed upstreams, exact-origin CORS, strict bbox/body/feature
+  caps, coalesced caching, and explicit stale/unavailable states; do not create
+  a universal upstream proxy.
+- Extract the proven WXGlobe terrain/projection/material contracts into a
+  reusable `packages/geo-core` surface while keeping WXGlobe and all current
+  tests compatible.
+- Add `demos/earth`, a non-aviation Cesium Earth/GIS viewer with the current
+  NOAA/AWS terrain and parallel-ring style, official OSM Shortbread roads and
+  buildings, bounded local scene data, NOAA weather imagery descriptors,
+  visible provenance, geolocation, and manual fallback.
+- Add deterministic CPU-authoritative particle-rigid and motorcycle packages,
+  based on the useful rigid particle-cloud idea in WebGPUPhys Dynamics but
+  correcting its contact, torque, inertia, gyro, friction, capacity, joint,
+  road-collider, and determinism gaps.
+- Add a reusable WebXR input/UI package plus normalized desktop, mobile,
+  gamepad, and XR adapters. DOM overlay and XR layers remain optional; target
+  rays, grip models, handedness, `xr-standard`, state-edge detection, session
+  cleanup, and an in-scene UI fallback are required.
+- Add `demos/motorcycle`, a first/third-person location-based motorcycle game
+  over real OSM roads and real terrain with particle-component suspension,
+  wheels, tire grip, bright topo rendering, buildings, deterministic synthetic
+  traffic, desktop/mobile/WebXR play, and truthful telemetry/source status.
+- The exact architecture, safety/privacy/source contracts, hard limits, and
+  completion gates live in
+  `plan/branch/earth-platform-motorcycle-xr.md`. Keep the full end state active
+  until the backend, both demos, all reusable packages, production builds,
+  browser gates, and final completion audit are proven.
+
+### Earth Platform Implementation Snapshot - 2026-08-23 AKDT
+
+- `packages/geo-core`, `services/geodata`, `demos/earth`,
+  `demos/motorcycle`, `demos/shared/{physics,traffic,xr}`, and their production
+  outputs are implemented. WXGlobe consumes the shared terrain modules through
+  compatibility exports and retains its existing imagery-free behavior.
+- EarthGrid combines bounded NOAA/AWS terrain, official OSM Shortbread context,
+  capped local OSM roads/buildings, cadence-qualified nowCOAST imagery,
+  in-memory geolocation/fallback, and exact freshness/license provenance.
+- RoadVector runs a deterministic 120 Hz/12-iteration six-body particle bike,
+  hard suspension travel, tire/surface grip, translational/rotational CCD,
+  deterministic race gates/laps, lane/restriction-aware synthetic traffic with
+  14 physical collision cages, origin rebasing, and normalized desktop/mobile/
+  gamepad/WebXR input over real OSM roads and bounded AWS Terrarium terrain.
+- The reusable XR layer now owns application-defined actions, pointer lock,
+  multitouch, gamepad and `xr-standard` snapshots, controller/hand lifecycle,
+  haptics, session cleanup, first/third/XR view transforms, and terminal-style
+  in-scene controls. Automated Three r182 mocked-browser XR passes; a physical
+  headset run remains explicitly manual and is not represented as completed.
+- Final deterministic evidence is `229` passing Node tests plus the mocked XR
+  browser harness; fresh WXGlobe/EarthGrid/RoadVector builds; `44/44` static
+  release checks; a three-demo built-browser smoke; and a bounded live-source
+  gate covering Shortbread, Overpass, nowCOAST, ETOPO, and Terrarium.
+- Software implementation and local release evidence are complete. The remote
+  handoff remains externally blocked until Tailscale Serve is enabled for this
+  node; the verified loopback RoadVector/geodata candidate is intentionally
+  retained only for that handoff and no insecure HTTP URL will be advertised.
+  A coherent local `Add EarthGrid and RoadVector platform` commit records the
+  slice; it has not been pushed.
+
+### RoadVector Hemisphere/Presence Follow-up Snapshot - 2026-08-23 AKDT
+
+- Correct the shared rider-centric steering boundary so `A`/negative means a
+  physical left turn and `D`/positive means a physical right turn across
+  desktop, pointer, touch, gamepad, and XR inputs. Keep normalized adapter
+  semantics unchanged and prove the actuator/lean sign in physics and built
+  browser tests.
+- Start RoadVector in a separate north-up hemisphere scene using bounded AWS
+  Terrarium relief and an official Shortbread z5 5×5 regional major-road window.
+  Pause the local particle simulation until `RIDE THIS REGION`; make the
+  12,742 km overview-to-2,400 m local-to-one-meter transition explicit.
+- Integrate genuine PeerCompute player presence. Publish only a coarse 0.1°
+  cell after permitted browser/manual location selection, never publish the
+  automatic fallback, render verified remote peers in fixed red, cap at 64,
+  expire after 15 seconds, and keep relay/source failure nonfatal.
+- Preserve metric world geometry while correcting perception: 60° third-person
+  FOV, 4.8 m chase distance, lighter fog, an 8 m × 4.2 m portal separate from
+  the 14 m × 7 m crossing corridor, and full tire rolling radius in wheel
+  kinematics.
+- Retain the direct Tailnet-only HTTPS listener at
+  `https://100.68.165.52:5188/` with same-origin loopback geodata. This is the
+  user-selected IP-SAN development-certificate handoff and does not use
+  Tailscale Serve or Funnel.
+- Deterministic implementation evidence is now 241 Node tests plus the mocked
+  Chromium XR harness: geo-core 23, geodata 44, EarthGrid 27, WXGlobe 26,
+  shared XR 21, particle/motorcycle physics 33, traffic 12, and RoadVector 55.
+  Final rebuilt/static/combined browser results are recorded in
+  `plan/tests.md`; the real-headset matrix remains manual and NOT RUN.
+
+### RoadVector Federal-Highway/NURBS/Camera Snapshot - 2026-08-24 AKDT
+
+- RoadVector's Cesium overview now carries the official current USDOT/BTS
+  National Highway System snapshot from FHWA rather than pairing current
+  metadata with the obsolete 2014 NHPN vector tiles. The reproducible static
+  artifact retains the original federal metadata and derives 1,028 bounded
+  z0-z8 MVT tiles (2,468,431 bytes) from 492,005 source records / 491,545
+  retained active road records, including Alaska.
+- Globe clicks use Cesium terrain/ellipsoid picking and generation-safe request
+  ownership, and preserve the exact selected WGS84 point when requesting the
+  1,200/800/500 m local road ladder. The generalized FHWA layer remains display
+  context only. Empty-road selections stay in the
+  overview with an explicit error; coarse presence publishes only after a
+  playable load succeeds.
+- The local presentation is now sparse without changing physics scale: a 3.5%
+  transparent exact terrain mesh carries bounded exact degree-one NURBS
+  contour paths, while the bike renders two rational NURBS wheel loops, five
+  frame strokes, and six stick-rider strokes. Collision particles/contact
+  markers remain capped diagnostics behind `?physicsDebug=1`.
+- First-, damped third-, and stereo-XR camera placement now shares a terrain
+  floor. It samples the same exact terrain triangles in the immutable ENU
+  frame, remains correct after origin rebasing, keeps every eye at least 0.35 m
+  above the surface, and moves only the XR locomotion root rather than the
+  headset-tracked camera.
+- Final deterministic evidence is 259 passing Node tests plus the mocked
+  Chromium XR harness; fresh WXGlobe/EarthGrid/RoadVector builds; 44/44 static
+  release checks; combined built-browser smoke; and the bounded live-source
+  gate. Direct private HTTPS verification passed at EarthGrid
+  `https://100.68.165.52:5187/` and RoadVector
+  `https://100.68.165.52:5188/`, with same-origin APIs/Cesium assets and an
+  IP-SAN certificate. The physical-headset matrix remains manual and NOT RUN.
+
+### RoadVector Terrain Reliability Snapshot - 2026-08-24 AKDT
+
+- A private-browser diagnosis proved RoadVector itself, its HTTPS listener,
+  geodata API, FHWA artifact, and Shortbread source were healthy; indefinite
+  NOAA ETOPO root requests were preventing Cesium imagery requests and the
+  local ride load from settling.
+- RoadVector now uses AWS Terrarium for both scales. The overview is limited to
+  the complete z0–z3 pyramid (85 possible tiles), and the local render/physics
+  grid resamples no more than nine z12 source tiles. Local source work has a
+  10-second deadline and truthfully degrades to the existing derived plane on
+  timeout or source failure.
+- Current evidence: RoadVector `66/66`, production build, focused built-browser
+  smoke, and exact private HTTPS browser/ride/traffic-impact checks all pass.
+  The live app reached current terrain/FHWA/OSM state in roughly 4.5 seconds
+  with no browser error; no Tailscale Serve/Funnel was introduced.
+
+### EarthGrid Buffer-Geometry Completion Snapshot - 2026-08-24 AKDT
+
+- EarthGrid emits immutable Cesium `BufferPolygonCollection` and
+  `BufferPolylineCollection` snapshots for water, exact degree-one shoreline
+  NURBS, building wires, roads, and terrain contours. The ordinary base has
+  zero imagery layers and no canvas-painted glow/halo path; current NOAA
+  weather is the only optional raster layer.
+- Road precedence is physical. Global and local road segments use bounded
+  point and exact segment queries against the active water index, resolve the
+  maximum crossed flat display level, and apply a larger radial offset before
+  packing curved-world geometry.
+- Whole-world Shortbread detail is explicitly deferred below zoom 5. That
+  settled revision publishes deferred source counts with zero submitted GPU
+  buffers, while a regional camera atomically replaces it with presented
+  detailed geometry. Pre-Cesium ring/point caps prevent the global z0 ocean
+  topology from becoming an unbounded synchronous triangulation.
+- Readiness distinguishes deliberate empty/deferred revisions, detailed
+  post-render presentation, terminal source/cap failures, and transient scene
+  errors. No private Cesium render state is inspected.
+
+### Current Validation Snapshot - 2026-08-22 AKDT
+
+- WXGlobe is now a first-class standalone demo on port `5186`, selectively
+  ported from `origin/3drtma` without the retired RTMA/RAP/GRIB/weather-data
+  path. It uses modular vanilla ES modules and Cesium `1.144.0` under Vite.
+- The default terrain provider requests signed little-endian heightmaps from
+  NOAA's token-free `DEM_all` ImageServer, pinned to
+  `ETOPO_2022_v1_60s_surface`. Geographic z6 is the native-request cutoff; the
+  source covers both poles, land, and bathymetry at one arc-minute resolution.
+  NOAA cell centers are aligned to 257 endpoint posts, exact pole/dateline
+  samples and a bounded active-boundary cache prevent contour seams, and z6
+  tiles advertise no source children instead of triggering deferred retries.
+- An optional AWS Terrarium provider retains the useful branch decoder and
+  mixed-source z15 detail. Its UI and plan disclose the Web Mercator ±85.051°
+  coverage boundary and older ETOPO1 ocean source. It decodes a cached 3 × 3
+  tile halo into 257 dyadic posts so adjacent tile edges match exactly.
+- The default rendering contains zero imagery layers. Cesium composites an
+  opaque black globe with neon-green `ElevationContour` lines for positive and
+  negative elevations; interval, width, exaggeration, provider, and camera
+  presets are interactive in the retro terminal panel. Contours are suppressed
+  only on Cesium's zero-width skirt boundary so crack guards do not render as
+  false straight meridians.
+- Production output lives in `docs/wxglobe`, uses nested-path-safe copied
+  Cesium Workers/ThirdParty/Assets/Widgets plus license notices, and is linked
+  from the docs gallery with a post-fix browser screenshot. Bounded abortable
+  retries, fatal/degraded classification, provider-generation filtering, full
+  AWS composite attribution, and a NOAA→AWS-z15→NOAA browser gate are included.
+  This standalone work does not require PeerCompute networking or the chaos lab.
+
+- The current release slice makes browser-worker execution an explicit policy.
+  `ComputeManager` keeps its default optional-worker/inline-fallback behavior,
+  while `requireWorkers: true` requires a real worker-module `ready`
+  acknowledgement within a bounded timeout and rejects bootstrap, queued, and
+  active work with `ERR_COMPUTE_REQUIRED_WORKER_UNAVAILABLE` rather than
+  changing execution mode. `NodeKernel` forwards that policy and cleans up
+  partially initialized managers when required-worker admission fails.
+- Multiscale's custom worker now participates in that readiness contract. Its
+  production build has stable Rollup entries for
+  `quantumOrbitalGridTasks.js`, `quantumMaterialPotentialTasks.js`, and
+  `ulgRuntimeTasks.js`, matching the URLs returned by production solver
+  descriptors instead of leaving those document-relative imports as 404s.
+- The focused SneakyWoods/CubeChat repair is complete without a full chaos-lab
+  run. `StateManager.observeNamespace()` now follows the winning nested
+  `Y.Map` after concurrent namespace creation, removes keys that existed only
+  in a detached map, replays the winning snapshot, and detaches both root and
+  child observers on unsubscribe.
+- Deterministic StateManager regressions pass `8/8`; an adversarial 40-seed,
+  10,000-transition namespace stress check kept observer-backed caches equal to
+  the active Yjs namespace after writes, deletes, replacements, and one-way
+  synchronization.
+- Three clean, isolated two-page SneakyWoods runs passed fresh temporary
+  production builds against dynamic local Go relays, including both pages'
+  presence, canvas, simulated movement, and remote moved-position assertions.
+- CubeChat's application `RTCPeerConnection` paths now consume the loaded
+  `webrtc.iceServers` and `webrtc.rtcConfiguration` instead of hardcoding only
+  Google STUN. Three direct two-page runs passed the strengthened media,
+  movement, screen-share, bidirectional room-theme, and bidirectional room-
+  directory checks.
+- Forced relay-only CubeChat runs passed through test-owned coturn over both
+  TURN UDP and TURN TCP. Both pages reported connected/succeeded application
+  media pairs, `iceTransportPolicy=relay`, local and remote `relay` candidates,
+  and bidirectional bytes. This proves the configured TURN fallback for the
+  two-peer camera/audio/data path; it does not clear the separate live
+  four-peer production regression.
+- NodeKernel now recognizes provider-owned `yjs-sync-request` and
+  `yjs-sync-response` messages without duplicate handling or false unknown-
+  message warnings. After the release worker additions, the full PeerCompute
+  unit suite passed `204`, skipped one, and failed zero; Multiscale passed
+  `206/206`; backend/release checks passed `23/23`.
+- The final Node-24 root production build regenerated every demo and production
+  config pair. A release reachability audit covered 18 generated HTML entries,
+  83 reachable files, and 135 HTML/module/URL edges with zero broken
+  references; the Multiscale stable worker/task graph is closed and no longer
+  emits reachable source-tree imports.
+- Built-doc runtime smoke passed all nine harness demos, and a focused
+  CubeChat/SneakyWoods two-page run passed media, interaction, bidirectional
+  theme/directory state, presence, and movement against a test-owned relay.
+- The validated release is live from GitHub Pages commit `07e79766`. The
+  `secretworkshop.net` host was snapshotted before mutation, its stale anonymous
+  coturn default was replaced by fingerprinted long-term-credential
+  configuration aligned with the public runtime config, and only the split
+  `peercompute-coturn.service` was restarted; relay and nginx stayed active.
+- Public config/CORS, WSS, IPv4/IPv6 STUN, native authenticated TURN UDP/TCP,
+  independent Chrome relay-candidate gathering over UDP/TCP, and the focused
+  two-page CubeChat relay-only application-media gate now pass. Both pages used
+  succeeded relay/relay pairs with bidirectional bytes. The known four-peer
+  CubeChat regression and full chaos lab remain outside this proof.
+- Keep the prior full ordered-demo instability, live four-peer CubeChat media,
+  ULG handoff contract drift, and unrelated Multiscale/DaddyGo findings open;
+  they were not revalidated by this focused repair.
+
+### Prior Validation Snapshot - 2026-06-18 AKDT
+
+- The top-level README now includes a dated current capability map, validation
+  snapshot, known open breakages, expanded test matrix, updated project
+  structure, and branch-relevant roadmap.
+- Root node implementation planning now lives in `plan/root-node-todo.md`.
+  The planned service is a new Deno control-plane/root-authority sidecar for
+  orchestration, synchronization, and durable saved state; it is not a revival
+  of the legacy Deno relay or a replacement for browser `NodeKernel` peers.
+- ULG/demo regression sweep results are recorded in
+  `plan/reports/2026-06-18-ulg-demo-regression-report.md`.
+- Multiplayer interaction sweep results are recorded in
+  `plan/reports/2026-06-18-multiplayer-interaction-report.md`.
+- Keep these failures open before claiming this branch is demo-clean:
+  DaddyGo P2P fails after the full multi-demo runtime matrix, direct ULG
+  browser `Launch Magnetar` handoff does not reach Multiscale
+  `handoff-ready`, Multiscale visual smoke loses the appended NaCl pair in
+  packet state, live Multiscale remote placement fails with
+  `quorum-mismatch`, and the strengthened multiplayer runner still closes the
+  shared browser context when Hyperborea is followed by SneakyWoods.
+- Relay-backed ULG handoff passed against the local coturn/ICE configuration,
+  so the current breakage is not a blanket ULG artifact or service-envelope
+  failure. Individual strengthened multiplayer interaction checks pass for
+  CubeChat, Hyperborea, SneakyWoods, DaddyGo, and NetViz. WebGpuPhys browser
+  smokes now use a system Chrome executable when the matching Playwright
+  managed browser is absent.
+
 ### Completed:
+
 - libp2p-first browser stack (relay bootstrap + gossipsub, floodsub fallback, pubsubPeerDiscovery).
 - Yjs state sync via PeerComputeProvider (no y-libp2p dependency).
+- PeerComputeProvider initial Yjs state-vector sync for late peers: providers
+  now answer `yjs-sync-request` with encoded diff updates so a joining
+  StateManager can receive warm deltas it missed before joining.
+- StateManager namespace observer replacement safety: namespace consumers now
+  follow the active nested Yjs map when concurrent peers create competing maps,
+  receive stale-key removals plus a winning-map snapshot, and cleanly detach
+  both child and root observers on unsubscribe.
+- NodeKernel provider sync lifecycle hardening: `StateManager` exposes
+  `requestProviderSync()`, `NodeKernel.start()` requests provider sync after
+  network connect and retries briefly to survive relay/pubsub settlement, and
+  lifecycle timers can be cleared by network-only wrappers.
+- NodeKernel provider sync routing recognizes provider-owned
+  `yjs-sync-request` / `yjs-sync-response` messages without warning or applying
+  them a second time.
 - NetworkScheduler core with clock policy scaffolding.
 - cb time sync anchored to the first joiner.
 - Layered DataState wrapper (hot/warm/cold) with commit deltas and unit tests.
 - GPU hub scaffolding and warm delta provider hook.
 - ComputeManager runtime support for worker-safe WASM tasks, hybrid WASM+WebGPU tasks, and DataState commitDelta adapters.
+- ComputeManager/GPU resident lane stage-plan executor:
+  `GpuResidentLaneManager` now consumes resident lane contracts, derives
+  `peercompute.compute.gpu-resident-lane-stage-plan.v0`, can execute supplied
+  stage handlers under one active GPU resident lane lease, merges retained
+  refs, and returns stage plan/execution metadata in completed lane execution
+  envelopes. `ComputeManager` preserves ULG
+  `residentSequenceLaneContract` metadata in normalized lane requirements and
+  exposes `executeGpuResidentLaneStagePlan()` as the authority facade.
+- GPU resident lane dependency batches:
+  `GpuResidentLaneManager` can now normalize explicit stage dependencies,
+  preserve sequential fallback for older contracts, validate dependency ids,
+  execute dependency-ready batches, and report dependency mode, batch layout,
+  and max concurrent stage count. This gives ULG's law-stage DAG a real
+  ComputeManager-owned concurrency surface while keeping same-queue WebGPU
+  ordering and state-authority constraints explicit.
+- GPU resident lane state-family conflict batching:
+  ready stages are now batched only when their declared read/write families do
+  not conflict. Write/write, write/read, and read/write overlaps defer the
+  later ready stage into a later batch and are recorded in execution metadata.
+  This keeps concurrency under ComputeManager authority without inventing
+  implicit dataflow: stages still need `dependsOn` or `inputFrom` when they
+  require another stage's value.
+- ComputeManager GPU resident lane placement preflight:
+  `GpuResidentLaneManager` now exposes
+  `peercompute.compute.gpu-resident-lane-stage-placement-preflight.v0`, using
+  the same dependency-ready batching and read/write conflict policy as actual
+  execution before any stage handlers run. `ComputeManager` exposes the
+  authority facade through `preflightGpuResidentLaneStagePlacement()` and
+  `planGpuResidentLaneStagePlacement()`. The report records placement batches,
+  max concurrent stage count, conflict deferrals, executor sources, GPUHub
+  Worker policy status, missing executors, and worker-ready/fallback counts.
+  This gives ULG and later NodeKernel/peer placement a truthful concurrency
+  audit surface without claiming that one ordered WebGPU queue runs kernels out
+  of order or that remote GPU buffers are locally usable.
+- NodeKernel GPU resident stage placement authority preflight:
+  `NodeKernel.preflightGpuResidentLaneStagePlacement()` now wraps the local
+  ComputeManager preflight with
+  `peercompute.nodekernel.gpu-resident-stage-placement-preflight.v0`.
+  Local and advisory distributed requests can continue to local
+  ComputeManager preflight while recording NodeKernel placement authority.
+  Non-advisory distributed resident stage placement fails closed with
+  `ERR_NODEKERNEL_DISTRIBUTED_GPU_RESIDENT_STAGE_PLACEMENT_UNAVAILABLE`
+  until a real remote resident-stage placement executor exists. This mirrors
+  the task-graph placement contract for the narrower GPU resident lane stage
+  path.
+- NodeKernel GPU resident stage placement executor contract:
+  `peercompute.nodekernel.gpu-resident-stage-placement-executor-contract.v0`
+  now defines the first remote/dedicated resident-stage placement executor
+  gate. `NodeKernel` can register and resolve explicit/configured/registered
+  resident-stage placement executors, but reports non-advisory distributed
+  placement as ready only when the executor declares GPU resident stage
+  capability, metadata-only nonlocal retained refs, StateManager authority,
+  and cache admission requirements. Invalid contracts remain fail-closed with
+  the same distributed placement error and detailed contract failure reasons.
+  Local and advisory demo paths remain on the existing ComputeManager preflight
+  route; no remote GPU buffer is treated as locally usable.
+- NodeKernel GPU resident stage execution authority:
+  `NodeKernel.executeGpuResidentLaneStagePlan()` now wraps resident stage
+  execution with `peercompute.nodekernel.gpu-resident-stage-execution-authority.v0`.
+  Local and advisory placement executes through the local ComputeManager stage
+  plan path. Non-advisory distributed placement can call only a validated
+  resident-stage placement executor and sends
+  `peercompute.nodekernel.remote-gpu-resident-stage-execution-request.v0`.
+  Returned remote retained refs are recorded under
+  `peercompute.nodekernel.remote-gpu-resident-stage-execution-result-preflight.v0`
+  as received but not admitted, not locally usable, and requiring a local
+  hot-buffer refresh/admission follow-up before any state mutation is trusted.
+- NodeKernel remote GPU resident stage result metadata admission:
+  `peercompute.nodekernel.remote-gpu-resident-stage-result-admission.v0`
+  records remote resident-stage execution output into StateManager warm deltas
+  only as compact metadata. Admission requires a remote execution result
+  preflight, StateManager commit authority, allowed state-family checks, and a
+  compact/state-seed payload unless the caller explicitly permits
+  metadata-only admission. Remote retained refs remain nonlocal and a local
+  hot-buffer refresh is still required before they can affect local state.
+- NodeKernel local hot-buffer refresh from remote resident-stage admission:
+  `peercompute.nodekernel.remote-gpu-resident-stage-hot-buffer-refresh.v0`
+  rebuilds same-device hot refs from an admitted remote resident-stage
+  metadata record. The method reads or receives the admission record, requires
+  a local refresh executor, acquires a local ComputeManager GPU resident lane,
+  rejects blocked/no-ref executor output, and completes the lane only with
+  executor-returned local retained refs. Remote retained refs remain source
+  metadata and are never treated as local WebGPU leases.
+- GPUHub resident stage executor registry:
+  `GPUHubManager` can now register resident stage executors by stage id or
+  law node alias, expose descriptor summaries, and execute stages with GPUHub
+  device/hot-store context. `GpuResidentLaneManager.executeStagePlan()` can
+  resolve missing stage handlers through the attached GPUHub and records
+  `gpu-hub-resident-stage-executor` as the stage executor source. This moves
+  the next ULG mechanics stage-chain promotion behind a ComputeManager/GPUHub
+  owned registry boundary before dedicated WebGPU worker residency is added.
+- NodeKernel shared GPUHub lane authority:
+  when `NodeKernel` creates `GPUHubManager`, it now passes that same GPUHub
+  into `ComputeManager` so the resident lane manager resolves stage executors
+  against the NodeKernel-owned GPUHub rather than an unconnected manager-local
+  lane registry.
+- GPUHub resident stage worker policy:
+  GPUHub resident stage executor descriptors now carry
+  `peercompute.gpu.resident-stage-worker-policy.v0`. A stage can request
+  dedicated WebGPU worker residency with startup/TTL/same-device/copy policy,
+  while the descriptor truthfully reports `blocked-worker-backend-missing`
+  with an inline fallback until a worker-owned device/buffer backend exists.
+  `GpuResidentLaneManager.executeStagePlan()` includes that worker-residency
+  descriptor on per-stage results so ULG can validate fallback versus true
+  worker execution before claiming copy avoidance.
+- GPUHub resident stage worker backend adapter:
+  GPUHub resident stage executors can now attach a worker backend runner. When
+  present, the worker policy reports `worker-ready`, `executeResidentStage()`
+  invokes the backend runner instead of inline fallback, and lane stage results
+  carry the worker-ready residency descriptor. This is the adapter boundary for
+  supervised worker hosts; browser-spawned WebGPU worker device/buffer
+  ownership still remains the next backend implementation.
+- GPUHub resident stage Worker bridge:
+  `createResidentStageWorkerBackend()` now wraps Worker-like hosts with an
+  explicit `run-resident-stage` request and `resident-stage-result` /
+  `resident-stage-error` response protocol. The bridge keeps the worker warm,
+  correlates in-flight stage requests, exposes a public PeerCompute export, and
+  terminates the host on dispose. This proves the protocol boundary for
+  dedicated GPU/CPU resident law workers while still requiring the next step to
+  create worker-owned WebGPU devices and retained lane buffers.
+- ComputeManager native task-graph lifecycle primitive:
+  `peercompute.compute.task-graph-result.v0` now supports dependency-batched
+  graph execution, graph-level cache policy, placement policy, cooperative
+  cancellation, active-graph inspection, task-graph stats, and optional
+  graph-wide GPU resident lane leases. Cross-repo ULG validates this with the
+  mechanics P2G -> grid-update -> G2P stage DAG, including record-only
+  CPU-oracle cache metadata and a direct graph-wide GPU lane lease.
+- ComputeManager content-addressed task-graph cache inputs:
+  `peercompute.compute.task-graph-cache-inputs.v0` normalizes declared state
+  refs, closure refs, law ids, invalidation refs, retained-buffer refs, units,
+  stable values, and per-node cache inputs into a deterministic hash-backed
+  cache key when no explicit graph key is supplied. Cross-repo ULG validates
+  this through the mechanics stage DAG while keeping physics output
+  record-only.
+- ComputeManager task-graph cache artifacts:
+  `peercompute.compute.task-graph-cache-artifact.v0` and
+  `peercompute.compute.task-graph-cache-admission.v0` wrap graph cache writes
+  with result hash, input hash, invalidation refs, node result schemas, and
+  admission status. Read-through requires admitted artifacts by default; ULG
+  mechanics artifacts remain `recorded-not-admitted` until StateManager/
+  NodeKernel admission exists.
+- StateManager/NodeKernel task-graph cache artifact authority:
+  `peercompute.state.task-graph-cache-artifact-admission.v0` and
+  `peercompute.state.task-graph-cache-artifact-invalidation.v0` now record
+  CRDT-backed admission and invalidation decisions for task-graph cache
+  artifacts. `NodeKernel` exposes the authority facade, while
+  `ComputeManager` only marks local artifacts admitted after receiving that
+  authority record and drops read-through cache entries on invalidation.
+  Cross-repo ULG validates this with its mechanics native stage DAG.
+- NodeKernel task-graph authority wrapper:
+  `NodeKernel.submitTaskGraph()` now delegates native task graphs through the
+  node authority layer, stamps placement authority as `node-kernel`, and
+  annotates results with `peercompute.nodekernel.task-graph-authority.v0`.
+  Cross-repo ULG validates that the mechanics P2G -> grid-update -> G2P stage
+  chain uses this NodeKernel path when a real kernel is present, while
+  preserving direct ComputeManager submission as fallback.
+- NodeKernel task-graph placement preflight:
+  `peercompute.nodekernel.task-graph-placement-preflight.v0` now records local,
+  advisory-distributed, or blocked-distributed graph placement status.
+  Non-advisory distributed graph requests fail closed with
+  `ERR_NODEKERNEL_DISTRIBUTED_TASK_GRAPH_UNAVAILABLE` until a real distributed
+  graph executor exists.
+- NodeKernel remote task-graph transport first hop:
+  `peercompute.nodekernel.remote-task-graph-request.v0` and
+  `peercompute.nodekernel.remote-task-graph-result.v0` now reuse the existing
+  NodeKernel request/result network path for whole task graphs. Non-advisory
+  distributed graphs with an explicit target peer can resolve a
+  `network-task-graph:<peer>` executor, send `compute-task-graph`, execute on
+  the responder's `ComputeManager.submitTaskGraph()`, and return
+  `peercompute.nodekernel.remote-task-graph-placement-provenance.v0` without
+  falling back to requester-local graph execution. Distributed graph execution
+  still needs admitted artifact hashes, retained GPU lane refs, and
+  StateManager-authorized cache/result sharing before ULG physics can move
+  real resident workloads across peers by default.
+- NodeKernel remote task-graph cache-artifact admission preflight:
+  `peercompute.nodekernel.remote-task-graph-cache-artifact-preflight.v0`
+  now annotates remote graph results that carry cache artifacts. Remote
+  artifacts are received but not silently trusted by default; callers must set
+  an explicit admission option for NodeKernel to route the artifact through
+  StateManager cache-artifact admission. This creates the first authority
+  surface for distributed result/cache sharing without pretending remote
+  physics output is automatically safe to replay.
+- ComputeManager admitted remote task-graph cache import:
+  `peercompute.compute.remote-task-graph-cache-import.v0` now records admitted
+  remote graph results as local read-through cache entries only after
+  NodeKernel/StateManager admission. Subsequent local graph submissions with
+  the same admitted cache key can hit the imported result, while remote GPU
+  resident lane/buffer refs are preserved as metadata-only nonlocal refs rather
+  than treated as usable local device leases.
+- ComputeManager remote-import state seed policy report:
+  `peercompute.compute.remote-task-graph-state-seed-policy.v0` now lets callers
+  evaluate an admitted remote cache import before using it to seed local warm
+  state. The report requires an admitted remote import, checks declared state
+  families against the caller's allowed-family policy, preserves remote GPU
+  retained-buffer refs as nonlocal metadata, and reports when a local
+  hot-buffer refresh is required instead of claiming remote WebGPU buffers are
+  usable local leases.
+- NodeKernel remote-import warm-state seed authority:
+  `peercompute.nodekernel.remote-task-graph-state-seed-authority.v0` now records
+  an allowed imported remote graph result into StateManager warm state through
+  `NodeKernel.commitRemoteTaskGraphStateSeed()`. The method calls
+  ComputeManager's policy report, requires an allowed warm-state seed and a
+  compact state seed payload, commits only a CPU-friendly warm delta, and keeps
+  hot-buffer refresh as an explicit local follow-up when remote retained GPU
+  refs are nonlocal.
+- NodeKernel local hot-buffer refresh from remote seed:
+  `peercompute.nodekernel.remote-task-graph-hot-buffer-refresh.v0` now provides
+  the first local refresh executor surface after a remote warm-state seed is
+  committed. `NodeKernel.refreshRemoteTaskGraphHotBuffersFromSeed()` reads the
+  StateManager warm seed, acquires a local ComputeManager GPU resident lane
+  lease, invokes a local refresh executor, completes the local fence, and can
+  commit a refresh delta. Remote retained refs stay seed metadata; only
+  executor-returned local refs are retained on the local lane.
+- NodeKernel remote task-graph compact-candidate authority:
+  `peercompute.nodekernel.remote-task-graph-compact-candidate-authority.v0`
+  records admitted compact remote graph outputs in StateManager without
+  pretending remote retained GPU refs are usable local leases.
+  `NodeKernel.commitRemoteTaskGraphCompactCandidate()` evaluates the existing
+  remote-import state-family policy, requires an allowed compact candidate
+  with declared output families, commits a warm compact-candidate delta, and
+  reports `compact-candidate-local-refresh-required` until a local retained
+  lane refresh executor rebuilds same-device hot buffers.
+  `NodeKernel.refreshRemoteTaskGraphHotBuffersFromCompactCandidate()` now reads
+  that compact-candidate record, requires an explicit local compact refresh
+  executor, and only completes a local GPU lane lease with executor-returned
+  local refs. Executor results that block, fail, or return no local refs reject
+  the lane and do not commit a refresh delta.
 - Backend `pcserver.sh` launcher for relay + local TURN/STUN, with systemd wiring at the relay runlevel.
 - Production relay/demo config refresh: `npm run build` now emits GitHub Pages demo `relay-config-source.json` files that point at `https://secretworkshop.net/peercompute/config/relay-config.json`, and the live prod relay/TURN endpoints have been revalidated against `wss://secretworkshop.net/` and `secretworkshop.net:3478`.
 - Production relay runtime guard: `scripts/start-relay-prod.sh` and `scripts/install-relay-systemd.sh` now enforce Go when `RELAY_IMPL=go` so prod/systemd launchers fail closed instead of silently falling back to the Node relay.
@@ -36,6 +887,295 @@ The root node should exist on a domain secured with SSL enabling all executable 
 - NetViz topology observability upgrade: enlarged scene bounds/zoom, simultaneous P2P + IP overlay rendering controls, and richer node/edge inspection metadata (transport mode, relay/direct hints, bandwidth, address families, NAT hints).
 - NetViz chaos-feed P2P synthesis: watcher can now build/render swarm P2P topology from chaos-lab `probe_result` telemetry events (latest per-agent `localPeerId` + peer links) even when the observer browser itself is not directly peered.
 - Cross-demo NetViz attach/debug: NodeKernel now auto-publishes `telemetry:<peerId>` warm deltas for all demos, publishes active demo sessions on shared pubsub topic `peercompute-netviz-sessions`, and still mirrors same-origin session hints via BroadcastChannel so NetViz can attach to live demo topology+room without manual re-entry.
+- Schrodinger Materials Console initial scaffold: standalone Vite + vanilla JS + Three.js demo with hydrogenic orbital visualization, water/material property packets, browser WebGPU probability smoke, optional PeerCompute packet publication, docs output, and deterministic local tests.
+- Schrodinger Materials Console visual correction: water is now the default material-cell view with explicit H2O molecules (O + 2H + bonds), the viewport owns the central layout column, and orbital sampling uses stratified spherical jitter to reduce point-cloud grid clumping.
+- Schrodinger Materials Console bond visibility: molecule templates now emit packet-level `chemical.bondEvents` and render visible covalent/ionic bond cylinders plus a retro bond legend for water and reference molecules.
+- Schrodinger/materials planning pivot: the branch now targets solver-agnostic microphysics/closure outputs, including future free-energy/EOS, phase-fraction, species/reaction, uncertainty, provenance, and conservation-accounting contracts for multiscale physics consumers.
+- Schrodinger reactive atom sandbox: interactive `toy-reactive-atoms-v0` mode lets users set temperature, pressure, and gravity, add counted periodic-table elements, and observe heuristic real-time bonding/breakup for UI and state-flow validation.
+- Schrodinger radial eigensolver first pass: the standalone console and Multiscale orbital closure now include `peercompute.schrodinger.radial-finite-difference-eigensolver.v0`, a CPU-reference one-electron radial finite-difference Schrodinger solve using a tridiagonal shift-invert Hamiltonian for the active `n/l` state, with energy, analytic-error, residual, radial-node, and radius diagnostics.
+- Schrodinger WebGPU radial path: the standalone console and Multiscale executable `quantum-orbital-grid` worker now use `peercompute.schrodinger.radial-webgpu-eigensolver.v0` for the active radial Hamiltonian/basis evaluation, with WebGPU compute passes for radial sampling, Hamiltonian application, workgroup reductions, residual diagnostics, and no CPU fallback when WebGPU is unavailable. The older CPU finite-difference solve remains model-local validation scaffolding for baseline tests and diagnostic comparison.
+- Schrodinger WebGPU orbital-grid/cloud path: the standalone console now uses `peercompute.schrodinger.orbital-grid-webgpu.v0` for the active 3D orbital probability grid and point cloud, with WebGPU storage-buffer density evaluation, workgroup reductions, GPU normalization, WebGPU hash-importance point sampling, and explicit unavailable status rather than CPU fallback when WebGPU is unavailable.
+- Multiscale Ladder initial scaffold: WebGPU-first Vite + vanilla JS + Three.js demo with a zoomable supergalactic-to-orbital scale ladder, massively parallel WebGPU particle compute backend with CPU fallback, environment controls, proxy water/fire/weather/orbital layers, and explicit warm-delta packet readout.
+- Multiscale Ladder PeerCompute compute integration: the ladder particle backend now runs through `ComputeManager` module tasks with persistent worker-local WebGPU state when browser worker WebGPU is available, explicit PeerCompute execution telemetry in packets, and direct local fallback when task management fails.
+- Multiscale Ladder shared compute-manager pool: the demo now uses one `ComputeManager` to own the full worker pool, schedules affinity-keyed `PeerComputeLadderRuntime` shard tasks through it, commits worker CPU deltas back into `StateManager`/`DataState`, and aggregates active-layer snapshots from warm state.
+- Adaptive compute capacity first pass: `ComputeManager` now exposes resource profiles, min/target/max worker policies, worker resize controls, and workload-budget estimates; Multiscale Ladder consumes that budget for adaptive shard and particle counts with URL overrides for mobile/workstation/cluster testing.
+- Dynamic compute capacity resize first pass: `ComputeManager` now records revisioned worker resize telemetry/history and worker-bound workload budgets, while Multiscale Ladder publishes `peercompute.multiscale.compute-capacity-resize.v0`, calls `ScaleComputeOrchestrator.resizePool()` after worker target changes, reuses compatible shard runtimes, and surfaces compute-resize state in packets, runtime debug, readout rows, and visual smoke.
+- Manual worker resize hold first pass: manual/demo worker target changes now set a short autoscale hold in both `ComputeManager` and the Multiscale `AdaptiveRuntimeScaler`, so a user-visible `resizeComputeWorkers()` transition is not immediately reversed by queue-pressure scaling. Runtime debug, packets, and visual smoke expose the hold/cooldown state.
+- ComputeManager retained-worker demand revival first pass: managers with positive target worker counts now try to recreate retained/retired worker pools before dispatching new or queued work inline, while true worker failure still falls back inline to avoid repeated bad-worker loops.
+- ComputeManager module-worker bootstrap hardening: the default browser worker path now uses the checked-in module worker instead of a generated `data:` script, `workerBootstrapURL` / `computeWorkerBootstrapURL` can point production demos at stable bundled worker assets, and Multiscale NodeKernel responders pass that bootstrap through so live remote tasks execute on responder workers instead of falling back inline after production-bundle worker import failures.
+- Remote worker task-execution provenance first pass: `ComputeManager` return envelopes now include `peercompute.compute.task-execution.v0` for inline/worker completions, `NodeKernel` forwards responder execution metadata into remote placement provenance as `workerId` / `remoteExecution`, and the Multiscale live remote-placement smoke asserts both runtime cadence and explicit probe tasks complete on named responder workers.
+- PeerCompute service-orchestration slice first pass: core exports now include `ComputeServiceRegistry`, `ChildWorkerLeaseManager`, `WorkerSupervisor`, and `ComputeManagerServiceAdapter` as vanilla ES modules. The slice normalizes service manifests, resolves services by task kind/capability, grants bounded child-worker leases with root-task revocation, supervises worker-style service hosts without requiring a browser, and can host a service through an existing `ComputeManager` for headless tests and future ULG/Eshkol/MoonLab service integration.
+- PeerCompute resource lease broker first pass: service orchestration now exports
+  `ResourceLeaseBroker` with `peercompute.service.resource-lease.v0` leases and
+  `peercompute.service.resource-pressure.v0` telemetry. The broker tracks GPU
+  capacity, priority classes, render-priority preemption of lower-priority
+  preemptable work, TTL expiry, release/revocation by root task, device-lost
+  quarantine, retryable quarantine metadata, and pressure counters. `WorkerSupervisor`
+  now revokes resource leases during `cancelTree()` so root-task cancellation
+  cleans up GPU/resource claims immediately and updates completed/error task
+  telemetry with the broker's released lease status.
+- PeerCompute ULG dispatch resource-leasing path: Multiscale's live
+  `runUlgDispatchServiceAdapterProbe()` now creates a `ResourceLeaseBroker`,
+  submits each MoonLab/Eshkol dispatch with a typed
+  `peercompute.multiscale.ulg-dispatch-resource-request.v0` GPU lease, and
+  returns `peercompute.service.resource-pressure.v0` telemetry to relay smokes.
+  The adapter-enabled relay smoke now proves two accepted dispatches leave two
+  released leases, zero active leases, zero preemptions, and unchanged false
+  full-fidelity/full-physics flags.
+- PeerCompute ULG service fixture bridge first pass: `peercompute/tests/fixtures/ulgServiceFixtures.js` now carries local fixture-style Eshkol and MoonLab service manifests plus representative ULG law/quantum task capsules, with no runtime dependency on `/home/cos/projects/ulg`. `ComputeServiceRegistry` preserves manifest contract metadata, `WorkerSupervisor` telemetry now includes registry/service contract summaries, and the headless service-orchestration unit test registers both fixtures, submits representative tasks through stub hosts, exercises child-worker grant/release/revoke flow, and verifies ULG contract telemetry.
+- PeerCompute child-worker lease type preservation: `ChildWorkerLeaseManager` now records `workerType` as either `module` or `classic`, defaults omitted leases to module workers, rejects unsupported worker kinds, and `WorkerSupervisor` forwards service lease requests without dropping the type. This keeps ordinary PeerCompute child workers module-first while allowing ULG/MoonLab Emscripten-style classic worker probes to request the browser semantics they need.
+- PeerCompute ULG v0.5 adapter bridge first pass: `ulgManifestAdapter.js` exports `adaptUlgV05ComputeServiceManifest()`, `adaptUlgV05TaskCapsule()`, and `createUlgV05ArtifactResult()` so copied ULG `compute_service_manifest` and task capsule fixtures can register with `ComputeServiceRegistry`, submit through `WorkerSupervisor`, preserve `entry.serviceAssets`, normalize output artifact plans, and hand real artifact bodies to the supervisor `artifactCache` for `artifact://...` refs without importing `/home/cos/projects/ulg` at runtime.
+- PeerCompute ULG artifact summary bridge first pass: `createUlgV05ArtifactResult()` now emits `peercompute.ulg.artifact-summary.v0` beside each artifact ref, summarizing validation status, quantum response descriptor readiness, parity schema/status, comparison count, and unsupported parity modes such as the current MoonLab WebGPU comparison. This lets orchestration telemetry expose the useful ULG artifact state without fetching the full content-addressed artifact body.
+- PeerCompute ULG magnetar calibration summary bridge first pass: `peercompute.ulg.artifact-summary.v0` now also summarizes MoonLab `peercompute.ulg.magnetar-dipole-ising-calibration.v0` artifacts, including ready/pass state, parity status, ground-state bitstring, evaluated bitstring count, and max energy delta for downstream magnetar scenario orchestration.
+- PeerCompute ULG magnetar reference contract summary first pass: `peercompute.ulg.artifact-summary.v0` now also summarizes MoonLab `outputs.reference` contracts from `moonlab.magnetar-dipole-ising-reference.v0`, including ready/pass state, schema/role/hash, energy units, ground-state reference energy, energy tolerance, max observed energy delta, and validation status for downstream tolerance consumers without claiming full magnetar simulation readiness. Reference readiness requires a digest-shaped contract hash, normalized energy units, ground-state energy, numeric tolerance/delta fields, and delta within tolerance.
+- PeerCompute ULG Eshkol closure bundle summary bridge first pass: `peercompute.ulg.artifact-summary.v0` now summarizes staged Eshkol `wasm-reference` closure bundles with closure kind, module URL/hash, service-worker safety, dynamic-code flags, entry signature, start-section metadata, import/export counts, WASM metadata counts, bundle host-import metadata, and `closureReady` for orchestration without fetching full artifact bodies.
+- Multiscale magnetar scenario first pass: `demos/multiscale` now exposes `peercompute.multiscale.scenario-preset.v0` for an opt-in `magnetar` preset through the UI, `?scenario=magnetar`, and `window.__multiscaleDemo.applyScenarioPreset('magnetar')`. The preset records physical magnetar reference fields normalized into demo solver bounds, points at the MoonLab `magnetar-dipole-ising-calibration` handoff, seeds stellar-fusion, magnetosphere MHD, PIC plasma, radiation, Maxwell, and relativistic proxy state, and exposes scenario metadata/refinement requests in packets and runtime state without claiming calibrated astrophysical fidelity.
+- Multiscale magnetar calibration-ingest first pass: `peercompute.multiscale.scenario-calibration-ingest.v0` lets the magnetar scenario consume a PeerCompute/ULG artifact summary, mark the MoonLab dipole Ising handoff as ready in scenario state and boundary conditions, and keep `simulationStatus: "proxy-only"` until the larger physics validation gates pass.
+- Multiscale magnetar closure-ingest first pass: `peercompute.multiscale.scenario-closure-ingest.v0` lets the magnetar scenario consume staged Eshkol closure bundle summaries, mark `wasm-reference` closure handoffs ready in scenario state and packet boundary conditions, preserve entry signature/start-section/import/export/host-import metadata, and keep `simulationStatus: "proxy-only"` until the closure is physically validated and executed.
+- Multiscale magnetar handoff-readiness first pass: `peercompute.multiscale.scenario-handoff-readiness.v0` combines MoonLab calibration ingest and Eshkol closure ingest into one scenario manifest, exposes handoff-ready/scientific-ready flags plus blocker counts in packet boundary conditions and the HUD scenario row, and keeps `scientificReady: false` with explicit blockers for host imports, unexecuted Eshkol closure integration, calibrated MHD/PIC/radiation/relativity references, and scientific tolerance coverage.
+- Multiscale Eshkol closure module-probe first pass: `peercompute.multiscale.scenario-closure-module-probe.v0` accepts full Eshkol closure artifacts plus transferred WASM bytes, compiles the module with `WebAssembly.Module`, compares observed imports/exports against the artifact metadata, records `main` entry-export availability, and exposes module-probe readiness in scenario state, packet boundary conditions, browser API, and the HUD. The optional nested `peercompute.multiscale.scenario-closure-host-runtime-probe.v0` path is a start-section-guarded dry instantiate with inert host stubs and no `main` call. The nested `peercompute.multiscale.scenario-closure-host-runtime-execution.v0` path uses DOM-free Eshkol host imports to invoke `main(0, 0)`, capture runtime output/import calls, clear only the host-runtime-required blocker, and keep `scientificReady: false` with the explicit `eshkol-closure-output-semantics-unvalidated` blocker. `executeUlgClosureArtifactForScenario()` now joins full ULG closure artifacts, optional bundle manifests, validation status, and transferred WASM bytes into one summary-ingest-plus-execution handoff path, avoiding mixed-content fetches from the HTTPS Multiscale page.
+- PeerCompute ULG demo handoff packet adapter first pass: `normalizeUlgDemoHandoff()` and `normalizeUlgDemoHandoffArtifact()` now normalize ULG browser `peercompute.ulg.demo-handoff.v0` packets into `peercompute.ulg.demo-handoff-adapter.v0`, classify MoonLab magnetar calibration artifacts, Eshkol closure artifacts, transferred closure WASM bytes, and explicit blockers. Multiscale exposes `window.__multiscaleDemo.applyUlgDemoHandoffForScenario()` / `ingestUlgDemoHandoffForScenario()` so the whole ULG packet can drive calibration ingest plus Eshkol closure execution without a manual per-artifact bridge.
+- PeerCompute ULG simulation artifact operator-summary bridge first pass: ULG `peercompute.ulg.simulation-artifact.v0` summaries now preserve compact-delta `peercompute.ulg.edge-message-summary.v0` status/count/residual/out-of-range fields, `peercompute.ulg.field-observer-summary.v0` observed-field/zero-weight/neighbor/weight fields, and `peercompute.ulg.field-closure-sample-summary.v0` closure table sample counts, input/output bounds, derivative bounds, and validation flags through the service-orchestration handoff adapter, Multiscale `peercompute.multiscale.ulg-simulation-artifact-summary.v0`, packet aggregate state, ULG spec-contract handoffs, the magnetar affordance, and the `ulg sim edge` / `ulg sim field` / `ulg sim closure` HUD rows. The evidence remains runtime/operator scoped and does not clear scientific runtime, material-property/phase-change, EOS, SPH/material, or full-physics readiness for CPU-reference `carrier-toy` artifacts.
+- PeerCompute ULG handoff transfer-manifest first pass: normalized ULG demo handoff artifacts now carry `peercompute.ulg.handoff-transfer-manifest.v0` metadata with artifact ref/content hashes, transferred closure WASM byte length, declared module SHA-256, source URL, transfer mode, relay-safe state, and transfer blockers. Aggregate handoffs expose transfer-ready status and blocker lists so future relay-safe transfer paths can reason about bytes and hashes without promoting magnetar scientific readiness.
+- PeerCompute ULG handoff service-envelope first pass: `createUlgHandoffServiceEnvelope()` / `normalizeUlgHandoffServiceEnvelope()` wrap normalized ULG demo handoffs into `peercompute.ulg.handoff-service-envelope.v0` for service-facing relay. The envelope preserves the normalized handoff and transfer manifest, publishes per-artifact content-addressed refs, relay-safe counts, ready counts, provenance/source metadata, and blocker lists, and is exported from the PeerCompute package plus `window.__multiscaleDemo.createUlgHandoffServiceEnvelope()`. `applyUlgDemoHandoffForScenario()` now returns the envelope beside the scenario ingest result.
+- PeerCompute ULG handoff service-host first pass: `UlgHandoffServiceHost` and `createUlgHandoffServiceManifest()` provide a headless WorkerSupervisor-compatible host for `peercompute.ulg.handoff-service-task.v0`. The host accepts raw ULG demo handoffs or prebuilt service envelopes, normalizes them into durable relay envelopes, returns `peercompute.ulg.handoff-service-result.v0`, and lets the supervisor store the envelope artifact in its artifact cache.
+- PeerCompute ULG handoff service-dispatch first pass: `createUlgHandoffServiceDispatchPlan()` and `UlgHandoffServiceHost` now derive `peercompute.ulg.handoff-service-dispatch-plan.v0` from durable envelope artifact refs, map MoonLab quantum-response refs to `moonlab.ulg.quantum-response.ingest`, map Eshkol closure refs to `eshkol.ulg.closure-artifact.ingest` or descriptor-bind tasks, preserve relay-safe/content-addressed/WASM-transfer metadata per dispatch, and optionally execute those dispatches through an injected service executor while defaulting to deterministic non-execution.
+- PeerCompute ULG handoff supervisor-executor first pass: `createUlgHandoffSupervisorServiceExecutor()` now lets a handoff host submit dispatch tasks to registered MoonLab/Eshkol service hosts through `WorkerSupervisor`, preserving the nested service task/result and child-lease-backed fixture execution inside `peercompute.ulg.handoff-service-dispatch-result.v0`.
+- PeerCompute ULG dispatch artifact-payload first pass: supervisor-submitted handoff dispatch tasks now include `peercompute.ulg.handoff-dispatch-artifact-payload.v0`, preserving the full normalized artifact body, artifact summary, bundle metadata, validation status, and transferred Eshkol WASM bytes for registered service adapters while the dispatch plan remains lightweight and relay/ref oriented.
+- PeerCompute ULG dispatch service-adapter first pass: `UlgDispatchServiceHost` plus MoonLab/Eshkol manifest helpers now provide exported WorkerSupervisor-compatible service adapters for `moonlab.ulg.quantum-response.ingest`, `eshkol.ulg.closure-artifact.ingest`, and descriptor-bind dispatches. The adapters validate `peercompute.ulg.handoff-dispatch-artifact-payload.v0`, preserve payload summaries/bodies/WASM bytes, request a supervised child lease when configured, and cache typed dispatch acceptance artifacts without claiming new scientific execution.
+- PeerCompute ULG dispatch adapter-probe first pass: dispatch adapters now run source-specific payload probes behind the same service contract. MoonLab records quantum-response calibration/reference readiness from the materialized artifact, while Eshkol compiles complete transferred WASM modules with `WebAssembly.compile()`, records import/export counts and `main` export presence, treats short `\0asm` unit fixtures as non-blocking probe skips, and still avoids claiming descriptor scientific validation.
+- Multiscale ULG dispatch adapter-worker first pass: `demos/multiscale` now builds browser module-worker shims for the exported MoonLab/Eshkol dispatch adapters and exposes `window.__multiscaleDemo.runUlgDispatchServiceAdapterProbe()` / `executeUlgHandoffDispatchServices()`. The live VPN path can export a ULG handoff from `5173`, run both dispatches through adapter Workers on `5185`, cache nested dispatch artifacts, preserve Eshkol transferred WASM bytes, and report `dispatch-adapters-ready` without promoting beyond the reduced calibrated runtime boundary. The relay-served docs path resolves those dispatch workers to stable bundled `assets/ulgMoonLabDispatchServiceHost.js` / `assets/ulgEshkolDispatchServiceHost.js` entries instead of raw hashed source assets, so `ULG_RELAY_HANDOFF_RUN_DISPATCH=1 npm --prefix demos/multiscale run test:ulg-relay-handoff` can complete both adapter dispatches over the relay-backed popup. The probe also supports compact raw-result omission plus stage/supervisor diagnostics so relay/browser harnesses can validate service summaries without structured-cloning materialized artifact bodies back through the popup.
+- PeerCompute ULG dispatch service-summary first pass: `createUlgHandoffSupervisorServiceExecutor()` now attaches compact `peercompute.ulg.handoff-supervisor-service-summary.v0` records beside each nested dispatch service result, and Multiscale `runUlgDispatchServiceAdapterProbe()` exposes top-level `peercompute.multiscale.ulg-dispatch-service-result-summary.v0` entries. The summaries surface MoonLab reference readiness plus Eshkol descriptor tensor-contract counts/matches, product-topology metadata binding, explicit tensor-runtime contract hash/ABI/execution-claim/sample-shape gates, runtime declared-not-executed status, dry runtime, gated smoke execution, and output-semantics validation status without copying raw artifact bodies, copying transferred WASM bytes, or promoting descriptor metadata to scientific execution.
+- PeerCompute ULG Eshkol tensor-runtime candidate first pass: the Eshkol dispatch adapter now recognizes deterministic tensor-offset runtime-smoke contracts from live ULG handoffs, instantiates the transferred WASM bytes with deterministic `f64` tensor-memory host imports, invokes the declared entry export with declared input byte offsets, verifies declared output tensors plus changed bytes in the tensor range, records `peercompute.ulg.eshkol-tensor-runtime-candidate-probe.v0` evidence, and keeps `productionHandlerBoundary.handlerReady`, `runtimeExecution`, `scientificValidation`, and `fullPhysicsValidation` false.
+- PeerCompute ULG Eshkol production dispatch preflight first pass: artifact summaries, dispatch adapter ingest, handoff supervisor summaries, Multiscale scenario readiness, module probes, and packet boundary conditions now preserve `eshkol.ulg.production-handler-dispatch-preflight.v0` plus production-host candidate requirements. The path keeps deterministic runtime-smoke stubs rejected for production dispatch, preserves the required production runtime ABI and blockers, and keeps production handler/runtime/full-physics readiness false.
+- PeerCompute ULG Eshkol production-candidate runtime probe handoff: artifact summaries, dispatch adapter ingest, handoff supervisor summaries, Multiscale scenario readiness, browser handoff smokes, relay dispatch smokes, and packet boundary conditions now preserve `eshkol.ulg.production-candidate-runtime-probe.v0` evidence from the production handler boundary. The probe records production-candidate host-import execution as smoke-only (`production-candidate-runtime-smoke-passed`), changed bytes `64`, tensor outputs produced, host import call counts `ulg_read_f64 = 12` / `ulg_write_f64 = 9`, and false production/science/full-physics flags.
+- PeerCompute ULG Eshkol service-worker host-import import handoff: artifact summaries, dispatch adapter ingest, handoff supervisor summaries, Multiscale closure ingest, scenario readiness, packet boundary conditions, browser handoff smoke, and relay dispatch smoke now preserve ULG's imported host-import JS module/factory proof: `closureHostImportsModule`, asset status `ready`, factory status `ready`, factory readiness, requirements schema/status, runtime scope `production-candidate-host-imports`, implementation status `production-candidate-runtime-imports-present`, and required non-stub import count `23`. This is runtime import availability evidence only; production handler/runtime/full-physics readiness remains blocked.
+- PeerCompute ULG Eshkol computed dispatch preflight evidence: artifact summaries, dispatch adapter ingest, handoff supervisor summaries, Multiscale scenario readiness, browser handoff smokes, and packet boundary conditions now preserve Eshkol's computed `checkResults` and `eshkol.ulg.production-handler-dispatch-preflight-check-summary.v0` counts/lists. The path records ten checks, nine passed checks, and one blocked check after production handler implementation/runtime-smoke evidence landed, without promoting full-physics readiness.
+- PeerCompute ULG Eshkol production handler runtime-smoke handoff: artifact summaries, dispatch adapter ingest, handoff supervisor summaries, Multiscale closure ingest, scenario readiness, browser handoff smoke, relay dispatch smoke, packet boundary conditions, and the relay-served docs bundle now preserve `eshkol.ulg.production-handler-implementation.v0` and `eshkol.ulg.production-handler-runtime-execution.v0`. The boundary status is `production-handler-runtime-smoke-executed`, `handlerReady = true`, `runtimeExecution = true`, deterministic entry args are `[131072, 131136]`, `entryResult = 0`, changed bytes are still constrained to the declared tensor range, output tensors are recorded as produced, and all science/full-physics/full-fidelity magnetar flags remain false with `full-physics-validation-not-run` as the remaining blocker.
+- PeerCompute ULG Eshkol full-physics validation requirements handoff: artifact summaries, dispatch adapter ingest, handoff supervisor summaries, Multiscale closure ingest, scenario readiness, module-probe summaries, browser handoff smoke, relay dispatch smoke, packet boundary conditions, and the relay-served docs bundle now preserve `eshkol.ulg.full-physics-validation-requirements.v0`. The required runtime evidence families are `magnetosphere-mhd`, `pic-kinetic-plasma`, `radiation-transport`, `relativistic-correction`, and `cross-family-conservation-coupling`, with required hash fields `referenceHash`, `toleranceHash`, `runtimeOutputHash`, and `evidenceHash`. The path keeps `declared-not-run`, `ready = false`, and `full-physics-validation-not-run` explicit instead of treating runtime smoke or reduced calibrated evidence as full-fidelity magnetar validation.
+- PeerCompute/Multiscale full-physics validation compatibility report: `peercompute.multiscale.scenario-full-physics-validation-compatibility.v0` now compares Eshkol's declared full-physics requirements against Multiscale runtime-evidence manifests. Handoff readiness and packet boundary conditions distinguish missing runtime evidence, bounded proxy-only evidence, hash/schema/scope drift, and hash-complete validated reduced runtime evidence. The live ULG handoff and relay-served docs bundle report all five required families matched/validated/hash-complete with `runtimeEvidenceCompatible = true`, but keep `ready = false` and `full-physics-validation-not-run` because Eshkol still declares `declared-not-run`.
+- PeerCompute MoonLab WebGPU complex64 parity-scope summary first pass: ULG artifact summaries, MoonLab dispatch probes/ingest summaries, handoff supervisor summaries, Multiscale scenario calibration ingest, handoff readiness, packet boundary conditions, and browser handoff smokes now surface `moonlab.webgpu.complex64-parity-scope.v0` evidence when it appears in a MoonLab artifact. The receiver accepts both the legacy no-backend blocked form and the current `scope-ready-backend-detected` reduced browser WebGPU form, but still requires `fullFidelityMagnetarSimulation = false` and `fullPhysicsValidation = false` and does not feed the scientific runtime gate.
+- PeerCompute ULG Eshkol interpolation-table fixture first pass: descriptor probes
+  now accept the explicit non-scientific `computed-fixture` table status only
+  when schema, fixture scope, sample ids/count, payload hash, and
+  `scientificValidation = false` line up. Service summaries expose table
+  status/count/hash while a negative unit test blocks scientific overclaims.
+- Multiscale ULG handoff service-dispatch API first pass: `window.__multiscaleDemo.applyUlgDemoHandoffForScenario()` now returns `serviceDispatchPlan` beside the service envelope, and `window.__multiscaleDemo.createUlgHandoffServiceDispatchPlan()` exposes direct browser inspection of the derived MoonLab/Eshkol dispatch tasks from a live ULG handoff.
+- Multiscale ULG handoff transfer-manifest ingest first pass: `peercompute.multiscale.scenario-transfer-manifest.v0` now records the normalized ULG transfer manifest inside the magnetar scenario, summarizes relay-safe artifacts and transferred WASM byte counts through handoff readiness, exposes `scenarioHandoffTransfer*` packet boundary fields plus the HUD transfer status, and still keeps scientific readiness governed by the calibrated-reference/tolerance gates.
+- Multiscale magnetar scientific runtime gate first pass: `peercompute.multiscale.scenario-scientific-runtime-gate.v0` now makes the proxy-runtime blocker explicit. It reports whether handoffs, transferred bytes, closure execution/output smoke validation, and tolerance-suite prerequisites are ready, then keeps `scientificReady: false` with `proxy-runtime-not-scientific` until validated MHD/PIC/radiation/relativity runtime solver evidence is attached.
+- Multiscale magnetar runtime evidence manifest first pass: `peercompute.multiscale.scenario-runtime-evidence-manifest.v0` now inventories runtime evidence for magnetosphere MHD, PIC kinetic plasma, radiation transport, relativistic correction, and cross-family conservation/coupling validation. Current live magnetar state can report four observed reduced proxy solver families plus one missing cross-family validation artifact, but the scientific runtime gate remains blocked until all entries are validated. External manifests now require `sha256:` evidence hashes and reject unknown or duplicate evidence entries as invalid. The magnetosphere-MHD, PIC kinetic-plasma, radiation-transport, relativistic-correction, and cross-family conservation/coupling families also have `peercompute.multiscale.magnetosphere-mhd.runtime-validation.v0`, `peercompute.multiscale.pic-kinetic-plasma.runtime-validation.v0`, `peercompute.multiscale.radiation-transport.runtime-validation.v0`, `peercompute.multiscale.relativistic-correction.runtime-validation.v0`, and `peercompute.multiscale.cross-family-conservation-coupling.runtime-validation.v0`, bounded proxy validation artifacts with deterministic evidence hashes, preserved validation schema/scope, and explicit `scientificExecution: false` so they improve runtime provenance without promoting magnetar scientific readiness. Validated scientific runtime entries now also require `peercompute.multiscale.scenario-scientific-runtime-validation.v0` with the magnetar scientific runtime validation scope plus reference, tolerance, runtime-output, and evidence hashes; incomplete scientific entries report `runtime-evidence-incomplete` instead of clearing the gate. The live browser API now exposes `createScenarioBoundedProxyRuntimeEvidenceManifest()` and `refreshScenarioBoundedProxyRuntimeEvidence()` so the `5185` demo can generate all five hash-bearing bounded proxy artifacts from the current magnetar state, report `observedCount: 5`, `proxyOnlyCount: 5`, `missingCount: 0`, and still keep the scientific runtime gate blocked. The live browser API also exposes `createScenarioCalibratedRuntimeEvidenceManifest()` and `refreshScenarioCalibratedRuntimeEvidence()` to validate the four reduced solver-family runtime entries against MoonLab calibrated reference contracts and derive reduced cross-family conservation/coupling validation from packet telemetry, producing scientific-validation hashes, `validatedCount: 5`, `runtime-evidence-ready`, and `scientific-runtime-ready` for the reduced calibrated magnetar runtime while remaining explicit that this is not full-fidelity GRMHD, production PIC, or spectral radiation transport.
+- Multiscale magnetar runtime evidence requirements boundary: `peercompute.multiscale.scenario-runtime-evidence-requirements.v0` now publishes the producer-facing contract for the five validated magnetar runtime artifacts. `MultiscaleModel.getScenarioRuntimeEvidenceRequirements()`, `window.__multiscaleDemo.getScenarioRuntimeEvidenceRequirements()`, and `getState().scenarioRuntimeEvidenceRequirements` expose the required entry ids, family/solver match keys, the scientific validation schema/scope, and required `sha256:` evidence/reference/tolerance/runtime-output hash fields while leaving proxy-only evidence blocked from scientific readiness.
+- PeerCompute/Multiscale Eshkol closure output-semantics validation first pass: ULG artifact summaries now carry staged Eshkol `validation.outputSemantics` smoke-fixture fields through PeerCompute normalization for both the small `hello` fixture and the default magnetar descriptor fixture. Multiscale validates executed `main(0, 0)` result/stdout against the declared hash, byte length, entry export, entry args, and expected result, clears only `eshkol-closure-output-semantics-unvalidated`, and keeps `scientificReady: false` with calibrated-reference, tolerance, and scientific-runtime blockers.
+- PeerCompute/Multiscale descriptor-smoke scenario ingestion first pass:
+  `applyUlgDemoHandoffForScenario()` now executes descriptor closures only when
+  transferred WASM bytes and explicit output semantics are present, preserving
+  descriptor readiness while keeping the scenario blocked on
+  `proxy-runtime-not-scientific`.
+- PeerCompute/Multiscale Eshkol descriptor-only closure first pass: ULG artifact summaries now also carry `validation.closureDescriptor` metadata for `eshkol.ulg.magnetar-closure-descriptor.v0` fixtures. Descriptor-only closures can be accepted as ready descriptor/probe handoffs with or without transferred WASM bytes, preserve any transferred bytes in the transfer manifest, avoid host-runtime/output-smoke claims, accept only guarded non-scientific table fixtures, and keep scientific runtime readiness blocked on validated solver evidence while recording `scientificValidation: false`.
+- PeerCompute/Multiscale MoonLab magnetar reference inventory first pass: Multiscale now consumes PeerCompute-normalized `magnetarReference*` fields from the ULG MoonLab `outputs.reference` contract, exposes `referenceInventory` plus packet/HUD reference status, clears only `moonlab-magnetar-dipole-ising-reference-contract-missing` when the digest-shaped normalized Ising tolerance contract is complete, and keeps calibrated MHD/PIC/radiation/relativity references plus scientific tolerance coverage blocked.
+- Multiscale magnetar scientific tolerance-suite manifest first pass: `peercompute.multiscale.scenario-scientific-tolerance-suite.v0` now enumerates the MoonLab dipole Ising tolerance input plus the missing MHD, PIC, radiation, and relativity calibrated tolerance families, exposes partial/ready/missing counts through handoff readiness, packet boundary conditions, and the HUD, and keeps `scientific-tolerance-suite-missing` blocked until all entries have scientific coverage.
+- PeerCompute/Multiscale calibrated magnetar reference inventory first pass: `peercompute.ulg.artifact-summary.v0` summarizes ULG `outputs.references[]` calibrated reference entries with family, solver id, schema/role, digest-shaped contract and units hashes, field maps, field tolerances, observed deltas, validation status, ready, and `scientificCoverage` flags. The live ULG bridge now supplies one scoped analytic `magnetosphere-mhd` dipole-field reference that Multiscale counts as ready/scientific while keeping PIC/radiation/relativity plus full MHD/force-free coverage blocked. Multiscale clears `calibrated-mhd-pic-radiation-relativity-reference-missing` and `scientific-tolerance-suite-missing` only when all four calibrated families are ready with scientific coverage, and still keeps scenario `scientificReady: false` until the proxy-only runtime is replaced by scientific execution.
+- Resource capacity envelope first pass: `ComputeManager` now tracks memory/GPU budget hints plus WebGPU adapter limits, emits `peercompute.compute.capacity-budget.v0` inside workload budgets, and Multiscale uses that capacity scale to size ladder particles plus solver body/grid/sample counts. Explicit particle overrides are clamped to the manager's effective worker/memory/GPU item ceiling, and browser smoke observes adapter limits plus capacity-scaled workstation sizes instead of fixed tier-only defaults.
+- Compute-capacity particle carry-forward/audit/correction first pass: when worker/memory/GPU capacity changes alter ladder particle counts, `ScaleComputeOrchestrator.resizePool()` now seeds replacement shard workers from prior live particle records where available and compact snapshot positions otherwise, applies a first-pass velocity correction for aggregate momentum and kinetic-energy proxy residuals, reports `carriedForwardShardCount` / `carriedForwardRecordShardCount` plus particle-resize audit/correction summaries, and browser smoke verifies the particle-count-changing resize does not cold-start every scale shard or silently hide residuals.
+- Compute resize correction HUD first pass: Multiscale Ladder now renders particle-resize correction summaries as a compact `resize corr` row in both the active-layer readout and `peercompute.multiscale.runtime-debug.v0`, so before/after momentum and kinetic-energy proxy residuals are visible without opening state payloads.
+- Compute resize mass-proxy first pass: particle-resize audits/corrections now treat record float 7 (`scale`) as a mass proxy for resize telemetry, making centroid, momentum, and kinetic-energy proxy residuals scale-weighted and exposing `record-scale` / `scale-weighted` modes plus mass-proxy deltas through state, HUD, runtime debug, tests, and visual smoke.
+- Compute resize mass-proxy conservation first pass: particle-count resize correction now redistributes record float 7 across rebuilt records to preserve total record-scale mass proxy before the velocity projection, with before/after mass residuals, `massConservedShardCount`, and `all-record-scale` mode exposed through state, HUD, runtime debug, tests, and visual smoke.
+- Compute resize conservation-audit embedding first pass: `peercompute.multiscale.conservation-audit.v0` can now embed `peercompute.multiscale.compute-resize-conservation.v0` from the latest capacity resize, carrying record-scale mass, momentum, and kinetic before/after residuals into packets and `multiscale-conservation` warm deltas.
+- ComputeManager runtime stats first pass: `ComputeManager` now emits `peercompute.compute.manager-stats.v0` with submitted/completed/failed task counts, inline vs worker completions, per-runtime buckets, per-task-family buckets, average/min/max/last task duration, active/queued task counts, and current load. Multiscale Ladder surfaces those stats in `getState()`, the active readout, and visual smoke, including a `manager families` readout for the busiest law/shard task families; the adaptive runtime scaler can use manager load/duration pressure for worker/workload decisions.
+- ComputeManager worker-utilization first pass: manager stats now embed `peercompute.compute.worker-utilization.v0` with stable local worker IDs, an inline executor bucket, active task counts, per-executor runtime/task-family counters, retired-worker markers, and a busiest-executor summary. Multiscale Ladder exposes the report through `getState().workerUtilization`, runtime debug, NetViz metadata, and a `worker util` readout row without changing scheduling behavior.
+- Adaptive solver capacity first pass: Multiscale Ladder now derives executable solver body/grid/particle sizes and per-solver cadence from the same resource profile/override path, including `nbodyBodies`, `maxwellGrid`, `cosmologySamples`, `hydroGrid`, `radiationGrid`, `combustionGrid`, `sphParticles`, `solverCadence`, and per-solver cadence query overrides. Default profiles are scale-separated so cosmology, relativity, stellar, MHD, radiation, and hydro fields update more slowly than tight local molecular/SPH/material layers unless explicitly overridden.
+- Runtime solver-governor first pass: Multiscale Ladder samples frame/task pressure and dynamically raises or lowers executable solver cadence around the budget baseline. The current `scale-aware-multirate-v0` policy backs off coarse/field solvers more aggressively under pressure while preserving lower-latency molecular, SPH, membrane, and combustion loops where possible; the companion `active-layer-priority-v0` policy maps solver families to scale layers and multiplies effective cadence for distant inactive layers while immediately refreshing solvers when their layer becomes active. `peercompute.multiscale.lower-scale-refinement.v0` now adds an `event-sampled-current-view-v0` scheduler that lets rupture/fire/chemistry/weather/plasma/cosmology events trigger targeted lower-scale solver runs while rotating background spot checks only when the frame budget allows.
+- Render-budget performance first pass: Multiscale Ladder now publishes `peercompute.multiscale.render-budget.v0`; focus mode skips hidden inactive-scale overlay buffer rebuilds, decimates visible overlay point/cell counts, lowers effective renderer pixel ratio, and slows non-state dynamic visual animation cadence from measured frame pressure, while telemetry mode keeps fuller hidden-overlay capture available for diagnostics. State, compute status, runtime debug, NetViz metadata, readout rows, unit tests, and browser visual smoke expose the policy, pressure, point scale, pixel-ratio scale/effective pixel ratio, dynamic visual cadence/skip count, skipped-hidden count, and dominant overlay budget.
+- Generic ladder snapshot visual removal: the WebGPU ladder compute/readback path still publishes snapshot telemetry, but `MultiscaleScene` no longer contains a generic ladder point-cloud renderer, resident hidden geometry, or render capacity on any scale. Dedicated solver overlays and scale-context geometry own the visible scene, so molecular/MD and other layers no longer show an uncoupled scaffold particle system.
+- Active overlay commit-throttle first pass: the render-budget path now also emits commit cadence and visible commit limits, and `MultiscaleScene` reuses recent accepted active overlay geometry under frame pressure instead of rewriting Three.js buffers on every solver/snapshot result. The policy applies to ladder snapshots plus N-body, field, molecular, SPH, combustion, plasma, relativity, and weather overlays; state/API/runtime-debug/readout/browser smoke expose commit interval, visible commit count, and reuse count.
+- Overlay buffer data-update first pass: `MultiscaleScene` now embeds `peercompute.multiscale.overlay-data-update.v0` inside the render-budget report, uses Three.js partial `BufferAttribute` update ranges where available, tracks full-upload fallback/component counters per overlay family, and separates N-body trail history buffers from reusable draw buffers so trail wrapping avoids a fresh ordered array allocation on every update.
+- Severe frame-rescue render-budget first pass: `peercompute.multiscale.render-budget.v0` now exposes `severeFrameRescue`, `rescueLevel`, and `minVisibleScale`; focus mode drops active overlay min-visible floors, point density, pixel ratio, dynamic visual cadence, and visible commit limits more aggressively only when measured frame pressure is far above target, while solver/model state updates remain unchanged.
+- Adaptive ladder readback first pass: Multiscale Ladder now publishes `peercompute.multiscale.readback-budget.v0`, adjusting WebGPU ladder readback cadence from frame/render pressure and pending readback backlog while keeping solver/model state updates intact. The interval flows through the shared scale orchestrator, PeerCompute worker tasks, and worker-local WebGPU compute instances, with state/API/runtime-debug/NetViz/readout/unit/browser-smoke coverage.
+- Frame-phase/performance observability first pass: Multiscale Ladder now publishes `peercompute.multiscale.frame-phase-timing.v0`, exposes the `frame phases` readout/runtime-debug row, and includes a no-screenshot Playwright `test:perf` probe for separating app-loop phase cost from screenshot/readback stalls. The frame loop now avoids duplicate readback/status propagation, uses compact render-budget status on the hot path, applies renderer pixel-ratio cooldown/hysteresis, and recalculates frame-loop readback budget on a shared cadence while preserving explicit API/debug telemetry.
+- Bottom-up visual-reference and zoom-continuity first pass: Multiscale Ladder now publishes `peercompute.multiscale.visual-reference.v0` and `peercompute.multiscale.zoom-continuity.v0`. Scales 1-3 intentionally borrow the Universes star/filament/orbital language, scales 4-5 borrow PlanetGen plus WebGPUPhys dynamics cues, scales 6-7 borrow WebGPUPhys MLS-MPM/material-particle cues, and scale 8 borrows Schrodinger orbital-cloud cues. Layer changes now have a first camera/target interpolation path so future navigation can become seamless zoom in/out rather than permanent hard jumps. The intended final UX is continuous zoom-position traversal across the whole ladder, with layer buttons as shortcuts instead of hard boundaries.
+- Mobile ladder traversal first pass: Multiscale now renders a fixed `controls` / `runtime` / `readout` / `packet` output-toggle strip and publishes `peercompute.multiscale.output-panel-visibility.v0` through browser APIs, HUD state, runtime debug, and visual smoke. Narrow screens now use a vertical flex HUD stack bounded above the fixed toggle strip so the scale buttons, zoom-depth slider, and visible readout rows stay reachable while output panels can be hidden. `setOutputPanelsVisibility()` and `?mobileOutputs=focus` / `?hideOutputs=runtime,packet` support one-shot mobile presets, and focus-mode molecular/orbital readouts retain response/reconcile/source-buffer/application/replay/mutation/queue/worker-writer rows for bottom-up source-handoff inspection.
+- Bottom-up quantum orbital finite-grid closure first pass: Multiscale Ladder now publishes `peercompute.multiscale.quantum-orbital-closure.v0` for the orbital layer, using the Schrodinger demo's element/orbital reference math to report electron configuration, screened hydrogenic active orbital, effective nuclear charge, valence/unpaired electrons, ionization, polarizability, dielectric/conductivity proxies, bonding tendency, packet closures, and a shared `ClosureResult`. It also emits `peercompute.multiscale.quantum-orbital-finite-grid.v0` CPU reference summaries with grid size, normalization drift, boundary mass, and radius moments plus `peercompute.multiscale.quantum-orbital-eigen-residual.v0` central-difference Hamiltonian residual telemetry with relative L2 and energy drift. Element/orbital/grid controls remain exposed through the retro UI and browser API, and the HUD now exposes `quantum residual` as the bottom-layer numerical quality gate. This is still a screened-hydrogenic finite-grid reference proxy, not validated quantum chemistry.
+- Bottom-up quantum orbital WebGPU worker first pass: Multiscale Ladder registers `quantum-orbital-grid` as a solver family under the single shared `ComputeManager`, emits `peercompute.multiscale.quantum-orbital-grid.result.v0` / `.delta.v0`, and applies worker finite-grid summaries plus WebGPU residual/evolution/radial-eigenstate fields back into the orbital packet/closure path. The worker now uses a WebGPU-only live backend policy: successful browser worker runs execute WGSL screened-hydrogenic finite-grid probability-density evaluation, WebGPU boundary/moment reduction, `peercompute.multiscale.quantum-orbital-grid.eigen-residual-webgpu.v0`, `peercompute.multiscale.quantum-orbital-grid.wavefunction-evolution-webgpu.v0`, `peercompute.multiscale.quantum-orbital-grid.hamiltonian-components-webgpu.v0` kinetic/potential/component/virial telemetry, `peercompute.multiscale.quantum-orbital-grid.field-response-webgpu.v0` bounded external-electric-field/Stark-response telemetry, `peercompute.multiscale.quantum-orbital-grid.magnetic-response-webgpu.v0` bounded magnetic-field/Zeeman-response telemetry, and the standalone `peercompute.schrodinger.radial-webgpu-eigensolver.v0` radial Hamiltonian contract on the worker's shared GPU device; no-adapter or shader/device failures report `blocked-webgpu-unavailable` / `blocked-webgpu-execution-error` with `webgpu-only-no-cpu-fallback` and no synthetic CPU finite-grid packet. Packets/readouts expose backend, kernel mode, blocked/executed status, `quantum worker`, `quantum residual ... gpu ok/watch/off`, `quantum evolve ... gpu ok/watch/off`, Hamiltonian component residual/virial residual fields, electric-field, field-energy, dipole, polarizability/Stark proxy fields, magnetic-field, Zeeman-energy, spin/orbital projection, magnetic-moment proxy fields, and `quantum radial ... gpu on/off` telemetry, solver budget/cadence/load placement entries, and all solver warm deltas. Stable production TDSE propagation and calibrated many-electron radial/DFT/electromagnetic-response validation remain later gates.
+- Bottom-up qgrid statistical-ensemble bridge first pass: executable qgrid summaries now derive `peercompute.multiscale.quantum-orbital-grid.statistical-bridge-webgpu.v0` from the live WebGPU Hamiltonian/wavefunction/radial telemetry plus ambient temperature and pressure. The bridge exposes partition/occupation, free/internal energy, heat-capacity, ionization, opacity, degeneracy, ensemble-pressure, temperature-delta, charge-delta, and damping scalars through orbital aggregate state, upward closures, MD quantum coupling diagnostics, packet closures, `molecular qgrid stat`, and `quantum qgrid stat`. Molecular dynamics uses those reduced source terms to bias matched-element ionization/charge/bond-order inside the existing WebGPU quantum-source path. This is a reduced two-level Boltzmann/Saha-style handoff, not a calibrated EOS, many-electron partition function, DFT result, or reactive chemistry model.
+- Bottom-up quantum evolution to MD coupling first pass: reduced molecular dynamics now preserves orbital wavefunction-evolution telemetry from quantum closure packets, derives a bounded `quantumEvolutionDrive`, and packages matched-element temperature, charge, ionization, and bond-order source terms as `peercompute.multiscale.molecular-quantum-source.v0`. Live browser WebGPU runs apply that source inside the staged molecular integrate shader, while Node/no-adapter coverage stays labeled as non-WebGPU regression behavior. Packet aggregate state, runtime status, upward closures, the `molecular quantum` HUD row, model tests, and browser smoke now expose wavefunction-evolution source/backend, norm drift, density drift, energy expectation, kinetic expectation, potential expectation, Hamiltonian component residual, virial residual, electric field, field energy, dipole, polarizability/Stark proxy response, magnetic field, Zeeman energy, magnetic moment projection, phase rotation, molecular quantum-evolution drive, `quantumCouplingApplicationMode`, and `quantumCouplingWebgpuKernelApplied`.
+- Bottom-up Schrodinger-to-MD WebGPU provenance handoff: the molecular coupling normalizer now classifies worker-provided `peercompute.multiscale.quantum-orbital-grid.wavefunction-evolution-webgpu.v0` payloads by schema/backend, not object identity, so qgrid results retain `wavefunctionEvolutionSource: "webgpu-worker"` instead of being mislabeled as CPU reference. The same handoff carries `peercompute.multiscale.quantum-orbital-grid.field-response-webgpu.v0`, `peercompute.multiscale.quantum-orbital-grid.magnetic-response-webgpu.v0`, and `peercompute.schrodinger.radial-webgpu-eigensolver.v0` source, energy, residual, mean-radius, and grid-count fields into `peercompute.multiscale.molecular-quantum-coupling.v0`, `peercompute.multiscale.molecular-quantum-source.v0`, MD diagnostics, packet aggregate state, runtime summaries, conservation exchange telemetry, and the `molecular quantum` HUD row.
+- Bottom-up molecular charge-equilibration first pass: reduced molecular dynamics now emits `peercompute.multiscale.molecular-charge-equilibration.v0`, a QEq-style electronegativity/hardness relaxation report with residual RMS, charge RMS delta, transfer magnitude, mean hardness proxy, quantum-coupling influence, and clamp-aware neutralization residuals. Diagnostics, model state, packet aggregate state, `ClosureResult` chemistry, runtime status, and the `molecular qeq` HUD row expose the report; tests and browser smoke verify the H10/O5/NaCl packet stays net-neutral after clamped charge correction. This is reduced telemetry, not calibrated QEq/ReaxFF.
+- Bottom-up quantum orbital wavefunction-evolution first pass: finite-grid summaries now also carry `peercompute.multiscale.quantum-orbital-wavefunction-evolution.v0`, a CPU reference single-step explicit real-time Schrodinger update over the same central-difference Hamiltonian for model-local baseline diagnostics, while the executable browser worker attaches `peercompute.multiscale.quantum-orbital-grid.wavefunction-evolution-webgpu.v0` WebGPU telemetry under `webgpu-only-no-cpu-fallback`. It reports timestep in atomic units/attoseconds, norm drift, density L1 drift, energy expectation, `peercompute.multiscale.quantum-orbital-grid.hamiltonian-components-webgpu.v0` kinetic/potential/component energy, Hamiltonian component residual, Coulomb virial residual, phase rotation, renormalization scale, and interior sample count through worker results, orbital packet aggregate state, upward closure scalars, browser API state, and the `quantum evolve` HUD row. This is a WGSL reducer for the bottom-up time-evolution contract; it is not yet a stable production TDSE propagator.
+- Bottom-up quantum material-potential first pass: Multiscale Ladder now publishes `peercompute.multiscale.quantum-material-potential.v0` beside the orbital closure. It reuses Schrodinger reference material/property packets to provide condition-aware atom/molecule color, size/shape/orbital descriptors, density/phase, bulk/Young/shear modulus, thermal/optical/electromagnetic/nuclear fields, bond-strength terms, behavior hooks, validity, uncertainty, and provenance. The sibling `quantum-material-potential` solver now runs under the shared `ComputeManager` as a WebGPU-only concurrent property/reduced-force-preview worker, emitting `peercompute.multiscale.quantum-material-potential.concurrent-batch.v0` / `.result.v0` / `.delta.v0` telemetry for density, mechanical response, optical/electrical response, behavior drive, backend, record count, cadence, reduced Morse-style bond potential/force-gradient/curvature preview, reduced `peercompute.multiscale.quantum-material-reaction-barrier-surface.v0` gate telemetry, reduced `peercompute.multiscale.quantum-material-product-stoichiometry.v0` Na-water product-source metadata, and `peercompute.multiscale.law-graph-fragment.v0` consistency only on the live WebGPU path. Node/no-adapter runs report `blocked-webgpu-unavailable` with `webgpu-only-no-cpu-fallback` instead of synthesizing CPU material packets. It still marks missing calibrated Born-Oppenheimer force gradients, calibrated reactive charge transfer, conservative product topology, and reaction networks, so Na-water chemistry can expose reduced source metadata while scientific chemistry remains blocked until calibrated reactive artifacts exist.
+- Bottom-up qmat product conservation audit first pass: the molecular qmat Na-water product-topology overlay now emits `peercompute.multiscale.molecular-qmat-product-conservation-audit.v0`, reporting requested/realized reaction sites, water consumed/remaining estimates, expected Na/O/H reactant atoms, observed NaOH/H2/H product atoms, elemental residuals, site coverage, and qmat heat/charge budget residuals through MD diagnostics, WebGPU status, packet aggregate state, shared closure fields, and upward closure scalars. This can close reduced product accounting for the diagnostic NaOH/H2 graph while keeping authoritative atom/species mutation and scientific product chemistry blocked.
+- Bottom-up qmat product topology mutation first pass: the molecular worker now emits `peercompute.multiscale.molecular-qmat-product-topology-mutation.v0` after the reduced NaOH/H2 topology overlay. The post-WebGPU state finalizer relabels existing atoms into persistent NaOH and H2 molecule groups, preserves product bond graphs across frames, nudges reduced product bonds toward qmat target distances, and reports mutation status, product atom inventory, retired water groups, atom-inventory conservation, and scientific-mutation=false fields through diagnostics, WebGPU status, packet aggregate state, shared closure fields, and upward closure scalars. This is an interactive existing-atom topology commit only; calibrated kinetics, charge-transfer energetics, conservative scientific mutation, and authoritative worker-buffer chemistry remain future gates.
+- Bottom-up qmat product topology WebGPU writeback first pass: the molecular WebGPU path now stages `peercompute.multiscale.molecular-qmat-product-topology-gpu-writeback.v0` after the MD integrate pass and before atom-buffer readback. When qmat emits NaOH/H2 product topology, the runtime packs topology write commands, dispatches a storage-buffer writeback pass against the GPU atom buffer, and reports kernel-applied status plus command counts through diagnostics, packet aggregate state, shared closure fields, WebGPU status, and upward closure scalars. The immediate open gate is live qmat source selection: fresh mixed `O:5 H:10 Na:2` sessions must deterministically produce Na-water product topology so the writeback path runs with nonzero commands.
+- Bottom-up qmat-to-MD source handoff first pass: molecular dynamics now consumes the live WebGPU qmat concurrent batch as `peercompute.multiscale.molecular-quantum-material-source.v0`, derives bounded material bond-scale, pair-force scale, rest-length shift, temperature, charge, ionization, behavior, force-gradient source terms, statistical-ensemble pressure ratio/drive, heat-capacity proxy, thermal damping scale, and formula-derived target-pair/target-atom selectivity, applies them in the WebGPU staged neighbor-list integrate kernel, and reports application mode, WebGPU-kernel status, backend, record count, target pair label, target/fallback atom counts, primary/secondary atomic numbers, selectivity, fallback factor, selected/fallback pair counts, ensemble bridge fields, source deltas, conservation exchange, closure fields, `forceFieldQuantumMaterialSourceBiasEnergyProxy`, `forceFieldQuantumMaterialPairForceBiasEnergyProxy`, `forceFieldQuantumMaterialEnsembleBiasEnergyProxy`, and `forceFieldQuantumMaterialBiasEnergyProxy` through packets, runtime status, the force-energy ledger, and the `molecular qmat` HUD row. The qmat ensemble now also exposes `peercompute.multiscale.quantum-statistical-source-equation.v0`, which names the ensemble-pressure, ionization, opacity, degeneracy, and heat-capacity source channels feeding the MD source terms and `quantum stat source` HUD row. For water qmat this targets O/H atoms and `O-H` pairs while non-target species such as Na receive only the bounded fallback factor. This is reduced property/force/statistical-closure coupling, not calibrated Born-Oppenheimer or reactive chemistry.
+- Bottom-up qmat response-derivative handoff first pass: the WebGPU qmat concurrent batch now emits `peercompute.multiscale.quantum-material-response-derivatives.v0` beside the property/statistical/force-preview packet, carrying density-vs-temperature, mechanical-vs-log-pressure, conductivity-vs-field, and opacity-vs-radiation response channels plus a compact Jacobian summary. Molecular dynamics consumes those derivative channels as bounded source drives in the same WebGPU qmat source path and exposes nested/scalar derivative evidence through diagnostics, conservation, packet aggregate state, upward closures, upward scalar summaries, runtime status, and the `qmat derivatives` HUD row. This is reduced response-surface telemetry for the lower-layer material-property contract, not calibrated DFT/BO derivatives.
+- Bottom-up qmat property source-buffer handoff first pass: qmat material-property responses now continue beyond the MD shader source path as side-band fields through molecular source/sink balance, source equations, conservative source-buffer reports, source-buffer application reports, and reactive/SPH source-buffer consumers while preserving the 8-float `sourceVectorF32` contract. Dispatchable targets carry active property-response provenance plus thermal-flux, phase-drive, electrical, optical, mechanical, and damping proxies so reactive thermal and SPH material consumers can expose reduced heat/phase/material responses without pretending the proxy is calibrated conservative mutation. The qmat drives are now target-buffer application fields too: reactive source-buffer reports include six qmat property fields on top of the four existing thermal/reaction fields, SPH reports include the same six on top of five material fields, and replay/mutation audit/queue/worker-write paths carry the combined 21-field two-target handoff.
+- Bottom-up qmat-only source-buffer warm path first pass: molecular-only runs can now warm the qmat property/response-derivative source-buffer path without requiring prior reactive/SPH target reports. `window.__multiscaleDemo.warmMolecularSourceBufferTargets()` and the default explicit proxy apply flow synthesize reduced active target source/sink reports from current qmat MD fields, then treat qmat side-band application evidence as reduced target response acknowledgement when thermal source-vector terms are zero. The same two-target conservative source buffer now advances through reconciliation, acceptance, writeback validation, replay validation, mutation audit, worker-write queue planning, explicit reduced proxy writer execution, and writer verification with a 55-write-intent handoff while scientific mutation remains blocked.
+- Molecular lower-law dependency warmup first pass: when the active layer is `molecular` and the MD packet lacks WebGPU qgrid or qmat evidence, solver candidate generation now admits `quantumOrbitalGrid` / `quantumMaterialPotential` as dependency work through the existing solver-submission budget instead of relying on orbital-layer cadence or background spot checks. This lets a direct molecular view warm Schrodinger/material providers and feed the WebGPU MD qmat source path.
+- Element-aware MD force-law first pass: the molecular WebGPU all-pairs and staged neighbor-list kernels now use reduced rest lengths from periodic-table covalent radii plus electronegativity/metal/nonmetal affinity scaling instead of one fixed H/non-H covalent distance. The JS mirror exposes `peercompute.multiscale.molecular-force-law.v0`, diagnostics flatten mean pair rest length, mean affinity, and ionic/polar/covalent/weak candidate counts, and packets/runtime status/HUD render those fields in a new `molecular force` row. This improves the bottom-up molecule structure proxy while remaining non-calibrated.
+- ULG v0.4 contract-audit first pass: Multiscale Ladder now publishes `peercompute.ulg.spec-contract-report.v0`, a representative packet/readout audit of the updated ULG spec substrate. It reports nine foundation/root contracts, active/proxy/scientific-ready counts, blockers, required 14-pass WebGPU core DAG coverage, hot/warm/cold state layout, hard-rule compliance, checklist readiness, the quantum-state/statistical-ensemble/material-closure bridge, hydrogen-star activation path, and the ULG-to-MD source handoff through `ulg spec` and `root contracts` rows. The focused MD regression now compares identical uncoupled/coupled base states and proves the packet-level handoff is absent without a ULG delta and present with temperature/charge/source-delta fields when the delta is supplied. Live Chrome/WebGPU smoke now verifies the VPN demo produces `peercompute.ulg.webgpu-state-delta.v0`, consumes it in MD through `webgpu-neighbor-integrate-source-term`, and exposes the active contract-audit handoff plus `molecular ulg` row. This keeps the representative demo honest about proxy closures while making v0.4 progress visible.
+- Multiscale packet law-graph update-plan, reduced solve, proposal-admission, and dispatch-queue first pass: Multiscale packets now include `peercompute.multiscale.law-graph-consistency.v0`, a packet-level bipartite report over state variables, laws, and constraints. It merges the qmat fragment with environment boundary, orbital closure, molecular dynamics, molecular source-buffer, reactive/SPH source consumers, cross-scale coupling, conservation audit, molecular scientific gate, and readiness-manifest nodes, then derives `peercompute.multiscale.law-graph-update-plan.v0` with law-operation read/write state ids, gating constraints, dependency phases, runnable/blocked/scientific-blocked counts, ComputeManager dispatch-ready solver tasks, residual targets, and authoritative-mutation readiness. The packet also nests `peercompute.multiscale.law-graph-consistency-solve.v0`, a reduced fixed-point report that walks the plan, records operation solve status, proposed state updates, proxy/scientific residuals, convergence booleans, and mutation blockers. It adds `peercompute.multiscale.law-graph-proposal-admission.v0`, which classifies solve proposals by target state family, StateManager warm-delta scope, ComputeManager dispatch readiness, and authoritative-mutation blockers. `peercompute.multiscale.law-graph-dispatch-queue.v0` then turns admitted law operations into ordered ComputeManager/model-local queue entries and executor batches with ready/blocked/partial-proxy counts, but still does not submit tasks or mutate authoritative state by itself. The report commits a `multiscale-law-graph` warm delta and exposes compact status through packets, upward closures, active readout, runtime debug, NetViz metadata, `getState()`, `getLawGraphUpdatePlan()`, `getLawGraphConsistencySolve()`, `getLawGraphProposalAdmission()`, and `getLawGraphDispatchQueue()`. It can mark proxy updates blocked for unsupported lower-layer chemistry such as sodium-water, and separately marks scientific readiness blocked until authoritative force/barrier, conservative transfer, and validation artifacts exist.
+- Multiscale law-graph scheduler-manifest first pass: `peercompute.multiscale.law-graph-scheduler-manifest.v0` now resolves dispatch-queue entries onto scheduler lanes, registered solver descriptors, module/export executor readiness, affinity/timestep hints, warm-delta scopes, StateManager application links, and descriptor/executor/scientific blockers. ComputeManager entries require descriptor resolution, while model-local and telemetry entries remain explicit non-worker lanes; `quantum-orbital-closure` aliases to the executable `quantum-orbital-grid` descriptor. Packets, upward closures, aggregate state, runtime debug, the `law graph` readout, warm deltas, `getState().lawGraphSchedulerManifest`, and `getLawGraphSchedulerManifest()` expose the manifest. This is visibility and admission telemetry only; it still does not submit solver tasks or authorize authoritative mutation.
+- Multiscale law-graph scheduler-execution audit first pass: `peercompute.multiscale.law-graph-scheduler-execution-audit.v0` now checks scheduler-manifest ComputeManager lanes against live `solverRuntime` status and `multiscale-solver-deltas` warm-delta evidence. Packets, upward closures, aggregate state, runtime debug, the `law graph` readout, warm deltas, `getState().lawGraphSchedulerExecutionAudit`, and `getLawGraphSchedulerExecutionAudit()` expose observed/missing runtime and warm-delta counts. This proves the graph can observe current worker execution, but it still does not submit tasks, admit results as authoritative, or mutate scientific state.
+- Multiscale law-graph result-admission first pass: `peercompute.multiscale.law-graph-result-admission.v0` now consumes scheduler-execution audit entries and admits only matching ComputeManager runtime plus warm-delta evidence as proxy worker-result evidence. It reports required/admitted/missing/pending/failed/schema/sequence/scientific-blocked counts through packet aggregate state, upward closures, runtime debug, `getState().lawGraphResultAdmission`, `getLawGraphResultAdmission()`, `multiscale-law-graph` warm deltas, and the `law graph` HUD row. This is a proxy result-evidence gate only; authoritative mutation and scientific promotion remain blocked.
+- Multiscale law-graph state-application preflight first pass: `peercompute.multiscale.law-graph-state-application-preflight.v0` now maps proxy-admitted worker-result evidence back to StateManager application links from the scheduler manifest before any state mutation occurs. It reports application-required, proxy-ready, waiting-result, missing-link, and scientific-blocked counts through packet aggregate state, upward closures, runtime debug, `getState().lawGraphStateApplicationPreflight`, `getLawGraphStateApplicationPreflight()`, `multiscale-law-graph` warm deltas, and the `law graph` HUD row. This is application-readiness observability only; authoritative StateManager/worker-buffer mutation remains downstream.
+- Bottom-up molecular source-accounting first pass: molecular-dynamics `ClosureResult` output is now consumed by reactive thermal and SPH material workers, then preserved in model state, packet closure fields, aggregate state, cross-scale coupling links, conservation exchange/drift telemetry, and field metadata as explicit reactive/SPH molecular heat-source provenance. This is still reduced open-system accounting, but downstream material consumers can now see when molecular closure drive affected reactive heat and SPH temperature.
+- Bottom-up molecular source/sink report first pass: reactive thermal and SPH material consumers now attach `peercompute.multiscale.molecular-source-sink.v0` reports to their molecular-closure handoff. The report names the MD closure source, target solver and field, reduced heat flux, thermal drive, energy/species residual proxies, validity warnings, and provenance, then threads compact summaries into packets, aggregate state, conservation exchange telemetry, cross-scale coupling, and field metadata.
+- Bottom-up molecular phase-EOS basis first pass: the MD thermo ledger now publishes `peercompute.multiscale.molecular-phase-eos-basis.v0` and flattens reduced specific free/internal/enthalpy/entropy proxies, latent-heat budget, phase-energy rate, source-temperature delta, and phase-stability residual into closure thermodynamics, source/sink/source-equation summaries, reactive/SPH consumer forcing, conservation/coupling exchange metadata, aggregate packets, and the `molecular eos` HUD row. This is a typed proxy scaffold for later free-energy/EOS work, not a calibrated water EOS.
+- Bottom-up molecular reaction-ledger first pass: reduced MD diagnostics now derive `peercompute.multiscale.molecular-reaction-ledger.v0` from the live inferred bond graph, classifying recognized small-molecule components and exposing molecule species, dominant molecule, stoichiometry residual proxy, component closure fraction, and closed/open status through packet aggregates, closure results, source/sink summaries, and the `molecular ledger` HUD row.
+- Bottom-up molecular reaction-event ledger first pass: each reduced MD step now compares the before/after inferred bond graph as `peercompute.multiscale.molecular-reaction-event-ledger.v0`, exposing formed/broken/retained bond counts, molecule species deltas, heat/reaction deltas, and event-intensity proxy through diagnostics, conservation, closures, packet aggregate state, source/sink summaries, runtime status, and the existing `molecular ledger` HUD row.
+- Bottom-up molecular reaction-source first pass: each reduced MD step now derives `peercompute.multiscale.molecular-reaction-source.v0` from the event ledger and timestep, exposing reduced bond-rate, species-rate, atom-species-rate, reaction-progress-rate, heat-source/cooling-sink, event-intensity, validity, and schema-provenance fields through diagnostics, conservation, closure chemistry, packet aggregate state, source/sink summaries, runtime status, and the `molecular ledger` HUD row.
+- Bottom-up molecular reaction-source consumer first pass: reactive thermal and SPH material consumers now summarize nested molecular reaction-source fields before adapting the molecular closure, use source/cooling drive in their reduced heat/material forcing, and preserve reaction-source schema, heat-source proxy, species-rate proxy, source drive, and cooling drive in diagnostics, model state, packet aggregate state, upward closures, and source/sink summaries.
+- Bottom-up molecular reaction-source reporting first pass: conservation audit, cross-scale coupling, and field metadata now expose compact reaction-source exchange fields separately from molecular closure heat flux and source/sink residuals. Packets report reaction heat-source proxy, species-rate proxy, source drive, cooling drive, and metadata so future conservative source/sink integration can target the event-derived chemistry handoff.
+- Bottom-up molecular source/sink balance first pass: Multiscale packets now include `peercompute.multiscale.molecular-source-sink-balance.v0`, comparing event-derived molecular source drive against reactive thermal and SPH source/sink consumers. The balance reports active targets, source/cooling coverage, heat/species residual proxies, fanout oversubscription, conservation/coupling exchange fields, field metadata, and a `molecular balance` HUD row while staying marked as reduced telemetry rather than conservative enthalpy or stoichiometry.
+- Bottom-up molecular source/sink balance warm-delta first pass: the balance packet is now committed under `multiscale-source-sink-balances` through `StateManager`, exposed by `window.__multiscaleDemo.getSourceSinkBalanceDeltas()` and `getState().sourceSinkBalanceState`, and counted in runtime-debug warm-delta telemetry.
+- Bottom-up molecular source-equation scaffold first pass: Multiscale packets now include `peercompute.multiscale.molecular-source-equation.v0`, deriving a unit-aware reduced source equation from the balance report. It records representative volume/mass/heat-capacity basis values, open-system status, `dE/dt`, `dT/dt`, and species-rate equation forms, scaled proxy W/count-per-second terms, coverage/residuals, and the `molecular equation` HUD row. This is the shape for conservative transfer, not a calibrated thermochemistry model.
+- Bottom-up molecular source-equation adapter plumbing first pass: conservation audit and cross-scale coupling now carry source-equation heat-rate, temperature-rate, species-rate, and open residual heat-rate fields with metadata plus reactive/SPH adapter context. This gives future conservative-transfer adapters named source terms before solver mutation is introduced.
+- Bottom-up molecular conservative-transfer dry-run first pass: Multiscale packets now include `peercompute.multiscale.molecular-conservative-transfer.v0`, allocating source-equation heat/species proxy terms across active reactive thermal and SPH source/sink consumers without mutating solver state. The report records target fractions, dry-run heat/species shares, unallocated residuals, closed-system residual proxy, proxy unit metadata, and the `molecular transfer` HUD row while staying `dryRun: true` and `applied: false`.
+- Bottom-up molecular conservative-transfer warm-delta first pass: dry-run transfer reports now commit under `multiscale-source-transfers` through `StateManager`, are exposed by `window.__multiscaleDemo.getSourceTransferDeltas()` and `getState().sourceTransferState`, and are counted in runtime-debug warm-delta telemetry.
+- Bottom-up molecular conservative-transfer adapter plumbing first pass: conservation audit and cross-scale coupling now carry dry-run transfer allocation count/fraction, allocated/unallocated heat and species-rate proxy fields, closed residual metadata, and reactive/SPH adapter context. This exposes the allocation surface for future conservative mutation while keeping the current path telemetry-only.
+- Bottom-up molecular conservative-transfer field-preview first pass: the named molecular reactive thermal field-transfer adapter now consumes `peercompute.multiscale.molecular-conservative-transfer.v0` allocation context for predicted target telemetry. Allocated heat/species proxy drive and closed residuals can change the previewed reactive-cell heat forcing, but no solver state is mutated.
+- Bottom-up molecular transfer application-gate first pass: packets now include `peercompute.multiscale.molecular-transfer-application.v0`, checking transfer schema, target allocations, proxy units, closed-residual tolerance, dry-run state, mutation enablement, scientific-mode enablement, and target-adapter validation before any solver mutation can occur. The report publishes through `multiscale-source-transfer-applications`, the demo API/state surface, upward counters, and the `molecular apply` HUD row; current status remains blocked with zero applied targets.
+- Bottom-up molecular transfer application config first pass: the gate now has a default-off operator configuration surface through `configureMolecularTransferApplication()`, `getMolecularTransferApplicationConfig()`, and `getState().molecularTransferApplicationConfig`. Toggling request/mutation/scientific/target-validation flags removes those blockers from telemetry, but source transfer remains blocked while the underlying transfer is dry-run.
+- Bottom-up molecular transfer transaction scaffold first pass: packets now include `peercompute.multiscale.molecular-transfer-transaction.v0`, a default-off non-mutating transaction report downstream of the application gate. It publishes through `multiscale-source-transfer-transactions`, `getSourceTransferTransactionDeltas()`, `getState().sourceTransferTransactionState`, upward counters, and the `molecular txn` HUD row so future source-term mutation has an explicit audit boundary. `configureMolecularTransferTransaction()` and `getMolecularTransferTransactionConfig()` expose the transaction/mutator gate separately from application-gate config.
+- Bottom-up molecular target-mutator preview first pass: packets now include `peercompute.multiscale.molecular-target-mutator-preview.v0`, a non-mutating preview after the transaction scaffold. It estimates reactive thermal and SPH target before/after source-term fields, publishes through `multiscale-source-transfer-target-previews`, exposes `getSourceTransferTargetPreviewDeltas()` / `getState().sourceTransferTargetPreviewState`, adds upward preview counters, and renders the `molecular preview` HUD row while keeping mutation blocked.
+- Bottom-up molecular target-mutator preview exchange first pass: conservation audit and cross-scale coupling now carry the preview as named exchange telemetry with target counts, blocked/applied counts, blocker count, total heat/species-rate proxies, max temperature delta, max phase-drive delta, field metadata, and reactive/SPH/field-transfer adapter context. This keeps the dry-run target effect visible to downstream consumers without applying source terms.
+- Bottom-up molecular target-mutator registry first pass: packets now include `peercompute.multiscale.molecular-target-mutator-registry.v0`, declaring the reactive thermal and SPH source-term fields that future target mutators may touch, their unit/dimension metadata, required invariant scopes, validation blockers, and zero validated/applied mutators. The registry publishes through `multiscale-source-transfer-target-mutators`, exposes API/state warm deltas, contributes conservation/coupling exchange telemetry, and renders the `molecular mutators` HUD row.
+- Bottom-up molecular target-mutation preflight first pass: packets now include `peercompute.multiscale.molecular-target-mutation-preflight.v0`, checking registry/preview presence, declared fields, invariant scopes, target validation, conservative accounting, mutation dispatch, and residual-risk proxies before any source-state mutation path can be armed. It publishes through `multiscale-source-transfer-target-preflights`, exposes API/state warm deltas, contributes conservation/coupling exchange telemetry, and renders the `molecular preflight` HUD row while remaining non-mutating.
+- Bottom-up molecular target-mutation operation-plan first pass: packets now include `peercompute.multiscale.molecular-target-mutation-operation-plan.v0`, expanding registered target mutator surfaces into per-field before/after/delta operations with source-term, unit/dimension, role, allowed-by-registry, and blocker telemetry. It publishes through `multiscale-source-transfer-target-operation-plans`, exposes API/state warm deltas, contributes conservation/coupling exchange telemetry, and renders the `molecular op plan` HUD row while keeping every operation blocked.
+- Bottom-up molecular target-mutation invariant-check first pass: packets now include `peercompute.multiscale.molecular-target-mutation-invariant-check.v0`, validating operation-plan energy/species/phase/provenance invariant coverage and residual-budget proxies for reactive thermal and SPH targets. It publishes through `multiscale-source-transfer-target-invariant-checks`, exposes API/state warm deltas, contributes conservation/coupling exchange telemetry and adapter context, and renders the `molecular invariants` HUD row while staying non-mutating.
+- Bottom-up molecular target-mutation commit first pass: packets now include `peercompute.multiscale.molecular-target-mutation-commit.v0`, an invariant-gated commit decision downstream of the invariant check. It publishes through `multiscale-source-transfer-target-commits`, exposes API/state warm deltas, contributes conservation/coupling exchange telemetry plus adapter context, and renders the `molecular commit` HUD row while reporting zero committable/committed operations.
+- Bottom-up molecular target-mutation dispatch first pass: packets now include `peercompute.multiscale.molecular-target-mutation-dispatch.v0`, a commit-gated batch assembly report downstream of the commit decision. It publishes through `multiscale-source-transfer-target-dispatches`, exposes API/state warm deltas, contributes conservation/coupling exchange telemetry plus adapter context, and renders the `molecular dispatch` HUD row while reporting zero dispatchable/queued/dispatched operations.
+- Bottom-up molecular target-mutation apply-validation first pass: packets now include `peercompute.multiscale.molecular-target-mutation-apply-validation.v0`, a dispatch-derived non-mutating validator that reconstructs target before/after write previews, checks residuals, publishes through `multiscale-source-transfer-target-apply-validations`, exposes API/state warm deltas, contributes conservation/coupling exchange telemetry plus adapter context, and renders the `molecular apply val` HUD row while reporting zero applied operations.
+- Bottom-up molecular target-mutation apply-execution first pass: packets now include `peercompute.multiscale.molecular-target-mutation-apply-execution.v0`, an explicit reduced proxy execution report after apply validation. The default packet remains blocked and non-mutating; deliberate API/config execution applies validated reactive thermal and SPH target previews into reduced aggregate state, acknowledges the matching target-source intake/source-buffer sequence, and surfaces `applied-proxy` execution telemetry through packet, conservation, coupling, runtime debug, and the `molecular apply exec` readout. Scientific conservative worker-buffer mutation remains a future gate.
+- Bottom-up molecular target-source intake first pass: explicit apply execution now derives `peercompute.multiscale.molecular-target-source-intake.v0` from the applied target operation set. It preserves source values and field deltas, publishes active target/operation counts plus heat/species/reaction/phase/temperature drive summaries, renders the `molecular intake` readout, and feeds reduced reactive thermal and SPH worker inputs through `molecularTargetSourceIntake`. The report now has its own `multiscale-source-transfer-target-source-intakes` warm-delta scope, `getSourceTransferTargetSourceIntakeDeltas()` API, `getState().sourceTransferTargetSourceIntakeState`, runtime-debug warm-delta count, and `target intake` telemetry row. This is an executed proxy source-input bridge, not validated conservative target-buffer mutation.
+- Bottom-up molecular target-source response first pass: packets now include `peercompute.multiscale.molecular-target-source-response.v0`, a reduced target-worker acknowledgement report after reactive thermal and SPH consume the source intake. It preserves intake schema/sequence checks, active/responded/pending target counts, response thermal drive, heat-flux response, temperature, phase/cooling/contact proxies, publishes through `multiscale-source-transfer-target-source-responses`, exposes `getSourceTransferTargetSourceResponseDeltas()` and `getState().sourceTransferTargetSourceResponseState`, and renders `molecular response` plus `target response` telemetry. This is worker-consumption observability, not validated conservative target-buffer mutation.
+- Bottom-up molecular target-source reconciliation first pass: packets now include `peercompute.multiscale.molecular-target-source-reconciliation.v0`, comparing source intake against target response acknowledgement. It reports reconciled/pending target counts, sequence mismatches, unacknowledged thermal drive, intake heat-rate, response heat-flux, residual tolerance/pass status, publishes through `multiscale-source-transfer-target-source-reconciliations`, exposes `getSourceTransferTargetSourceReconciliationDeltas()` and `getState().sourceTransferTargetSourceReconciliationState`, and renders `molecular reconcile` plus `target reconcile` telemetry. This is a typed observability gate, not scientific conservation proof.
+- Bottom-up molecular conservative source-buffer first pass: packets now include `peercompute.multiscale.molecular-conservative-source-buffer.v0`, created after target-source reconciliation. The report packages per-target 8-float source vectors for heat/species/temperature/phase/reaction/radiative/thermal/residual terms, exposes active/dispatchable/reconciled/pending counts plus source-term totals, publishes through `multiscale-conservative-source-buffers`, surfaces through `getConservativeSourceBufferDeltas()` and `getState().conservativeSourceBufferState`, feeds reactive thermal and SPH worker inputs, and renders `molecular buffer`. This is worker-addressable proxy source telemetry before scientific conservative mutation.
+- Bottom-up molecular source-buffer application first pass: reactive thermal and SPH material workers now emit `peercompute.multiscale.molecular-source-buffer-application.v0` after consuming conservative source buffers. Explicit proxy apply also records local reduced application reports for the current reactive/SPH target fields, so the acceptance, writeback, replay, mutation-audit, and worker-write queue surfaces become deterministic immediately after API apply while still blocking scientific mutation. Packet aggregate state wraps those reports in `peercompute.multiscale.molecular-source-buffer-application-aggregate.v0`, publishes through `multiscale-source-buffer-applications`, surfaces through `getSourceBufferApplicationDeltas()` and `getState().sourceBufferApplicationState`, and renders `molecular buffer apply` / `buffer apply` telemetry so the ladder can distinguish dispatchable source vectors from actual target-side worker consumption.
+- Bottom-up molecular source-buffer acceptance first pass: packets now include `peercompute.multiscale.molecular-source-buffer-acceptance.v0`, comparing the dispatchable source buffer with target-side application reports for schema, stride, sequence, source-term coverage, field-delta coverage, and residual tolerance. The report publishes through `multiscale-source-buffer-acceptances`, surfaces through `getSourceBufferAcceptanceDeltas()` and `getState().sourceBufferAcceptanceState`, contributes `canMutateProxy`/blocker counters to packet closures, and renders `molecular buffer accept` / `buffer accept` while keeping `scientificMutationReady` false.
+- Bottom-up molecular source-buffer writeback validation first pass: packets now include `peercompute.multiscale.molecular-source-buffer-writeback-validation.v0`, validating accepted target-side source-buffer applications for source-term coverage, finite field-delta coverage, residual tolerance, and reduced writeback blockers. The report publishes through `multiscale-source-buffer-writeback-validations`, surfaces through `getSourceBufferWritebackValidationDeltas()` and `getState().sourceBufferWritebackValidationState`, contributes `canWritebackProxy`/blocker counters to packet closures, and renders `molecular buffer writeback` / `buffer writeback` while keeping `scientificWritebackReady` false.
+- Bottom-up molecular target-buffer replay validation first pass: packets now include `peercompute.multiscale.molecular-target-buffer-replay-validation.v0`, replaying target-side application reports against current reactive thermal and SPH target snapshots after writeback validation. The report publishes through `multiscale-target-buffer-replay-validations`, surfaces through `getTargetBufferReplayValidationDeltas()` and `getState().targetBufferReplayValidationState`, contributes replay counters to packet closures, and renders `molecular buffer replay` / `buffer replay` while keeping `scientificReplayReady` and `scientificMutationReady` false.
+- Bottom-up molecular target-buffer mutation-audit first pass: packets now include `peercompute.multiscale.molecular-target-buffer-mutation-audit.v0`, turning replay-validated target fields into explicit reduced write intents. The report publishes through `multiscale-target-buffer-mutation-audits`, surfaces through `getTargetBufferMutationAuditDeltas()` and `getState().targetBufferMutationAuditState`, contributes ready/blocked target and write-intent counters to packet closures, and renders `molecular buffer mutate` / `buffer mutate` while distinguishing `canMutateProxy: true` from `canQueueWorkerWrite: false` and `scientificMutationReady: false`.
+- Bottom-up molecular target-buffer worker-write queue plan first pass: packets now include `peercompute.multiscale.molecular-target-buffer-worker-write-queue.v0`, grouping mutation-audit write intents into per-target worker-write batches without queuing, dispatching, or applying them. The report publishes through `multiscale-target-buffer-worker-write-queues`, surfaces through `getTargetBufferWorkerWriteQueueDeltas()` and `getState().targetBufferWorkerWriteQueueState`, contributes batch/write-intent counters to packet closures, and renders `molecular buffer queue` / `buffer queue` while keeping live worker writes and scientific mutation blocked.
+- Bottom-up molecular target-buffer worker-write execution first pass: packets now include `peercompute.multiscale.molecular-target-buffer-worker-write-execution.v0`, an explicit API-gated reduced proxy execution report after queue planning. Default packets remain blocked and non-mutating; deliberate execution applies replay-ready reactive thermal and SPH target values into reduced aggregate state, publishes through `multiscale-target-buffer-worker-write-executions`, surfaces through `getTargetBufferWorkerWriteExecutionDeltas()` and `getState().targetBufferWorkerWriteExecutionState`, contributes applied batch/write counters to packet closures, and renders `molecular buffer writer` / `buffer writer` while keeping scientific mutation blocked.
+- Bottom-up molecular target-buffer worker-write verification first pass: packets now include `peercompute.multiscale.molecular-target-buffer-worker-write-verification.v0`, a post-execution target snapshot comparison that verifies reduced proxy worker writes against current reactive thermal and SPH target fields. The report publishes through `multiscale-target-buffer-worker-write-verifications`, surfaces through `getTargetBufferWorkerWriteVerificationDeltas()` and `getState().targetBufferWorkerWriteVerificationState`, contributes verified/missing/mismatched field counters to packet closures, and renders `molecular buffer verify` / `buffer verify` while keeping scientific mutation blocked.
+- Bottom-up molecular current gate state exposure first pass: `window.__multiscaleDemo.getState()` now exposes the current source-buffer acceptance, writeback validation, replay validation, mutation audit, worker-write queue, worker-write execution, worker-write verification, scientific invariant gate, and scientific readiness manifest reports directly alongside their warm-delta state maps. This keeps live progress probes and the demo overview from having to reconstruct the latest qmat/source-buffer status from scoped delta summaries, and the standard browser visual smoke now asserts those direct state reports after qmat source-buffer warmup and explicit reduced writer execution.
+- Bottom-up molecular scientific readiness manifest first pass: packets now include `peercompute.multiscale.molecular-scientific-readiness-manifest.v0`, downstream of the scientific invariant gate. It enumerates the authoritative artifacts required before reduced proxy target-buffer writes can become scientific mutation, including the GPU worker-buffer writer, calibrated EOS/free-energy closure, stoichiometric charge ledger, phase/latent-heat reference, field metadata lock, deterministic replay suite, and calibrated invariant residual suite. It publishes through `multiscale-scientific-readiness-manifests`, surfaces through `getScientificReadinessManifestDeltas()` and `getState().scientificReadinessManifestState`, and renders `molecular sci manifest` while remaining blocked even when proxy writes are explicitly executed and verified.
+- Bottom-up molecular target-source response exchange first pass: conservation audit and cross-scale coupling now carry target-source intake and response summaries as named exchange telemetry. Exchange rows and metadata expose intake active/applied-operation counts, response active/responded/pending counts, response thermal drive, heat-flux response, max target temperature, blocker counts, and reactive/SPH adapter context with the full response report plus compact summary. This keeps worker-consumption acknowledgement visible to downstream material/SPH layers before scientific conservative mutation exists.
+- Bottom-up molecular target-source reconciliation exchange first pass: conservation audit and cross-scale coupling now carry reconciliation summaries as named exchange telemetry. Exchange rows and metadata expose active/reconciled/pending counts, sequence mismatches, residual proxy, unacknowledged thermal drive, intake heat-rate, response heat-flux, blocker count, and reactive/SPH adapter context with the full reconciliation report plus compact summary.
+- Bottom-up molecular conservative source-buffer exchange first pass: conservation audit and cross-scale coupling now carry source-buffer summaries as named exchange telemetry. Exchange rows and metadata expose active/dispatchable/reconciled/pending target counts, source-term count, proxy heat/species totals, residual, unacknowledged drive, and reactive/SPH adapter context with the full source buffer plus compact summary.
+- Bottom-up molecular source-buffer application exchange first pass: conservation audit and cross-scale coupling now carry source-buffer application summaries as named exchange telemetry. Exchange rows expose applied target/field/source-term counts, applied proxy heat rate, thermal drive, residual, and max target delta, while reactive/SPH molecular links preserve target-side application summaries in adapter context.
+- Bottom-up molecular source-buffer acceptance exchange first pass: conservation audit and cross-scale coupling now carry source-buffer acceptance summaries as named exchange telemetry. Exchange rows expose accepted/blocked target counts, source-term count, residual, blocker count, and proxy-mutation readiness, while reactive/SPH molecular links preserve acceptance reports in adapter context before any scientific target mutation exists.
+- Bottom-up molecular source-buffer writeback-validation exchange first pass: conservation audit and cross-scale coupling now carry source-buffer writeback validation as named exchange telemetry. Exchange rows expose validated/blocked target counts, residual, blocker count, and proxy-writeback readiness, while reactive/SPH molecular links preserve the validation report in adapter context before live worker-buffer replay exists.
+- Bottom-up molecular target-buffer replay-validation exchange first pass: conservation audit and cross-scale coupling now carry target-buffer replay validation as named exchange telemetry. Exchange rows expose replayed/blocked target counts, replayed/missing field counts, residual, blocker count, and proxy replay readiness, while reactive/SPH molecular links preserve the replay report in adapter context before scientific worker-buffer mutation exists.
+- Bottom-up molecular target-buffer mutation-audit exchange first pass: conservation audit and cross-scale coupling now carry mutation-audit summaries as named exchange telemetry. Exchange rows expose ready/blocked target counts, ready/blocked write-intent counts, residual, blocker count, reduced mutation readiness, worker-write queue readiness, and scientific readiness, while reactive/SPH molecular links preserve the audit summary in adapter context before any live target-buffer writer exists.
+- Bottom-up molecular target-buffer worker-write queue exchange first pass: conservation audit and cross-scale coupling now carry queue-plan summaries as named exchange telemetry. Exchange rows expose planned/ready/blocked batch counts, ready/blocked/queued write-intent counts, residual, blocker count, reduced queue-planning readiness, worker-write blockers, and scientific readiness, while reactive/SPH molecular links preserve the queue plan in adapter context before any live target-buffer writer exists.
+- Bottom-up molecular target-buffer worker-write execution exchange first pass: conservation audit and cross-scale coupling now carry explicit worker-write execution summaries as named exchange telemetry. Exchange rows expose execution readiness, applied/blocked batch counts, applied/skipped write-intent counts, residual, blocker count, proxy execution status, and scientific readiness, while reactive/SPH molecular links preserve the execution report in adapter context before authoritative GPU worker-buffer mutation exists.
+- Bottom-up molecular target-buffer worker-write verification exchange first pass: conservation audit and cross-scale coupling now carry verification summaries as named exchange telemetry. Exchange rows expose verification readiness, verified/blocked target counts, verified/skipped/missing/mismatched field counts, residual, blocker count, and scientific readiness, while reactive/SPH molecular links preserve the verification report in adapter context before authoritative GPU worker-buffer mutation exists.
+- Bottom-up molecular transfer application-gate adapter plumbing first pass: conservation audit and cross-scale coupling now expose application can-apply, ready/blocked/applied target count, blocker count, closed-residual metadata, and reactive/SPH/field-transfer adapter context. This makes "allocated but blocked" visible to downstream consumers before source terms are allowed to mutate solver state.
+- Adaptive state-publication first pass: Multiscale Ladder now publishes `peercompute.multiscale.state-publication-budget.v0`, throttling full packet construction plus conservation/coupling `StateManager` warm-delta commits from frame/render/manager/queue pressure while keeping the model, scene, active readout, and solver scheduler ticking every frame. State, API, compute status, runtime debug, NetViz metadata, unit tests, and browser smoke expose publish cadence, publish/defer decisions, publish/skip counts, and last publication cost through the `state publish` row.
+- Adaptive runtime-diagnostics cache first pass: Multiscale Ladder now publishes `peercompute.multiscale.runtime-diagnostics-budget.v0`, reusing the latest runtime-debug snapshot for `getRuntimeDebug()`, `getState().runtimeDebug`, NetViz session metadata, and panel/readout consumers when frame/render/state-publication/manager pressure is high. The cache removes duplicate coupling/manager telemetry rebuilds from repeated API/state paths while exposing snapshot interval, refresh/cache decision, build/reuse counts, and last build cost through state, API, compute status, runtime debug, NetViz metadata, unit tests, browser smoke, and the `runtime diag` row.
+- Live solver workload resize first pass: Multiscale Ladder exposes `sim -` / `sim +` controls plus `window.__multiscaleDemo.resizeSolverWorkloads()`, `scaleSolverQuality()`, and `resizeComputeWorkers()` so solver problem sizes and manager worker targets can change without a page reload.
+- Solver admission first pass: Multiscale Ladder now wraps solver budget creation with `peercompute.multiscale.solver-admission.v0`, asking the shared `ComputeManager.estimateWorkloadBudget()` for per-family worker/memory/GPU ceilings before law-worker state is reset. Oversized solver overrides for grids, particles, atoms, and samples are clamped into the local resource envelope and reported through state, compute status, runtime debug, and readout rows.
+- Solver submission backpressure first pass: Multiscale Ladder now publishes `peercompute.multiscale.solver-submission-budget.v0` every frame, ranks cadence/refinement-eligible law workers by event trigger and active-layer proximity, keeps newly viewed layer-native solvers urgent until each receives one submission, limits new submissions when frame time, manager load, or queue pressure rises, and exposes admitted/deferred solver families through state, compute status, runtime debug, NetViz metadata, API, and the `solver submit` readout row.
+- Adaptive runtime scaler first pass: Multiscale Ladder now samples frame time, ComputeManager manager-stats load/duration telemetry, worker-utilization pressure, queue pressure, solver pressure, solver-admission pressure, browser memory pressure, network/cluster capacity telemetry, and worker policy to request compute-worker scaling or solver-workload quality changes automatically, with `setAutoScale()` and `?autoScaleWorkloads=false` for manual-only comparisons.
+- Solver-load adaptive scaling first pass: Multiscale Ladder now publishes `peercompute.multiscale.solver-load.v0` telemetry for per-law pending state, elapsed time, cadence, workload units, molecular candidate-pair pressure, locked/manual solvers, and dominant scalable solver pressure; the adaptive runtime scaler can use that report plus solver-admission pressure for targeted per-solver workload changes.
+- Molecular GPU-pressure autoscaling first pass: solver-load pressure for `molecularDynamics` now uses WebGPU neighbor-list candidate/accepted pair counts, neighbor-capacity usage, and overflow counters ahead of CPU-only candidates, so the adaptive scaler can reduce or restore the MD atom workload based on actual staged-kernel pressure.
+- Runtime memory-pressure first pass: Multiscale Ladder now publishes `peercompute.multiscale.memory-pressure.v0` from browser heap samples when available and resource-profile memory budgets otherwise, exposes it in `getState()`, compute status, runtime scaler status, runtime debug, NetViz session metadata, and readout rows, and prevents the scaler from adding workers while memory pressure is high.
+- Runtime network/cluster capacity first pass: Multiscale Ladder now publishes `peercompute.multiscale.network-capacity.v0` from browser Network Information API data plus query/cluster hints such as `clusterNodes`, `clusterGpus`, `networkBandwidthMbps`, and `networkRttMs`. The report exposes local/cluster placement mode, remote worker capacity, bandwidth/latency tiers, capacity score, and scheduling recommendation through compute status, `getState()`, runtime debug, NetViz metadata, and readout rows.
+- Runtime placement-plan scaffold first pass: Multiscale Ladder now publishes advisory `peercompute.multiscale.placement-plan.v0` telemetry from resource profile, worker policy, manager stats, solver load, memory pressure, network/cluster capacity, and solver descriptors. It recommends local, peer, or cluster candidates per solver family while keeping all current work under the single local `ComputeManager`.
+- ComputeManager task-placement first pass: `ComputeManager` now emits `peercompute.compute.task-placement.v0` inside manager stats, recording requested local/peer/cluster placement intent from task hints separately from actual local worker/inline execution. Multiscale Ladder passes advisory placement-plan entries into solver tasks and exposes requested-vs-actual task placement through `getState().taskPlacement`, runtime debug, and the active `task placement` readout row while actual work remains under the single local manager.
+- Remote placement executor hook first pass: `ComputeManager` accepts an optional placement executor for non-advisory peer/cluster tasks, records successful delegated execution as `remote-peer` or `remote-cluster`, routes returned `commitDelta` payloads through the same manager hook, and leaves all advisory/default tasks on the existing local worker/inline path.
+- Remote placement timeout/provenance first pass: delegated non-advisory peer/cluster tasks now have configurable timeout handling, remote failure/timeout counters, placement-bucket timeout accounting, and `peercompute.compute.remote-placement-provenance.v0` metadata for executor id, peer/cluster/worker ids, hashes, validation state, and result schema.
+- Remote placement admission first pass: an optional placement admission hook can now accept or reject non-advisory peer/cluster tasks before the executor runs, with rejected-task counters, placement-bucket rejection accounting, and explicit `ERR_COMPUTE_PLACEMENT_REJECTED` failures for bandwidth/trust/resource policy gates.
+- Placement admission policy helper first pass: PeerCompute now exports `createPlacementAdmissionPolicy()`, `evaluatePlacementAdmission()`, and placement-admission schemas so measured bandwidth, RTT, remote worker capacity, cluster nodes/GPUs, placement confidence, and trusted-peer ids can feed the core admission hook without hardwiring Multiscale to a specific network transport.
+- Deterministic task-packet metadata first pass: non-advisory remote placement payloads now receive `peercompute.compute.task-packet.v0` before admission/executor hooks run, carrying stable code/input/task hashes into admission context and remote-placement provenance for later replay, trust, and redundant-validation work.
+- Remote task envelope/signing scaffold first pass: non-advisory remote placement now attaches `peercompute.compute.remote-task-envelope.v0` before admission/executor hooks run, with optional signer metadata exposed in executor/admission context and remote provenance. This is a pluggable signature envelope, not a peer identity or cryptographic trust policy by itself.
+- Remote placement hash-verification first pass: delegated non-advisory peer/cluster results now produce `peercompute.compute.remote-placement-verification.v0`; returned provenance hashes must match the task packet hashes or the manager rejects the task with `ERR_COMPUTE_PLACEMENT_VERIFICATION` and records verification-failure counters.
+- Remote placement result-validation hook first pass: an optional result validator can inspect the final result, pending `commitDelta`, task packet, and provenance before state is applied, returning `peercompute.compute.remote-placement-validation.v0` and rejecting failures with `ERR_COMPUTE_PLACEMENT_VALIDATION`.
+- Remote placement retry/backoff first pass: non-advisory remote placement now has a bounded retry policy for transient executor errors and timeouts, emits `peercompute.compute.remote-placement-retry.v0` reports, counts remote attempts/retries/exhaustion separately from final task success/failure, and keeps admission, verification, and validation failures terminal.
+- Remote result quorum-validator helper first pass: PeerCompute now exports `createRemoteResultQuorumValidator()`, `evaluateRemoteResultQuorum()`, and quorum schemas so the result-validation hook can compare compact replica output/delta hashes and reject mismatched delegated results before `commitDelta` is applied.
+- NodeKernel remote-compute transport scaffold first pass: PeerCompute now exports `peercompute.compute.remote-request.v0` / `peercompute.compute.remote-result.v0`, `NodeKernel.submitRemoteComputeTask()`, and `createNetworkPlacementExecutor(peerId)`; responders are opt-in, route module/WASM tasks through local `ComputeManager`, return task envelopes without local delta commits, and reject function payloads by default.
+- NodeKernel placement provenance bridge first pass: `createNetworkPlacementExecutor(peerId)` now requests full remote-compute response envelopes and returns `peercompute.nodekernel.remote-compute-placement-provenance.v0` metadata to the core remote-placement path, preserving responder/request ids, task-packet hashes, task-envelope signer metadata, response schema, result schema, and round-trip timing for verification and audit.
+- NodeKernel two-kernel placement gate first pass: the unit suite now drives a requester `ComputeManager` through `NodeKernel.createNetworkPlacementExecutor(peerId)`, an in-memory transport, and a responder `ComputeManager`, verifying responder-local deltas are suppressed while the requester applies the returned `commitDelta` and records verified remote-peer provenance.
+- NodeKernel redundant placement gate first pass: `createRedundantNetworkPlacementExecutor(peerIds)` now dispatches one primary peer plus replica peers, keeps the primary as the preferred state-commit source, promotes the first successful replica when the primary fails, attaches `peercompute.nodekernel.redundant-network-placement.v0` primary/replica/failover summaries with output/delta/task hashes, preserves replica provenance including nested responder `remoteExecution` plus promoted-replica executor ids through `ComputeManager`, and is covered by in-memory requester/primary/replica quorum and dead-primary/two-replica promotion unit tests.
+- Multiscale remote-placement readiness first pass: the demo now publishes `peercompute.multiscale.remote-placement-readiness.v0` from URL flags, network capacity, placement-plan candidates, and manager placement capabilities, exposing off/armed/dispatch-ready state through compute status, runtime debug, `getState()`, and the `remote place` readout while keeping default solver execution advisory/local.
+- Remote placement runtime hook wiring first pass: `ComputeManager.configurePlacementHooks()` can now install or clear placement executor/admission/signer/result-validator hooks after construction, and Multiscale exposes `window.__multiscaleDemo.configureRemotePlacement()` plus `peercompute.multiscale.remote-placement-configuration.v0` / `remote config` readouts so an explicit NodeKernel executor/trust path can be attached without changing default local execution.
+- Multiscale opt-in NodeKernel layer first pass: the demo now parses `?enablePeerNetwork=1` style flags, discovers relay config, can start/stop a real `NodeKernel` through `window.__multiscaleDemo.startPeerNetwork()` / `stopPeerNetwork()`, starts browser transport with non-fatal relay-listen fault tolerance, publishes `peercompute.multiscale.node-kernel-status.v0` through compute status, runtime debug, NetViz session metadata, `getState().nodeKernel`, and a `node kernel` readout row, and can auto-wire the kernel's `createNetworkPlacementExecutor(peerId)` only when remote placement is explicitly armed with `remotePlacementPeerId` or `autoSelectRemotePlacementPeer`.
+- Multiscale redundant remote-placement config first pass: `remotePlacementReplicaPeerIds` / `remoteReplicaPeerIds` / `replicaPeerIds` and `remotePlacementTargetReplicaCount` / aliases now parse from URL/runtime overrides, auto-wired NodeKernel placement can choose ranked replica candidates, `remotePlacementConfiguration` reports replica ids/count and redundant schema state, and quorum validator thresholds scale to the primary-plus-replica count.
+- Multiscale remote solver placement policy first pass: the demo now exposes `peercompute.multiscale.remote-solver-placement-policy.v0`, `window.__multiscaleDemo.configureRemoteSolverPlacement()`, and URL flags such as `?enableRemoteSolverPlacement=1&remoteSolverFamilies=cosmologyExpansion,nbody`, promoting selected coarse solver families to non-advisory peer/cluster placement only when the remote placement readiness gate is dispatch-ready while keeping tight solvers advisory by default.
+- Multiscale remote solver decision telemetry first pass: the demo now publishes `peercompute.multiscale.remote-solver-placement-decisions.v0` through state, compute status, runtime debug, `window.__multiscaleDemo.getRemoteSolverPlacementDecisions()`, and a `remote decisions` readout row, so each solver family's promote/advisory/block reason is visible before non-advisory remote dispatch is enabled.
+- Multiscale loopback remote-placement probe first pass: the demo now exposes an opt-in `peercompute.multiscale.loopback-remote-placement.v0` executor through `?enableLoopbackRemotePlacement=1` and `window.__multiscaleDemo.runLoopbackRemotePlacementProbe()`, letting a local browser run a real non-advisory cosmology solver task through remote placement admission/provenance/hash-verification/result-validation/task-placement accounting and the `StateManager` `commitDelta` path without requiring a second peer.
+- Multiscale policy-promoted loopback solver gate first pass: `window.__multiscaleDemo.runLoopbackRemoteSolverPlacementProbe()` now enables loopback remote placement plus the remote-solver policy, asks the normal cosmology placement-plan hint to promote through `getSolverPlacementHint()`, and verifies the resulting solver task uses the same non-advisory remote placement, provenance, verification, validation, task-placement accounting, and `StateManager` `commitDelta` path.
+- Multiscale live NodeKernel redundant remote-placement smoke first pass: `npm --prefix demos/multiscale run test:remote-placement` now serves the built docs bundle, starts a local Node relay, opens requester/primary-responder/promoted-replica/quorum-replica browser pages, auto-selects the connected non-relay primary responder through `peercompute.multiscale.remote-peer-selection.v0`, verifies primary and replicas advertise worker/GPU capacity from NodeKernel presence, arms remote-solver policy for `cosmologyExpansion`, and verifies both an ordinary runtime cadence task and `window.__multiscaleDemo.runRemoteSolverPlacementProbe()` execute `cosmology-expansion` solver work as actual redundant `remote-peer` tasks. The smoke requires primary-plus-replica quorum validation, matching output/task hashes with `compareCommitDeltaHash: false` for independently stateful responder deltas, named primary/replica `workerId` / `remoteExecution` provenance, deterministic balanced primary rotation to a non-top-ranked responder via `remotePlacementBalanceSeed`, requester-side primary or promoted-replica `StateManager` commit, and positive primary/replica worker completion counters.
+- Multiscale remote solver cadence handoff first pass: `configureRemoteSolverPlacement()` now queues a one-shot promoted solver refresh for each promoted solver family, and `createSolverSubmissionBudget()` treats that refresh as urgent `remote-solver-placement` work under backlog. The handoff reuses an already dispatch-ready NodeKernel placement executor so balanced remote-peer rotation is not disturbed by solver-policy setup, clears the refresh after a successful solver step, and exposes refreshed `remote peer plan` / `remote decisions` HUD evidence through `refreshReadout()`.
+- Multiscale live NodeKernel redundant failover smoke first pass: the live remote-placement smoke now opens a fourth Chromium page as a second replica, configures `remotePlacementPrimaryTimeoutMs`, `remotePlacementReplicaTimeoutMs`, and `remotePlacementQuorumResultCount`, closes the requested primary responder, and verifies the dead-primary probe promotes one replica while an independent replica supplies matching output/task hashes for quorum before requester-side state application.
+- Multiscale remote peer selection and capacity advertisement first pass: `NetworkManager` presence can now carry compact peer capability snapshots; `NodeKernel` publishes `peercompute.nodekernel.peer-capabilities.v0` / `peercompute.nodekernel.compute-capacity.v0` from its `ComputeManager`; and `createRemotePeerSelectionReport()` scores connected non-relay peers from trusted/preferred/sticky peer hints, network-capacity telemetry, local manager pressure, and advertised worker/GPU/bandwidth/reliability metadata. The decision is exposed through `getState().remotePeerSelection`, `remotePlacementConfiguration.remotePeerSelection`, runtime debug, and a `remote peer` readout row.
+- Multiscale balanced remote peer placement first pass: `createRemotePeerPlacementPlan()` now emits `peercompute.multiscale.remote-peer-placement-plan.v0` from the scored connected-peer report. When `balanceRemotePlacementPeers=1` / `remotePlacementBalancePeers=1` is enabled with auto-selected remote placement and no explicit primary, Multiscale rotates the NodeKernel primary across ranked candidates, preserves requested replica ids ahead of ranked fallback replicas, keeps manual `remotePlacementPeerId` pinning intact, accepts `remotePlacementBalanceSeed` / aliases for deterministic rotation, avoids persisting the balanced auto-primary as a runtime override, keeps the active executor-backed readiness dispatchable, and exposes the active primary/replica plan through `getState().remotePeerPlacementPlan`, `getRemotePeerPlacementPlan()`, `remotePlacementConfiguration.remotePeerPlacementPlan`, runtime debug, and the `remote peer plan` readout row.
+- Multiscale remote peer reliability first pass: the demo now publishes `peercompute.multiscale.remote-peer-reliability.v0`, updating a local per-peer outcome ledger from `taskPlacement.lastRemotePlacement` success/failure/timeout/verification/validation results. The ledger is scoped by Multiscale room/topology, persists through `peercompute.multiscale.remote-peer-reliability-store.v0`, prunes stale entries, and decays old scores back toward the prior before selector use. `createRemotePeerSelectionReport()` consumes the learned reliability score through candidate capacity, selected-peer admission overlays receive the same score, and the state API/readout/runtime-debug surfaces expose the ledger plus persistence status through a `remote reliability` row.
+- Multiscale remote admission capacity bridge first pass: selected NodeKernel peer capacity is now overlaid into placement-admission network-capacity input, and the live remote-placement smoke asserts runtime/probe admission `remoteWorkerCapacity` stays positive for retained but currently retired browser worker pools.
+- Infinite Context Coder adoption for PeerCompute: the local PeerCompute checkout is now registered and indexed in `/home/cos/projects/infinite_context_coder` for long-running Multiscale work; the current memory artifact lives at `/home/cos/projects/infinite_context_coder/artifacts/repos/peercompute/codebase_memory` and should be refreshed before broad architecture changes.
+- Runtime debug panel first pass: Multiscale Ladder now renders `peercompute.multiscale.runtime-debug.v0` in a center retro panel and exposes it through `window.__multiscaleDemo.getRuntimeDebug()` / `getState().runtimeDebug`, combining worker policy, manager load, worker utilization, task placement, top task families, solver pressure, active-layer solver focus, memory pressure, network capacity, placement plan, autoscaler state, readout cadence, warm-delta counts, and current quality multipliers. Automatic HUD/packet JSON rendering is throttled to `peercompute.multiscale.readout-cadence.v0` at 250 ms so debug serialization does not compete with the render loop.
+- Runtime HUD focus first pass: Multiscale Ladder now defaults to a compact `focus` HUD, exposes `window.__multiscaleDemo.setHudMode()` / `getHudMode()` / `getPacketPreview()`, filters the active-layer readout to current-scale rows, writes `peercompute.multiscale.packet-preview.v0` instead of the full packet into the DOM, and throttles the center runtime-debug DOM panel separately at 1000 ms while keeping full telemetry available through `?hud=telemetry` or the HUD buttons.
+- NetViz session metadata first pass: NetViz session normalization now preserves session metadata, NodeKernel can include provider-backed session metadata, and Multiscale Ladder exposes/broadcasts `peercompute.multiscale.netviz-session.v0` metadata that embeds its runtime-debug snapshot for same-origin NetViz attach surfaces.
+- NetViz session runtime inspector first pass: NetViz now renders selected/latest attach-session metadata in a Session Runtime panel, including worker counts, manager task totals, top task families, solver pressure, autoscale state, and warm-delta counts; a focused Playwright smoke injects Multiscale metadata over the same BroadcastChannel path and verifies panel/API preservation.
+- Solver state remap first pass: Multiscale Ladder now preserves live law-worker timelines and state during solver workload resize through `peercompute.multiscale.solver-state-remap.v0`, remapping record/particle solvers, grid/tile solvers, and mixed solver state while exposing compact mass/charge/momentum/energy/species/field invariant deltas in packets, `getState().solverRemapSummary`, runtime-debug, readout rows, and visual smoke, with full reports gated behind explicit debug access.
+- Ambient environment controls first pass: Multiscale Ladder now exposes ambient temperature and pressure sliders/API alongside oxygen, stellar flux, and gravity; these values flow into solver inputs, active-layer readout, and packet downward boundary conditions.
+- Solver-worker registry first pass: PeerCompute now has a `SolverRegistry` for typed physics law/rule descriptors and `ComputeManager.submitSolverTask()`. Multiscale Ladder registers initial N-body gravity, Maxwell/electromagnetic, cosmology expansion, stellar-fusion, magnetosphere plasma/MHD, hydro-atmosphere, radiation-opacity, combustion-plume, membrane-shell, reactive thermal cell, molecular dynamics, quantum orbital grid, and SPH material descriptors as solver task families.
+- Executable law-worker first pass: Multiscale Ladder now wires `nbody-gravity` to a WebGPU direct-sum N-body task module with deterministic CPU fallback, emits `multiscale-solver-deltas` through the shared `ComputeManager` -> `StateManager` path, reports energy/momentum conservation diagnostics in the demo packet, and uses the solver output to render visible body/trail overlays on solar and galactic layers.
+- N-body tree-gravity first pass: the same `nbody-gravity` worker now supports CPU Barnes-Hut tree mode (`nbodyMode=tree`) with theta/leaf/threshold controls, approximation diagnostics, warm-delta packet fields, direct-vs-tree tests, and a 128-body browser smoke path.
+- Reactive law-worker first pass: Multiscale Ladder now wires `reactive-thermal-cell` to a reduced CPU task module that emits fire/steam/temperature/pressure closures, commits solver deltas, and feeds surface aggregate packet state for the water/fire layer.
+- Reactive thermal WebGPU first pass: the same `reactive-thermal-cell` task now has a WebGPU one-cell thermochemical backend with deterministic CPU fallback, publishing the same solver and closure deltas while reporting `webgpu-reactive-thermal` in browser visual smoke.
+- Maxwell law-worker first pass: Multiscale Ladder now wires `maxwell-em` to a WebGPU periodic FDTD-style field tile with CPU fallback that emits electromagnetic field energy, net charge, Poynting flux, commits solver deltas, feeds galactic aggregate packet state, and renders a visible vector-field overlay on the galactic layer.
+- Hydro-atmosphere law-worker first pass: Multiscale Ladder now wires `hydro-atmosphere` to a WebGPU reduced moist shallow-water tile with CPU fallback that emits cloud/precipitation/wind/storm diagnostics, commits solver deltas, feeds planet aggregate packet state, and renders a visible planet weather overlay.
+- Radiation-opacity law-worker first pass: Multiscale Ladder now wires `radiation-opacity` to a WebGPU reduced grey-radiation/opacity tile with CPU fallback that emits optical depth, greenhouse factor, mean material temperature, net heating power, and reduced energy-drift diagnostics, commits solver deltas, feeds planet/solar aggregate packet state, and renders a visible heat/opacity overlay.
+- Combustion-plume law-worker first pass: Multiscale Ladder now wires `combustion-plume` to a WebGPU reduced fuel/oxygen/smoke/water tile with CPU fallback that emits fire area, smoke column, fuel remaining, heat-release, and temperature diagnostics, commits solver deltas, feeds surface aggregate packet state, and renders visible surface/MLS-MPM plume overlays.
+- Combustion-plume advection diagnostics first pass: the reduced plume tile now advects smoke/heat/oxygen with hydro wind on CPU and WebGPU paths, reports smoke centroid, plume rise, buoyancy flux, oxygen depletion, and suppression diagnostics against the active environment baseline, and exposes those fields in solver runtime status, warm deltas, packet closures, aggregate state, overlay status, and browser visual smoke.
+- Radiative heat-feedback first pass: radiation-opacity aggregate output now produces `surfaceRadiativeHeatFlux`, and the reactive thermal, combustion-plume, plus SPH material kernels consume that flux on both WebGPU and CPU paths so radiation can directly heat the fire/material layer instead of only updating packet aggregates.
+- SPH material law-worker first pass: Multiscale Ladder now wires `sph-material` to a WebGPU reduced material-particle task module with CPU fallback that emits material temperature/phase/mass diagnostics, commits solver deltas, feeds MPM/surface aggregate packet state, and renders visible water/vapor particle overlays on the surface and MLS-MPM layers.
+- SPH fire-contact suppression first pass: SPH material diagnostics now report fire-contact fraction and cooling potential, and the model feeds that liquid-contact signal back into surface water-contact/fire-suppression state plus packet closures.
+- Membrane-shell law-worker first pass: Multiscale Ladder now wires `membrane-shell` to a WebGPU reduced thin-shell task module with CPU fallback that emits pressure-load, heat-flux, stress, strain, damage, integrity, rupture-risk, and burst diagnostics, commits solver deltas, feeds balloon aggregate packet state, and tints the visible surface water-balloon shell by rupture risk.
+- SPH rupture spill-coupling first pass: membrane/manual rupture now drives a decaying SPH spill impulse, reduced stream placement toward the fire, released-water accounting, ground/fire contact telemetry, packet closures, conservation exchange fields, and browser visual smoke clicks the rupture control to verify positive spill, fire-contact, and cooling telemetry.
+- SPH impulse accounting first pass: SPH material packets and the conservation audit now expose momentum drift and kinetic-energy drift so reduced rupture-stream work is visible in telemetry instead of hidden behind suppression behavior.
+- SPH phase-change telemetry first pass: SPH material diagnostics now expose ice/liquid/vapor mix, boiling/freezing fractions, phase-change-rate and latent-heat sink/release proxies, carry them through packet aggregate state and shared closure results, and apply a small CPU/WebGPU latent-heat-style damping step around vaporization/condensation while preserving the current particle buffer layout. `peercompute.multiscale.sph-material.phase-change-evidence.v0` adds H2O-specific reduced evidence status, validation status, scientific/EOS flags, and explicit blockers for missing tabulated H2O EOS, surface-tension calibration, and phase-boundary benchmarks.
+- Stellar-fusion plasma law-worker first pass: Multiscale Ladder now wires `stellar-fusion` to a WebGPU reduced proton-proton-chain/plasma tile with CPU fallback that emits core temperature, density, H/He fraction, fusion power, luminosity, neutrino-loss, species drift, and energy-drift diagnostics, commits solver deltas, feeds solar/radiation packet state, and renders a visible solar-core overlay.
+- Magnetosphere plasma/MHD law-worker first pass: Multiscale Ladder now wires `magnetosphere-plasma` to a WebGPU reduced ideal-MHD/plasma tile with CPU fallback that emits solar-wind pressure, magnetopause radius, reconnection rate, ionization, Alfven speed, current-sheet intensity, divergence-B proxy, and reduced mass/magnetic/plasma energy drift diagnostics, commits solver deltas, feeds solar/radiation/debris packet state, and renders a visible solar magnetosphere overlay.
+- PIC plasma patch law-worker first pass: Multiscale Ladder now wires `pic-plasma-patch` to a WebGPU reduced particle-in-cell push/deposit task with CPU fallback that emits charge/current, kinetic/field energy, particle escape, reconnection heating, and divergence-E diagnostics, commits solver deltas, feeds magnetosphere/solar packet state, renders a visible charge-colored kinetic plasma overlay, and adds reduced charge audit telemetry.
+- Relativistic correction law-worker first pass: Multiscale Ladder now wires `relativistic-correction` to a WebGPU reduced post-Newtonian orbit-shell task with CPU fallback that emits speed, Lorentz, time-dilation, gravitational-redshift, perihelion-precession, frame-dragging, lensing, Shapiro-delay, and causality diagnostics, commits solver deltas, feeds solar/galactic/cosmology packet state, renders a visible relativistic shell overlay, and adds reduced relativity audit telemetry.
+- Cosmology expansion law-worker first pass: Multiscale Ladder now wires `cosmology-expansion` to a WebGPU reduced supergalactic expansion/density-contrast task with CPU fallback that emits scale factor, Hubble rate, density contrast, filament energy, void fraction, structure growth, expansion work, and Hubble-tension diagnostics, commits solver deltas, feeds cosmology/galaxy packet state, renders a visible supergalactic web overlay, and adds reduced cosmology audit telemetry.
+- Molecular dynamics law-worker first pass: Multiscale Ladder now wires `molecular-dynamics` to a WebGPU reduced atom/bond patch with CPU fallback that emits atom, bond, species, bond-order, reaction-progress, heat-release, pressure, temperature, ionization, charge, and reduced energy diagnostics, commits solver deltas, feeds molecular/surface packet state, renders visible atom/bond overlays, and adds reduced molecular energy/charge/bond telemetry to the conservation audit.
+- Molecular recipe controls first pass: Multiscale Ladder now exposes counted atom recipe controls for the MD patch through the retro UI, URL composition parameters, and `window.__multiscaleDemo.setMolecularComposition()` / `addMolecularAtoms()`, with tests and browser smoke validating a 5 O + 10 H water recipe.
+- Molecular bond-structure cleanup first pass: the reduced MD initializer now seeds H2O, CO2, methane-style C/H groups, and NaCl pairs with recipe-aware geometry, and diagnostics use valence-costed bond inference so the overlay shows intended molecular structure instead of dense nearest-neighbor clutter.
+- Molecular live append first pass: the molecular add API now appends atoms into the current reduced MD state while preserving existing atom positions/velocities, anchors new atoms near compatible valence partners, resubmits the appended state through the same worker path, and keeps non-H/C/N/O species such as Na/Cl in packet aggregate state.
+- Molecular charge/electrical proxy first pass: the reduced MD worker now applies electronegativity/hardness partial-charge equilibration after initialization, appends, and timesteps, then exposes `peercompute.multiscale.molecular-charge-equilibration.v0`, patch dipole, conductivity, ionic/covalent bond counts, polar-bond fraction, valence saturation, mean absolute charge, and clamp-aware neutralization residuals in packet aggregate/closure state.
+- Molecular force-energy ledger first pass: reduced MD diagnostics now expose `peercompute.multiscale.molecular-force-energy-ledger.v0`, splitting the current force model's energy accounting into kinetic, thermal, bonded-attraction, bond-strain, electrostatic, repulsion, QEq-residual, and quantum-coupling-bias proxy terms. The ledger feeds aggregate packets, shared `ClosureResult` state, runtime summaries, the `molecular energy` HUD row, and visual smoke assertions while remaining a reduced diagnostic proxy rather than a calibrated force-field or ab initio energy.
+- Molecular thermo-phase ledger first pass: reduced MD diagnostics now expose `peercompute.multiscale.molecular-thermo-phase-ledger.v0`, deriving solid/liquid/vapor/plasma fractions, water-molecule fraction, phase-change drive, latent-heat sink/release proxies, condensation order, and specific-enthalpy proxy from molecular temperature, charge/ionization, bond closure, reaction ledger, and force-energy telemetry. Aggregate packets, shared `ClosureResult.phase`, runtime summaries, unit tests, browser smoke, and the `molecular phase` HUD row carry the ledger while it remains a reduced phase-state proxy rather than a calibrated water EOS or phase diagram.
+- Molecular phase consumer handoff first pass: reactive thermal and SPH material workers now summarize molecular `ClosureResult.phase` through the shared molecular source/sink contract, fold reduced phase heating/cooling plus latent heat proxies into their input/source terms, and publish phase drive/latent fields through aggregate packets, conservation exchange, field metadata, unit tests, and browser smoke. This is still reduced open-system telemetry, not conservative thermodynamic mutation.
+- Molecular electrical readout first pass: the Multiscale Ladder active-layer panel now renders molecular bond class and electrical proxy rows from packet aggregate state, with browser smoke validating the H10/O5/NaCl readout on dev and built-docs pages.
+- Molecular spatial search first pass: the reduced MD worker now uses deterministic spatial cell-list candidate search for bond inference and CPU fallback interactions, exposes search mode/candidate/cell telemetry in diagnostics and packet aggregate state, and renders a live `molecular search` row in the active-layer panel.
+- Molecular WebGPU tiled-kernel first pass: the reduced MD worker shader now uses workgroup-shared atom tiles for its direct all-pairs reference pass, reports `kernelMode: "tiled-workgroup-all-pairs"`, and visual smoke fails if molecular silently falls back to CPU on the current Chrome/WebGPU path.
+- Molecular WebGPU neighbor-list first pass: the reduced MD worker now prefers a staged `cell-neighbor-list` WebGPU path with clear-grid, build-grid, build-neighbor-list, and integrate passes, reports grid/capacity/candidate/accepted/overflow telemetry, and falls back to the tiled all-pairs reference shader if capacity overflows or neighbor validation is unavailable.
+- Molecular WebGPU telemetry surfacing first pass: packet aggregate state and solver-load reports now carry flattened `webgpuKernelMode`, neighbor-list mode, neighbor capacity, candidate/accepted pair counts, and overflow counters, with browser smoke verifying zero-overflow active neighbor-list telemetry on both dev and built-docs pages.
+- Molecular adaptive GPU-pressure first pass: `createSolverLoadReport()` now derives MD workload units and pressure from WebGPU neighbor-list candidate/accepted pairs, capacity usage, and overflow counters before CPU-only candidate counts; browser smoke verifies solver-load pressure telemetry and observed molecular workload scale-down on dev and built-docs pages.
+- Molecular dynamic neighbor-grid first pass: the staged WebGPU MD path now keeps fixed buffer dimensions but computes per-step cell size/origin from padded atom bounds, reports grid extent/center/bounds plus a `dynamicBounds` flag, and visual smoke verifies those layout fields on dev and built-docs pages.
+- Shared closure contract first pass: Multiscale Ladder now defines `ClosureState -> ClosureResult` for thermodynamics, transport, mechanics, electromagnetics, chemistry, phase, validity, uncertainty, provenance, and conservation outputs; reactive thermal and SPH material solver outputs publish closure summaries in the packet.
+- Multiscale conservation audit first pass: Multiscale packets now include `peercompute.multiscale.conservation-audit.v0`, a reduced open-system report for water inventory, mass residual, energy residual proxy, species residual proxy, solver drift, cosmology expansion exchange, magnetosphere/MHD exchange, membrane rupture exchange, compute-resize residuals, and active radiation/combustion/reactive/SPH exchange terms. This is a telemetry/regression surface for coupling work, not a scientific conservation proof.
+- Multiscale conservation warm-delta first pass: the conservation audit is now committed through `StateManager` as a `multiscale-conservation` warm delta and exposed by the demo state API/readout, so conservation telemetry follows the same state path as solver and closure summaries.
+- Multiscale cross-scale coupling report first pass: Multiscale packets now include `peercompute.multiscale.cross-scale-coupling.v0`, a structured proxy handoff report for molecular/reactive/combustion/SPH/membrane/weather/radiation/stellar/magnetosphere/PIC/relativity/cosmology links plus environment boundary forcing. The report is committed as `multiscale-couplings`, exposed through state/runtime-debug/readout/NetViz APIs, and verified by model plus browser visual smoke tests.
+- Multiscale field metadata report first pass: coupling endpoints and conservation residual/exchange fields now carry `peercompute.multiscale.field-metadata-report.v0` unit/dimension metadata, including solver id, canonical field, quantity, unit, dimensions, storage location, source, and `unitStatus` so proxy and dimensionless fields are explicit in runtime packets.
+- Multiscale field compatibility report first pass: cross-scale coupling packets now include `peercompute.multiscale.field-compatibility-report.v0`, checking link source/target unit and dimension compatibility, recording adapter-required proxy or dimensionless paths, and flagging physical dimension mismatches separately from expected proxy handoffs.
+- Multiscale field adapter plan first pass: compatibility reports now feed `peercompute.multiscale.field-adapter-plan.v0`, classifying each coupling handoff as identity pass-through, known affine/scaled unit conversion, named response adapter, stub-required proxy/dimensionless adapter, or blocked metadata/dimension error. Runtime debug and the active readout expose compact adapter counts; scientific-mode adapters still need source/sink accounting and validation gates.
+- Multiscale field transfer report first pass: adapter plans now feed `peercompute.multiscale.field-transfer-report.v0`, executing ready scalar identity/unit-conversion paths plus named molecular reactive thermal source, thermal ignition, SPH water suppression, membrane rupture spill, combustion plume weather, radiation surface heat, stellar radiation pressure, Maxwell magnetosphere boundary response, and PIC kinetic/MHD reconnection feedback adapters against live source values/context, reporting predicted target values/residuals, and explicitly skipping remaining proxy stubs until named conservative equations exist. The molecular reactive thermal preview now includes dry-run conservative-transfer allocation context while remaining telemetry-only.
+- Schrodinger closure adapter first pass: Schrodinger material property packets now convert to/from the shared closure contract, and PeerCompute attach publishes both the legacy `materials` warm delta and a normalized `multiscale-closures` delta.
+- Multiscale closure warm-delta first pass: Multiscale Ladder now commits reactive thermal and SPH material `ClosureResult` summaries as `multiscale-closures` warm deltas through `StateManager`, exposes them through `window.__multiscaleDemo`, and verifies them in the reusable browser visual smoke.
+- Multiscale ULG runtime-manifest first pass: packets now include `peercompute.ulg.runtime-manifest.v0`, a WebGPU-only bottom-up law runtime contract that packages carrier/state-channel declarations, the current Schrodinger Hamiltonian, quantum-state result, derived material closure provenance, canonical WGSL pass DAG, law/quantum task capsules, invariant report, and compact delta. It publishes `multiscale-ulg-runtime` warm deltas, surfaces in runtime debug/readout/API state, and explicitly rejects live non-WebGPU pass backends while remaining scientific-blocked until calibrated closures replace the current screened-hydrogenic/reference-property envelope.
+- Multiscale ULG WebGPU state-delta first pass: the registered `ulg-runtime` solver now resolves to `ulgRuntimeTasks.js`, submits through the shared `ComputeManager`, encodes the ULG pass DAG plus manifest-derived closure/environment/quantum scalars into worker-local WebGPU storage buffers, and publishes `peercompute.ulg.webgpu-execution-result.v0`, nested `peercompute.ulg.webgpu-state-delta.v0`, plus `peercompute.ulg.webgpu-execution-delta.v0` under `multiscale-ulg-runtime-execution`. It surfaces through runtime debug, the `ulg exec` readout row, `getState().ulgRuntimeExecution`, `getState().ulgRuntimeStateDelta`, `getState().ulgRuntimeExecutionState`, `getUlgRuntimeExecution()`, `getUlgRuntimeStateDelta()`, and `getUlgRuntimeExecutionDeltas()`, and reports WebGPU-unavailable blockers instead of a CPU fallback.
+- ComputeManager GPU resident lane authority wrapper first pass: `ComputeManager` now derives `peercompute.compute.gpu-resident-lane-task.v0` metadata from task/WebGPU residency hints, owns a `GpuResidentLaneManager`, and wraps declared inline GPU-lane tasks in acquire/complete/reject lease flow before local commit. Required GPU fences are enforced before `commitDelta` with `ERR_COMPUTE_GPU_FENCE_UNSATISFIED`, and return envelopes include fence/lane execution evidence for admission debugging. This is the local authority wrapper for resident lanes; full distributed ULG SPH pass-DAG scheduling remains downstream.
+- Molecular ULG WebGPU source-term first pass: molecular dynamics now consumes `peercompute.ulg.webgpu-state-delta.v0` as a lower-law source. Browser/WebGPU MD packs compact temperature, charge, velocity, magnetic, energy, and normalization channels into the shader uniform buffer and applies them inside the staged `cell-neighbor-list` integrate kernel before force evaluation. Packets, closures, runtime status, and the active `molecular ulg` readout expose the source hash, channel count, delta magnitudes, `ulgStateDeltaApplicationMode`, and `ulgStateDeltaWebgpuKernelApplied`. This remains reduced proxy coupling rather than calibrated ab initio chemistry or authoritative scientific worker-buffer mutation.
+- Molecular quantum WebGPU source-term first pass: molecular dynamics now converts the orbital/material coupling into `peercompute.multiscale.molecular-quantum-source.v0`, packs matched-element source terms into the MD shader parameter buffer, and applies temperature, charge, ionization-drive, evolution-drive, and bond-order-scale updates inside the staged `cell-neighbor-list` integrate kernel. Packets, closures, runtime status, conservation telemetry, and the active `molecular quantum` readout expose `quantumCouplingApplicationMode`, `quantumCouplingWebgpuKernelApplied`, target charge, charge mix, temperature delta, bond-order scale, qgrid WebGPU source/backend, and radial Schrodinger WebGPU source/residual provenance. This remains a reduced source-term bridge rather than calibrated Born-Oppenheimer forces or reactive quantum chemistry.
+- Qgrid statistical bridge to molecular source first pass: the qgrid WebGPU statistical bridge now travels alongside molecular quantum source telemetry as `quantumStatisticalBridge*` fields. Packets, upward closures, runtime status, conservation diagnostics, and `molecular qgrid stat` expose WebGPU source classification, partition log, excited occupation, heat capacity, ionization, opacity, degeneracy, ensemble pressure, temperature/charge deltas, damping, and a bounded bridge drive. This keeps ensemble/statistical physics visible in the bottom-up handoff while preserving the calibrated-science blocker.
+- Molecular qmat WebGPU source-term first pass: molecular dynamics now converts the WebGPU qmat reduced force/property/statistical-ensemble batch into `peercompute.multiscale.molecular-quantum-material-source.v0`, packs material source scalars plus formula-derived target-pair parameters into the MD shader parameter buffer, and applies target-weighted temperature, charge, ionization-drive, behavior-drive, force-gradient, bond-order-scale, pair-force, rest-length, ensemble pressure, and thermal damping updates inside the staged `cell-neighbor-list` integrate kernel. Packets, closures, runtime status, conservation telemetry, the force-energy ledger, and the active `molecular qmat` readout expose application mode, WebGPU-kernel status, backend, record count, force-gradient, target pair label, target/fallback atom counts, selected/fallback pair counts, ensemble pressure ratio/drive, heat-capacity proxy, thermal damping scale, temperature/charge deltas, bond scale, and material bias energy. The same qmat material-property and response-derivative bundles are now preserved as source-buffer side-band metadata into reactive/SPH consumers without changing source-vector stride; those qmat properties and derivative drives participate in target replay, mutation intent creation, worker-write queue planning, explicit reduced worker writes, and qmat-specific post-write verification. This remains a reduced source-term bridge rather than calibrated Born-Oppenheimer forces or reactive quantum chemistry.
+- Molecular dynamics closure first pass: reduced MD diagnostics now normalize into `upward.closureResults.molecularDynamics` and `closure:molecular-dynamics` warm deltas, carrying atom/bond/species chemistry, heat/pressure/energy proxies, charge/electrical/dielectric proxies, quantum-orbital coupling telemetry, validity/uncertainty/provenance, and conservation fields for material/SPH/thermal consumers.
+- Molecular closure consumer first pass: reactive thermal and SPH material workers now accept the typed molecular `ClosureResult` as an optional bottom-up source, fold its heat/reaction/ionization telemetry into their existing heat/chemistry coupling scalars, expose reduced provenance fields in results, and have unit coverage proving hotter molecular closures raise reactive heat output and SPH material temperature.
 - Net chaos-lab containernet image hardening: default docker image now includes `iproute2` + DNS/HTTPS/TURN binaries, with startup image preflight/auto-build to avoid runtime apt failures inside isolated lab nodes.
 - Net chaos-lab containernet probe-runtime guard: startup validates in-agent Playwright+Chromium launch and fails fast with a rebuild hint when workspace/image versions drift.
 - Net chaos-lab image revision guard: default image now carries an explicit revision label and auto-rebuilds when stale to avoid drift across rebooted/dev hosts.
@@ -74,6 +1214,7 @@ The root node should exist on a domain secured with SSL enabling all executable 
 - Local relay dev hardening: `dev` / `dev:local-relay` now default to loopback-safe relay addressing (`localhost` + `127.0.0.1`) unless explicitly opted into LAN exposure (`RELAY_DEV_EXPOSE_LAN=1`), reducing WSS certificate-host mismatches and demo peer-discovery failures.
 - Local relay stale-config guard: dev launcher scripts now clear stale per-demo `relay-config*.json` source/fallback files before startup so first-load demos do not bootstrap to outdated relay endpoints.
 - Local relay strict-port guard: `dev` / `dev:local-relay` now pass `--strictPort` to demo/docs Vite servers by default (`DEV_STRICT_PORT=1`) so port collisions fail fast instead of silently remapping demos to unexpected ports.
+- Local coturn-backed dev stack verified: `dev:vpn-coturn` wraps `dev:local-relay`, detects the Tailscale/VPN host when available, binds demos on `0.0.0.0`, disables auto-open, and advertises Google STUN plus local coturn UDP/TCP TURN entries in generated demo/docs relay configs; the current local run advertises the VPN WSS relay plus `turn:100.86.83.35:3478` UDP/TCP.
 - Production relay ICE defaults: `config/relay.json`/`config/relay.env` now default to Google STUN + coturn UDP/TCP entries, and repo automation includes a hardened coturn systemd installer helper (`scripts/install-coturn-systemd.sh`).
 - NetworkManager direct-redial hint cache: peers now remember observed direct `/webrtc` dial targets (with TTL) and reuse them when presence/directory inputs are relay-scoped, reducing unnecessary relay-webrtc-only redial loops after earlier direct upgrades.
 - Go relay launcher env hardening: `scripts/run-go-relay.sh` now defaults `CGO_ENABLED=0` (unless set) and probes real cache write access, falling back to `/tmp` Go caches when home-cache writes are blocked (sandbox/CI) to avoid misleading `imports net: cannot find package` startup failures.
@@ -100,8 +1241,16 @@ The root node should exist on a domain secured with SSL enabling all executable 
 - NetworkManager transport-limit decoupling: logical topology cap (`maxConnections`) is now separated from libp2p transport cap via `transportConnectionHeadroom`/`transportMaxConnections`, preventing bootstrap/control churn while keeping relay-scaling topology defaults intact.
 - NetworkManager logical-cap reservation guard: pending topology requests, inbound accepts, and in-flight peer dials now reserve logical peer slots, preventing `maxConnections` overshoot during concurrent discovery/topology churn and exposing separate logical-vs-raw connection counters for diagnosis.
 - CubeChat polish: Safari/iOS/macOS welcome overlay dismissal fix, room-scoped multi-biome world themes (`Tron`, `Moon`, `Beach`, `Desert`, `Jungle`, `Hyperborea`, `Ireland`), moon terrain/rocks/dust (including landing dust poofs + stronger crater ridges) plus world-anchored moon surface texture phase to prevent crater/grain sliding during floor expansion, synthwave Tron skybox (sunset/mountains/city, with horizon/sun/city visibility tuning), cross-theme skybox horizon visibility tuning for `Beach`/`Desert`/`Jungle`/`Hyperborea` (including a stronger second-pass raise), skybox anchoring to player/camera for infinite-space feel, seeded world-coordinate decor streaming for stable cross-client procedural placements during expansion (moon/jungle/ireland decor), Ireland gray-sky intermittent rain weather + cow sprites + green rolling hills + a single smaller skyline castle (visibility/readability tuned) plus low stone-wall pasture dividers (two-axis generation with larger pasture spacing), taller/denser jungle tree sprites with full-canopy sky coverage (plus ground-contact grounding fix), terrain-contour-following player cubes on non-`Tron` themes, Tron movement light-trails, avatar visual cleanup (no direction arrow, local rear-facing video / remote front-facing video), and room/theme/password deep-link query params for shareable private-room links.
+- CubeChat configured media ICE: offerer and answerer application peer
+  connections now preserve loaded RTC policies and STUN/TURN credentials, use
+  configured ICE servers when present, and retain Google STUN only as the
+  no-config fallback. The focused runtime gate can require actual relay
+  candidates and bidirectional TURN bytes with
+  `CUBECHAT_REQUIRE_RELAY_MEDIA=1`.
 
 ### TODO:
+- Next model-demo work: **MODEL-BROWSER-01**, then **AGENT-01** in the ordered list
+  above; see [agent-layer plan](demos/inference/agent-layer-plan.md).
 - Stabilize dev/test workflow for relay + Playwright in a non-sandboxed env.
 - Improve relay scaling: drop relay connection after hitting target peers, rejoin relay only to assist new WebRTC dials, then drop again.
 - Execute and validate full net-chaos-lab containernet matrix runs in a properly provisioned host (docker + mininet + containernet), then calibrate gate thresholds from observed data.
@@ -112,9 +1261,10 @@ The root node should exist on a domain secured with SSL enabling all executable 
 - Wire warm DataState deltas into netman publishing end-to-end.
 - Implement explicit topology selection (topologyId + topologyType) and sharded state/interest management.
 - Chemistry demo (`plan/branch/chem.md`): build a distributed "Fano Reactor" / zero-divisor chemistry sandbox around the sedenion periodic-table paper.
+- Schrodinger/materials simulation (`plan/branch/schrodinger-simulation.md`): extend the initial standalone console into validated WebGPU wavefunction kernels, water MD/phase validation, and PeerCompute sharding for solver-agnostic low-level microphysics/closure packets.
 - Keep plan/ and log aligned with ongoing changes.
 - Demo release polish: continue tightening release-facing docs/examples and any remaining per-demo README coverage now that the root README capability inventory has been refreshed.
-- Keystone demo: flagship visualization of self-organizing topology + workload placement.
+- Keystone demo: continue expanding the Multiscale Ladder into the flagship visualization of self-organizing topology, workload placement, and validated cross-scale physics handoffs.
 
 ### TODONT:
 - Reintroduce PeerJS or legacy CRDT experiments.
@@ -127,12 +1277,64 @@ The root node should exist on a domain secured with SSL enabling all executable 
 3. Scale: interest management, topology selection, sharded state, health metrics, reliability tiers.
 4. Compute: resume WebGPU workloads, portable WASM workloads, and worker/service-worker isolation.
 
+## Multiscale Physics Runtime Roadmap:
+1. **Foundation contract:** define strict units, dimensions, conserved state, primitive state, closure input/output schemas, validity domains, uncertainty, provenance, code/input hashes, and conservation-impact reports.
+2. **Microphysics closure slice:** evolve the Schrodinger/materials demo from heuristic visual sandbox into a closure provider with `ClosureState` and `ClosureResult`, starting with toy free-energy/EOS/reaction closures and tests for energy/species accounting.
+3. **Interactive atom/material workbench:** keep the standalone Schrodinger console usable for adding periodic-table atoms, environment controls, bond visualization, water/material presets, WebGPU kernel diagnostics, and PeerCompute warm-delta publication.
+4. **Single-region physics kernels:** add small validated kernels before cross-scale composition: conservative hydro + EOS + gravity, SPH/MPM material particles with phase change, and a fire/chemistry cell or patch with species and heat release.
+5. **Coupling engine:** implement solver-agnostic region boundaries, operator splitting/subcycling, conservative grid/particle transfer, restriction/prolongation, event triggers, and conservation audits across representations.
+6. **PeerCompute distributed runtime:** use PeerCompute first for asynchronous/loosely coupled workloads: parameter sweeps, closure table generation, active-learning microphysics jobs, surrogate inference, validation replay, visualization streaming, and patch-level scheduling.
+7. **Law/solver worker registry:** treat Maxwell/electromagnetic, relativistic, cosmology expansion, N-body/tree gravity, radiation, chemistry, nuclear, SPH/MPM, hydrodynamics/weather, PIC/plasma, and closure microphysics as specialized solver modules scheduled by the node's single `ComputeManager`, not as separate managers. Each solver task must declare inputs, outputs, conserved fields, timestep constraints, validity domain, coupling boundaries, and warm-delta schema.
+8. **Validated material science path:** replace toy chemistry/phase rules with named reference data, EOS/free-energy tables, force fields, reaction networks, and measured tolerances. Interactive mode may stay approximate; scientific mode must report validation status.
+9. **Advanced regimes:** layer in radiation, MHD/GRMHD, PIC/plasma patches, nuclear/isotope networks, N-body/tree/FMM gravity, planetary erosion/fracture, and stellar/nebula scenarios as separate solver modules sharing the same state/closure/coupling contracts.
+10. **Scientific operations:** add deterministic replay, checkpoint/restart, redundant peer validation for untrusted tasks, benchmark scenarios, regression gates, and explicit separation between visual/interactive and scientific execution modes.
+
+## Multiscale Physics Ladder:
+- **Atomic / quantum / MD layer:** resolves or samples local electronic, molecular, phase, reaction, transport, and material-property behavior. It provides closures, source terms, validity domains, uncertainty, and refinement labels.
+- **Coarse reactive material layer:** groups many molecules into cells, particles, or superparticles with species, phase, energy, pressure, temperature, reaction progress, charge/ionization, and structure descriptors.
+- **SPH / MPM / finite-volume layer:** moves mass, momentum, energy, heat, species, stress, fluids, granular materials, smoke, vapor, melt, fracture, and local flow fields using closures from lower layers.
+- **Human-scale scene layer:** composes local solvers into visible scenarios such as water balloons, fires, structures, vehicles, tools, terrain, weather patches, and interactive dynamics.
+- **Planetary layer:** evolves terrain, oceans, atmosphere, climate/weather, erosion, impacts, volcanism, magnetosphere, and large geophysical flows using human/local-scale closures where needed.
+- **Solar-system layer:** handles orbital dynamics, N-body gravity, radiation from stars, planetary interactions, accretion/debris disks, comets/asteroids, and solar wind coupling.
+- **Galactic layer:** handles stellar populations, gas/dust, dark-matter potentials, star formation feedback, radiation fields, cosmic rays, MHD, and large gravitational structure.
+- **Supergalactic/cosmological layer:** handles large-scale structure, cluster/supercluster dynamics, expansion/cosmology parameters, dark matter, baryonic gas, feedback, and coarse galaxy/halo subgrid models.
+- Each layer must expose upward outputs and downward inputs. Upward flow provides closures, effective properties, source terms, and aggregate state. Downward flow provides boundary conditions, environment, stressors, radiation fields, gravity, pressure/temperature regimes, uncertainty triggers, and refinement requests.
+- No layer should pretend to resolve everything below it everywhere. The runtime should use adaptive fidelity: refine down when a local state is high-interest or outside validity, and coarse-grain up when conserved quantities and closure tolerances are satisfied.
+- Each active scale should be represented by one or more compute jobs/shards scheduled by the node's single `ComputeManager`; the manager owns the actual worker pool. Current Multiscale Ladder scaffolding worker-bounds shard count from the active target worker policy, reports actual manager worker counts, planned shard tasks, manager capabilities/stats, worker resize revision/history, worker autoscale hold status, advisory requested-vs-actual task placement, compute-capacity resize status, carried-forward shard/record counts and particle-resize audit/correction summaries on particle-count resize, affinity count, StateManager warm-delta backing, and compact live solver-state remap status in packet telemetry, with full remap reports available only through explicit debug APIs; future scientific layers should tune shard counts by workload, bandwidth, and device capability.
+- Compute capacity should be adaptive. `ComputeManager` must expose resource profiles, min/target/max worker policy, runtime resize controls, workload-budget estimates, and state-remap/audit hooks so a phone, laptop, gaming GPU, workstation, or GPU cluster can run the same solver family at different shard counts and simulation sizes without silently cold-starting scientific state.
+- Physics "laws" should be composable solver workers under that same manager: one task family may advance Maxwell/MHD fields, another may advance relativistic corrections, another may run N-body/tree gravity, another may evolve cosmology expansion/structure telemetry, another may evaluate radiation/opacity, chemistry, nuclear/plasma source terms, or closure microphysics. Their results become typed deltas applied by `StateManager`, then consumed by coupled solvers and visualization. The current N-body worker has a WebGPU direct-sum reference path and a CPU Barnes-Hut tree path; the current cosmology expansion worker has a WebGPU reduced supergalactic density/expansion tile with CPU fallback for scale/Hubble/filament/void telemetry; the current stellar-fusion worker has a WebGPU reduced plasma tile with CPU fallback for solar-core telemetry; the current magnetosphere worker has a WebGPU reduced MHD/plasma tile with CPU fallback for solar-wind, reconnection, magnetopause, and divergence-B telemetry; the current PIC worker has a WebGPU reduced particle push/deposit path with CPU fallback for kinetic charge/current/reconnection telemetry; the current relativistic correction worker has a WebGPU reduced post-Newtonian orbit-shell path with CPU fallback for Lorentz/time-dilation/redshift/precession/lensing telemetry; the current molecular-dynamics worker has a staged WebGPU cell-neighbor-list path with tiled all-pairs fallback, a 13-float atom buffer that carries molecule topology metadata through GPU readback, recipe-aware seed geometry, seeded H2O topology projection while qmat product topology is pending, qmat NaOH/H2 product-topology overlay, reduced existing-atom product-group mutation when available, a staged WebGPU product-topology writeback pass, valence-capped overlays, reduced charge equilibration, ionic/covalent classification, a bounded H2O geometry force-law ledger, dipole/conductivity proxy telemetry, qmat electronic charge-source plus reduced product-source consumption, and spatial candidate-search diagnostics; and the current quantum orbital and quantum material workers are WebGPU-only live bottom-layer workers that fail closed without CPU substitution when WebGPU is unavailable. Later slices should promote these toward FMM/orbital formation, validated cosmological N-body/AMR expansion-history consumers, validated stellar-structure/nuclear-network consumers, validated resistive MHD/force-free/PIC plasma consumers, GR/GRMHD compact-object benchmark consumers, real finite-grid Schrodinger wavefunction kernels, and validated force-field/reaction-network/quantum-closure molecular consumers.
+
+## Numerical vs Neural Microphysics Stance:
+- Start with numerical/reference models before neural MD. The first base-layer implementation should prioritize deterministic integrators, known potentials, EOS/free-energy/reaction-network closures, conservation accounting, unit metadata, and small benchmark problems.
+- Neural MD / ML interatomic potentials still make sense later as acceleration and interpolation layers, but only after there is training/reference data, validity-domain tracking, uncertainty estimation, and baseline numerical tests to compare against.
+- The first useful neural path is likely a surrogate for closure outputs or local force/reaction rates, not a replacement for the entire simulation stack. It should be optional, versioned, and guarded by fallback numerical closures.
+- Learned models must report model id, training/provenance metadata, input-domain confidence, uncertainty/disagreement, and conservation error. They should not silently extrapolate into new chemistry, pressure, temperature, or phase regimes.
+
+## Multiscale Accuracy Boundary:
+- The runtime can be designed to host planetary formation, stellar fusion, magnetar/nebula interaction, planetary weather, and fire spread, but those are separate validated solver assemblies rather than one universal real-time kernel.
+- "Accurate" must mean accurate against a named scenario, scale, reference dataset, and tolerance. Interactive demos may be qualitative or reduced-order; scientific runs must expose model ids, validity domains, conservation diagnostics, uncertainty, and benchmark results.
+- Current ULG execution is a WebGPU-produced reduced state delta for the ULG StateManager lane, and Multiscale can now also consume ULG `peercompute.ulg.simulation-artifact.v0` carrier-runtime artifacts as compact runtime evidence/provenance summaries. The current molecular quantum/ULG/qmat/electronic-charge/product-topology consumers apply reduced shader, charge-equilibration, bond-overlay, and GPU-visible molecule-topology-buffer source/state terms in the MD WebGPU integrate/diagnostic path. The new ULG oscillator artifact path is CPU-reference `carrier-toy` evidence only: it records passing invariant drift and deltas, but it does not promote SPH/material readiness, scientific runtime readiness, full-physics readiness, calibrated Schrodinger/DFT/AIMD solves, authoritative molecular/material worker-buffer mutation, QEq/ReaxFF chemistry, conservative product mutation, or scientifically validated material update laws.
+- Planetary formation requires N-body/tree gravity, gas/dust hydrodynamics, collision/accretion models, thermodynamics, and radiative effects.
+- Stellar fusion requires stellar-structure or radiation-hydrodynamics solvers, nuclear reaction networks, plasma EOS, opacity tables, and energy-transport validation.
+- Magnetar/nebula scenarios require relativistic MHD/force-free models, radiation, pair-plasma/electromagnetic closures, and optional PIC patches for kinetic regions.
+- Weather requires geophysical fluid dynamics, moist thermodynamics, radiation, boundary-layer/cloud microphysics, terrain/ocean coupling, and data-assimilation-style validation.
+- Fire spread requires low-Mach CFD, combustion/pyrolysis chemistry, radiation heat transfer, turbulence/subgrid models, vegetation or building-material fuel models, and smoke/ventilation coupling.
+
+## Candidate Flagship Slice: Water Balloon Over Campfire:
+- This is a strong early multiscale scenario because it exercises deformable solids, liquid motion, heat transfer, phase change, combustion, radiation, rupture, and suppression in one human-scale demo.
+- Interactive version: XPBD/cloth or thin-shell MPM balloon membrane, SPH/MPM water particles, analytic or voxel campfire heat source, visual flame/smoke/steam, temperature-dependent membrane weakening, rupture, spill, evaporation, and fire cooling.
+- Scientific version: validated water EOS/phase closure, latent heat, convection/radiation heat flux, low-Mach combustion/pyrolysis, membrane material model with burst strain and temperature degradation, fuel-bed moisture/cooling response, and mass/energy conservation audits.
+- Fire chemistry boundary: a small reactive MD patch is reachable for molecular-scale reaction visualization or closure sampling, but a visible campfire should be modeled as a reduced combustion/pyrolysis + heat-transfer closure. Full macroscopic fire cannot be every molecule in MD at real-time rates.
+- Emergence target: avoid scripted "fire effect" switches. The base layer should evolve local reactive material state (species, phase, temperature, pressure, internal energy, reaction progress, charge/ionization where needed) in representative cells or superparticles; the SPH/MPM/flow layer should then produce visible flame motion, buoyancy, water motion, steam, cooling, and suppression from those local source terms.
+- Required coupling: particle-grid heat exchange, water-to-fire suppression source terms, membrane-water pressure coupling, rupture event handling, vapor/steam source terms, and warm-delta telemetry for closure validity and conservation error.
+- Validation gates should start with separate benchmarks before the combined scene: water heating/boiling curve, membrane pressure/rupture threshold, droplet or spill cooling of a hot surface, simple flame heat-flux field, and total mass/energy accounting.
+
 ## Known Issues / Blockers:
 - Playwright tests blocked in sandbox (Chromium EPERM, report port bind).
 - WSS relay requires valid certs; use HTTP for local tests if needed.
 - Production browser logs still show intermittent `webrtc-relay` signal timeouts. Headless Playwright checks run from the host on 2026-04-03 against both the local rebuilt NetViz and the live GitHub Pages NetViz (including the shared `room=telemetry`) now show non-empty public relay circuit addrs, so the earlier empty-`Libp2p addrs` symptom is no longer globally reproducible and likely needs browser-session/cache-specific repro data if it recurs.
 - Live GitHub Pages CubeChat media is not yet stable at higher peer counts: a host-run Chromium probe on 2026-04-04 passed with 3 private-room peers on `https://metaversejs.github.io/peercompute/cubechat/`, but a 4-peer probe timed out after 120 s with incomplete media convergence (`remoteStreamCount` as low as `0` on one page, `remoteVideoReadyCount` `0/3` on three pages, and only `1/3` ready on the best page). Treat "local multiplayer gate passes" and "prod 4-peer video playback works" as separate checks until this is fixed.
-- Production-style Vite bundles still degrade `ComputeManager` workers to inline execution for module-based JS tasks in at least the Universes path, because the bundled worker/task-runtime graph is emitted as nested `data:` modules. The black-screen regression is fixed by fallback, but the warning indicates there is still a deeper bundler/worker-url cleanup available later if we want true worker execution in built docs.
+- The Multiscale/NodeKernel responder path now uses real module-worker bootstraps in built docs, but the older Universes production-worker fallback has not been re-smoked in this slice. Treat Universes built-doc worker execution as unverified until that demo has its own production bundle smoke; inline fallback still prevents module-task hangs.
 
 ## Design Principles:
 - Modular ES6 modules; managers should be worker-ready where practical.
@@ -152,3 +1354,490 @@ The root node should exist on a domain secured with SSL enabling all executable 
 - Browser-based P2P compute network using WebGPU.
 - Support hierarchical or emergent topologies based on bandwidth/compute affinity.
 - HTTPS/WSS deployment with signed code and data-only replication.
+
+## GPU resident lane lease identity
+- [x] Preserve a lane's declared `sourceFamily` on the lane and every acquired
+  lease.
+- [x] Inject the actual acquired inline lease into object task data as
+  `gpuResidentLaneLeaseIdentity` without mutating the submitted payload.
+- [x] Keep identity authority with `ComputeManager`/`GpuResidentLaneManager`;
+  downstream ULG code may validate and bind this identity but may not invent it.
+
+## RoadVector Cesium Foundation Snapshot - 2026-08-24 AKDT
+
+- Replace the custom Three.js hemisphere with a CesiumJS 1.144 overview while
+  retaining the proven local Three/WebXR/particle-physics scene unchanged.
+- Reuse `packages/geo-core` for bounded browser fetches, the NOAA ETOPO capped
+  terrain provider, contour material, Shortbread MVT decoding, and a shared
+  configurable Cesium imagery provider rather than duplicating EarthGrid code.
+- Keep global and local coordinates explicit: Cesium WGS84/ECEF for overview;
+  east/up/south local meters for terrain, motorcycle, traffic, race, buildings,
+  cameras, and XR. The selected longitude/latitude is the only bridge.
+- Preserve the 25-tile z5 regional major-road policy, byte/vertex caps,
+  published OSM attribution, and fixed-red validated PeerCompute presence.
+  Scope NOAA's 128-unique-tile budget to each selected location and abort
+  replaced terrain/imagery generations.
+- Ship RoadVector Cesium workers/assets/licenses beneath `docs/motorcycle`,
+  keep the direct Tailnet HTTPS/same-origin geodata deployment, and validate the
+  built overview before updating the retained listener.
+
+## FHWA highway, globe selection, and sparse NURBS ride snapshot - 2026-08-24 AKDT
+
+- Treat the current FHWA National Highway System layer published by U.S. DOT
+  BTS as the sole nationwide road authority. Do not mix its current metadata
+  with the unrelated 2014 National Highway Planning Network tiles.
+- Reproducibly derive a versioned, same-origin z0–8 overview artifact from the
+  validated official shapefile: retain open non-ferry NHS features, dissolve
+  only by documented NHS class, simplify for globe display, checksum every
+  output tile, retain the original metadata byte-for-byte, and fail all source,
+  size, count, class, Alaska, and freshness gates closed.
+- Keep the nationwide NHS imagery layer persistent below the replaceable
+  regional 25-tile Shortbread context. Cesium globe clicks select WGS84 points;
+  the existing bounded local OSM/NOAA transaction determines whether a ride is
+  playable before coarse presence is published.
+- Keep the local simulation at one unit per meter. Replace only its dense
+  default presentation: render a 3.5%-opacity exact terrain mesh with capped
+  source-elevation NURBS contours, and render the six-body motorcycle as two
+  rolling-radius NURBS wheel loops, five sparse frame strokes, and a six-curve
+  stick rider. Collision particles/contact markers remain behind the explicit
+  `?physicsDebug=1` diagnostic path.
+- Keep direct private Tailnet HTTPS listeners at `100.68.165.52:5187` for
+  EarthGrid and `:5188` for RoadVector, with geodata loopback-only behind each
+  same-origin proxy. Do not use Tailscale Serve, Funnel, or an in-terminal
+  browser pane.
+
+## EarthGrid water-surface snapshot - 2026-08-24 AKDT
+
+- The generic EarthGrid GIS demo now opts into the official OSM Shortbread
+  `ocean` and `water_polygons` layers through its existing Cesium imagery
+  provider. It draws fill-only blue surfaces at exact opacity `0.5` before
+  buildings and roads, while RoadVector remains water-disabled by default.
+- “Flat” is implemented as non-extruded, non-animated, non-glowing imagery
+  draped on NOAA/AWS terrain. Glaciers and centerline-only `water_lines` are
+  excluded so the layer does not mislabel ice or lines as water surfaces.
+- EarthGrid exposes exact style, ocean/inland command counts, rendered water
+  vertices, visibility, source status, and lifetime-session budget telemetry.
+  The existing 2 MiB per-tile and 96-canvas LRU limits are joined by explicit
+  192 MiB / 4,000,000-rendered-vertex session budgets.
+- The single shared OSM imagery layer remains one layer normally and two with
+  NOAA weather. Existing visible OSM/ODbL attribution covers the new geometry;
+  no duplicate backend route or provider was introduced.
+- The implementation and generated EarthGrid artifact are verified through
+  focused shared/Earth tests, the 261-test Earth-platform unit gate, static
+  release checks, combined built-browser smoke, a current live Anchorage MVT,
+  and the direct private HTTPS origin `https://100.68.165.52:5187/`.
+
+## EarthGrid NURBS-waterline refinement snapshot - 2026-08-24 AKDT
+
+- Preserve the existing 50%-opacity Shortbread water fill and add an exact
+  `#24cfff` NURBS outline around every valid ocean/non-glacier water polygon
+  ring. Use unit-weight degree-one open-clamped fragments so the display has
+  zero source-coordinate deviation; do not smooth an authoritative boundary.
+- Suppress same-edge MVT clipping segments and keep the remaining fragments
+  open with butt caps so tile seams never become fake glowing shorelines.
+  Preserve holes/multipart bodies and reject an over-cap/invalid tile before
+  canvas mutation rather than silently omitting a body.
+- Keep the renderer bounded at 4,096 rings, 8,192 curve fragments, 65,536
+  source points, and 131,072 sampled vertices per tile, inside EarthGrid's
+  existing 4,000,000-vertex provider-session budget. Expose exact topology,
+  source/sample counts, clipped segments, cap rejections, and zero-deviation
+  telemetry.
+- Keep road meaning legible over water: composite water fill first, the NURBS
+  halo/core second, buildings third, and roads last so road strokes take
+  precedence at every overlap.
+- Color every Cesium terrain contour at or below the active terrain source's
+  native zero-height reference with the exact shoreline blue. Use one shared
+  elevation-contour alpha mask plus above-/below-water colors; retain green
+  above zero and leave RoadVector/WXGlobe defaults unchanged.
+- Do not claim a numeric per-body water elevation: Shortbread publishes a
+  boundary, not an elevation. NOAA ETOPO uses EGM2008 heights and Terrarium is
+  provider-native, so the common shader threshold is explicitly
+  `terrain-source-native-zero`, not universal MSL or an inland-water mask.
+
+## EarthGrid actual-geometry rendering snapshot - 2026-08-24 AKDT
+
+- Replace EarthGrid's rasterized Shortbread canvas and painted globe contour
+  shader with bounded public Cesium ground geometry. Preserve RoadVector's
+  shared imagery-provider consumer and WXGlobe's material independently.
+- Use exact solid linework with no texture glow: terrain isocontours,
+  degree-one shoreline NURBS, building footprint wires, and road paths each
+  receive one geometry pass. Water alone remains a 50%-opacity blue ground
+  polygon; optional NOAA weather remains source raster imagery.
+- Enforce category precedence with ground `zIndex`: contours `0`, water `10`,
+  shoreline `20`, building wires `30`, global roads `40`, and local roads
+  higher. Decode order can never put water above a road.
+- Feed successful canonical NOAA/AWS height grids into bounded contour
+  extraction instead of inspecting private Cesium terrain tiles or duplicating
+  source requests. Anchor levels at source-native zero, use blue below/at zero
+  and green above, and retain exact degree-one path telemetry.
+- Give the vector layer an explicit antimeridian-aware camera selector,
+  concurrency/cache/body/feature/vertex limits, generation cancellation,
+  atomic tile replacement, visible attribution, and fail-closed capability
+  checks. The ordinary EarthGrid base must have zero imagery layers.
+
+## EarthGrid Cesium buffer-geometry correction snapshot - 2026-08-24 AKDT
+
+- The public-ground-geometry prototype was rejected after a real Cesium run:
+  one large root-ocean entity remained in worker creation for more than 40
+  seconds, concurrent terrain generations accumulated, and its only
+  per-primitive readiness probe was private. EarthGrid now uses Cesium
+  `1.144.0` buffer collections pinned exactly in every Cesium demo manifest.
+- Shortbread water is synchronous triangulated `BufferPolygonCollection`
+  geometry. Shorelines, building footprint wires, global and local roads, and
+  terrain isocontours are exact-capacity `BufferPolylineCollection` geometry.
+  The normal base has zero imagery layers and all geometry reports one solid
+  Color pass, `rasterPainted:false`, and `glow:false`.
+- Curved-world correctness is explicit: RHUMB polylines and flat water polygon
+  interiors are geodetically subdivided before packing so low-zoom WGS84
+  features never become hidden straight-ECEF chords. Every generated vertex
+  and triangle participates in the hard active caps.
+- Rendering precedence is physical rather than a nonexistent Buffer `zIndex`:
+  sampled/source heights receive increasing category offsets, and both global
+  and local road crossings clamp their base to the highest matching active
+  water-body display level before the road offset is applied.
+- Oceans remain source-native zero. Each inland polygon derives one bounded
+  median from available terrain samples and its shoreline shares that flat
+  display level; unresolved bodies disclose a zero fallback until the next
+  atomic height refresh. This remains display geometry, not a claim that
+  Shortbread publishes measured lake or river elevation.
+- A current immutable revision is ready only after exact CPU buffer counts and
+  the next successful public `scene.postRender`. A public `scene.renderError`
+  while that revision awaits presentation, cap rejection, fetch failure, or a
+  stale generation keeps it unready. The app transiently revokes readiness on
+  a later scene error and recovers only after a later fully qualified frame;
+  an unrelated post-presentation error is not retroactively assigned to an
+  already-presented layer revision.
+
+## EarthGrid land-side shoreline and multilevel geodata cache snapshot - 2026-08-25 AKDT
+
+- Add one distinct solid green land-side companion curve beside every bright
+  blue Shortbread shoreline curve. The green line is derived display geometry,
+  not a second source boundary or a glow/halo pass; both members remain bounded
+  unit-weight degree-one NURBS polylines with explicit topology and omission
+  telemetry.
+- Derive the companion on the land side of ocean/lake outer rings and holes,
+  retain tile-edge suppression and antimeridian behavior, and charge every
+  generated control/tessellated vertex to the existing hard active caps.
+- Put validated road and terrain response artifacts behind a bounded local-only
+  cache owned by PeerCompute `StateManager`. Cache payloads must never enter the
+  replicated Yjs warm state or presence channel; persistence, byte/entry caps,
+  TTL/stale bounds, integrity metadata, eviction, and lifecycle remain explicit.
+- Extend the loopback geodata service from its existing coalesced OSM-region
+  cache to bounded allowlisted road/vector and terrain source caches. Preserve
+  source validation, content types, freshness, ETags, abort isolation, request
+  coalescing, SSRF prevention, and visible cache provenance.
+- Wire EarthGrid and RoadVector through the same-origin cache endpoints and
+  StateManager cache adapter while retaining direct-source fallback for static
+  deployments without the backend. Measure cold/warm behavior and ensure the
+  new shoreline pass does not reopen broad-view synchronous geometry work.
+
+## EarthGrid land-side shoreline and multilevel cache result - 2026-08-25 AKDT
+
+- The requested companion is complete as one solid `#33ff73` degree-one NURBS
+  buffer curve on the derived land side of every accepted `#24cfff` water
+  boundary. Outer rings, island holes, tile seams, antimeridian wrapping,
+  bounded miter/bevel joins, topology caps, exact pairing, and one-pass/no-glow
+  telemetry are enforced before atomic tile presentation.
+- PeerCompute `StateManager` now owns a separate local artifact tier backed by
+  bounded memory and IndexedDB. It is deliberately outside the Y.Doc and
+  network provider, so precise road/terrain bytes and cache keys are never
+  replicated to peers. EarthGrid and RoadVector use it for validated
+  Shortbread and Terrarium responses, with caller abort, coalescing, stale,
+  integrity, LRU, byte-reservation, and admission telemetry.
+- The loopback geodata service now exposes only fixed allowlisted Shortbread
+  TileJSON/MVT and AWS Terrarium routes. A separate 512-entry/128 MiB source
+  cache preserves exact validated bytes, strong ETags/304, source TTL/stale
+  policy, coalescing, concurrency/queue limits, and byte-bounded LRU. Detailed
+  local OSM regions remain in their independent 128-entry/128 MiB semantic
+  cache; NOAA ETOPO remains a direct bounded source and is never mislabeled.
+- The official Alaska z5 Shortbread boundary tile proved that the old 10,000
+  feature admission was below real source density. Backend and every consumer
+  now share the exported 25,000-feature hard ceiling; the existing 2 MiB tile,
+  one-million coordinate, 192 MiB geometry-session, and four-million active
+  vertex limits remain unchanged, and 25,001 still fails closed.
+- EarthGrid now uses request-render mode, z10 interactive Terrarium detail, a
+  six-pixel globe screen-space error, and one height reconciliation after a
+  quiescent terrain burst. Detailed global geometry remains deferred below z5.
+  This keeps interaction usable while terrain continues progressively filling
+  its bounded cache rather than blocking the qualified vector/local scene.
+- Final private services are direct Tailnet HTTPS listeners, without Tailscale
+  Serve/Funnel: WXGlobe `https://100.68.165.52:5186/`, EarthGrid
+  `https://100.68.165.52:5187/`, and RoadVector
+  `https://100.68.165.52:5188/`; geodata stays on loopback `127.0.0.1:8788`.
+
+## RoadVector licensed model, controls, and performance snapshot - 2026-08-25 AKDT
+
+- Replace only RoadVector's presentation mesh with the user-selected
+  Sketchfab “Akira Bike” asset. Keep the existing six-body particle rigid-body
+  motorcycle, wheel contacts, suspension, tire forces, traffic collision,
+  origin rebasing, and fixed-step simulation authoritative; the visual must
+  follow physics and may not substitute animation or kinematic motion.
+- Acquire the asset only through Sketchfab's authenticated official download.
+  Preserve the published CC BY 4.0 attribution to Ryanwill679/TrashCG, link the
+  source and license, identify the optimized derivative, and never hotlink or
+  extract protected viewer/CDN resources.
+- Treat the source model as an offline build input. Produce one bounded runtime
+  derivative with explicit triangle, draw-call, texture-byte, download-byte,
+  orientation, scale, and attribution telemetry; do not ship the 29 original
+  high-resolution textures unexamined.
+- Improve keyboard riding through the physics controller: stable parking and
+  reset, speed-aware steering/lean authority, progressive throttle and brake,
+  recoverable counter-steer behavior, and an intentional transmission policy.
+  Input semantics stay normalized and desktop, gamepad, touch, and XR mappings
+  must remain consistent at the actuator boundary.
+- Optimize measured simulation hot paths without reducing the 120 Hz fixed
+  step, twelve solver iterations, particle contacts, suspension bodies, traffic
+  collision, or terrain parity. Performance work must preserve deterministic
+  state hashes and scenario outcomes.
+- Validate with focused physics/terrain/render tests, repeatable real keyboard
+  drives in the browser, foreground frame and CPU profiles, built RoadVector
+  smoke, generated-artifact checks, and private Tailnet HTTPS. Physical-headset
+  comfort/performance remains a separately recorded manual gate.
+
+## RoadVector licensed model, controls, and performance result - 2026-08-25 AKDT
+
+- COMPLETE: the user-provided official Sketchfab archive was traversal-audited,
+  test-extracted, and retained outside the runtime artifact. The locally served
+  derivative is a hash-verified 7,508,640-byte GLB with 58,870 triangles,
+  fifteen authored material/draw primitives, and twenty-two embedded KTX2
+  textures capped at 1024 px. CC BY 4.0 attribution, original/derived hashes,
+  calibration, optimization changes, and limitations ship beside it.
+- COMPLETE: the model is attached only to the interpolated chassis transform.
+  It explicitly reports no collision authority; all six rigid components,
+  particle contacts, suspension constraints, tire forces, CCD, traffic impacts,
+  rebasing, and reset remain physical. The source is unrigged, so independent
+  visible wheel/suspension articulation is a disclosed limitation.
+- COMPLETE: keyboard mouse drift/pointer lock is disabled by default, A/D keep
+  rider-centric signs, S is a balanced service brake, and dedicated front/rear
+  inputs remain. Fixed-step actuator filters, one compatible curvature/lean
+  target, traction/front-load torque limiting, lower engine braking, automatic
+  shift hysteresis, and force/torque-only parking support replace the unstable
+  direct full-authority response without pose or velocity correction.
+- COMPLETE: exact local-XZ terrain indexing, one shared interpolation snapshot,
+  lazy render telemetry, mutation-safe inverse-inertia caching, and mask/joint/
+  exclusion pruning before spatial pair-key capacity reduce the measured hot
+  path while preserving 120 Hz, twelve iterations, physical traffic, and exact
+  deterministic hashes.
+- VERIFIED: physics `41/41`, RoadVector `75/75`, XR `23/23` plus mocked browser,
+  model/terrain/render focused `21/21`, static release `17/17`, rebuilt built-doc
+  RoadVector smoke, and exact private Tailnet HTTPS all pass. Physical-headset
+  comfort/performance remains NOT RUN; no hardware certification is claimed.
+- FOLLOW-UP COMPLETE: the spatial hash now preserves its globally sorted
+  insertion order without sorting every cell again and computes swept bounds in
+  one scalar pass. The model resource converts its single authored transmission
+  material to one-pass alpha presentation, and race beams use ordinary frustum
+  culling. Deterministic cell/pair ordering and material/culling policy are
+  regression-tested; no solver, body, contact, or traffic authority changed.
+- LATEST VERIFIED: physics `42/42`, RoadVector `75/75`, focused model plus
+  particle plus renderer `39/39`, static release `17/17`, and built RoadVector
+  smoke on owned port `43977` pass. A foreground W/D/A/S keyboard drive sampled
+  `526` frames / `9.003 s` at `17.12 ms` mean, `16.7 ms` p50, `16.8 ms` p95,
+  `33.3 ms` p99, and `33.4 ms` max; the final view reported `42` calls,
+  `164,922` triangles, and zero physics overflow.
+- AUDIT HARDENED: the parking spring anchor now participates in origin rebases;
+  a twin-run regression preserves parked force, velocity, and world position.
+  Transparent model materials explicitly set Three.js `forceSinglePass`, with
+  the authored double-sided glass fixture proving there is no hidden second
+  alpha pass. A manifest-enforced `-0.12573690675938365 m` visual-only grounding
+  offset aligns the model minimum with the physical `-1.042 m` tire-bottom
+  midpoint while preserving the correct `1.67 m` wheelbase and all six-body
+  authority. Final physics is `43/43`; RoadVector `75/75`; static release
+  `17/17`; rebuilt browser smoke passes on closed owned port `43978`.
+- LOCAL CLEAN POINT: validated implementation and generated release are in
+  commit `99779eec57f8`; the only subsequent repository change is this durable
+  commit/ICC closure record. Nothing is pushed, and physical-headset testing
+  remains an explicit manual gate rather than an implementation blocker.
+
+## RoadVector camera/road/automatic and EarthGrid residency snapshot - 2026-08-25 AKDT
+
+- Active task: `roadvector-camera-collision-auto-earthgrid-persistence-20260825`.
+- Reproduce the chase-camera skew, road-contact mismatch, gearbox
+  discoverability, and EarthGrid geometry churn in the running private apps.
+- Center the chase view, share one terrain-draped road surface between rendering
+  and physical tire contact, and expose a default automatic/manual gearbox mode
+  without weakening the six-body 120 Hz/twelve-iteration simulation.
+- Retain bounded compiled Shortbread buffers across view selections so a warm
+  revisit does not reconstruct road geometry; preserve source-cache, vertex,
+  resident-resource, height-revision, and terminal-state truth.
+- Finish with focused/aggregate tests, measured keyboard driving and private
+  browser proof, fresh EarthGrid/RoadVector artifacts, docs, cleanup, ICC gates,
+  and a coherent local commit. Physical-headset evidence remains NOT RUN unless
+  real hardware is used.
+
+## RoadVector camera/road/automatic and EarthGrid residency result - 2026-08-25 AKDT
+
+- COMPLETE: RoadVector's chase camera is centered on local X with a negative-Z
+  trailing offset and a centered look target. Desktop device pixel ratio is
+  capped at `1.5` to bound high-density fragment work; WebXR keeps its own
+  compositor render target.
+- COMPLETE: one bounded terrain-draped road representation now supplies both
+  the rendered triangles and the single composite terrain/road heightfield.
+  The six-body motorcycle reaches the road through ordinary fixed-step tire
+  contacts, suspension, friction, and impulses; contacts retain OSM way and
+  segment metadata, and no pose/velocity road constraint was introduced.
+- COMPLETE: automatic transmission is explicit, enabled by default, visible in
+  the HUD/controls/public state, and switchable to manual. Switching modes
+  clears queued one-shot shifts; automatic ignores manual shift edges and
+  reset preserves the selected mode.
+- COMPLETE: decoded Shortbread records retain bounded compiled Cesium buffers.
+  Unchanged A→B→A selections reattach exact resident buffers; height changes
+  mark every resident stale, rebuild active records eagerly, and rebuild stale
+  inactive records lazily without another source request. Resident vertex and
+  byte caps evict/destroy least-recent inactive buffers deterministically.
+- VERIFIED: aggregate unit, production build/static, generated browser smoke,
+  and direct private HTTPS proofs pass. Test listeners and owned TLS relays are
+  closed; the two requested direct private app services remain active. Physical
+  headset behavior/performance remains NOT RUN and is not certified.
+
+## RoadVector continuous globe riding roadmap - 2026-08-25 AKDT
+
+- Active ICC task: `roadvector-globe-offroad-speed-stability-20260825`.
+- Replace the current 500–1,200 m local snapshot and eight-metre boundary reset
+  with a continuously streamed, bounded terrain working set anchored to the
+  actual Cesium globe. The six-body particle motorcycle remains a local-metre,
+  fixed-120 Hz/twelve-iteration physical simulation; Cesium/WGS84/ECEF owns the
+  persistent world position and visible planetary terrain.
+- Preserve physical tire, suspension, road, terrain, traffic, and origin-rebase
+  behavior while terrain and road windows change. A rider may leave roads and
+  cross real terrain and mountains; road decks take precedence only where a
+  current road footprint exists. Missing next-window terrain must be explicit
+  and bounded rather than silently teleporting or inventing authoritative data.
+- Diagnose and remove visible fixed-step/contact jitter, then raise the stable
+  physical powertrain target substantially above the current roughly 58 km/h
+  nine-second result. Do not reduce solver authority or clamp poses/velocities;
+  acceleration, suspension, grip, braking, drag, gearing, and stability remain
+  force/contact based and deterministically tested.
+- Preserve desktop/mobile/gamepad/WebXR input, automatic/manual transmission,
+  chase/first-person camera behavior, model attribution, caches, provenance,
+  and finite resource caps. Browser validation must use non-interactive
+  headless automation and must never invoke `terminal-browser`.
+
+## RoadVector continuous globe riding result - 2026-08-25 AKDT
+
+- COMPLETE: Cesium/WGS84/ECEF is the persistent planetary authority while the
+  Three/WebXR ride and six-body solver remain in a bounded local ENU metre
+  frame. Full rigid frame transactions preserve current/previous/predicted
+  poses, orientations, velocities, controller anchors, local radial gravity,
+  renderer chunks, chase state, camera floor, and XR locomotion without
+  mutating the tracked headset camera.
+- COMPLETE: a deterministic z12-z14 terrain stream owns a 3x3 mandatory active
+  ring, 5x5 desired ring, six-request scheduler, 32-record/64 MiB/900,000-
+  vertex residency caps, immutable generation snapshots, reservations,
+  retries, LRU disposal, and `stream-wait`. The bike can cross the former
+  region boundary onto real Terrarium mountain/off-road collision without a
+  reset or fabricated relief. Web Mercator polar limits remain explicitly
+  unsupported rather than clamped.
+- COMPLETE: the stable collision facade resolves optional roads above streamed
+  terrain, retains the bounded seed road as a fallback only while physically
+  covered, and shares one committed snapshot revision with the streamed Three
+  renderer and camera-floor sampler. The current release truthfully keeps OSM
+  roads, buildings, race, and synthetic traffic as the 2.4 km seed overlay;
+  continuous global terrain does not falsely claim globally streamed roads.
+- COMPLETE: each wheel now has one solver-owned analytic circular tread contact
+  with compliant normal impulse and XPBD support. Thirty-two ring particles
+  remain for physical inertia and body/body impacts. The six rigid bodies,
+  120 Hz step, twelve solver iterations, suspension, friction, CCD, drive and
+  braking forces, and deterministic replay remain authoritative; no pose or
+  velocity smoothing/clamp was introduced.
+- COMPLETE: the automatic powertrain uses filtered load/slip/contact state,
+  ground-coupled shifting/kickdown, and rate-limited reaction torque. The final
+  deterministic smooth gate sustains at least 26.09 m/s and reaches 30.55 m/s
+  with 0.118 mm height deviation, 0.00177 m/s vertical-speed deviation, and
+  1.04 degrees maximum tilt. The rough-mountain and physical braking gates pass.
+- COMPLETE: a 64-entry, exact-16 MiB session-local decoded Terrarium LRU
+  coalesces caller-isolated halo reads, owns exact Float32 storage, cancels
+  orphaned work, fences late completion, and stays outside Yjs. One 5x5 logical
+  window still accounts for 225 bounded halo reads but now performs exactly 49
+  PNG decodes. Active terrain is scheduled ahead of desired-ring prefetch.
+- VERIFIED: geo-core `87/87`, XR `24/24` plus mocked browser, traffic `12/12`,
+  physics `54/54`, RoadVector `114/114` before the final two cache/scheduler
+  regressions and `117/117` after them, static release `17/17`, production
+  build, and the standalone Playwright/system-Chromium built smoke pass. The
+  owned HTTPS listener is closed after the smoke. Physical-headset validation
+  remains NOT RUN and no headset performance certification is claimed.
+
+### GitHub Pages rebuild and complete demo validation - 2026-11-03 AKST
+
+- Build/deployment complete for all15packages, with the Local Model Console as the second overview card. Actual public acceptance passes all17gallery demos plus additional shipped HTML routes under /peercompute/ (23routes total).
+- Acceptance requires inspected screenshots, captured console/resource errors, and authenticated open SecretWorkshop connections in each demo that supports networking. Activate explicit opt-in connections; label local-only simulations accurately. Verify static-host isolation for inference/CubeChat/Earth without injecting server headers. Preserve production geodata limitations as explicit failures until resolved.
+- Publishing authorized by the subsequent November3 23:32 AKST “yes”; merge into ulg remains separate.
+
+- Result: complete local Pages build,23/23 native desktop-browser route checks and46 inspected desktop/mobile screenshots;67/67 focused tests; authenticated SecretWorkshop relay connections in all9network-enabled demo packages (10routes including Hyperborea redirect/direct). Owned managed SmolVLM inference over the peer network also passes. RoadVector riding remains geodata-backend-unconfigured; automated DaddyGo does not validate camera/pose tracking or physical XR. Public Pages was initially fe3cfda3; the November4 authorized deployment and exact-origin checks below supersede that publication blocker.
+
+- November3 23:32 AKST: user explicitly approved publishing938fe136 to the existing feature-branch Pages source. Deployment and exactpublicURL validation are in progress; ulg merge remains separate.
+- Publication currently blocked by GitHub GH013 false-positive detection of an official Transformers.js model-class identifier. Both ordinary pushes rejected; remote remains fe3cfda3. Replacement8bbba3d2 passes67tests/8affected runtime routes plus previous23route coverage. Await explicit false-positive exception approval; no bypass or merge performed.
+- November4 05:47 AKST: user explicitly approved the verified false-positive exception. GitHub accepted the narrowly scoped false_positive API request; protected normal push and exact public deployment checks are proceeding. All broader IPFS qualification and ulg merge remain separate.
+
+- November4 public deployment: a281d9b5 is live; model tileHTTP200,33exact-byte/MIME checks and23actual-public browser routes pass. All9network packages connect to SecretWorkshop. All46screenshots reviewed and actual public owned-peer inference passes64.56s (999GPUdispatches, encryptedWebRTC, exactpinnedCID). Previously documented camera/XR/geodata limits remain.
+
+- Follow-up: investigate MPM Headless raw momentum-drift warning with force-corrected numerical acceptance; startup success does not validate the large transient. Investigate CubeChat2/64 memory64-probe failures before declaring every embedded worker GGUF-ready. Standalone managed-worker prerequisites and actual ONNX peer inference pass. Broader IPFS-01 and ulg merge remain open.
+
+### Model console library and Tsotchke catalog - November4 2026
+
+- Implemented package-size ordering and labels; remember the last successfully loaded model while its package remains stored, else Qwen3.5 0.8B Abliterated; explicit load from Stored Models without download or automatic startup. Conditional, Web-Lock-serialized preference updates prevent an older tab from clearing a newer selection.
+- Added visible overview back arrow and top-right hamburger containing About, Tsotchke-Corporation Hugging Face, tsotchke.org and tsotchke.net links; mobile layout, keyboard focus and five-second discovery preserved.
+- Added every standard-GGUF Tsotchke release (C30,L162,C20 alongside existing D14), excluding three custom-codec packages. Pinned metadata/D14 CID and runtime bounds preserved; C30/C20 exceed the current16GiB loader limit, and new models remain hardware-unqualified candidates.
+- Validation passes150integrated unit,44UI/navigation and67release tests; three production builds; real library restart/load/delete with zero repeat downloads; actual owned-peer inference; four nested and four actual public Pages routes with SecretWorkshop connections. Published bc392fc8 on November4:33exact-byte/MIME URLs and8public screenshots verified. This console slice is delivered; broader IPFS qualification and ulg merge remain separate.
+
+
+### Remote DreamShaper lifecycle, automatic startup and installable console - November4 2026
+
+- In progress: repair timer-dependent resident reservations and stale hosted readiness after confirmed live expiry; preserve explicit revocation, quota and worker ownership.
+- Move Stored Models/Config/About into hamburger; About opens a separate modal. Rename import action Load; start one cancellable saved/default model load at launch.
+- Add standalone installable PWA with isolated service worker, relative Pages paths and bounded app-shell caching. Validate offline shell separately from actual model/network execution.
+- Acceptance: deterministic expiry/revocation/cleanup regressions, UI startup/menu tests, PWA installability/offline and isolation checks, actual public DreamShaper generation after simulated idle clock gap.
+- Implementation andprepublicationgates pass:193integratedunits,49UI,17PWA/isolation,73releasechecks;3builds,4nestedroutes andrealconsoleinstallability/offline/menuacceptance. Publishing thenverifyingactualpublicDreamimage/startup withretainedmodel; broaderIPFS/ulg/large-modelqualification remainsopen.
+
+- November4 follow-up: public83b0c1df fixes the confirmed expired admission and verifies automatic saved/default loading and installable PWA. Peer Dream image transfer completes, but visual output is corrupt; retain image-quality gate open separately. Add a modal spinner with progress and real cancellation for every local load path, staying open through cancellation cleanup.
+
+- Latest November4 steering: unsupported startup choices automatically fall back to a compatible saved package, otherwise the requested default if compatible, otherwise the smallest compatible catalog package. Validate actual automatic startup on a standard no-f16 browser and embedded consoles.
+
+- Inference connections now retry another already authenticated connection to the same host when initial stream negotiation fails, before any prompt is sent. The reported console-only dial warning was distinct from the observed expired remote model error; refresh the hosting page to use the deployed owner-lifetime fix.
+
+- Verified: cancellable local-load overlay, supported-model startup fallback, late cancellation cleanup/preference rollback, diffusion GPU error detection, and same-peer stream recovery.213integratedunit/55UI/17PWA/73releasechecks plus actual library/startup/cancel and4affectedPagesroutes pass. Live controlled encrypted relay recovery passes; Dream's prior bad pixels were an actual GPUallocationfailure, now rejected. Publishing this slice; broader IPFS/ulg gates remain separate.
+
+- Delivered publicly as5ab49109 (Pages41889388873, November4 18:42:32UTC): loading overlay/Cancel, compatible initial fallback, GPU failure detection and authenticated same-peer stream recovery. Public byte/install/offline/4route checks and actualownedGPU native→relay inference pass. User clarified “Dial failed” appears only in developer console; observed inference was accepted then rejected by an older remote session, requiring hosting-page refresh. ParentIPFS/ulg merge and large-model qualification remainopen.
+
+### Embodied game agents — research discussion, November 4 2026
+
+- Proposed direction only; the user requested brainstorming, not implementation. Existing model hosting, bounded demo action proposals, and CubeChat's separate deterministic bot controls provide useful components, but do not yet constitute persistent autonomous characters.
+- Candidate first experiment: two CubeChat characters with stable agent IDs, distinct goals and relationships, limited observations, validated movement/chat/interact actions, and event memories that survive restart. Reuse one loaded model across characters where practical; keep movement, collision and animation independent of inference latency.
+- Prefer the existing Qwen3.5 2B q4 vision path for initial dialogue/decisions. Qwen3.5 0.8B is a cheaper text-only candidate through our current GGUF adapter. FunctionGemma-270M's published browser game fine-tune is a promising specialized action adapter, but needs integration and actual qualification here.
+- Keep identity, memories, goals and versioned avatar recipes outside model weights. StateManager would replicate bounded active state and authority; local persistence plus explicitly retained IPFS checkpoints/assets would support recovery and transfer. Agent execution authority and handoff still require design: a discoverable CID alone does not guarantee persistence or availability.
+- Start body creation with validated procedural recipes and known rigs; allow controlled proportions, materials, accessories and animation choices. Hunyuan3D-2mini and HY-Motion are later native-GPU candidates, not current browser runtime capabilities. Novel body topology requires appropriate rigging and controllers.
+- FlyWire/NeuroMechFly motivate a separate small sensorimotor experiment (heading/path integration or visual following), compared with ordinary steering and a shuffled-connectivity baseline. Anatomy alone does not supply physiological dynamics, social language, autobiographical memory, or arbitrary-body control. No browser connectome performance claim or new implementation commitment is made.
+
+#### November 4 follow-up — learned movement and specialist routing
+
+- User clarified that behavior, navigation and movement should be learned neural policies, with multiple small specialists and an orchestrator routing information. This supersedes the earlier proposal to use deterministic bot behavior as the character's controller. Physics integration, valid actuator bounds and network authority remain engine responsibilities; they do not prescribe behavioral sequences.
+- Proposed architecture: recurrent sensory encoders and shared agent state, a learned routing/skill-selection policy, learned navigation and motor controllers, an outcome/world predictor and critic, episodic memory, and a language specialist. Keep fast feedback on the simulation owner; route slower inference and training jobs over PeerCompute. Use explicit compatible observation/action contracts between specialists.
+- Bootstrap a few useful learned modules before expanding the expert graph. Recurrent PPO is a practical small-controller baseline; DreamerV3 motivates learned consequences and imagined rollouts; recurrent independent mechanisms/option-critic motivate learned attention and skill selection. These are training approaches requiring a PeerCompute environment adapter, not pretrained browser policies for our game physics.
+- Separate recurrent-state adaptation, persistent memory and actual weight updates in design and reporting. Training requires versioned rollouts/checkpoints and validation before adoption; existing WebGPU model inference does not provide an RL optimizer. A learned body model and morphology-conditioned policy can later support physical body changes within a tested design space.
+- Still brainstorming; no autonomous-agent runtime, training process or browser deployment has begun. Proposed acceptance is recorded in plan/tests.md.
+- Browser feasibility clarification: small learned controllers/routers can target roughly 100k–1M parameters (0.4–4 MB FP32 weights each), with larger custom predictors sized separately. These are proposed budgets, not published Dreamer/MetaMorph checkpoint requirements or performance measurements. Validate WebGPU operator coverage, recurrent-state handling, rendering contention and latency. Training needs a separate gradient/optimizer/experience-buffer implementation; current inference support does not establish browser training support.
+- Self-directed curriculum proposal: the LLM can review grounded observations/learning metrics, choose suitable practice tasks, suggest bounded reward parameters and request specialist training; optimizers update policy weights and independent engine metrics evaluate improvement. Start with a few measurable task families and compare adaptive task selection with a fixed curriculum. Voyager supports curriculum/code-skill ideas, Eureka reward design plus RL, and OMNI-EPIC generated learning environments; none proves our browser 2B model can reproduce their results. Preserve the fast neural router/control loop and invoke deliberative curriculum planning less frequently. Childlike exploration is an analogy, not a claim of developmental or subjective equivalence.
+
+### Humunculus design document — November 4 2026
+
+- User authorized a comprehensive design PDF with abstract/introduction, diagrams, architecture, implementation/training plans, candidate voice/vision/reasoning models and fly-connectome placement, stored under the demo plan folder and delivered to their specified Stinkpad desktop path.
+- Design v0.1: [PDF](demos/humunculus/humunculus.pdf), [editable HTML](demos/humunculus/humunculus.html), vector sources and build script in plan/demos/humunculus/. Covers 26 pages, six vector diagrams and 32 reference entries. This is a documented engineering proposal, not a new implemented agent or training result.
+- Review clarified dedicated managed motor/slow-model workers and admission capacity, a direct bounded continuous-force adapter instead of the existing boolean bot bridge, and recipient-bound durable authority transitions. Speech remains candidate integration; PPO/Dreamer and browser training remain new work. Document validation and authorized delivery are tracked in plan/log.md.
+
+### Model browser modal — November 5 2026 proposal
+
+- User requests brainstorming before implementation: replace the model select list with a responsive searchable modal, including Hugging Face name/description search and size filters. Implementation awaits explicit approval.
+- Proposed browser combines HF discovery, stored packages and network availability; compact results open variant details, with separate download size, parameter count and estimated RAM/GPU requirements. Preserve size sorting, remembered successful model, startup loading, cancellation and existing peer routing.
+- Compatibility must distinguish tested package/runtime evidence, required device features and unknown memory fit. Local limitations must not hide usable remote inference. Current GGUF/diffusion loaders require approved catalog profiles; live Hub results need package resolution and admission before loading, not only a new UI.
+- HF documents model-card full-text search and exposes /api/search/full-text in its current OpenAPI schema. Plan to combine name/card search, bounded metadata enrichment and caching. Browser CORS, pagination, rate limits and selected-variant file completeness still require implementation-time validation.
+- Follow-up: user placed this next in the TODO queue as MODEL-BROWSER-01 and requested
+  AGENT-01 immediately afterward. See the ordered queue above and the agent-layer
+  plan; these supersede the earlier unprioritized brainstorming status.
+
+### November 5 — model-support expansion discussion
+
+The current Hub browser exposes more models than the qualified runtimes admit.
+Research identified existing-engine architecture restrictions, a1.5GiB generic
+ONNX package ceiling, and missing discovery of related browser conversions as
+near-term opportunities. See the [support priorities proposal](branch/ipfs-large-files-model-inference.md#november-5--broader-model-support-priorities-proposal).
+No additional runtime support is claimed; AGENT-01 ordering is unchanged pending
+the user's implementation direction.

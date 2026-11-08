@@ -5,6 +5,21 @@ async function importTaskModule(modulePath) {
     throw new Error('module path must be a non-empty string');
   }
 
+  // Fixed lazy import lets Vite bundle the trusted runtime and its dependencies.
+  // Artifact manifests supply model data, never executable module locations.
+  if (modulePath === 'peercompute:model-inference') {
+    return import('../inference/modelTask.js');
+  }
+  if (modulePath === 'peercompute:gguf-inference') {
+    return import('../inference/gguf/modelTask.js');
+  }
+  if (modulePath === 'peercompute:diffusion-inference') {
+    return import('../inference/diffusion/modelTask.js');
+  }
+  if (modulePath === 'peercompute:speech-inference') {
+    return import('../inference/speech/modelTask.js');
+  }
+
   return import(
     /* webpackChunkName: "compute-task" */
     /* webpackMode: "lazy" */
@@ -24,7 +39,7 @@ function normalizeRuntime(payload = {}) {
   return 'js';
 }
 
-async function executeJavaScriptTask(payload) {
+async function executeJavaScriptTask(payload, context) {
   let handler;
 
   if (payload.fn) {
@@ -39,15 +54,15 @@ async function executeJavaScriptTask(payload) {
     throw new Error('Handler not found for task');
   }
 
-  return handler(payload.data);
+  return handler(payload.data, context);
 }
 
-export async function executeTaskPayload(payload) {
+export async function executeTaskPayload(payload, context = {}) {
   const runtime = normalizeRuntime(payload);
 
   switch (runtime) {
     case 'js':
-      return executeJavaScriptTask(payload);
+      return executeJavaScriptTask(payload, context);
     case 'wasm':
       return executeWasmTask(payload);
     case 'wasm-webgpu':

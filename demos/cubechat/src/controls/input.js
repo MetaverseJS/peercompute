@@ -1,5 +1,16 @@
+export function usesTouchControls(event, fallback = false) {
+  if (event?.pointerType) return event.pointerType === 'touch';
+  if (event?.type?.startsWith('touch')) return true;
+  if (event?.type === 'keydown') return false;
+  if (event?.sourceCapabilities) return event.sourceCapabilities.firesTouchEvents;
+  return fallback;
+}
+
+const gameplayKeys = new Set(['w', 'a', 's', 'd', 'q', 'e', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' ']);
+const isEditable = (target) => target?.isContentEditable || Boolean(target?.closest?.('input, textarea, select'));
+
 export class PlayerController {
-  constructor() {
+  constructor({ canvas = document.querySelector('#scene-container > canvas') } = {}) {
     this.keys = {};
     
     // Camera controls
@@ -29,15 +40,44 @@ export class PlayerController {
     this.moveJoystick = { x: 0, y: 0 };
     this.lookJoystick = { x: 0, y: 0 };
     this.joystickElements = null;
+    this.mobileControls = null;
+    this.touchResetters = [];
     
-    this.setupEventListeners();
+    this.setupEventListeners(canvas);
   }
 
   setMobileMode(enabled) {
+    enabled = Boolean(enabled);
+    if (this.isMobile === enabled) return;
     this.isMobile = enabled;
-    if (enabled) {
-      this.createMobileControls();
-    }
+    if (enabled && !this.mobileControls) this.createMobileControls();
+    if (this.mobileControls) this.mobileControls.hidden = !enabled;
+    this.resetTouchInput();
+  }
+
+  resetTouchInput() {
+    this.moveJoystick = { x: 0, y: 0 };
+    this.lookJoystick = { x: 0, y: 0 };
+    this.jumpTriggered = false;
+    for (const reset of this.touchResetters) reset();
+  }
+
+  clearInput() {
+    this.keys = {};
+    this.jumpKeyPressed = false;
+    this.resetTouchInput();
+  }
+
+  getMovementInput() {
+    const key = (name) => Number(Boolean(this.keys[name]));
+    const forward = Number(Boolean(this.keys.w || this.keys.arrowup)) - Number(Boolean(this.keys.s || this.keys.arrowdown));
+    const strafe = key('d') - key('a');
+    const joystick = this.isMobile ? this.moveJoystick : { x: 0, y: 0 };
+    const clamp = (value) => Math.max(-1, Math.min(1, value));
+    return {
+      forward: clamp(forward - joystick.y * this.mobileMoveSensitivity),
+      strafe: clamp(strafe + joystick.x * this.mobileMoveSensitivity)
+    };
   }
 
   createMobileControls() {
@@ -69,6 +109,7 @@ export class PlayerController {
     controlsDiv.appendChild(jumpButton);
     controlsDiv.appendChild(rightJoy);
     document.body.appendChild(controlsDiv);
+    this.mobileControls = controlsDiv;
 
     this.joystickElements = { left: leftJoy, right: rightJoy, jump: jumpButton };
     this.setupJoystickListeners(leftJoy, 'move');
@@ -130,8 +171,10 @@ export class PlayerController {
       button.style.background = 'rgba(0, 255, 255, 0.3)';
       button.style.transform = 'translateX(-50%) scale(1)';
     };
+    this.touchResetters.push(resetButton);
 
     button.addEventListener('touchstart', (e) => {
+      if (!this.isMobile) return;
       e.preventDefault();
       e.stopPropagation();
       
@@ -287,6 +330,7 @@ export class PlayerController {
     };
 
     const resetStick = () => {
+      touchId = null;
       stick.style.transform = 'translate(-50%, -50%)';
       if (type === 'move') {
         this.moveJoystick = { x: 0, y: 0 };
@@ -294,6 +338,7 @@ export class PlayerController {
         this.lookJoystick = { x: 0, y: 0 };
       }
     };
+    this.touchResetters.push(resetStick);
 
     const getTouchInBounds = (touches) => {
       const rect = joystick.getBoundingClientRect();
@@ -307,6 +352,7 @@ export class PlayerController {
     };
 
     joystick.addEventListener('touchstart', (e) => {
+      if (!this.isMobile) return;
       e.preventDefault();
       e.stopPropagation();
       
@@ -318,7 +364,7 @@ export class PlayerController {
     });
 
     document.addEventListener('touchmove', (e) => {
-      if (touchId !== null) {
+      if (this.isMobile && touchId !== null) {
         for (let touch of e.touches) {
           if (touch.identifier === touchId) {
             e.preventDefault();
@@ -350,15 +396,26 @@ export class PlayerController {
     });
   }
 
-  setupEventListeners() {
+  setupEventListeners(canvas) {
     // Keyboard events
     window.addEventListener('keydown', (e) => {
-      this.keys[e.key.toLowerCase()] = true;
+      if (e.defaultPrevented || e.isComposing || e.ctrlKey || e.metaKey || e.altKey || isEditable(e.target)
+          || document.querySelector('dialog[open]')) return;
+      const key = e.key.toLowerCase();
+      if (!gameplayKeys.has(key)) return;
+      // Space on a focused button belongs to that button, not the avatar.
+      if (key === ' ' && e.target?.closest?.('button, [role="button"]')) return;
+      e.preventDefault();
+      this.setMobileMode(false);
+      this.keys[key] = true;
     });
 
     window.addEventListener('keyup', (e) => {
       this.keys[e.key.toLowerCase()] = false;
     });
+    window.addEventListener('blur', () => this.clearInput());
+    document.addEventListener('visibilitychange', () => { if (document.hidden) this.clearInput(); });
+    document.addEventListener('focusin', (event) => { if (isEditable(event.target)) this.clearInput(); });
 
     // Mouse movement for rotation (when pointer is locked)
     document.addEventListener('mousemove', (event) => {
@@ -379,8 +436,13 @@ export class PlayerController {
       }
     });
 
-    // Mousewheel for zoom
+    // Only the world canvas owns wheel zoom. Dialogs, editors and other UI
+    // (including image canvases) must retain native scrolling.
     window.addEventListener('wheel', (event) => {
+      if (event.defaultPrevented || event.ctrlKey || event.metaKey || !event.deltaY ||
+          event.target !== canvas || isEditable(event.target) ||
+          event.target?.closest?.('dialog, [role="dialog"]') ||
+          (document.pointerLockElement && document.pointerLockElement !== canvas)) return;
       event.preventDefault();
       
       // Zoom in/out with mousewheel
@@ -447,8 +509,8 @@ export class PlayerController {
 
   // Check if player should jump (for physics integration)
   shouldJump() {
-    // Space key for desktop, or jump handled separately for mobile
-    if (!this.isMobile && this.keys[' ']) {
+    // A connected keyboard remains usable even on a touch-capable device.
+    if (this.keys[' ']) {
       // Prevent repeated jumps by checking if key was just pressed
       if (!this.jumpKeyPressed) {
         this.jumpKeyPressed = true;

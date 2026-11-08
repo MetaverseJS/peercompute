@@ -1,0 +1,146 @@
+{
+  "schemaVersion": "peercompute.motorcycle.model-asset.v1",
+  "id": "akira-bike-ryanwill679-optimized-v1",
+  "title": "Akira Bike",
+  "author": {
+    "name": "Ryanwill679",
+    "url": "https://sketchfab.com/Ryanwill679"
+  },
+  "license": {
+    "spdx": "CC-BY-4.0",
+    "name": "Creative Commons Attribution 4.0 International",
+    "url": "https://creativecommons.org/licenses/by/4.0/",
+    "localRecord": "LICENSE.txt",
+    "attribution": "This work is based on \"Akira Bike\" by Ryanwill679, licensed under CC BY 4.0.",
+    "changesDisclosedIn": "ATTRIBUTION.md"
+  },
+  "source": {
+    "url": "https://sketchfab.com/3d-models/akira-bike-a5b1dc49808b40a9b94f9a4a3073d548",
+    "authenticatedDownload": true,
+    "archive": {
+      "originalDownloadName": "akira_bike.zip",
+      "distributedWithRuntime": false,
+      "bytes": 43520175,
+      "sha256": "b39ed00351d94c1b4ac697df76d57616bb7823d3fe258044da6a77cf6f3971fa"
+    },
+    "scene": {
+      "file": "scene.gltf",
+      "bytes": 38299,
+      "sha256": "7bc8b9173b96664b12510026bd53a2b07bb46a8b099956935d11e03d9bb581a1"
+    },
+    "binary": {
+      "file": "scene.bin",
+      "bytes": 5706904,
+      "sha256": "2d3747521281e0ed95748f9f806f50b641c9688cee339990803ca00f1d012a42"
+    },
+    "licenseRecordSha256": "2b1447238df73c9b836a25b755095d56628bec91875cd9ef3ca234ffa3a616f2",
+    "triangleCount": 116412,
+    "materialCount": 15,
+    "referencedTextureCount": 25,
+    "animationCount": 0
+  },
+  "output": {
+    "file": "model.glb",
+    "mimeType": "model/gltf-binary",
+    "bytes": 7508640,
+    "sha256": "95a6453bce76ea3764550089ddbc002edd50ebd0fa0804fb837ef18ae3b0dfe7",
+    "triangleCount": 58870,
+    "meshCount": 15,
+    "meshPrimitiveCount": 15,
+    "drawCallUpperBound": 15,
+    "materialCount": 15,
+    "textureCount": 22,
+    "maximumTextureDimension": 1024,
+    "compressedTexturePayloadBytes": 6934070,
+    "estimatedMinimumGpuTextureBytes": 23243753,
+    "gpuTextureEstimateMethod": "glTF-Transform 4.4.2 ImageUtils KTX2 mip-level estimate; the selected hardware transcode target may require more memory",
+    "animationCount": 0,
+    "embeddedResources": true,
+    "requiredExtensions": [
+      "EXT_meshopt_compression",
+      "KHR_mesh_quantization",
+      "KHR_texture_basisu"
+    ],
+    "sourceSpaceBounds": {
+      "minimum": [-1.49409, -2.30022, 0.65886],
+      "maximum": [0.76054, -1.418, 1.4189]
+    }
+  },
+  "runtimeBounds": {
+    "maximumManifestBytes": 65536,
+    "maximumModelBytes": 8000000,
+    "maximumTriangles": 60000,
+    "maximumMeshPrimitives": 16,
+    "maximumDrawCalls": 16,
+    "maximumMaterials": 16,
+    "maximumTextures": 24,
+    "maximumTextureDimension": 1024
+  },
+  "optimization": {
+    "gltfTransformVersion": "4.4.2",
+    "ktxSoftwareVersion": "4.4.2",
+    "geometryCompression": "EXT_meshopt_compression/high",
+    "simplificationRatio": 0.5,
+    "simplificationErrorLimit": 0.001,
+    "textureCompression": "KTX2 ETC1S/UASTC",
+    "textureMaximumDimension": 1024,
+    "command": "gltf-transform optimize scene.gltf model.glb --compress meshopt --meshopt-level high --simplify true --simplify-ratio 0.5 --simplify-error 0.001 --texture-compress ktx2 --texture-size 1024"
+  },
+  "calibration": {
+    "sourceAxes": {
+      "longitudinal": "+X with the front wheel toward -X",
+      "up": "+Y",
+      "axle": "+Z"
+    },
+    "runtimeAxes": {
+      "axle": "+X",
+      "up": "+Y",
+      "forward": "+Z"
+    },
+    "sourceWheelCenters": {
+      "front": [-1.233476, -2.032612, 1.043712],
+      "rear": [0.450789, -1.990411, 1.035115]
+    },
+    "sourceWheelbaseMeters": 1.684266,
+    "targetWheelbaseMeters": 1.67,
+    "uniformScale": 0.991529841485846,
+    "rotationEulerRadiansXYZ": [0, 1.5707963267948966, 0],
+    "rotationQuaternionXYZW": [0, 0.7071067811865475, 0, 0.7071067811865476],
+    "translationMeters": [-1.0306095028932485, 1.3644736787419562, -0.3730287585215162],
+    "presentationGroundingOffsetMeters": [0, -0.12573690675938365, 0],
+    "physicsRollingRadiusMeters": 0.412,
+    "physicsTireBottomMidpointMeters": -1.042,
+    "targetWheelMidpointMeters": [0, -0.63, 0.015],
+    "calibratedWheelCenters": {
+      "front": [0.004262091023626846, -0.6509217754202719, 0.8499995042350792],
+      "rear": [-0.004262091023627068, -0.6090782245797279, -0.8199995042350792]
+    }
+  },
+  "runtimeDependencies": {
+    "networkRequired": false,
+    "basisTranscoder": {
+      "path": "basis/",
+      "license": "Apache-2.0",
+      "javascript": {
+        "file": "basis/basis_transcoder.js",
+        "bytes": 57529,
+        "sha256": "8478b5b6d6b74e7d3082b89f6417321d8d1dc0307f2b30d4484bb11b441696a1"
+      },
+      "wasm": {
+        "file": "basis/basis_transcoder.wasm",
+        "bytes": 527333,
+        "sha256": "6cf17dc889352c42e9acf8897107978d127005fe3386c36a0e3845e27967630a"
+      }
+    }
+  },
+  "physicsAuthority": "six-body-particle-rigid",
+  "collisionAuthority": false,
+  "limitations": [
+    "The downloaded scene has no armature, wheel rig, animation, or morph targets.",
+    "The optimized derivative is rendered as a chassis-relative presentation mesh; its wheels do not articulate independently.",
+    "A presentation-only 0.12573690675938365-metre downward grounding offset aligns the visible model minimum with the authoritative physics tire-bottom midpoint; it does not alter physics poses or collision geometry.",
+    "The mesh supplies no collision or vehicle dynamics authority.",
+    "Fifteen preserved materials imply an upper bound of fifteen model draw calls.",
+    "Lossy mesh simplification and 1024-pixel KTX2 texture compression may soften close-range details."
+  ]
+}

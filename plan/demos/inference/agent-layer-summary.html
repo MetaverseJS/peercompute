@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PeerCompute Agent Layer — One Page Summary</title>
+<style>
+@page { size:A4; margin:0; }
+* { box-sizing:border-box; }
+body { margin:0; background:#e5e9e7; color:#152b26; font-family:Arial, sans-serif; }
+.page { width:210mm; height:297mm; padding:15mm 16mm 14mm; background:white; position:relative; }
+.content { height:257mm; }
+.eyebrow { font:9pt monospace; color:#42756a; letter-spacing:.8px; margin:0 0 3mm; }
+h1 { font-size:25pt; line-height:1.05; margin:0 0 3mm; letter-spacing:-.5px; }
+.intro { font-size:10.5pt; line-height:1.35; margin:0 0 3mm; }
+h2 { font-size:10.6pt; margin:3mm 0 1.3mm; color:#1b6654; }
+p { font-size:10pt; line-height:1.34; margin:0 0 2mm; }
+figure { margin:2mm 0; }
+figure img { display:block; width:100%; height:auto; }
+figcaption { font-size:8.5pt; line-height:1.3; margin:1mm 0 2mm; color:#426359; }
+.note { background:#f0f5f2; padding:2.5mm 3mm; margin-top:3mm; font-size:9.5pt; }
+footer { position:absolute; bottom:11mm; left:16mm; right:16mm; border-top:1px solid #acc4ba; padding-top:2mm; font-size:8pt; display:flex; justify-content:space-between; color:#426359; }
+a { color:inherit; }
+@media screen { .page { margin:15px auto; box-shadow:0 2px 14px #0002; } }
+@media print { body { background:white; } }
+</style>
+<main class="page"><article class="content">
+<p class="eyebrow">PEERCOMPUTE / PLANNED NEXT STEPS / 05 NOVEMBER 2026</p>
+<h1>One general agent on PeerCompute</h1>
+<p class="intro">Spawn a general agent with a name, goals and persistent context. The same agent can reason, write code, understand images and generate images by selecting eligible models. Multiple instances keep separate identities. Dedicated agent types and new speech/3D adapters are future work.</p>
+<h2>1 · Where the agent runs and remembers</h2>
+<figure><img src="figures/agent-peercompute.svg" alt="General agent on its owning peer using StateManager private persistence, local ComputeManager inference and NetworkManager connections to peer inference and optional peer routing."><figcaption>The agent runtime is proposed. Existing managers provide the foundation; the private agent store and ranking protocol are new additions.</figcaption></figure>
+<h2>2 · How a request becomes a saved result</h2>
+<figure><img src="figures/agent-request-cycle.svg" alt="Task passes through context and eligibility, local or optional peer ML ranking, local revalidation, managed execution and a saved result."></figure>
+<p>A small learned scorer ranks task–model pairs using measured quality, latency and availability. Train and evaluate it on versioned outcomes. Routing can run locally or optionally on a peer, with a local fallback. The owning host enforces permissions and chooses the provider; the model or router never becomes the agent's owner.</p>
+<h2>Persistence, consent and continuity</h2>
+<p>Commit identity, goals, context and results to private IndexedDB. Keep model weights in ArtifactStore. Local-only prohibits remote inference, routing and automatic context transfer; public weight downloads are a separate choice. Model loading and guest-agent hosting require separate host opt-ins.</p>
+<p>Migration transfers one identity only after durable source relinquishment. Cloning creates a new identity with selected memories. Both require destination consent. Private context is not automatically published over IPFS, and saved state does not keep a closed browser running.</p>
+<p class="note"><strong>Next:</strong> MODEL-BROWSER-01 — wider Hugging Face discovery. <strong>Then:</strong> AGENT-01 — one general agent, persistence, trained routing, optional peer routing, consented model loading, cloning and migration. Learned embodiment follows in Humunculus.</p>
+</article><footer><span>Design proposal · Implementation pending</span><span>PeerCompute · 1 / 1</span></footer></main>
+</html>

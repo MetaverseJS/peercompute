@@ -10,6 +10,7 @@ const docsRoot = path.resolve(__dirname, '../../docs');
 export default defineConfig(({ command }) => ({
   root: './',
   base: './',
+  worker: { format: 'es' },
   build: {
     outDir: path.resolve(docsRoot, 'planetgen'),
     assetsDir: 'assets',

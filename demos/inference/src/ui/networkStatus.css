@@ -1,0 +1,14 @@
+.pc-network-trigger{--pc-network-color:#e6aa9a;display:grid;place-items:center;flex:0 0 auto;width:40px;height:40px;min-width:40px;padding:8px;border:1px solid #365b46;border-radius:4px;background:#0b1d15;cursor:pointer}
+.pc-network-trigger[data-state=healthy],.pc-network-popover[data-state=healthy]{--pc-network-color:#91e6ac}
+.pc-network-trigger[data-state=pending],.pc-network-popover[data-state=pending]{--pc-network-color:#e7ce78}
+.pc-network-trigger[data-state=offline],.pc-network-popover[data-state=offline]{--pc-network-color:#e6aa9a}
+.pc-network-trigger svg{display:block;width:23px;height:23px;fill:none;stroke:var(--pc-network-color);stroke-width:1.7;stroke-linejoin:round;stroke-linecap:round;pointer-events:none}
+.pc-network-popover{box-sizing:border-box;position:fixed;inset:auto;margin:0;padding:14px;width:min(360px,calc(100vw - 16px));max-width:none;max-height:calc(100dvh - 16px);overflow:auto;overscroll-behavior:contain;background:#091610;color:#bce9cd;border:1px solid #568568;border-radius:6px;box-shadow:0 14px 42px #0009;font:13px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;z-index:10020}
+.pc-network-popover[hidden]{display:none!important}.pc-network-popover *{box-sizing:border-box}
+.pc-network-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
+.pc-network-header h2{margin:0;font:600 14px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace}
+.pc-network-close{display:grid;place-items:center;flex:0 0 auto;width:32px;min-height:32px;padding:3px!important;color:inherit;background:#0b1d15;border:1px solid #365b46;border-radius:4px;font:20px/1 ui-monospace,SFMono-Regular,Consolas,monospace;cursor:pointer}
+.pc-network-state{margin:0 0 7px;color:var(--pc-network-color);font-weight:600}
+.pc-network-popover .pc-network-summary{margin:0;min-height:0;color:#adcbb7;font-size:12px;line-height:1.5;overflow-wrap:anywhere;white-space:normal}
+.pc-network-trigger:focus-visible,.pc-network-popover:focus-visible,.pc-network-close:focus-visible{outline:2px solid #9be1b7;outline-offset:2px}
+@media(max-width:540px){.pc-network-popover{padding:12px}}

@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Humunculus: design for persistent embodied learning agents on PeerCompute.">
+<title>Humunculus — PeerCompute Embodied Learning Agents</title>
+<style>
+@page { size: A4; margin: 0; }
+:root { --ink:#183b39; --teal:#14776d; --muted:#536b68; --paper:#fffef9; --line:#d6e2db; --gold:#a56b2d; --blue:#406b92; }
+* { box-sizing:border-box; }
+html,body { margin:0; padding:0; color:var(--ink); font-family:'Noto Sans',Arial,sans-serif; font-size:10.2pt; line-height:1.48; background:#e5eae5; }
+.page { width:210mm; height:297mm; padding:18mm 17mm 18mm; margin:9mm auto; background:var(--paper); position:relative; break-after:page; }
+.page:last-child { break-after:auto; }
+.content { height:252mm; position:relative; }
+.running { height:9mm; font-family:'DejaVu Sans Mono',monospace; font-size:7.5pt; letter-spacing:1px; text-transform:uppercase; color:var(--muted); border-top:2px solid var(--teal); padding-top:2mm; margin-bottom:4mm; }
+.footer { position:absolute; bottom:9mm; left:17mm; right:17mm; border-top:1px solid var(--line); padding-top:2mm; display:flex; justify-content:space-between; font-size:8pt; color:var(--muted); }
+h1,h2,h3 { line-height:1.17; margin:0 0 4mm; font-weight:650; letter-spacing:-.45px; }
+h1 { font-size:25pt; } h2 { font-size:15pt; margin-top:6mm; } h3 { font-size:11.3pt; margin-top:4.5mm; }
+p { margin:0 0 3.4mm; }
+ul,ol { margin:2mm 0 4mm; padding-left:5mm; } li { margin-bottom:2mm; }
+a { color:var(--teal); text-decoration:none; }
+.eyebrow { font-size:8.4pt; letter-spacing:2.1px; font-family:'DejaVu Sans Mono',monospace; color:var(--teal); text-transform:uppercase; margin-bottom:5mm; }
+.deck { font-size:13pt; line-height:1.45; color:var(--muted); margin-bottom:6mm; }
+.small { font-size:8.7pt; line-height:1.45; }
+.muted { color:var(--muted); }
+.callout { background:#eaf4ef; border-left:3px solid var(--teal); padding:4mm 4.5mm; margin:4mm 0; }
+.callout.gold { background:#f8f0e2; border-color:var(--gold); }
+.callout.blue { background:#edf2f8; border-color:var(--blue); }
+.callout p:last-child { margin-bottom:0; }
+.columns { display:grid; grid-template-columns:1fr 1fr; gap:7mm; }
+.columns.three { grid-template-columns:1fr 1fr 1fr; gap:5mm; }
+table { border-collapse:collapse; width:100%; table-layout:fixed; font-size:9.2pt; line-height:1.4; margin:3.5mm 0 5mm; }
+th { background:#e8f1ec; text-align:left; font-size:8.4pt; letter-spacing:.2px; }
+th,td { vertical-align:top; padding:2.5mm 2.5mm; border-bottom:1px solid var(--line); overflow-wrap:anywhere; }
+tr { break-inside:avoid; } td:first-child { font-weight:600; }
+.compact th,.compact td { padding:2mm 2.2mm; }
+.tag { display:inline-block; font-family:'DejaVu Sans Mono',monospace; font-size:7.1pt; padding:.5mm 1.4mm; border:1px solid currentColor; border-radius:2px; color:var(--teal); letter-spacing:.3px; margin-right:1mm; }
+.tag.candidate { color:var(--blue); }.tag.research { color:var(--gold); }
+figure { margin:4mm 0; } figure img { width:100%; display:block; } figcaption { font-size:8.5pt; line-height:1.4; color:var(--muted); margin-top:2.5mm; }
+pre { padding:4mm; font-family:'DejaVu Sans Mono',monospace; font-size:8.1pt; line-height:1.55; white-space:pre-wrap; overflow-wrap:anywhere; background:#eef3ee; border:1px solid var(--line); margin:3mm 0 4mm; }
+code { font-family:'DejaVu Sans Mono',monospace; font-size:.88em; overflow-wrap:anywhere; }
+.cover { background:#0b2928; color:#f5f3e9; }
+.cover .running { border-color:#87ceac; color:#a9c5ba; }.cover .footer { color:#a9c5ba; border-color:#35605a; }
+.cover .eyebrow { color:#8ddcb5; margin-top:16mm; }.cover h1 { font-size:46pt; letter-spacing:-2px; margin:5mm 0 8mm; }.cover .deck { color:#bed4c9; font-size:18pt; max-width:150mm; }
+.cover .lede { margin-top:12mm; font-size:12pt; line-height:1.65; max-width:157mm; }
+.cover .orbit { display:flex; justify-content:space-between; border-top:1px solid #426a61; border-bottom:1px solid #426a61; padding:8mm 0; margin:14mm 0 10mm; font-family:'DejaVu Sans Mono',monospace; font-size:12pt; color:#a0e7bd; }
+.cover .meta { margin-top:10mm; color:#bdd0c6; font-size:9pt; line-height:1.8; }
+.toc { list-style:none; padding:0; margin:5mm 0; }.toc li { display:flex; justify-content:space-between; border-bottom:1px solid var(--line); padding:1.7mm 0; margin:0; }.toc a { color:var(--ink); }
+.refs { font-size:8.8pt; line-height:1.43; }.ref { margin-bottom:4mm; }.ref strong { display:block; }.ref a { display:block; overflow-wrap:anywhere; font-size:8pt; }.ref .note { color:var(--muted); }
+.terminal { color:#bdf1cf; background:#102c29; border-color:#1a5f50; font-size:9pt; line-height:1.7; }
+.page.dense { font-size:9.7pt; line-height:1.42; }
+.page.dense p { margin-bottom:2.8mm; }
+.page.dense h2 { margin-top:4.3mm; }
+.page.dense table { font-size:8.9pt; }
+.page.dense figure img { max-height:73mm; object-fit:contain; }
+.page.dense .terminal { font-size:8.7pt; line-height:1.55; }
+.page#speech figure img { max-height:60mm; }
+.metric { border-top:3px solid var(--teal); padding-top:3mm; }.metric b { display:block; font-size:20pt; }.metric span { font-size:8.6pt; color:var(--muted); }
+@media print { html,body { background:white; }.page { margin:0; } a { text-decoration:none; } }
+</style>
+</head>
+<body>
+
+<section class="page cover" data-title="Cover" id="cover"><div class="content">
+<div class="running">PeerCompute / Design study 001</div>
+<div class="eyebrow">Persistent embodied learning agents</div>
+<h1>HUMUNCULUS</h1>
+<p class="deck">A distributed architecture for entities that perceive, act, remember and learn.</p>
+<p class="lede">Small neural specialists coordinate through learned attention. A persistent identity connects experience across sessions and hosts. A language model helps choose what to investigate, while embodied policies learn how to navigate, interact and adapt their own bodies.</p>
+<div class="orbit"><span>SENSE</span><span>→</span><span>PREDICT</span><span>→</span><span>ACT</span><span>→</span><span>LEARN</span></div>
+<div class="columns"><div><h3>Design scope</h3><p>Browser execution, peer-hosted services, self-directed curricula, speech, vision, memory, body construction and experimental connectome control.</p></div><div><h3>Engineering stance</h3><p>Learned behavior with measurable outcomes. Explicit boundaries between demonstrated capabilities, proposed components and research questions.</p></div></div>
+<p class="meta">Version 0.1 · 4 November 2026<br>Architecture proposal and implementation roadmap<br>Repository baseline: <code>1c58fc6d</code> · <code>feature/ipfs-artifacts-webgpu</code><br>Prepared from the PeerCompute design discussion and primary research sources.</p>
+</div></section>
+
+<section class="page" data-title="Abstract and introduction" id="abstract"><div class="content">
+<div class="running">Humunculus / Purpose</div><h1>Abstract &amp; introduction</h1>
+<h2>Abstract</h2>
+<p>Humunculus is a proposed architecture for persistent, embodied learning agents in PeerCompute environments. It combines compact neural policies for perception, navigation and motor control with learned information routing, a predictive world/body model, episodic memory, and a language specialist for communication and deliberative learning direction. Agent identity is independent of the browser, hosting peer and model checkpoint. Immutable, content-addressed artifacts preserve policies, body descriptions and experience checkpoints, while bounded replicated state coordinates their use.</p>
+<p>The design separates continuous local control from asynchronous language inference and training. An LLM may propose practice tasks, inspect measured failures and suggest curriculum changes; learning algorithms update neural parameters, and independent evaluation determines whether capability improved. The first implementation targets a simple physical body, followed by speech, social interaction, host handoff and articulated morphology. Fly-connectome models are evaluated as optional sensory or motor specialists through controlled comparisons. The document catalogs candidate models, integration boundaries, training procedures and staged acceptance criteria. It describes an engineering program, not an implemented autonomous entity or evidence of subjective experience.</p>
+<h2>Introduction</h2>
+<p>PeerCompute can already execute selected language and vision models in managed browser GPU workers and serve inference to other peers. Humunculus extends that foundation toward an entity whose actions affect an environment and whose subsequent decisions depend on the consequences. The central requirement is that behavior, navigation and movement arise from learned neural policies. Existing deterministic bots remain useful experimental controls or optional demonstration teachers; their behavior is not presented as the learned entity.</p>
+<p>The intended experience is a recognizable character that meets players, explores, acquires skills, remembers shared events and modifies its appearance or body. Several specialized models may contribute, but their separate outputs must form a coherent ongoing interaction. This requires stable contracts, shared state, deadlines, ownership and learning provenance as much as model selection.</p>
+<p>“Self-directed” means choosing experiments and practice within an engineered learning system. The childhood analogy describes incremental exploration and feedback. The language model brings prior knowledge, and the system still needs defined senses, actuators, learning objectives and resource budgets.</p>
+<div class="callout"><p><strong>First proof:</strong> a small neural agent learns to approach and follow a player, adapts to changed conditions, retains that improvement after restart, and can show the evidence behind its claim.</p></div>
+</div></section>
+
+<section class="page" data-title="Reading guide and evidence" id="guide"><div class="content">
+<div class="running">Humunculus / Reading guide</div><h1>Scope, evidence &amp; navigation</h1>
+<p>This document records the agreed direction and a proposed implementation sequence. No autonomous-agent runtime, policy-training service or speech integration has been implemented by producing this design.</p>
+<div class="columns"><div><h3>Architecture</h3><ul class="toc">
+<li><a href="#architecture">Execution architecture</a><span>04</span></li><li><a href="#perception">Perception and contracts</a><span>05</span></li><li><a href="#routing">Learned routing and timing</a><span>06</span></li><li><a href="#memory">Identity and memory</a><span>07</span></li><li><a href="#network">Hosting and authority</a><span>08</span></li><li><a href="#speech">Speech interaction</a><span>09</span></li><li><a href="#speech-models">Speech candidates</a><span>10</span></li><li><a href="#cognition-models">Vision and reasoning candidates</a><span>11</span></li><li><a href="#policies">Neural policy candidates</a><span>12</span></li><li><a href="#body">Self-designed bodies</a><span>13</span></li></ul></div><div><h3>Learning and delivery</h3><ul class="toc">
+<li><a href="#training">Training architecture</a><span>14</span></li><li><a href="#curriculum">Training curriculum</a><span>15</span></li><li><a href="#self-direction">LLM-directed learning</a><span>16</span></li><li><a href="#fly">Fly-connectome placement</a><span>17</span></li><li><a href="#browser">Browser execution budgets</a><span>18</span></li><li><a href="#modules">Implementation modules</a><span>19</span></li><li><a href="#roadmap">Implementation stages</a><span>20–21</span></li><li><a href="#evaluation">Evaluation and acceptance</a><span>22</span></li><li><a href="#experience">Demo experience and operations</a><span>23</span></li><li><a href="#references-a">Primary sources and provenance</a><span>24–26</span></li></ul></div></div>
+<h2>Evidence labels</h2>
+<table class="compact"><tr><th style="width:25%">Label</th><th>Meaning in this document</th></tr><tr><td><span class="tag">Existing</span></td><td>Implemented repository capability with stated historical validation. It does not imply every device or composed workload is qualified.</td></tr><tr><td><span class="tag candidate">Candidate</span></td><td>Published model or runtime with useful evidence. PeerCompute adaptation and acceptance remain required.</td></tr><tr><td><span class="tag research">Research</span></td><td>Architecture or scientific hypothesis requiring reproduction, training and experiments.</td></tr><tr><td><span class="tag candidate">Proposed</span></td><td>Engineering choice, resource target or future acceptance gate. Not a measured result.</td></tr></table>
+<p class="small">Source baseline: selected live files and README at commit <code>1c58fc6dd3a32f9a625e9f0201bdb06ede81a0a2</code>. Primary web sources were reviewed on 4 November 2026. Current catalog entries alone are not proof of runtime qualification. The final pages identify sources and exact code locations for follow-up.</p>
+</div></section>
+
+<section class="page" data-title="Execution architecture" id="architecture"><div class="content">
+<div class="running">Humunculus / Architecture 01</div><h1>One entity, several execution loops</h1>
+<p>Keep the active body and its fast neural feedback loop together on one simulation owner. Invoke slower specialists asynchronously. All results carry the observation, policy and authority versions under which they were produced.</p>
+<figure><img src="figures/architecture.svg" alt="Fast local sensory and neural control loop with asynchronous language, memory and training services."><figcaption>Figure 1. Logical architecture. The workspace and router are proposed modules. Remote inference supplies a result; it does not acquire control of the body.</figcaption></figure>
+<table class="compact"><tr><th style="width:28%">Existing foundation</th><th>Humunculus integration</th></tr><tr><td>ComputeManager</td><td>Own model workers, residency, cancellation, admission and affinity. Extend with trusted small-policy tasks and explicit training jobs.</td></tr><tr><td>StateManager / DataState</td><td>Replicate bounded identity heads, public state and authority metadata. Keep high-rate tensors local; persist versioned checkpoints separately.</td></tr><tr><td>ArtifactStore</td><td>Verify and retain model files, body assets and checkpoints by CID. Local retention and online availability remain distinct.</td></tr><tr><td>NetworkManager</td><td>Use authenticated transport and discovery for allowed inference/artifact services. Add agent-specific authority and speech protocols explicitly.</td></tr></table>
+<p class="small">The cognitive router selects information and skills. The compute scheduler selects execution resources. These are separate decisions with separate failure modes. A large language model must not sit on the deadline path for every actuator update.</p>
+</div></section>
+
+<section class="page dense" data-title="Perception and contracts" id="perception"><div class="content">
+<div class="running">Humunculus / Architecture 02</div><h1>Perception grounded in a body</h1>
+<p>The agent observes an environment through a declared sensor contract. Its training and deployed policy must receive equivalent information. Full simulator state may assist diagnostics or an explicitly privileged training critic, but must not silently leak into the deployed actor.</p>
+<table><tr><th style="width:24%">Channel</th><th style="width:39%">Initial observation</th><th>Later extension</th></tr><tr><td>Proprioception</td><td>Velocity, orientation, contact flags, previous action and body descriptor.</td><td>Joint positions/velocities, actuator effort, balance and contact forces.</td></tr><tr><td>Local geometry</td><td>Egocentric rays or depth samples within a declared range; nearby object observations.</td><td>Learned visual spatial representation and uncertainty.</td></tr><tr><td>Vision</td><td>Bounded first-person image captured on demand, timestamped to a simulation tick.</td><td>Motion features, attention-selected crops and low-rate scene interpretation.</td></tr><tr><td>Hearing</td><td>Speech transcript with speaker/source, time and uncertainty; nearby interaction events.</td><td>Audio localization and environmental sound classification after qualification.</td></tr><tr><td>Internal state</td><td>Current goal, skill, prediction error, memory query results and available compute.</td><td>Learned competence estimates and body capability predictions.</td></tr></table>
+<h2>Versioned data contracts</h2>
+<pre>ObservationFrame: {agentId, authorityEpoch, simulationTick,
+  schemaVersion, bodyCid, sensorPose, observationAgeMs,
+  proprioception, visibleEntities, contactEvents,
+  visionRef?, speechEvents[], memoryRefs[]}
+
+PolicyStep: {observationId, policyCid, previousState,
+  action, nextState, uncertainty, expiresAtTick}</pre>
+<p>Normalize tensor units and coordinate frames before training. Use typed arrays and stable layouts for worker/physics interoperability. Store validity masks for missing or stale sensors. Every receiver validates shape, bounds, finite values and versions; delayed results must not act on a different world state.</p>
+<h3>Embodiment choice matters</h3>
+<p>CubeChat uses a 6 × 6 × 6 Cannon box, horizontal forces and grounded jump impulses. Its wrapper imposes orientation and damping. This supports navigation experiments; articulated gait and balance require a new body adapter.</p>
+</div></section>
+
+<section class="page dense" data-title="Learned routing and timing" id="routing"><div class="content">
+<div class="running">Humunculus / Architecture 03</div><h1>Learned attention &amp; specialist routing</h1>
+<p>A compact recurrent router chooses which specialists receive an observation, which skill remains active and when deliberation is useful. Specialists exchange versioned observations, goals, predictions and confidence through a shared workspace. Unrelated model embeddings are not interchangeable; adapters or jointly trained representations must establish a common meaning.</p>
+<h2>Two complementary decisions</h2>
+<div class="columns"><div><h3>Information routing</h3><p>Select vision, memory, body prediction or language processing based on novelty, uncertainty, current goals and observed failure. Keep state for inactive modules and make observation age visible.</p></div><div><h3>Behavior selection</h3><p>Select or compose learned skills and decide when they terminate. Navigation supplies intent to a motor policy. The engine enforces valid actuation and ownership without supplying a scripted sequence of behavior.</p></div></div>
+<p>Recurrent Independent Mechanisms provides a precedent for selective activation and sparse communication. Option-critic provides a precedent for learning skills, selection and termination. These inform the design; neither supplies a pretrained browser controller for our physics. <a href="#r20">[20]</a> <a href="#r21">[21]</a></p>
+<table><tr><th style="width:28%">Loop</th><th style="width:26%">Initial design target</th><th>Scheduling rule</th></tr><tr><td>Physics integration</td><td>Fixed 60 Hz for the initial CubeChat adapter</td><td>Preserve simulator semantics; never wait for a language response.</td></tr><tr><td>Motor inference</td><td>20–60 Hz, then measure</td><td>Local resident policy; budgeted action hold between steps.</td></tr><tr><td>Navigation / skill routing</td><td>2–10 Hz plus events</td><td>Update when goals, obstacles or uncertainty change.</td></tr><tr><td>Vision / dialogue</td><td>Event-triggered</td><td>Bound queue depth and input age; cancel superseded work.</td></tr><tr><td>Curriculum / training review</td><td>After episodes or sufficient evidence</td><td>Use aggregated measurements and retrieved history.</td></tr></table>
+<p class="small">All neural frequencies above are proposed targets, not benchmarks. During deadline misses, an explicit actuator policy holds a bounded recent command briefly or returns to neutral. That failure state is visible and is never counted as learned skill performance.</p>
+<h3>Start small, expand with evidence</h3>
+<p>Begin with perception, one motor/navigation policy, a router and language/memory services. Add specialists when an ablation shows improved performance or reduced cost. Uncoordinated simultaneous learning changes the distribution seen by every module; versioned curricula and staged updates make failures attributable.</p>
+</div></section>
+
+<section class="page" data-title="Identity and persistent memory" id="memory"><div class="content">
+<div class="running">Humunculus / Architecture 04</div><h1>Identity survives a model or host change</h1>
+<p>A stable agent identifier connects personality, goals, relationships, body and experience. Model weights are shared resources where appropriate; each entity retains its own recurrent state, memory and learned adaptations. Changing inference providers must not silently merge identities.</p>
+<figure><img src="figures/memory.svg" alt="A stable agent identity refers to a versioned checkpoint containing shared model parameters, individual state, experiences and body assets."><figcaption>Figure 2. Identity is a durable reference. Checkpoints and their constituent files are immutable content-addressed artifacts.</figcaption></figure>
+<table class="compact"><tr><th style="width:25%">Memory type</th><th>Representation and use</th></tr><tr><td>Working state</td><td>Current observations, recurrent activations, active intention and pending requests. Local, frequently updated and bounded.</td></tr><tr><td>Episodic memory</td><td>Append-only events: who, where, when, observation, action and outcome. Preserve provenance and confidence; distinguish observation from inference.</td></tr><tr><td>Semantic / relational</td><td>Derived facts, preferences, relationships and summaries linked to supporting events. Conflicting claims remain traceable.</td></tr><tr><td>Procedural memory</td><td>Skill descriptors and policy/adaptor CIDs, conditions of use, evaluation results and known failure ranges.</td></tr></table>
+<p>Use local persistence for events and a small embedding model for retrieval. Keep original records alongside summaries and vectors. Retrieve only the context relevant to the next decision; a persistent memory store is not an ever-growing prompt.</p>
+<p>A checkpoint records physical state, model and normalization versions, recurrent/plastic variables, random-generator state, memory heads, body contract and authority epoch. GPU buffers must be read into a defined portable format. ArtifactStore can package an <code>agent.json</code> file under its existing file-manifest schema; new manifest fields require an explicit schema change.</p>
+</div></section>
+
+<section class="page dense" data-title="Network hosting and authority" id="network"><div class="content">
+<div class="running">Humunculus / Architecture 05</div><h1>Hosting, availability &amp; authority</h1>
+<p>Inference hosting and agent ownership are different services. Several peers may serve the same model. Exactly one authorized simulation owner applies an agent's actions at a time. StateManager replication and CRDT convergence do not establish exclusive control.</p>
+<table><tr><th style="width:25%">Resource</th><th style="width:38%">Where it belongs</th><th>Failure behavior</th></tr><tr><td>Fast neural state</td><td>Owner's managed resident worker</td><td>Explicit pause/neutral actuation after deadline; restore from compatible checkpoint.</td></tr><tr><td>Slow inference</td><td>Local or admitted peer service</td><td>Cancel stale work, choose another provider before request commitment where safe; avoid duplicate side effects.</td></tr><tr><td>Public agent head</td><td>Bounded replicated state with owner and version</td><td>Validate authority and epoch before accepting actions or checkpoint updates.</td></tr><tr><td>Artifacts / checkpoints</td><td>Verified local storage and explicitly retained online providers</td><td>Retry available providers; expose unavailable dependencies without inventing state.</td></tr><tr><td>Private experience</td><td>Local persistence or explicitly protected replication</td><td>No automatic publication of raw audio, private dialogue or personal memory.</td></tr></table>
+<h2>Acknowledged handoff first</h2>
+<ol><li>The current owner pauses decisions and drains or cancels pending actions.</li><li>It writes a consistent checkpoint and exposes its verified artifact set.</li><li>The receiver validates versions, capacity and an authenticated transfer record binding agent ID, sender, recipient, old/new epochs and checkpoint CID.</li><li>The old owner durably records relinquishment before acknowledging. The receiver persists the accepted transition and rejects replay.</li><li>The receiver restores state and applies actions. Restarts honor persisted authority; stale epochs and delayed responses are rejected.</li></ol>
+<p>Automatic failover during a partition requires a separately designed arbitration or consensus mechanism. The initial design prefers an explicit pause over two divergent controllers. A local timeout or Yjs merge must not become an implicit authority election.</p>
+<p class="small"><strong>Availability:</strong> a CID identifies bytes without guaranteeing an online provider. Saved agents remain paused without an active owner, retained dependencies and compute capacity.</p>
+<p class="small">Use the existing authenticated peer transport, provider discovery and model residency rules. Remote policy-training results require provenance and evaluation before deployment; successfully receiving a file is not a behavioral qualification.</p>
+</div></section>
+
+<section class="page dense" data-title="Speech interaction" id="speech"><div class="content">
+<div class="running">Humunculus / Interaction 01</div><h1>Hearing, speaking &amp; taking turns</h1>
+<p>Speech becomes an observation and action channel of the embodied agent. A transcript carries time, source and uncertainty into the same memory and decision loop used for other events. Spoken output corresponds to an agent turn and can be interrupted without leaving queued audio behind.</p>
+<figure><img src="figures/speech.svg" alt="Microphone audio passes through speech detection and recognition into a grounded conversation; generated sentences feed voice synthesis and interruptible playback."><figcaption>Figure 3. Proposed speech pipeline. The existing peer protocol does not yet provide ASR/TTS execution or streamed audio framing.</figcaption></figure>
+<h2>Initial interaction contract</h2>
+<ul><li>Start microphone capture explicitly. Use a visible listening state and bounded audio buffers, with resampling appropriate to the selected model.</li><li>Voice activity detection segments turns. Partial recognition may drive a visible transcript; final or reconciled text drives committed requests.</li><li>Attach speaker/session identity and source position when known. Speech detection alone does not identify a speaker.</li><li>Retrieve relevant memories and recent world observations before producing a response or intent. Distinguish proposed actions from actions confirmed by the engine.</li><li>Synthesize sentence chunks and schedule playback. New player speech cancels the current turn's queued generation and playback; preserve the interrupted event in memory.</li></ul>
+<h3>Browser and network integration</h3>
+<p>Use Web Audio for capture/playback and a worker for preprocessing. ASR and TTS enter managed compute admission just like other model tasks. Small VAD work can run explicitly on CPU/WASM. A WASM speech implementation is a valid browser choice, but must not be reported as GPU execution.</p>
+<p>Remote speech requires versioned PCM framing, sample rate, channels, sequence, turn ID, maximum duration and cancellation semantics. Existing text/image generation task names are insufficient. Prefer local raw-audio processing initially; send derived transcripts to a peer only under the chosen session-sharing policy.</p>
+<p class="small"><strong>First stack:</strong> Silero VAD → Whisper Tiny or Moonshine → language specialist → Kokoro. Qualify interruption and contention before adding simultaneous speakers.</p>
+</div></section>
+
+<section class="page" data-title="Speech candidate models" id="speech-models"><div class="content">
+<div class="running">Humunculus / Model catalog 01</div><h1>Candidate models: voice input/output</h1>
+<p>All speech entries below are <span class="tag candidate">Candidates</span> for PeerCompute. Published browser examples support feasibility; they do not qualify our managed-worker, artifact or peer-protocol integration.</p>
+<table class="compact"><tr><th style="width:25%">Candidate / role</th><th style="width:23%">Size / license</th><th>Execution evidence and integration decision</th></tr>
+<tr><td>Whisper Tiny / Base<br><span class="muted">Speech recognition</span></td><td>39M / 74M parameters<br>MIT</td><td>Transformers.js ONNX exports and WebGPU examples exist. Start Tiny; compare recognition accuracy before upgrading. Interactive use needs buffering, VAD and transcript reconciliation. <a href="#r6">[6–7]</a></td></tr>
+<tr><td>Moonshine Tiny / Base<br><span class="muted">Legacy English ASR</span></td><td>HF checkpoints: 27.1M / 61.5M<br>MIT for English</td><td>Existing Transformers.js ONNX exports are candidates. Current architecture inventory uses different reported counts; pin the exact checkpoint and language license. <a href="#r8">[8]</a></td></tr>
+<tr><td>Moonshine Tiny Streaming<br><span class="muted">Conversational hearing</span></td><td>34M parameters<br>MIT</td><td>Maintained <code>moonshine-wasm</code> browser microphone/partial-transcript examples. This is WASM evidence, not a WebGPU qualification. <a href="#r9">[9]</a></td></tr>
+<tr><td>Silero VAD<br><span class="muted">Speech boundaries</span></td><td>Small artifact; upstream JIT about 2 MB<br>MIT</td><td>Browser ONNX integrations exist. Supports 8/16 kHz. Prefer inexpensive explicit CPU/WASM execution initially; measure false speech triggers. <a href="#r10">[10]</a></td></tr>
+<tr><td>Kokoro-82M v1.0<br><span class="muted">Speech synthesis</span></td><td>82M parameters<br>Apache-2.0 model / JS library</td><td>Kokoro.js demonstrates browser WASM/WebGPU and sentence streaming. Upstream recommends FP32 on WebGPU. Include voice and phonemization assets in the verified package. <a href="#r11">[11–12]</a></td></tr>
+<tr><td>Piper voices<br><span class="muted">Alternative local TTS</span></td><td>Voice-dependent<br>Current engine GPL-3.0-or-later</td><td>Browser ports exist, but runtime/phonemizer/voice licenses differ. Pin a specific voice and review its model card. Keep as an alternative pending integration review. <a href="#r13">[13]</a></td></tr></table>
+<h2>Selection measurements</h2>
+<p>Compare word-error rate on representative player speech, end-of-turn latency, time to first audible response, interruption delay, pronunciation, peak memory and render-frame impact. Use the same clips, playback settings, device and concurrent workload for each candidate.</p>
+<p class="small">Parameter count is not package size or peak memory. Model weights, preprocessing, voice assets and runtime buffers must be measured together. Current Moonshine streaming models are MIT; specified legacy non-English models have different terms. The older <code>moonshine-js</code> repository redirects to the maintained WASM package.</p>
+</div></section>
+
+<section class="page" data-title="Vision reasoning and retrieval models" id="cognition-models"><div class="content">
+<div class="running">Humunculus / Model catalog 02</div><h1>Vision, reasoning &amp; memory retrieval</h1>
+<table class="compact"><tr><th style="width:26%">Model / role</th><th style="width:22%">Evidence</th><th>Recommended use and limits</th></tr>
+<tr><td>Qwen3.5 2B all-q4<br><span class="muted">Vision + dialogue + deliberation</span></td><td><span class="tag">Existing</span><br>1.771 GB pinned package<br>Apache-2.0</td><td>Primary language/vision starting point. Managed text/image inference has repository evidence. Curriculum quality and social consistency remain untested; use bounded observations and compact retrieved context. <a href="#r2">[2]</a></td></tr>
+<tr><td>Qwen3.5 0.8B GGUF<br><span class="muted">Lightweight dialogue</span></td><td><span class="tag">Existing</span><br>Small quantized profile</td><td>Useful lower-cost text specialist. Current GGUF path is text-only and requires shader-f16. An upstream multimodal architecture does not establish vision support in this adapter.</td></tr>
+<tr><td>SmolVLM 256M / 500M q4<br><span class="muted">Visual interpretation</span></td><td><span class="tag">Existing</span><br>0.269 / 0.490 GB packages<br>Apache-2.0</td><td>Cheap occasional scene descriptions and visual questions. These are not qualified geometric estimators or reliable long-horizon planners. <a href="#r3">[3]</a></td></tr>
+<tr><td>FunctionGemma 270M<br><span class="muted">Typed intent specialist</span></td><td><span class="tag candidate">Candidate</span><br>Gemma terms</td><td>A game fine-tune already has a WebGPU physics demo. Needs architecture admission, tool/developer templates and call parsing here. Task-specific fine-tuning is appropriate; it does not replace learned motor control. <a href="#r4">[4–5]</a></td></tr>
+<tr><td>all-MiniLM-L6-v2<br><span class="muted">Memory embeddings</span></td><td><span class="tag candidate">Candidate</span><br>22.7M; 384 dimensions<br>Apache-2.0</td><td>Practical retrieval baseline with a Transformers.js export. Store provenance and original events alongside vectors. Changing the embedding model requires a versioned reindex. <a href="#r14">[14]</a></td></tr>
+<tr><td>Larger peer-hosted language model<br><span class="muted">Difficult planning review</span></td><td><span class="tag candidate">Candidate</span><br>Profile-specific</td><td>Optional escalation for rare curriculum or design decisions. Qualify the exact model/runtime and resource envelope; catalog presence is insufficient.</td></tr></table>
+<h2>Choose by demonstrated task quality</h2>
+<p>Evaluate valid intents, observation grounding, contradiction handling, memory relevance and useful practice-task selection. “Uncensored” or “abliterated” naming does not establish better control or planning. Compare each variant against its base under the same gameplay tests.</p>
+<p class="small">Qwen package pin: <code>onnx-community/Qwen3.5-2B-ONNX-OPT</code>, revision <code>ed446636739bf426e73c5a00714fd8e010d36c21</code>. Configured 8 GiB RAM/GPU envelopes are admission policy, not universal measured minima. Historical execution used Chrome 155 / RTX 5060 Ti; composition with rendering and speech needs new measurement.</p>
+</div></section>
+
+<section class="page" data-title="Learned policy candidates" id="policies"><div class="content">
+<div class="running">Humunculus / Model catalog 03</div><h1>Small policies &amp; predictive models</h1>
+<p>The following are trainable approaches, not interchangeable pretrained checkpoints. Their usefulness depends on the body, observations, action space and training distribution. The first control policy should operate from compact egocentric observations before adding expensive pixel-based learning.</p>
+<table><tr><th style="width:27%">Approach</th><th style="width:34%">Role</th><th>Integration / decision gate</th></tr>
+<tr><td>MLP + recurrent state<br>trained with PPO</td><td>Motor/navigation policy with short-term memory under partial observations.</td><td>Initial baseline. Train against actual game dynamics; export one-step inference and explicit state. PPO is the learner, not a model size. <a href="#r16">[16–17]</a></td></tr>
+<tr><td>Dreamer-style world model</td><td>Predict latent outcomes and rewards; learn actor/critic from imagined trajectories.</td><td>Later comparison when sample efficiency matters. Published implementation uses Python/JAX; browser export and training require new work. <a href="#r18">[18–19]</a></td></tr>
+<tr><td>Recurrent Independent Mechanisms</td><td>Selective activation and sparse communication between specialized recurrent modules.</td><td>Architecture inspiration for the router/workspace. Compare against a simpler recurrent policy at equal cost. <a href="#r20">[20]</a></td></tr>
+<tr><td>Option-critic</td><td>Learn skill policies, skill selection and termination.</td><td>Candidate for behavior routing after useful skills exist. Watch frequent switching and collapsed specialization. <a href="#r21">[21]</a></td></tr>
+<tr><td>MetaMorph-style conditioning</td><td>Condition control on a description of the current body.</td><td>Articulated-body research stage. Generalization depends on trained morphology families. <a href="#r22">[22]</a></td></tr></table>
+<h2>Proposed custom-network budgets</h2>
+<table class="compact"><tr><th style="width:40%">Component</th><th style="width:28%">Target parameters</th><th>FP32 weights only</th></tr><tr><td>Motor controller / small router</td><td>100k–1M each</td><td>0.4–4 MB each</td></tr><tr><td>Navigation / body predictor</td><td>1–10M</td><td>4–40 MB</td></tr><tr><td>Compact latent world predictor</td><td>5–30M</td><td>20–120 MB</td></tr></table>
+<p class="small">These are proposed budgets for our own networks, not published Dreamer or MetaMorph sizes. Decimal MB = parameters × four bytes. Activations, recurrent state, temporary tensors, optimizer state and experience buffers are additional. Capability and latency at these sizes remain experimental.</p>
+</div></section>
+
+<section class="page dense" data-title="Body design and animation" id="body"><div class="content">
+<div class="running">Humunculus / Embodiment</div><h1>Designing and learning a body</h1>
+<p>Give the agent a structured body recipe and a way to inspect the result. Separate appearance from physical morphology. A new material or accessory can preserve the existing controller; changed mass, sensors, joints or contacts changes the control problem.</p>
+<figure><img src="figures/body.svg" alt="Body proposals become validated rigs and sensor contracts, which feed conditioned policies, physics trials and evaluation."><figcaption>Figure 4. Physical self-modification is an experiment with consequences. The previous body and controller remain recoverable.</figcaption></figure>
+<h2>Three levels of capability</h2>
+<ol><li><strong>Appearance:</strong> choose colors, proportions within cosmetic bounds, materials, accessories and identity cues. Construct meshes through validated Three.js recipes.</li><li><strong>Expression:</strong> learn selection and parameters for gaze, gestures and posture. Animation clips can provide demonstrations; label any clip playback separately from learned physical movement.</li><li><strong>Morphology:</strong> expose mass, joint structure, actuator limits and sensor placement. Train a conditioned controller and body predictor, then evaluate the modified body on new tasks.</li></ol>
+<table class="compact"><tr><th style="width:29%">Asset candidate</th><th>Role and limitation</th></tr><tr><td>Hunyuan3D-2mini</td><td>0.6B shape model; native GPU candidate for mesh generation from an image. Upstream pipeline lists 6 GB VRAM for shape / 16 GB for shape plus texture, not our browser measurements. Rigging, collision and topology validation remain separate. <a href="#r23">[23]</a></td></tr><tr><td>HY-Motion-1.0-Lite</td><td>0.46B human motion model; upstream minimum 24 GB VRAM excluding optional LLM prompt processing. Native service candidate; retarget generated motion to a compatible skeleton. <a href="#r24">[24]</a></td></tr></table>
+<p class="small">Begin with procedural bodies and known articulation. Store recipes, geometry, rigs, collision shapes and controller compatibility by CID. Mesh generation does not automatically produce a playable or balanced body. Native asset-generation services require a new peer runtime; they are not current browser model-console capabilities.</p>
+</div></section>
+
+<section class="page dense" data-title="Training architecture" id="training"><div class="content">
+<div class="running">Humunculus / Learning 01</div><h1>From experience to a better policy</h1>
+<p>Training is an explicit execution path with measurable parameter updates. A model-generated explanation, changed prompt or new memory entry is not evidence that the motor policy learned. Every training result identifies the exact experience and configuration that produced it.</p>
+<figure><img src="figures/learning.svg" alt="Curriculum proposals create episodes; a learner updates weights; independent evaluation controls deployment into the embodied agent."><figcaption>Figure 5. Self-directed practice is coupled to independent validation. A rejected checkpoint remains an experimental artifact, not an active skill.</figcaption></figure>
+<h2>Reproducible episode contract</h2>
+<p>Record simulator/body/schema versions, seed, fixed timestep, observation normalization, policy CID, actions, reward components, termination conditions, recurrent state boundaries and outcomes. Episodes also identify device/backend and whether data came from the agent, an optional demonstration teacher, or an evaluation controller.</p>
+<p>For PPO, collect sufficiently fresh rollouts under a known policy version and preserve the information required by its update procedure. Do not mix arbitrary old peer trajectories into an on-policy update. A world-model learner may use a replay buffer under its own documented sampling and validation rules.</p>
+<h3>Training placement</h3>
+<p>First build the fixed-step simulator adapter and a reference learner. A native training peer can provide established tooling while browsers run the resulting policies. Browser training is a separate implementation milestone requiring gradient checks, optimizer state, buffer limits and numerical comparison. In either case, all accepted weights become verified versioned artifacts.</p>
+<p class="small">Start with one learner and a small task suite. Preserve a frozen baseline and held-out seeds. Promote checkpoints only after capability and retention checks; retain rollback artifacts. Peer contribution is identified by task and policy version, not accepted merely because it arrived over an authenticated connection.</p>
+</div></section>
+
+<section class="page" data-title="Training curriculum and objectives" id="curriculum"><div class="content">
+<div class="running">Humunculus / Learning 02</div><h1>A staged embodied curriculum</h1>
+<p>Use a progression that exposes increasingly difficult consequences while keeping success observable. The first tasks develop control competence. Dialogue and social goals then compose those skills; articulated balance and locomotion require their own body adapter.</p>
+<table class="compact"><tr><th style="width:21%">Stage</th><th style="width:43%">Experience and learning objective</th><th>Evidence before progression</th></tr>
+<tr><td>A · Body calibration</td><td>Actuate, observe velocity/contact, stop at a marker, learn basic action consequences.</td><td>Prediction error and stop accuracy on unseen starts.</td></tr>
+<tr><td>B · Navigation</td><td>Reach visible targets, avoid obstacles, recover from blocked motion and disturbances.</td><td>Completion, collision, stuck-time and recovery measures.</td></tr>
+<tr><td>C · Moving partners</td><td>Follow a moving player, maintain distance, approach from a visible direction and yield space.</td><td>Tracking error and interaction quality across new trajectories.</td></tr>
+<tr><td>D · Composed goals</td><td>Retrieve an object, bring it to someone, revisit a remembered place; partial observations.</td><td>Task success, memory relevance and grounded action reports.</td></tr>
+<tr><td>E · Adaptation</td><td>Changed friction, mass, disturbances and sensor noise within declared ranges.</td><td>Learning improvement versus frozen weights; old-skill retention.</td></tr>
+<tr><td>F · Articulation</td><td>Posture, balance, gait, reaching and contact on a jointed body.</td><td>New body-specific benchmarks; no inferred cube-policy transfer.</td></tr></table>
+<h2>Rewards, demonstrations and exploration</h2>
+<p>Define task outcomes independently from the training reward. A reaching reward may include progress, terminal success, contact penalties and actuation cost, but held-out evaluation must still test actual arrival without unacceptable collisions. Version reward definitions so a higher score after a reward change is not mistaken for improved capability.</p>
+<p>Optional imitation can bootstrap a policy from player demonstrations or a labeled reference controller. Compare with learning from scratch where feasible. Log the provenance of demonstrations and avoid describing imitation data as self-discovered skill.</p>
+<p>Curiosity should favor learning progress and useful novelty. Raw unpredictability alone can attract the agent to noise. Track competence, uncertainty and diminishing returns; allocate practice toward tasks that are learnable at the current skill level. Hold total interactions and compute fixed when comparing curricula.</p>
+<div class="callout gold"><p><strong>Three adaptation mechanisms:</strong> recurrent state changes immediately; memory changes the context of decisions; training changes model parameters. Measure and report each separately. Saving a conversation is not a substitute for a motor-learning test.</p></div>
+</div></section>
+
+<section class="page" data-title="LLM-directed exploration" id="self-direction"><div class="content">
+<div class="running">Humunculus / Learning 03</div><h1>The agent chooses what to practice</h1>
+<p>The language specialist can serve as a slow curriculum planner within the same entity. It reviews compact observations, failures and learning curves, proposes a useful experiment and adjusts the next challenge. The learned router and motor loop continue independently of this deliberation.</p>
+<h2>A concrete learning episode</h2>
+<ol><li><strong>Observe:</strong> the body predictor reports unexpected drift on a slippery surface.</li><li><strong>Hypothesize:</strong> the agent proposes that its stopping behavior is poorly calibrated.</li><li><strong>Practice:</strong> it requests stopping-at-marker trials at several speeds within allowed physical ranges.</li><li><strong>Update:</strong> the learner trains a candidate motor checkpoint from the resulting episodes.</li><li><strong>Test:</strong> independent trials compare stopping error and old-surface performance against frozen weights.</li><li><strong>Retain:</strong> the agent keeps an accepted policy and grounded memory of its useful range; otherwise it revises the hypothesis.</li></ol>
+<pre>PracticeProposal {
+  hypothesis, taskFamily, scenarioRanges,
+  targetSkill, allowedRewardParameters,
+  episodeBudget, computeBudget, stoppingRule,
+  expectedImprovement, supportingEventIds
+}</pre>
+<p>Begin with structured task families and bounded parameters. A later environment generator may compose validated scene primitives. Arbitrary generated code should not become an executable peer-supplied runtime through a manifest. Evaluation scenarios and acceptance definitions remain separately versioned.</p>
+<h3>Research precedents and their limits</h3>
+<p><strong>Voyager</strong> demonstrates automatic task selection and reusable generated code skills in Minecraft; it does not demonstrate our neural motor learning. <strong>Eureka</strong> demonstrates LLM-designed rewards coupled to reinforcement learning. <strong>OMNI-EPIC</strong> generates tasks/environments adjusted to learning progress. These justify experiments, not a claim that our 2B browser model will reproduce their results. <a href="#r25">[25]</a> <a href="#r26">[26]</a> <a href="#r27">[27]</a></p>
+<p>Compare LLM task selection with fixed and learning-progress curricula. Measure held-out success, retention, episode count and compute cost. The LLM can explain an outcome, but the simulator's recorded measurements establish whether the experiment succeeded.</p>
+</div></section>
+
+<section class="page" data-title="Fly-connectome research placement" id="fly"><div class="content">
+<div class="running">Humunculus / Biological controller research</div><h1>Where the fly brain fits</h1>
+<p>A connectome-derived model is an optional sensory or motor specialist. Its role is to test hypotheses about orientation, visual following, approach/avoidance and bodily coordination. Language, autobiographical records, identity continuity and body construction remain explicit surrounding systems.</p>
+<figure><img src="figures/fly.svg" alt="Matched observations and body interfaces compare a learned recurrent controller, a connectome-derived controller, and rewired or ablated controls."><figcaption>Figure 6. Evaluate the biological structure through matched tasks and controls. A beneficial result must survive the same inputs, outputs and resource budget.</figcaption></figure>
+<p>FlyWire reconstructed an adult female brain with 139,255 neurons and roughly 50 million chemical synapses. Anatomy does not specify all physiological strengths, membrane states, modulation or an individual's memories. Shiu and colleagues showed that simplified connectome-based neural simulations can make useful predictions about feeding and grooming. <a href="#r28">[28–29]</a></p>
+<p>NeuroMechFly v2 combines sensory systems, biomechanics and engineered/trained controllers for embodied behaviors. Flybody supplies a detailed body and reinforcement-learning framework for walking and flight. Eon's September 2026 clarification describes selected descending neurons driving body-level controllers. These are narrower claims than a fully reconstructed animal. <a href="#r30">[30–32]</a></p>
+<h3>Bounded experiment</h3>
+<p>Reproduce a published heading/path-integration or visual-following task natively. Pin graph, equations, sensory mapping, body, timestep and seeds. Then port the selected inference circuit into a managed WebGPU worker and compare numerical traces, closed-loop behavior, cancellation and checkpoint restoration.</p>
+<p class="small">Store membrane variables, delay buffers and implemented plasticity separately from immutable graph/weight artifacts and agent memories. Whole-brain simulation is not the first milestone. No source here establishes a ready-made WebGPU port, general personality, transferred biological identity or consciousness.</p>
+</div></section>
+
+<section class="page dense" data-title="Browser execution and resource budgets" id="browser"><div class="content">
+<div class="running">Humunculus / Runtime engineering</div><h1>Browser feasibility &amp; resource budgets</h1>
+<p>Compact policies can be far smaller than a language model. Ten one-million-parameter specialists occupy about 40 MB of FP32 weights. That arithmetic says nothing by itself about useful learned behavior or meeting a control deadline under graphics and speech load.</p>
+<div class="columns three"><div class="metric"><b>4 MB</b><span>FP32 weights for one million parameters</span></div><div class="metric"><b>1.771 GB</b><span>Existing pinned Qwen3.5 2B q4 package</span></div><div class="metric"><b>Measure</b><span>Peak memory, contention and tail latency on the composed workload</span></div></div>
+<h2>Execution choices</h2>
+<table class="compact"><tr><th style="width:27%">Path</th><th>Proposed use / engineering obligation</th></tr><tr><td>ONNX Runtime WebGPU</td><td>Supported dense, convolutional and attention operations. Validate the actual exported graph and execution provider; do not silently claim GPU execution after CPU fallback. <a href="#r15">[15]</a></td></tr><tr><td>Explicit recurrent cell</td><td>Export one step with hidden state as input/output using supported matrix and gate operations. Compare against the native reference over long sequences.</td></tr><tr><td>Custom WGSL policy kernel</td><td>Candidate for a small stable network when launch/copy overhead matters. Requires numerical validation and versioned weights/layout.</td></tr><tr><td>Explicit CPU/WASM</td><td>Small VAD, preprocessing or tiny policies may be cheaper here. Label placement and measure its effect on the main/render threads.</td></tr><tr><td>Training peer</td><td>Initially native reference training; later browser optimizers if justified. Existing model inference supplies neither gradients nor replay/optimizer storage.</td></tr></table>
+<h3>Resident state and scheduling</h3>
+<p>Provision a dedicated managed motor worker and separate slow-model workers with shared admission capacity. The current standalone console defaults to one worker and one CPU/GPU unit; those defaults cannot support this composition. Affinity reserves an exclusive worker and does not provide preemption.</p>
+<p>Batch compatible entities sharing weights while isolating recurrent state. Separate devices cannot casually exchange GPUBuffer objects; use supported IO binding only under valid device ownership and otherwise budget copies.</p>
+<p>Prioritize control deadlines, then interactive speech, then slow deliberation and background learning. Bound queues and discard expired results. Account for renderer, physics buffers, model activations, KV caches, voice assets and temporary copies. Total GPU capacity alone is not a supported-feature check.</p>
+<p>Small FP32 controllers can avoid shader-f16. Quantization is a later measured optimization with behavioral regression tests. Handle real storage-write failures; browser quota estimates are advisory. A package fitting in persistent storage does not establish that it can run in device memory.</p>
+</div></section>
+
+<section class="page" data-title="Proposed implementation modules" id="modules"><div class="content">
+<div class="running">Humunculus / Implementation design</div><h1>Composable ES-module boundaries</h1>
+<p>Build the first runnable demo at <code>demos/humunculus/</code> using Vite, vanilla JavaScript and Three.js. Keep task/physics formats compatible with PeerCompute. Promote modules into shared packages after a second game integration validates their contracts.</p>
+<table class="compact small"><tr><th style="width:42%">Proposed module</th><th>Responsibility</th></tr>
+<tr><td><code>runtime/AgentRuntime.js</code></td><td>Lifecycle: start, step, pause, cancel, checkpoint, restore and dispose. Own composition, not independent unmanaged workers.</td></tr>
+<tr><td><code>runtime/AgentContracts.js</code></td><td>Versioned observation/action/episode/checkpoint schemas; sizes, units, authority and stale-result validation.</td></tr>
+<tr><td><code>perception/PerceptionPipeline.js</code></td><td>Sensor extraction, normalization, bounded image/audio inputs and observation timestamps.</td></tr>
+<tr><td><code>policies/PolicyRegistry.js</code></td><td>Bind trusted execution modules to immutable approved policy packages and compatibility metadata.</td></tr>
+<tr><td><code>policies/NeuralPolicyTasks.js</code></td><td>ComputeManager-owned one-step inference, recurrent state, cancellation and backend evidence.</td></tr>
+<tr><td><code>routing/PolicyRouter.js</code></td><td>Learned attention, skill activation/termination and cost-aware scheduling requests.</td></tr>
+<tr><td><code>body/BodyAdapter.js</code></td><td>Observe/apply/reset/checkpoint interface; first cube adapter, later jointed bodies.</td></tr>
+<tr><td><code>identity/AgentIdentity.js</code><br><code>memory/EpisodicMemory.js</code></td><td>Stable identity; event append, retrieval, summaries and provenance. Keep large private records out of replicated state.</td></tr>
+<tr><td><code>persistence/AgentCheckpoint.js</code><br><code>authority/AgentAuthority.js</code></td><td>Portable snapshots and verified artifact references; owner/epoch validation and acknowledged handoff.</td></tr>
+<tr><td><code>training/EpisodeRunner.js</code><br><code>training/TrajectoryWriter.js</code></td><td>Seeded fixed-step rollouts, provenance, bounded storage and learner-compatible trajectories.</td></tr>
+<tr><td><code>training/Curriculum.js</code><br><code>training/EvaluationSuite.js</code></td><td>Practice proposals and learning progress; independent held-out acceptance and retention testing.</td></tr>
+<tr><td><code>speech/SpeechPipeline.js</code></td><td>Capture, VAD, recognition, turn reconciliation, synthesis, playback and end-to-end interruption.</td></tr>
+<tr><td><code>observability/AgentOverlay.js</code></td><td>Readable retro terminal controls and traces of goals, skills, memory, resource use and learning provenance.</td></tr></table>
+<p class="small">Existing extension points include <code>submitTask()</code>, <code>submitTaskGraph()</code> and <code>reserveWorkerAffinity()</code>. Generic control-policy execution, RL optimization and audio tasks are new work. Artifact manifests carry data and approved runtime identifiers; they must not select arbitrary downloaded executable modules.</p>
+</div></section>
+
+<section class="page dense" data-title="Implementation stages one" id="roadmap"><div class="content">
+<div class="running">Humunculus / Implementation roadmap 01</div><h1>Build the measurable core first</h1>
+<p>Stages are ordered by dependency, with concrete exit evidence. The plan does not assign calendar promises before simulator throughput, export compatibility and training cost are measured.</p>
+<h2>M0 · Reproducible body and observation interface</h2>
+<p>Extract a fixed-step body adapter compatible with CubeChat's dynamics. Add seeded reset, bounded sensors/actions, pause/single-step and trajectory recording. Expose direct bounded continuous-force actions: the existing bot bridge thresholds inputs into keys and normalizes magnitude. Separate imposed orientation/damping from policy outputs. Reference controllers serve evaluation or optional demonstrations only.</p>
+<p class="small"><strong>Exit:</strong> deterministic reference episodes under declared tolerances; no hidden observation leakage; exact reset/checkpoint round trip; browser/worker lifecycle cleanup. No claim of learned behavior at this stage.</p>
+<h2>M1 · Learned movement and navigation</h2>
+<p>Train a compact recurrent policy for reaching, stopping, obstacle avoidance and following. Export one-step inference; carry recurrent state explicitly. Add a trusted ComputeManager task adapter and actual backend instrumentation. Compare a player-demonstration bootstrap with direct RL where feasible.</p>
+<p class="small"><strong>Exit:</strong> native/browser numerical parity and closed-loop success on unseen layouts; continuous actions originate from the neural policy; cancellation and deadlines hold under rendering load. Retain failed episodes and training cost.</p>
+<h2>M2 · Identity, memory and grounded dialogue</h2>
+<p>Add a stable agent ID, episodic records, a compact retrieval baseline and versioned checkpoints. Connect Qwen through existing managed inference. Make speech/text reports distinguish observed events, inferred facts, proposed actions and confirmed outcomes. Introduce two entities sharing weights but maintaining separate state.</p>
+<p class="small"><strong>Exit:</strong> restart preserves identities, relevant memories and policy state; one entity cannot receive the other's private recurrent state; dialogue reflects real completed actions. Memory retrieval is tested independently of prose fluency.</p>
+<h2>M3 · Learned routing and composed skills</h2>
+<p>Train a small attention/skill-selection policy on measured specialist outcomes and costs. Add termination, stale-input handling and explicit compute budgets. Compose navigation with object interaction and memory-guided goals. Compare with simple fixed scheduling and monolithic-policy controls.</p>
+<p class="small"><strong>Exit:</strong> ablation evidence that routing improves capability or efficiency; bounded switching and queues; continuous local control during slow language requests. A model outage produces a visible paused/degraded state.</p>
+<div class="callout"><p><strong>First playable acceptance:</strong> two persistent agents can approach players, follow, interact, remember an event and resume after restart with neural movement and traceable decisions.</p></div>
+</div></section>
+
+<section class="page" data-title="Implementation stages two" id="roadmap-next"><div class="content">
+<div class="running">Humunculus / Implementation roadmap 02</div><h1>Add learning autonomy and richer bodies</h1>
+<table class="compact"><tr><th style="width:23%">Milestone</th><th style="width:42%">Implementation work</th><th>Exit evidence</th></tr>
+<tr><td>M4 · Self-directed practice</td><td>LLM task proposals, episode/compute budgets, native learner jobs, versioned rewards and independent evaluation. Add accepted-policy promotion and rollback.</td><td>Useful improvement versus fixed curriculum at matched cost; actual weight changes and retained prior skills.</td></tr>
+<tr><td>M5 · Speech and social turns</td><td>Qualify ASR/VAD/TTS packages; managed execution, microphone state, speaker provenance, interruption and optional bounded peer audio transport.</td><td>Recognition and response metrics, correct cancellation, no stale playback; rendering/control retain deadlines.</td></tr>
+<tr><td>M6 · Hosted continuity</td><td>Checkpoint retention and fetch, explicit authority transfer, stop/drain acknowledgments and epoch fencing between independent peers.</td><td>One active controller after handoff; stale/duplicate actions rejected; partition and restore tests.</td></tr>
+<tr><td>M7 · Self-designed articulation</td><td>Body recipe compiler, physical rig, morphology descriptor, conditioned policy and body predictor; staged adaptation after physical changes.</td><td>Useful control on declared morphology variations; versioned rollback and honest out-of-range failures.</td></tr>
+<tr><td>M8 · Connectome experiment</td><td>Reproduce a small native circuit/body task, add matched recurrent and rewired controls, then port the selected specialist to WebGPU.</td><td>Numerical and behavioral parity; equal-budget comparison; measured benefit or recorded negative result.</td></tr></table>
+<h2>Decisions to resolve through prototypes</h2>
+<ul><li><strong>Initial sensors:</strong> compare bounded rays/proprioception with low-resolution learned vision; record observation privileges.</li><li><strong>Training placement:</strong> measure native reference throughput before investing in browser optimization and distributed rollout collection.</li><li><strong>Social cognition:</strong> determine whether the 2B model selects useful goals and tasks from bounded histories; optional larger-peer review needs its own qualification.</li><li><strong>Body scope:</strong> choose a small family of physically meaningful designs before open-ended topology changes.</li><li><strong>Availability:</strong> decide whether explicit owner handoff is sufficient or automatic failover justifies additional coordination infrastructure.</li></ul>
+<p class="small">Speech can proceed alongside M4 after managed-model admission is stable. Fly experiments can be isolated from the primary demo. Neither is allowed to relabel a missing core learned-control result as complete.</p>
+</div></section>
+
+<section class="page dense" data-title="Evaluation and acceptance" id="evaluation"><div class="content">
+<div class="running">Humunculus / Evidence and acceptance</div><h1>Measure the capability being claimed</h1>
+<p>These are proposed acceptance gates, not completed tests. Establish a reference desktop profile and report other devices separately. Fix evaluation definitions before inspecting candidate results; retain failures and confidence intervals.</p>
+<table class="compact"><tr><th style="width:25%">Claim</th><th style="width:44%">Measurement / initial gate</th><th>Required evidence</th></tr>
+<tr><td>Browser neural execution</td><td>Declared GPU operations; reference tensor/sequence comparison. Initial FP32 tolerance proposal: abs 1e-4 / rel 1e-3, reviewed before acceptance.</td><td>Actual backend traces; no silent CPU relabeling.</td></tr>
+<tr><td>Responsive control</td><td>Proposed desktop target: p95 policy step ≤10 ms and &lt;1% deadline misses at chosen control rate under rendering load.</td><td>Wall-clock distributions, queues and device memory.</td></tr>
+<tr><td>Useful navigation</td><td>Proposed target ≥90% reaching success on a fixed 100-episode unseen suite, with separately reported collisions and stuck time.</td><td>Multiple training seeds; baseline comparison and raw episodes.</td></tr>
+<tr><td>Learning/adaptation</td><td>Candidate exceeds frozen policy on changed conditions without unacceptable loss on retained tasks; minimum five training seeds for comparisons.</td><td>Policy hashes, optimizer updates, learning curves and intervals.</td></tr>
+<tr><td>Useful curriculum/router</td><td>Compare against fixed scheduling/curriculum and relevant ablations at matched episodes and compute.</td><td>Sample efficiency, success, cost and failure attribution.</td></tr>
+<tr><td>Persistent entity</td><td>Identity, memory references, body and compatible recurrent/learned state survive restart and acknowledged handoff.</td><td>Checkpoint/hash checks and two independent peers.</td></tr>
+<tr><td>Speech interaction</td><td>Recognition errors, turn latency, intelligibility and interruption measured on representative clean/noisy clips.</td><td>Versioned audio test set; no new microphone capture without explicit use.</td></tr>
+<tr><td>Body / fly transfer</td><td>Declare morphology/task range; compare shared contracts and intact/ablated controls.</td><td>Native reproduction and browser parity, not visual resemblance alone.</td></tr></table>
+<h2>Record every experiment</h2>
+<p>The report identifies source commit, runtime/model versions, body and dataset CIDs, seeds, learning objective, reward version, normalization, policy checkpoints, hardware/browser, precision and resource budget. Separate numerical tests, visual inspection, network behavior and learned-task outcomes.</p>
+<p class="small">A runtime can pass lifecycle tests while its policy fails to learn. A generated image can look plausible while its body is uncontrollable. A fluent recollection can be unsupported by the event log. Each result remains scoped to the capability actually measured.</p>
+</div></section>
+
+<section class="page dense" data-title="Demo experience and operations" id="experience"><div class="content">
+<div class="running">Humunculus / Demo experience</div><h1>A visible, inspectable learning entity</h1>
+<p>The primary view shows the environment and its entities. A compact retro terminal overlay reveals what the selected agent is doing, what it believes and what evidence supports those beliefs. Players interact through text, optional voice and ordinary game actions.</p>
+<pre class="terminal">HUMUNCULUS // AGENT 02                [PAUSE]
+identity   Mira              owner    peer-A
+body       cube-v1           epoch    12
+goal       meet the nearby player
+skill      approach          policy   CID…
+observed   player at 4.2 m    age      33 ms
+motor      NEURAL / WebGPU    p95      measured
+memory     remembered a shared event
+practice   stopping on low-friction ground
+learning   candidate 07 → evaluation pending
+
+[ TALK ] [ MEMORY ] [ BODY ] [ LEARNING ]
+[ STEP ] [ CHECKPOINT ] [ RESOURCE DETAILS ]</pre>
+<p class="small">Illustrative interface specification, not a screenshot or performance report. Inferred beliefs, planned actions and confirmed outcomes have distinct labels.</p>
+<h2>First user journey</h2>
+<ol><li>Open the demo, inspect device compatibility and load the qualified starter package.</li><li>Meet an agent, provide a name or goal, and watch it navigate using its learned policy.</li><li>Introduce a changed surface or obstacle and inspect the resulting observations and practice proposal.</li><li>Compare a trained candidate with the prior checkpoint; retain the measured improvement.</li><li>Restart or hand off to another peer and verify the same identity, memories and compatible skills return.</li></ol>
+<h3>Operational boundaries</h3>
+<p>Provide clear pause, cancel, checkpoint, rollback and storage controls. Bound background training and inference budgets; visibility changes or browser suspension may pause control. Keep microphone state obvious and private records local unless deliberately shared. Artifact retention must show which packages are needed by active entities before deletion.</p>
+<p>For developer inspection, expose observation age, dropped results, action clamps, policy/provider identity, authority epoch, memory provenance and actual backend placement. These diagnostics explain behavior without presenting every implementation detail in the normal player flow.</p>
+</div></section>
+
+<section class="page" data-title="References: runtime and speech" id="references-a"><div class="content refs">
+<div class="running">Humunculus / Primary sources 01</div><h1>Sources: runtime &amp; speech</h1>
+<p class="small">Reviewed 4 November 2026. These links establish upstream properties and research results. They do not replace PeerCompute integration tests. Model/runtime versions and complete asset licenses must be pinned at implementation.</p>
+<div class="ref" id="r1"><strong>[1] PeerCompute repository evidence</strong><span class="note">Baseline <code>1c58fc6d</code>: README, model catalog, StateManager, ComputeManager, peer inference, CubeChat physics and shared agent adapters. See source map on page 26.</span></div>
+<div class="ref" id="r2"><strong>[2] Qwen3.5-2B model and ONNX export</strong><a href="https://huggingface.co/Qwen/Qwen3.5-2B">huggingface.co/Qwen/Qwen3.5-2B</a><a href="https://huggingface.co/onnx-community/Qwen3.5-2B-ONNX-OPT">huggingface.co/onnx-community/Qwen3.5-2B-ONNX-OPT</a></div>
+<div class="ref" id="r3"><strong>[3] SmolVLM small vision-language models</strong><a href="https://huggingface.co/HuggingFaceTB/SmolVLM-256M-Instruct">huggingface.co/HuggingFaceTB/SmolVLM-256M-Instruct</a><a href="https://huggingface.co/HuggingFaceTB/SmolVLM-500M-Instruct">huggingface.co/HuggingFaceTB/SmolVLM-500M-Instruct</a></div>
+<div class="ref" id="r4"><strong>[4] Google FunctionGemma guidance and model</strong><a href="https://ai.google.dev/gemma/docs/functiongemma">ai.google.dev/gemma/docs/functiongemma</a><a href="https://huggingface.co/google/functiongemma-270m-it">huggingface.co/google/functiongemma-270m-it</a></div>
+<div class="ref" id="r5"><strong>[5] FunctionGemma game fine-tune and browser implementation</strong><a href="https://huggingface.co/Xenova/functiongemma-270m-game">huggingface.co/Xenova/functiongemma-270m-game</a><a href="https://huggingface.co/spaces/webml-community/FunctionGemma-Physics-Playground/blob/main/index.html">huggingface.co/spaces/webml-community/FunctionGemma-Physics-Playground/blob/main/index.html</a></div>
+<div class="ref" id="r6"><strong>[6] Whisper: model sizes and MIT licensing</strong><a href="https://github.com/openai/whisper">github.com/openai/whisper</a></div>
+<div class="ref" id="r7"><strong>[7] Whisper browser-compatible ONNX export</strong><a href="https://huggingface.co/onnx-community/whisper-tiny">huggingface.co/onnx-community/whisper-tiny</a></div>
+<div class="ref" id="r8"><strong>[8] Moonshine model families, exact checkpoints and license scope</strong><a href="https://github.com/moonshine-ai/moonshine/blob/main/docs/models/available-models.md">github.com/moonshine-ai/moonshine/blob/main/docs/models/available-models.md</a><a href="https://huggingface.co/moonshine-ai/moonshine-tiny">huggingface.co/moonshine-ai/moonshine-tiny</a><a href="https://github.com/moonshine-ai/moonshine/blob/main/docs/license.md">github.com/moonshine-ai/moonshine/blob/main/docs/license.md</a></div>
+<div class="ref" id="r9"><strong>[9] Moonshine maintained browser/WASM quickstart</strong><a href="https://moonshine-voice.readthedocs.io/en/latest/quickstart/">moonshine-voice.readthedocs.io/en/latest/quickstart/</a></div>
+<div class="ref" id="r10"><strong>[10] Silero voice activity detection and browser wrapper</strong><a href="https://github.com/snakers4/silero-vad">github.com/snakers4/silero-vad</a><a href="https://github.com/ricky0123/vad">github.com/ricky0123/vad</a></div>
+<div class="ref" id="r11"><strong>[11] Kokoro-82M v1.0 ONNX model</strong><a href="https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX">huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX</a></div>
+<div class="ref" id="r12"><strong>[12] Kokoro.js: browser execution, precision and streaming examples</strong><a href="https://github.com/hexgrad/kokoro/blob/main/kokoro.js/README.md">github.com/hexgrad/kokoro/blob/main/kokoro.js/README.md</a></div>
+<div class="ref" id="r13"><strong>[13] Maintained Piper engine and per-voice requirements</strong><a href="https://github.com/OHF-Voice/piper1-gpl">github.com/OHF-Voice/piper1-gpl</a><a href="https://github.com/OHF-Voice/piper1-gpl/blob/main/docs/VOICES.md">github.com/OHF-Voice/piper1-gpl/blob/main/docs/VOICES.md</a></div>
+</div></section>
+
+<section class="page" data-title="References: neural learning and bodies" id="references-b"><div class="content refs">
+<div class="running">Humunculus / Primary sources 02</div><h1>Sources: learning &amp; embodiment</h1>
+<div class="ref" id="r14"><strong>[14] MiniLM memory-retrieval model and browser export</strong><a href="https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2">huggingface.co/sentence-transformers/all-MiniLM-L6-v2</a><a href="https://huggingface.co/Xenova/all-MiniLM-L6-v2">huggingface.co/Xenova/all-MiniLM-L6-v2</a></div>
+<div class="ref" id="r15"><strong>[15] ONNX Runtime WebGPU execution provider</strong><a href="https://onnxruntime.ai/docs/tutorials/web/ep-webgpu.html">onnxruntime.ai/docs/tutorials/web/ep-webgpu.html</a><span class="note">Provider configuration, GPU tensors and execution integration; graph compatibility must be checked for each export.</span></div>
+<div class="ref" id="r16"><strong>[16] Recurrent PPO implementation</strong><a href="https://sb3-contrib.readthedocs.io/en/master/modules/ppo_recurrent.html">sb3-contrib.readthedocs.io/en/master/modules/ppo_recurrent.html</a><span class="note">Reference recurrent policy interfaces and state handling.</span></div>
+<div class="ref" id="r17"><strong>[17] Schulman et al. — Proximal Policy Optimization Algorithms</strong><a href="https://arxiv.org/abs/1707.06347">arxiv.org/abs/1707.06347</a><span class="note">Policy-learning method; not a pretrained controller or browser runtime.</span></div>
+<div class="ref" id="r18"><strong>[18] Hafner et al. — Mastering diverse control tasks through world models</strong><a href="https://www.nature.com/articles/s41586-025-08744-2">nature.com/articles/s41586-025-08744-2</a><span class="note">Nature, 2025. Learned world model, actor and critic with imagined trajectories.</span></div>
+<div class="ref" id="r19"><strong>[19] DreamerV3 implementation and configurations</strong><a href="https://github.com/danijar/dreamerv3">github.com/danijar/dreamerv3</a><span class="note">Python/JAX training reference; configurable network sizes.</span></div>
+<div class="ref" id="r20"><strong>[20] Goyal et al. — Recurrent Independent Mechanisms</strong><a href="https://arxiv.org/abs/1909.10893">arxiv.org/abs/1909.10893</a><span class="note">Selective recurrent module activation and communication through attention.</span></div>
+<div class="ref" id="r21"><strong>[21] Bacon, Harb and Precup — The Option-Critic Architecture</strong><a href="https://arxiv.org/abs/1609.05140">arxiv.org/abs/1609.05140</a><span class="note">Learning policies over skills, internal skill policies and termination.</span></div>
+<div class="ref" id="r22"><strong>[22] Gupta et al. — MetaMorph: Learning Universal Controllers with Transformers</strong><a href="https://arxiv.org/abs/2203.11931">arxiv.org/abs/2203.11931</a><span class="note">Morphology-conditioned control and transfer within tested design distributions.</span></div>
+<div class="ref" id="r23"><strong>[23] Tencent Hunyuan3D-2 / 2mini</strong><a href="https://github.com/Tencent-Hunyuan/Hunyuan3D-2">github.com/Tencent-Hunyuan/Hunyuan3D-2</a><span class="note">Image-conditioned geometry and texture pipelines; native GPU and license requirements.</span></div>
+<div class="ref" id="r24"><strong>[24] Tencent HY-Motion-1.0</strong><a href="https://github.com/Tencent-Hunyuan/HY-Motion-1.0">github.com/Tencent-Hunyuan/HY-Motion-1.0</a><span class="note">Text-conditioned human motion; Lite model and published hardware requirements.</span></div>
+<div class="ref" id="r25"><strong>[25] Wang et al. — Voyager</strong><a href="https://voyager.minedojo.org/">voyager.minedojo.org</a><span class="note">LLM-directed curriculum and generated code-skill library in Minecraft.</span></div>
+</div></section>
+
+<section class="page" data-title="References and reproduction" id="references-c"><div class="content refs">
+<div class="running">Humunculus / Primary sources 03</div><h1>Sources, provenance &amp; reproduction</h1>
+<div class="ref" id="r26"><strong>[26] Ma et al. — Eureka</strong><a href="https://eureka-research.github.io/">eureka-research.github.io</a><span class="note">LLM-generated reward functions coupled to neural policy training.</span></div>
+<div class="ref" id="r27"><strong>[27] Faldor, Zhang, Cully and Clune — OMNI-EPIC</strong><a href="https://arxiv.org/abs/2405.15568">arxiv.org/abs/2405.15568</a><span class="note">Generated learning environments and rewards, with curriculum adaptation.</span></div>
+<div class="ref" id="r28"><strong>[28] Dorkenwald et al. — Neuronal wiring diagram of an adult brain</strong><a href="https://www.nature.com/articles/s41586-024-07558-y">nature.com/articles/s41586-024-07558-y</a><span class="note">FlyWire adult female anatomical connectome; Nature, 2024.</span></div>
+<div class="ref" id="r29"><strong>[29] Shiu et al. — A Drosophila computational brain model reveals sensorimotor processing</strong><a href="https://www.nature.com/articles/s41586-024-07763-9">nature.com/articles/s41586-024-07763-9</a></div>
+<div class="ref" id="r30"><strong>[30] NeuroMechFly v2: simulating embodied sensorimotor control in adult Drosophila</strong><a href="https://www.nature.com/articles/s41592-024-02497-y">nature.com/articles/s41592-024-02497-y</a><span class="note">Nature Methods, 2024; sensory, body and controller integration.</span></div>
+<div class="ref" id="r31"><strong>[31] Flybody — anatomical fly body and locomotion RL tasks</strong><a href="https://github.com/TuragaLab/flybody">github.com/TuragaLab/flybody</a></div>
+<div class="ref" id="r32"><strong>[32] Eon Systems — technical clarification of embodied fly demonstrations</strong><a href="https://eon.systems/updates/more-flies-are-getting-uploaded">eon.systems/updates/more-flies-are-getting-uploaded</a><span class="note">September 2026; scope of descending-neuron to body-controller mapping.</span></div>
+<h2>Repository source map</h2>
+<p class="small">Paths are relative to the PeerCompute root at baseline <code>1c58fc6d</code>. They establish implemented foundations, not the proposed modules.</p>
+<ul class="small"><li><code>peercompute/src/peercompute/computeManager/ComputeManager.js</code> — task execution, graphs, affinity and model residency.</li><li><code>peercompute/src/peercompute/stateManager/StateManager.js</code> and <code>artifacts/ArtifactStore.js</code> — state and artifact ownership.</li><li><code>peercompute/src/peercompute/networkManager/inference/</code> — authenticated inference services and existing task protocol.</li><li><code>demos/cubechat/src/physics/world.js</code>, <code>src/main.js</code> — cube body and control wrapper.</li><li><code>demos/shared/agents/DemoAgent.js</code>, <code>demos/shared/peercomputeBots.js</code> — existing proposal UI and separate bot baseline.</li></ul>
+<h3>Editable source and PDF build</h3>
+<p class="small">The design lives at <code>plan/demos/humunculus/</code>. Edit <code>humunculus.html</code>; vector figure sources are in <code>diagrams.mjs</code>. Run <code>node plan/demos/humunculus/build-pdf.mjs</code> with Node 24, repository Playwright and system Chrome. The build validates layout/anchors, captures page images and writes <code>humunculus.pdf</code>. Review the rendered pages before distributing a revised edition.</p>
+</div></section>
+<script>
+const pages=[...document.querySelectorAll('.page')];
+pages.forEach((p,i)=>{const f=document.createElement('div');f.className='footer';f.innerHTML=`<span>HUMUNCULUS · PeerCompute · Design v0.1</span><span>${String(i+1).padStart(2,'0')} / ${pages.length}</span>`;p.append(f);});
+</script>
+</body></html>

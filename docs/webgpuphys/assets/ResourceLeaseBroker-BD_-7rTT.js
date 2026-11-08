@@ -1,0 +1,59 @@
+var x=n=>{throw TypeError(n)};var T=(n,e,r)=>e.has(n)||x("Cannot "+r);var $=(n,e,r)=>e.has(n)?x("Cannot add the same private member more than once"):e instanceof WeakSet?e.add(n):e.set(n,r);var c=(n,e,r)=>(T(n,e,"access private method"),r);const _="peercompute.service.resource-lease.v0",P="peercompute.service.resource-pressure.v0";let q=1;const b=Object.freeze(
+{background:10,compute:50,interactive:75,render:100,critical:1e3});function U(n="resource-lease"){const e=q;return q+=1,
+`${n}-${Date.now().toString(36)}-${e.toString(36)}`}function u(n){return n==null?n:JSON.parse(JSON.stringify(n))}function f(n,e,r=1,t=Number.
+MAX_SAFE_INTEGER){const s=Math.floor(Number(n));return Number.isFinite(s)?Math.min(t,Math.max(r,s)):e}function N(n,e,r=Number.
+MAX_SAFE_INTEGER){const t=Math.floor(Number(n));return Number.isFinite(t)?Math.min(r,Math.max(0,t)):e}function h(n){return String(
+n||"gpu").trim().toLowerCase()||"gpu"}function S(n){if(n==null)return 0;if(!Number.isSafeInteger(n)||n<=0)throw new TypeError(
+"Memory budgets must be positive safe integers or null");return n}function j(n){const e=String(n||"compute").trim().toLowerCase();
+return Object.hasOwn(b,e)?e:"compute"}function K(n,e){const r=Number(e);return Number.isFinite(r)?r:b[n]??b.compute}function C(n,e={}){
+const r=f(e.units??e.count,n==="gpu"?1:0,0);return{kind:n,units:r,memoryBytes:N(e.memoryBytes,0),deviceIds:Array.isArray(
+e.deviceIds)?e.deviceIds.map(t=>String(t||"").trim()).filter(Boolean):[],metadata:u(e.metadata||{})}}function F(n={}){const e=new Map;
+for(const[r,t]of Object.entries(n))e.set(h(r),C(h(r),t));return e.has("gpu")||e.set("gpu",C("gpu",{units:1})),e}var a,E,
+g,O,I,M;class G{constructor({capacities:e={gpu:{units:1}},defaultTtlMs:r=3e4,now:t=()=>Date.now()}={}){$(this,a);this.pools=
+F(e),this.defaultTtlMs=f(r,3e4),this.now=t,this.leases=new Map,this.quarantined=new Map,this.preemptionCount=0}setMemoryBudgets(e){
+if(!e||typeof e!="object"||Array.isArray(e)||![Object.prototype,null].includes(Object.getPrototypeOf(e)))throw new TypeError(
+"Invalid resource memory budgets");const r=Object.entries(e).map(([t,s])=>{const i=this.pools.get(t);if(!i)throw new Error(
+`No resource pool configured for ${t}`);return[i,S(s)]});for(const[t,s]of r)t.memoryBytes=s;return Object.fromEntries(r.
+map(([t])=>[t.kind,t.memoryBytes||null]))}async requestLease(e={}){if(this.expireLeases(),e.leaseId&&this.leases.has(e.leaseId))
+throw new Error("Resource lease ID already exists");const r=e.lifetime??"ttl";if(!["ttl","owner"].includes(r))throw new Error(
+"Invalid resource lease lifetime");if(r==="owner"&&(e.resident!==!0||e.preemptable!==!1||e.ttlMs!=null||e.expiresAt!=null))
+throw new Error("Owner lifetime requires a non-preemptable resident allocation without a TTL");const t=h(e.resourceKind||
+e.kind||e.type),s=this.pools.get(t);if(!s||s.units<=0)throw new Error(`No resource capacity configured for ${t}`);const i=e.
+deviceId?String(e.deviceId):null;if(i&&s.deviceIds.length>0&&!s.deviceIds.includes(i))throw new Error(`Resource device i\
+s not in the ${t} pool: ${i}`);if(this.quarantined.has(`${t}:*`)||i&&this.quarantined.has(`${t}:${i}`))throw new Error(`\
+Resource ${i||t} is quarantined for ${t}`);const o=j(e.priorityClass),d=K(o,e.priority),l=f(e.units??e.count,1,1,s.units),
+y=N(e.memoryBytes,0),A=S(e.memoryBudgetBytes),p=Math.min(s.memoryBytes||1/0,A||1/0),v=c(this,a,g).call(this,t);if(y>0&&v+
+y>p){const m=k=>Number((k/1073741824).toFixed(3));throw Object.assign(new Error(`Resource memory quota exceeded for ${t}\
+: ${m(v)} GiB estimated reserved + ${m(y)} GiB requested exceeds the configured ${m(p)} GiB budget`),{code:"ERR_RESOURCE\
+_MEMORY_BUDGET",resourceKind:t,reservedBytes:v,requestedBytes:y,budgetBytes:p,brokerBytes:s.memoryBytes||null,policyBytes:A||
+null})}const R=c(this,a,E).call(this,t);if(R+l>s.units){const m=R+l-s.units;if(c(this,a,O).call(this,t,d,m)<m)throw new Error(
+`Resource quota exceeded for ${t}`)}const w=this.now(),L=f(e.ttlMs,this.defaultTtlMs),B={schema:_,leaseId:e.leaseId||U(),
+resourceKind:t,rootTaskId:e.rootTaskId||null,serviceId:e.serviceId||null,taskId:e.taskId||null,priorityClass:o,priority:d,
+units:l,memoryBytes:y,deviceId:i,preemptable:e.preemptable!==!1,resident:e.resident===!0,lifetime:r,createdAt:w,expiresAt:r===
+"owner"?null:f(e.expiresAt,w+L,w),status:"active",metadata:u(e.metadata||{})};return this.leases.set(B.leaseId,B),u(B)}async releaseLease(e){
+return c(this,a,I).call(this,e,"released","releasedAt")}async renewLease(e,{ttlMs:r=this.defaultTtlMs}={}){this.expireLeases();
+const t=this.leases.get(e);if(!t||t.status!=="active")throw new Error("Resource lease is no longer active");return t.lifetime!==
+"owner"&&(t.expiresAt=this.now()+f(r,this.defaultTtlMs)),u(t)}async revokeLease(e){return c(this,a,I).call(this,e,"revok\
+ed","revokedAt")}async revokeByRootTask(e){const r=[];for(const t of this.leases.values())t.rootTaskId===e&&t.status==="\
+active"&&(t.status="revoked",t.revokedAt=this.now(),r.push(u(t)));return r}expireLeases(e=this.now()){const r=[];for(const t of this.
+leases.values())t.status==="active"&&t.lifetime!=="owner"&&t.expiresAt<=e&&(t.status="expired",t.expiredAt=e,r.push(u(t)));
+return r}quarantineResource({resourceKind:e="gpu",deviceId:r=null,reason:t="device-lost",retryable:s=!0}={}){const i=h(e),
+o=`${i}:${r||"*"}`,d={resourceKind:i,deviceId:r,reason:t,retryable:!!s,quarantinedAt:this.now()};this.quarantined.set(o,
+d);for(const l of this.leases.values())l.status==="active"&&l.resourceKind===i&&(r==null||l.deviceId===r)&&(l.status="qu\
+arantined",l.quarantinedAt=d.quarantinedAt,l.quarantineReason=t,l.retryable=!!s);return u(d)}clearQuarantine({resourceKind:e="\
+gpu",deviceId:r=null}={}){return this.quarantined.delete(`${h(e)}:${r||"*"}`)}get(e){const r=this.leases.get(e);return r?
+u(r):void 0}list({status:e=null,rootTaskId:r=null,resourceKind:t=null}={}){const s=t==null?null:h(t);return[...this.leases.
+values()].filter(i=>e==null||i.status===e).filter(i=>r==null||i.rootTaskId===r).filter(i=>s==null||i.resourceKind===s).map(
+i=>u(i))}reportPressure(){const e={};for(const[t,s]of this.pools.entries()){const i=c(this,a,E).call(this,t),o=c(this,a,
+g).call(this,t);e[t]={units:s.units,activeUnits:i,availableUnits:Math.max(0,s.units-i),pressure:s.units>0?i/s.units:0,memoryBytes:s.
+memoryBytes,activeMemoryBytes:o,availableMemoryBytes:s.memoryBytes>0?Math.max(0,s.memoryBytes-o):null,deviceIds:[...s.deviceIds],
+metadata:u(s.metadata)}}const r={};for(const t of this.leases.values())r[t.status]=(r[t.status]||0)+1;return{schema:P,pools:e,
+leaseCounts:r,activeLeaseCount:r.active||0,preemptionCount:this.preemptionCount,quarantined:[...this.quarantined.values()].
+map(t=>u(t)),leases:this.list()}}}a=new WeakSet,E=function(e){return[...this.leases.values()].filter(r=>c(this,a,M).call(
+this,r)&&r.resourceKind===e).reduce((r,t)=>r+t.units,0)},g=function(e){return[...this.leases.values()].filter(r=>c(this,
+a,M).call(this,r)&&r.resourceKind===e).reduce((r,t)=>r+t.memoryBytes,0)},O=function(e,r,t){let s=0;const i=[...this.leases.
+values()].filter(o=>o.status==="active"&&o.resourceKind===e&&o.preemptable&&!o.resident&&o.priority<r).sort((o,d)=>o.priority-
+d.priority||o.createdAt-d.createdAt);for(const o of i)if(o.status="preempted",o.preemptedAt=this.now(),o.preemptedByPriority=
+r,s+=o.units,this.preemptionCount+=1,s>=t)break;return s},I=function(e,r,t){const s=this.leases.get(e);if(s)return(s.status===
+"active"||s.resident&&r==="released"&&s.status!=="released")&&(s.status=r,s[t]=this.now()),u(s)},M=function(e){return e.
+status==="active"||e.resident&&e.status!=="released"};export{_ as RESOURCE_LEASE_SCHEMA,P as RESOURCE_PRESSURE_SCHEMA,G as ResourceLeaseBroker};

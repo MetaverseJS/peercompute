@@ -59,6 +59,8 @@ export default {
     }
   },
   plugins: [
+    // Helia's browser graph imports this Node-prefixed stream compatibility shim.
+    new webpack.NormalModuleReplacementPlugin(/^node:stream$/, 'stream-browserify'),
     new HtmlWebpackPlugin({
       template: 'index.html',
     }),

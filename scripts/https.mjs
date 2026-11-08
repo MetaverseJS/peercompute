@@ -29,6 +29,14 @@ function getLocalIPv4Addresses() {
 }
 
 export function ensureDevHttpsCert() {
+  // Use an operator-provided certificate for trusted LAN/Tailnet HTTPS previews.
+  // Keep its private key outside the repository.
+  if (process.env.SSL_CERT || process.env.SSL_KEY) {
+    if (!process.env.SSL_CERT || !process.env.SSL_KEY) {
+      throw new Error('SSL_CERT and SSL_KEY must be provided together.');
+    }
+    return { cert: fs.readFileSync(process.env.SSL_CERT), key: fs.readFileSync(process.env.SSL_KEY) };
+  }
   try {
     if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
       return {

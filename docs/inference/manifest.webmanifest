@@ -1,0 +1,18 @@
+{
+  "id": "./",
+  "name": "PeerCompute Chat",
+  "short_name": "PeerCompute",
+  "description": "Local and peer-hosted models in a private browser console.",
+  "lang": "en",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#020906",
+  "theme_color": "#020906",
+  "prefer_related_applications": false,
+  "icons": [
+    { "src": "./icons/peercompute-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/peercompute-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/peercompute-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

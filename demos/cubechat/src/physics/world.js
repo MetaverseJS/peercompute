@@ -29,6 +29,10 @@ export class PhysicsWorld {
   }
 
   createPlayerBody(id, position) {
+    // Room reconnects may preserve the peer ID. Reuse the existing body rather
+    // than orphaning a second collider outside the registry.
+    const existing = this.bodies.get(id);
+    if (existing) return existing;
     // Create a box shape for the player (6x6x6 units to match visual cube)
     const shape = new CANNON.Box(new CANNON.Vec3(3, 3, 3)); // Half extents
     

@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { P2PNetwork } from './p2p/network.js';
 import { RoomDirectory, buildRoomId, normalizeRoomName } from './p2p/roomDirectory.js';
 import { TronScene } from './renderer/scene.js';
-import { PlayerController } from './controls/input.js';
+import { PlayerController, usesTouchControls } from './controls/input.js';
 import { PhysicsWorld } from './physics/world.js';
 import {
   DEFAULT_WORLD_THEME,
@@ -14,9 +14,13 @@ import {
   normalizeWorldTheme
 } from './world/themes.js';
 import { registerPeercomputeBotBridge } from '../../shared/peercomputeBotBridge.js';
+import { installWorldAgents } from '../../shared/agents/WorldAgentHost.js';
+import { CubeAgentLayer } from './agents/CubeAgentLayer.js';
+import { cubeShell, createCubeSettingsUi } from './ui/CubeSettingsUi.js';
+import { createCubeWorldUi } from './ui/CubeWorldUi.js';
+import { SpeechBubbleLayer } from '../../shared/world/SpeechBubbleLayer.js';
+import { RoomChatService } from '../../shared/chat/RoomChatService.js';
 import {
-  bindPeercomputeBotSettingsControls,
-  createPeercomputeBotHost,
   maybeStartPeercomputeLocalBotRuntime,
   readPeercomputeBotIdentity,
   readPeercomputeBotParams
@@ -25,7 +29,6 @@ import {
 class CubeChat {
   constructor() {
     this.botLaunch = readPeercomputeBotParams();
-    this.botHost = null;
     this.botRuntime = null;
     this.network = null;
     this.scene = null;
@@ -44,6 +47,16 @@ class CubeChat {
     this.worldTheme = DEFAULT_WORLD_THEME;
     this.worldThemeStateUnsubscribe = null;
     this._initialThemeFromQuery = null;
+    this.worldAgents = null;
+    this.agentLayer = null;
+    this.worldUi = null;
+    this.settingsUi = null;
+    this.roomChat = null;
+    this.speechBubbles = null;
+    this.started = false;
+    this.roomSwitchPromise = null;
+    this.destroying = null;
+    this.isDestroying = false;
   }
 
   _isMobileLikeDevice() {
@@ -91,12 +104,105 @@ class CubeChat {
   }
 
   _showSettingsOnce() {
-    if (this.settingsShownOnce) return;
-    const settingsMenu = document.getElementById('settings-menu');
-    if (settingsMenu) {
-      settingsMenu.style.display = 'block';
-    }
+    this.started = true;
+    this.worldUi?.setEnabled?.(true);
     this.settingsShownOnce = true;
+  }
+
+  _releaseWorldInput() {
+    this.controller?.clearInput(); this._exitPointerLock();
+  }
+
+  async _installRoomChat() {
+    if (this.botLaunch.enabled || this.isDestroying) return;
+    const service = new RoomChatService({
+      networkManager: this.network.node.getNetworkManager(),
+      worldId: `cubechat:${this.currentRoom.roomId}`,
+      onMessage: message => {
+        if (this.roomChat !== service || this.isDestroying) return;
+        this.worldUi?.appendRoomMessage(message);
+        if (!message.agentId) this.speechBubbles?.show(message.peerId, message.text);
+        this.worldAgents?.receiveWorldMessage(message);
+      },
+      onStatus: delivery => {
+        if (this.roomChat !== service || this.isDestroying) return;
+        const text = delivery.status === 'local-only' ? 'You are alone in the room. Message shown locally.'
+          : delivery.status === 'sending' ? 'Sending to the room…'
+          : delivery.status === 'delivered' ? `Delivered to ${delivery.delivered} player${delivery.delivered === 1 ? '' : 's'}.`
+          : `Delivered to ${delivery.delivered}/${delivery.total} players. Some connections did not confirm delivery.`;
+        this.worldUi?.setRoomStatus(text);
+      }
+    });
+    this.roomChat = service;
+    try { await service.start(); }
+    catch (error) { this.worldUi?.setRoomStatus(`Room chat unavailable: ${error.message}`); }
+  }
+
+  async _disposeRoomChat() {
+    await this.roomChat?.close(); this.roomChat = null; this.speechBubbles?.clear();
+  }
+
+  _installWorldAgents() {
+    if (this.botLaunch.enabled || this.isDestroying || this.worldAgents) return;
+    let host;
+    const layer = new CubeAgentLayer({
+      scene: this.scene,
+      physics: this.physics,
+      getPlayerPosition: () => this.physics.getPosition(this.network.localPlayer.id) ?? this.network.localPlayer.position,
+      onSelect: (key) => host?.openConversation(key)
+    });
+    try {
+      host = installWorldAgents({
+        worldId: `cubechat:${this.currentRoom.roomId}`,
+        worldLabel: 'CubeChat',
+        adapter: layer,
+        getRuntimeOptions: () => ({
+          stateManager: this.network.node.getStateManager(),
+          networkManager: this.network.node.getNetworkManager()
+        }),
+        exclusiveEmbodiments: true,
+        panelOwnsWindow: true,
+        getModelReturnFocus: () => document.getElementById('settings-button'),
+        publishWorldMessage: (input, { signal }) => {
+          if (!this.roomChat) throw new Error('Room chat is not connected');
+          return this.roomChat.send(input, { signal });
+        },
+        beforeOpen: () => this._releaseWorldInput(),
+        uiFactory: options => {
+          const ui = createCubeWorldUi({ ...options,
+            roomLabel: this.currentRoom.name,
+            onRoomSend: ({ text }, { signal } = {}) => {
+              if (!this.roomChat) throw new Error('Room chat is still connecting');
+              return this.roomChat.send({ text, name: this.network.localPlayer.name || 'Anonymous' }, { signal });
+            },
+            onPlayerCaption: text => this.speechBubbles?.show(this.network.peerId, text),
+            onMovement: ({ key, mode }) => layer.setMovement(key, mode),
+            onSettings: section => this.settingsUi?.open(section)
+          });
+          this.worldUi = ui; ui.setEnabled?.(this.started); return ui;
+        },
+        panelFactory: async options => (await import('../../inference/src/agentPanel.js')).mountInferencePanel({ ...options, managementOnly: true })
+      });
+      this.agentLayer = layer;
+      this.worldAgents = host;
+      Promise.resolve(host.ready).catch((error) => {
+        if (this.worldAgents !== host || this.isDestroying) return;
+        this.logEvent(`Agents unavailable: ${error.message}`, 'error');
+      });
+    } catch (error) {
+      layer.dispose();
+      this.logEvent(`Agents unavailable: ${error.message}`, 'error');
+    }
+  }
+
+  async _disposeWorldAgents() {
+    const host = this.worldAgents;
+    // Keep the reference on failed cleanup so room changes and shutdown can retry.
+    await host?.dispose();
+    this.agentLayer?.dispose();
+    this.worldAgents = null;
+    this.agentLayer = null;
+    this.worldUi = null;
   }
 
   _getWorldThemeSelect() {
@@ -338,150 +444,12 @@ class CubeChat {
     this.network.broadcastPlayerState();
   }
 
-  _initBotControls() {
-    const countInput = document.getElementById('bot-count');
-    const presetInput = document.getElementById('bot-preset');
-    const addButton = document.getElementById('bot-add');
-    const clearButton = document.getElementById('bot-clear');
-    const statusEl = document.getElementById('bot-status');
-    if (!this.botHost) {
-      this.botHost = createPeercomputeBotHost({
-        demoId: 'cubechat',
-        mediaEnabled: false,
-        getRoomState: () => ({
-          room: this.currentRoom,
-          password: this.currentRoomPassword,
-          extraParams: {
-            theme: normalizeWorldTheme(this.worldTheme)
-          }
-        })
-      });
-    }
-    bindPeercomputeBotSettingsControls({
-      host: this.botHost,
-      countInput,
-      presetInput,
-      addButton,
-      clearButton,
-      statusEl
-    });
-  }
-
   async init() {
     this._applyLaunchStateFromQuery();
 
     // Show loading message
     const app = document.querySelector('#app');
-    app.innerHTML = `
-      <div id="loading" role="button" tabindex="0" aria-label="Start CubeChat">
-        <h1>CubeChat</h1>
-        <p>Initializing P2P Network...</p>
-        <p style="font-size: 0.9em; color: #00ffff;">Click to start</p>
-        <p style="font-size: 0.8em; color: #ffff00; max-width: 90%; margin: 0.5em auto;">📹 Share your voice and video to chat with other people!</p>
-        <p style="font-size: 0.8em; color: #00cccc; max-width: 90%; margin: 0.5em auto;">WASD: Move | Mouse/Arrows: Look | Movement has momentum</p>
-      </div>
-      <div id="scene-container"></div>
-      <div id="event-log"></div>
-      <div id="vr-button" style="display: none;">Enter VR</div>
-      <div id="settings-button">⚙️</div>
-      <div id="settings-menu" style="display: none;">
-        <div id="settings-close-x">✕</div>
-        <h3>Settings</h3>
-        <div class="settings-section">
-          <h4>Player</h4>
-          <label>
-            Name:
-            <input type="text" id="player-name" maxlength="20" placeholder="Anonymous">
-          </label>
-          <label>
-            Color:
-            <input type="color" id="player-color">
-          </label>
-          <label>
-            Mass:
-            <input type="number" id="player-mass" min="0.1" max="100" step="0.1" value="5">
-          </label>
-          <label>
-            Screen Height:
-            <input type="number" id="screen-height" min="10" max="1000" step="10" value="100">
-          </label>
-          <label style="display: flex; align-items: center; cursor: pointer;">
-            <input type="checkbox" id="invert-mouse" style="margin-right: 8px;">
-            Invert Mouse Y-Axis
-          </label>
-        </div>
-        <div class="settings-section">
-          <h4>Room</h4>
-          <label>
-            Room Name:
-            <input type="text" id="room-name" placeholder="global">
-          </label>
-          <label>
-            Privacy:
-            <select id="room-privacy">
-              <option value="public">Public</option>
-              <option value="private">Private</option>
-            </select>
-          </label>
-          <label>
-            Password (private rooms):
-            <input type="password" id="room-password" placeholder="Required for private rooms">
-          </label>
-          <div class="room-actions">
-            <button id="room-create">Create</button>
-            <button id="room-join">Join</button>
-            <button id="room-list-open">Room List</button>
-          </div>
-          <div id="room-status"></div>
-        </div>
-        <div class="settings-section">
-          <h4>World</h4>
-          <label>
-            Theme:
-            <select id="world-theme">
-              <option value="tron">Tron</option>
-              <option value="moon">Moon</option>
-            </select>
-          </label>
-          <div style="font-size: 0.8em; color: #00cccc; margin-top: 6px;">
-            Theme is shared with everyone in the current room.
-          </div>
-        </div>
-        <div class="settings-section">
-          <h4>Screen Share</h4>
-          <div style="margin-top: 10px;">
-            <button id="screen-share-toggle" style="width: 100%; margin-bottom: 5px;">Share Screen</button>
-            <div id="screen-share-status" style="font-size: 0.8em; color: #00ffff; text-align: center;"></div>
-          </div>
-        </div>
-        <div class="settings-section">
-          <h4>Bots</h4>
-          <label>
-            Add Count:
-            <input type="number" id="bot-count" min="1" max="8" step="1" value="1">
-          </label>
-          <label>
-            Archetype:
-            <select id="bot-preset"></select>
-          </label>
-          <div class="room-actions">
-            <button id="bot-add">Add Bots</button>
-            <button id="bot-clear">Clear Bots</button>
-          </div>
-          <div id="bot-status"></div>
-        </div>
-        <button id="save-settings">Save</button>
-        <button id="close-settings">Close</button>
-      </div>
-      <div id="room-list" style="display: none;">
-        <div class="room-list-actions">
-          <h3>Available Rooms</h3>
-          <button id="room-list-close">Close</button>
-        </div>
-        <button id="room-list-refresh">Refresh</button>
-        <div id="room-list-items"></div>
-      </div>
-    `;
+    app.innerHTML = cubeShell;
 
     // Initialize event log system
     this.initEventLog();
@@ -537,6 +505,8 @@ class CubeChat {
       const isMobile = this._isMobileLikeDevice();
       
       const loadingDiv = document.querySelector('#loading');
+      const loadingStatus = loadingDiv?.querySelector('p');
+      if (loadingStatus) loadingStatus.textContent = 'Ready';
       const canvas = this.scene.renderer.domElement;
       let loadingStarted = false;
       let pendingInitialPointerUnlock = false;
@@ -544,9 +514,7 @@ class CubeChat {
       const dismissLoading = ({ mobileMode = false } = {}) => {
         if (!loadingDiv || loadingDiv.style.display === 'none') return;
         loadingDiv.style.display = 'none';
-        if (mobileMode) {
-          this.controller.setMobileMode(true);
-        }
+        this.controller.setMobileMode(mobileMode);
         this._showSettingsOnce();
       };
 
@@ -556,7 +524,7 @@ class CubeChat {
         if (event?.type === 'touchend' || event?.type === 'pointerdown') {
           event.preventDefault();
         }
-        if (isMobile) {
+        if (usesTouchControls(event, isMobile)) {
           dismissLoading({ mobileMode: true });
           return;
         }
@@ -574,41 +542,38 @@ class CubeChat {
         }
       };
       
-      if (isMobile) {
-        // Mobile: just tap to start, no pointer lock
-        loadingDiv.style.cursor = 'pointer';
-        loadingDiv.addEventListener('click', startFromLoading);
-        loadingDiv.addEventListener('touchend', startFromLoading, { passive: false });
-        loadingDiv.addEventListener('pointerdown', startFromLoading);
-      } else {
-        // Desktop: use pointer lock
-        canvas.addEventListener('click', () => {
-          this._requestPointerLock(canvas);
-        });
+      // A coarse primary pointer does not mean a mouse or keyboard is absent.
+      // Prefer the actual interaction; retain device detection for legacy events.
+      canvas.addEventListener('pointerdown', (event) => {
+        this.controller.setMobileMode(usesTouchControls(event, this.controller.isMobile));
+      });
+      canvas.addEventListener('click', () => {
+        if (!this.controller.isMobile) this._requestPointerLock(canvas);
+      });
 
-        loadingDiv.style.cursor = 'pointer';
-        loadingDiv.addEventListener('click', startFromLoading);
-        loadingDiv.addEventListener('pointerdown', startFromLoading);
-        loadingDiv.addEventListener('keydown', (event) => {
-          if (event.key !== 'Enter' && event.key !== ' ') return;
-          startFromLoading(event);
-        });
+      loadingDiv.style.cursor = 'pointer';
+      loadingDiv.addEventListener('click', startFromLoading);
+      loadingDiv.addEventListener('touchend', startFromLoading, { passive: false });
+      loadingDiv.addEventListener('pointerdown', startFromLoading);
+      loadingDiv.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        startFromLoading(event);
+      });
 
-        // Remove loading screen when pointer is locked
-        const handlePointerLockChange = () => {
-          if (this._getPointerLockElement()) {
-            dismissLoading();
-            if (pendingInitialPointerUnlock) {
-              pendingInitialPointerUnlock = false;
-              this._exitPointerLock();
-            }
-          } else {
+      const handlePointerLockChange = () => {
+        if (this._getPointerLockElement()) {
+          dismissLoading();
+          if (pendingInitialPointerUnlock) {
             pendingInitialPointerUnlock = false;
+            this._exitPointerLock();
           }
-        };
-        document.addEventListener('pointerlockchange', handlePointerLockChange);
-        document.addEventListener('webkitpointerlockchange', handlePointerLockChange);
-      }
+        } else {
+          pendingInitialPointerUnlock = false;
+        }
+      };
+      document.addEventListener('pointerlockchange', handlePointerLockChange);
+      document.addEventListener('webkitpointerlockchange', handlePointerLockChange);
 
       // Initialize settings
       this.initSettings();
@@ -617,6 +582,10 @@ class CubeChat {
       this.initVR();
 
       this._registerBotBridge();
+      this._installWorldAgents();
+      this.speechBubbles = new SpeechBubbleLayer({ scene: this.scene.scene, camera: this.scene.camera,
+        getAnchor: key => this.scene.players.get(key) });
+      await this._installRoomChat();
       this.botRuntime = maybeStartPeercomputeLocalBotRuntime({
         demoId: 'cubechat',
         bridgeId: 'cubechat',
@@ -678,6 +647,7 @@ class CubeChat {
       // The updateRemoteBillboardProximity() method will automatically apply it when in range
     } else if (message.type === 'player_update') {
       const { peerId, data } = message;
+      const displayName = typeof data.name === 'string' ? data.name.trim().slice(0, 20) || 'Anonymous' : 'Anonymous';
 
       // Add new remote player if not already tracked
       if (!this.remotePlayers.has(peerId)) {
@@ -685,18 +655,13 @@ class CubeChat {
         this.physics.createPlayerBody(peerId, data.position);
         this.remotePlayers.add(peerId);
         
-        // Apply name if available
-        if (data.name) {
-          this.scene.setPlayerName(peerId, data.name);
-        }
+        this.scene.setPlayerName(peerId, displayName);
         
         console.log('New player joined:', peerId);
         this.logEvent(`Player joined: ${data.name || peerId.substring(0, 8)}...`, 'join');
       } else {
         // Update existing player's name and color if changed
-        if (data.name) {
-          this.scene.setPlayerName(peerId, data.name);
-        }
+        this.scene.setPlayerName(peerId, displayName);
         if (data.color) {
           this.scene.updatePlayerColor(peerId, data.color);
         }
@@ -749,6 +714,7 @@ class CubeChat {
       const { peerId } = message;
       
       if (this.remotePlayers.has(peerId)) {
+        this.speechBubbles?.remove(peerId);
         this.scene.removePlayer(peerId);
         this.physics.removePlayerBody(peerId);
         this.remotePlayers.delete(peerId);
@@ -850,7 +816,7 @@ class CubeChat {
     // Use setAnimationLoop for VR compatibility
     this.scene.renderer.setAnimationLoop((currentTime) => {
       // Calculate delta time
-      const deltaTime = (currentTime - this.lastTime) / 1000;
+      const deltaTime = Math.min(0.1, Math.max(0, (currentTime - this.lastTime) / 1000));
       this.lastTime = currentTime;
 
       // Update mobile look controls if needed
@@ -866,9 +832,11 @@ class CubeChat {
 
       // Step physics simulation
       this.physics.step(deltaTime);
+      this.agentLayer?.update(deltaTime);
 
       // Sync visual representation with physics
       this.syncPhysicsToScene();
+      this.speechBubbles?.update();
 
       // Stabilize player rotation (keep upright) and sync Y rotation with controller
       this.physics.stabilizeRotation(this.network.localPlayer.id);
@@ -997,25 +965,11 @@ class CubeChat {
   }
 
   getForwardBackInput() {
-    if (this.controller.isMobile) {
-      return -this.controller.moveJoystick.y * this.controller.mobileMoveSensitivity;
-    } else {
-      let input = 0;
-      if (this.controller.keys['w'] || this.controller.keys['arrowup']) input += 1;
-      if (this.controller.keys['s'] || this.controller.keys['arrowdown']) input -= 1;
-      return input;
-    }
+    return this.controller.getMovementInput().forward;
   }
 
   getLeftRightInput() {
-    if (this.controller.isMobile) {
-      return this.controller.moveJoystick.x * this.controller.mobileMoveSensitivity;
-    } else {
-      let input = 0;
-      if (this.controller.keys['a']) input -= 1;
-      if (this.controller.keys['d']) input += 1;
-      return input;
-    }
+    return this.controller.getMovementInput().strafe;
   }
 
   initVR() {
@@ -1084,14 +1038,13 @@ class CubeChat {
         this.controller.pitch += lookJoy.y * this.controller.mobileLookSensitivityV;
         this.controller.pitch = Math.max(-maxPitch, Math.min(maxPitch, this.controller.pitch));
       }
-    } else {
-      // Process keyboard rotation (arrow keys and Q/E)
-      if (this.controller.keys['arrowleft'] || this.controller.keys['q']) {
-        this.controller.rotation += turnSpeed;
-      }
-      if (this.controller.keys['arrowright'] || this.controller.keys['e']) {
-        this.controller.rotation -= turnSpeed;
-      }
+    }
+    // Keyboard look remains available independently of the touch HUD.
+    if (this.controller.keys['arrowleft'] || this.controller.keys['q']) {
+      this.controller.rotation += turnSpeed;
+    }
+    if (this.controller.keys['arrowright'] || this.controller.keys['e']) {
+      this.controller.rotation -= turnSpeed;
     }
   }
 
@@ -1217,11 +1170,12 @@ class CubeChat {
   }
 
   initSettings() {
-    const settingsButton = document.getElementById('settings-button');
-    const settingsMenu = document.getElementById('settings-menu');
+    this.settingsUi = createCubeSettingsUi({
+      beforeOpen: () => this._releaseWorldInput(),
+      onResidents: () => this.worldUi?.openResidents(),
+      onModels: () => this.worldUi?.openModels()
+    });
     const saveButton = document.getElementById('save-settings');
-    const closeButton = document.getElementById('close-settings');
-    const closeX = document.getElementById('settings-close-x');
     const nameInput = document.getElementById('player-name');
     const colorInput = document.getElementById('player-color');
     const massInput = document.getElementById('player-mass');
@@ -1276,10 +1230,9 @@ class CubeChat {
     }
     
     // Apply saved settings
-    if (savedName) {
-      this.network.localPlayer.name = savedName;
-      this.scene.setPlayerName(this.network.localPlayer.id, savedName);
-    }
+    this.network.localPlayer.name = savedName.trim().slice(0, 20) || 'Anonymous';
+    this.scene.setPlayerName(this.network.localPlayer.id, this.network.localPlayer.name);
+    this.network.broadcastPlayerState();
     if (savedColor !== this.network.localPlayer.color) {
       this.network.localPlayer.color = savedColor;
       this.scene.updatePlayerColor(this.network.localPlayer.id, savedColor);
@@ -1294,37 +1247,16 @@ class CubeChat {
     // Apply saved invert mouse setting
     this.controller.setInvertMouse(savedInvertMouse);
 
-    // Toggle settings menu
-    settingsButton.addEventListener('click', () => {
-      const isShowing = settingsMenu.style.display === 'none';
-      settingsMenu.style.display = isShowing ? 'block' : 'none';
-      
-      // Release pointer lock when showing settings
-      if (isShowing && this._getPointerLockElement()) {
-        this._exitPointerLock();
-      }
-    });
-
-    // Close settings with button
-    closeButton.addEventListener('click', () => {
-      settingsMenu.style.display = 'none';
-    });
-
-    // Close settings with X
-    closeX.addEventListener('click', () => {
-      settingsMenu.style.display = 'none';
-    });
-
     // Save settings
     saveButton.addEventListener('click', () => {
-      const newName = nameInput.value.trim();
+      const newName = nameInput.value.trim().slice(0, 20);
       const newColor = colorInput.value;
       const newMass = parseFloat(massInput.value) || 1;
       const newScreenHeight = parseFloat(screenHeightInput.value) || 100;
       const newInvertMouse = invertMouseInput.checked;
       
       // Update local player
-      this.network.localPlayer.name = newName;
+      this.network.localPlayer.name = newName || 'Anonymous';
       this.network.localPlayer.color = newColor;
       
       // Save to localStorage
@@ -1336,7 +1268,7 @@ class CubeChat {
       
       // Update visuals
       this.scene.updatePlayerColor(this.network.localPlayer.id, newColor);
-      this.scene.setPlayerName(this.network.localPlayer.id, newName);
+      this.scene.setPlayerName(this.network.localPlayer.id, this.network.localPlayer.name);
       
       // Update physics mass
       const body = this.physics.getPlayerBody(this.network.localPlayer.id);
@@ -1352,7 +1284,7 @@ class CubeChat {
       this.network.broadcastPlayerState();
       
       // Close menu
-      settingsMenu.style.display = 'none';
+      this.settingsUi.close();
       
       console.log('Settings saved:', newName, newColor, 'Mass:', newMass);
     });
@@ -1382,26 +1314,26 @@ class CubeChat {
 
     if (roomCreateButton) {
       roomCreateButton.addEventListener('click', () => {
-        applyRoomChange();
+        void applyRoomChange().catch(error => updateRoomStatus(error.message));
       });
     }
 
     if (roomJoinButton) {
       roomJoinButton.addEventListener('click', () => {
-        applyRoomChange();
+        void applyRoomChange().catch(error => updateRoomStatus(error.message));
       });
     }
 
     if (roomListOpen && roomList) {
       roomListOpen.addEventListener('click', () => {
-        roomList.style.display = 'block';
+        this.settingsUi.open('rooms');
         this.renderRoomList();
       });
     }
 
     if (roomListClose && roomList) {
       roomListClose.addEventListener('click', () => {
-        roomList.style.display = 'none';
+        this.settingsUi.close();
       });
     }
 
@@ -1417,7 +1349,18 @@ class CubeChat {
       });
     }
 
-    this._initBotControls();
+    // Media controls affect only existing user-granted tracks.
+    const stream = this.network.getLocalStream();
+    for (const [id, kind] of [['camera-enabled', 'video'], ['microphone-enabled', 'audio']]) {
+      const input = document.getElementById(id), tracks = stream?.getTracks().filter(track => track.kind === kind) ?? [];
+      input.checked = tracks.some(track => track.enabled); input.disabled = !tracks.length;
+      input.addEventListener('change', () => tracks.forEach(track => { track.enabled = input.checked; }));
+    }
+    document.getElementById('media-status').textContent = stream ? 'Media controls apply immediately.' : 'Camera and microphone permission was not granted. Room text chat still works.';
+    screenHeightInput.addEventListener('change', () => {
+      const height = Math.max(10, Math.min(1000, Number(screenHeightInput.value) || 100));
+      screenHeightInput.value = String(height); localStorage.setItem('screenHeight', String(height));
+    });
 
     // Screen share toggle
     const screenShareToggle = document.getElementById('screen-share-toggle');
@@ -1480,8 +1423,18 @@ class CubeChat {
   }
 
   async switchRoom({ name, visibility, roomId, password = '' }) {
+    if (this.isDestroying) throw new Error('CubeChat is closing');
+    if (this.roomSwitchPromise) throw new Error('A room change is already in progress');
     if (!roomId || roomId === this.currentRoom.roomId) return;
+    this.roomSwitchPromise = this._switchRoom({ name, visibility, roomId, password });
+    try { await this.roomSwitchPromise; }
+    finally { this.roomSwitchPromise = null; }
+  }
+
+  async _switchRoom({ name, visibility, roomId, password }) {
     this.setRoomStatus('Switching rooms...');
+    await this._disposeRoomChat();
+    await this._disposeWorldAgents();
     this.stopScreenShare();
     this.clearRemoteState();
     const previousLocalId = this.network.peerId;
@@ -1492,7 +1445,7 @@ class CubeChat {
     }
     this.scene.createPlayer(localPlayer.id, localPlayer.color, localPlayer.position);
     this.scene.setLocalPlayer(localPlayer.id);
-    this.scene.setPlayerName(localPlayer.id, localPlayer.name || '');
+    this.scene.setPlayerName(localPlayer.id, localPlayer.name || 'Anonymous');
     this.physics.createPlayerBody(localPlayer.id, localPlayer.position);
     if (this.network.getLocalStream()) {
       this.scene.setPlayerVideoStream(localPlayer.id, this.network.getLocalStream());
@@ -1504,7 +1457,8 @@ class CubeChat {
     this.roomDirectory?.announceRoom(this.currentRoom);
     this._syncRoomInputs();
     this._updateLinkQueryParams();
-    this.botHost?.refreshBots();
+    this._installWorldAgents();
+    await this._installRoomChat();
     this.setRoomStatus(`Current room: ${name} (${visibility})`);
   }
 
@@ -1548,7 +1502,7 @@ class CubeChat {
           : (room.roomId || buildRoomId({ name: normalizeRoomName(name), visibility }));
         await this.switchRoom({ name, visibility, roomId, password });
         const roomList = document.getElementById('room-list');
-        if (roomList) roomList.style.display = 'none';
+        if (roomList) this.settingsUi.close();
         const roomNameInput = document.getElementById('room-name');
         const roomPrivacyInput = document.getElementById('room-privacy');
         const roomPasswordInput = document.getElementById('room-password');
@@ -1864,20 +1818,28 @@ class CubeChat {
     });
   }
 
-  // Clean up on page unload
+  // Agent execution acknowledges cancellation before manager-owned stores close.
   destroy() {
-    this.stopScreenShare();
-    if (this.worldThemeStateUnsubscribe) {
-      try {
+    if (this.destroying) return this.destroying;
+    this.isDestroying = true;
+    this.destroying = (async () => {
+      await this.roomSwitchPromise?.catch(() => {});
+      await this._disposeRoomChat();
+      await this._disposeWorldAgents();
+      this.speechBubbles?.dispose();
+      this.settingsUi?.dispose();
+      this.botRuntime?.stop?.();
+      this.controller?.clearInput();
+      this.scene?.renderer.setAnimationLoop(null);
+      this.stopScreenShare();
+      if (this.worldThemeStateUnsubscribe) {
         this.worldThemeStateUnsubscribe();
-      } catch (_) {
-        // ignore
+        this.worldThemeStateUnsubscribe = null;
       }
-      this.worldThemeStateUnsubscribe = null;
-    }
-    if (this.network) {
-      this.network.stop();
-    }
+      await this.roomDirectory?.stop();
+      await this.network?.stop();
+    })().catch((error) => { this.destroying = null; throw error; });
+    return this.destroying;
   }
 }
 
@@ -1887,5 +1849,5 @@ app.init();
 
 // Clean up on page unload
 window.addEventListener('beforeunload', () => {
-  app.destroy();
+  void app.destroy().catch((error) => console.warn('CubeChat cleanup incomplete', error));
 });

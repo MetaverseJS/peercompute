@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" role="img" aria-labelledby="title desc">
+  <title id="title">Schrodinger materials console schematic</title>
+  <desc id="desc">Retro terminal view of an orbital cloud, nucleus, and material property packet.</desc>
+  <rect width="960" height="540" fill="#020403"/>
+  <g stroke="#123c2b" stroke-width="2">
+    <path d="M0 90h960M0 180h960M0 270h960M0 360h960M0 450h960"/>
+    <path d="M120 0v540M240 0v540M360 0v540M480 0v540M600 0v540M720 0v540M840 0v540"/>
+  </g>
+  <rect x="44" y="44" width="872" height="452" fill="none" stroke="#2b8f64" stroke-width="6"/>
+  <g transform="translate(330 270)">
+    <circle r="24" fill="#ffca6b"/>
+    <g fill="#7dffb8" opacity="0.82">
+      <circle cx="-168" cy="-54" r="5"/>
+      <circle cx="-132" cy="92" r="4"/>
+      <circle cx="-78" cy="-126" r="6"/>
+      <circle cx="-24" cy="152" r="5"/>
+      <circle cx="42" cy="-142" r="4"/>
+      <circle cx="96" cy="108" r="7"/>
+      <circle cx="154" cy="-38" r="5"/>
+      <circle cx="186" cy="52" r="4"/>
+      <circle cx="-198" cy="22" r="4"/>
+      <circle cx="0" cy="-190" r="4"/>
+      <circle cx="0" cy="196" r="4"/>
+      <circle cx="216" cy="-94" r="4"/>
+    </g>
+    <ellipse rx="220" ry="94" fill="none" stroke="#7dffb8" stroke-width="4"/>
+    <ellipse rx="220" ry="94" fill="none" stroke="#7dffb8" stroke-width="4" transform="rotate(60)"/>
+    <ellipse rx="220" ry="94" fill="none" stroke="#7dffb8" stroke-width="4" transform="rotate(-60)"/>
+  </g>
+  <g transform="translate(662 118)" font-family="Courier New, monospace">
+    <rect width="206" height="304" fill="#06120d" stroke="#2b8f64" stroke-width="3"/>
+    <text x="18" y="42" fill="#ffca6b" font-size="24">PACKET</text>
+    <text x="18" y="88" fill="#d7ffe9" font-size="18">phase: liquid</text>
+    <text x="18" y="122" fill="#d7ffe9" font-size="18">rho: 997 kg/m3</text>
+    <text x="18" y="156" fill="#d7ffe9" font-size="18">bulk: 2.2e9 Pa</text>
+    <text x="18" y="190" fill="#d7ffe9" font-size="18">n: 1.333</text>
+    <text x="18" y="224" fill="#d7ffe9" font-size="18">eps: 80.7</text>
+    <text x="18" y="258" fill="#7dffb8" font-size="18">valid: true</text>
+  </g>
+  <text x="62" y="84" fill="#ffca6b" font-family="Courier New, monospace" font-size="28">SCHRODINGER MATERIALS</text>
+</svg>

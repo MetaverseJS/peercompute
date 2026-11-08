@@ -10,6 +10,36 @@ import * as Y from 'yjs';
 import { IndexeddbPersistence } from 'y-indexeddb';
 import { PeerComputeProvider } from './PeerComputeProvider.js';
 import { DataState } from './DataState.js';
+import { LocalArtifactCache } from './LocalArtifactCache.js';
+import { ArtifactStore } from '../artifacts/ArtifactStore.js';
+import { AgentRecordStore } from '../agents/AgentRecordStore.js';
+
+export const STATE_TASK_GRAPH_CACHE_ARTIFACT_ADMISSION_SCHEMA = 'peercompute.state.task-graph-cache-artifact-admission.v0';
+export const STATE_TASK_GRAPH_CACHE_ARTIFACT_INVALIDATION_SCHEMA = 'peercompute.state.task-graph-cache-artifact-invalidation.v0';
+export const STATE_TASK_GRAPH_CACHE_ARTIFACT_ADMISSION_NAMESPACE = 'taskGraphCacheArtifactAdmissions';
+export const STATE_TASK_GRAPH_CACHE_ARTIFACT_INVALIDATION_NAMESPACE = 'taskGraphCacheArtifactInvalidations';
+
+function normalizeStringList(value, fallback = []) {
+  if (Array.isArray(value)) {
+    return value.map((entry) => String(entry || '').trim()).filter(Boolean);
+  }
+  if (typeof value === 'string') {
+    return value.split(',').map((entry) => entry.trim()).filter(Boolean);
+  }
+  return [...fallback];
+}
+
+function cloneStateManagerValue(value) {
+  if (value == null) return value;
+  if (typeof structuredClone === 'function') {
+    try {
+      return structuredClone(value);
+    } catch {
+      // Fall through for plain JSON diagnostics.
+    }
+  }
+  return JSON.parse(JSON.stringify(value));
+}
 
 /**
  * StateManager class - Handles distributed state coordination
@@ -61,6 +91,7 @@ export class StateManager {
     // State
     this.isInitialized = false;
     this.persistenceFailed = false;
+    this.agentRecordStores = new Map();
   }
 
   /**
@@ -151,6 +182,86 @@ export class StateManager {
     return this.dataState;
   }
 
+  /**
+   * Create a bounded local-only source-artifact cache.
+   *
+   * This method does not require initialize(): the cache is deliberately
+   * separate from the Y.Doc, y-indexeddb, and network-provider lifecycles.
+   * @param {Object} options LocalArtifactCache options
+   * @returns {LocalArtifactCache}
+   */
+  createLocalArtifactCache(options = {}) {
+    if (this.destroyed) throw new Error('StateManager is destroyed');
+    const cache = new LocalArtifactCache({
+      ...options,
+      onDestroy: (destroyedCache) => {
+        this.dataState.unregisterLocalArtifactCache(destroyedCache.name, destroyedCache);
+      }
+    });
+    try {
+      return this.dataState.registerLocalArtifactCache(cache.name, cache);
+    } catch (error) {
+      void cache.destroy();
+      throw error;
+    }
+  }
+
+  getLocalArtifactCache(name) {
+    return this.dataState.getLocalArtifactCache(name);
+  }
+
+  /** Binary blocks and local metadata remain outside the replicated Y.Doc. */
+  createArtifactStore(options = {}) {
+    if (this.destroyed) throw new Error('StateManager is destroyed');
+    const name = options.name || 'default';
+    if (this.getArtifactStore(name)) throw new Error(`Artifact store ${name} is already registered`);
+    const store = new ArtifactStore({ ...options, name, onDestroy: (closed) => {
+      this.dataState.unregisterArtifactStore(closed);
+      options.onDestroy?.(closed);
+    } });
+    return this.dataState.registerArtifactStore(store);
+  }
+
+  getArtifactStore(name = 'default') { return this.dataState.getArtifactStore(name); }
+
+  /** Acknowledged private agent journals never enter the replicated Y.Doc. */
+  createAgentRecordStore(options = {}) {
+    if (this.destroyed) throw new Error('StateManager is destroyed');
+    const name = options.name || 'default';
+    if (this.agentRecordStores.has(name)) throw new Error(`Agent store ${name} is already registered`);
+    const store = new AgentRecordStore({ ...options, name, onDestroy: (closed) => {
+      if (this.agentRecordStores.get(name) === closed) this.agentRecordStores.delete(name);
+      options.onDestroy?.(closed);
+    } });
+    this.agentRecordStores.set(name, store);
+    return store;
+  }
+
+  getAgentRecordStore(name = 'default') { return this.agentRecordStores.get(name) || null; }
+
+  async ensureArtifact(cid, { storeName = 'default', signal } = {}) {
+    if (this.destroyed) throw new Error('StateManager is destroyed');
+    const store = this.getArtifactStore(storeName);
+    if (!store) throw new Error(`Artifact store ${storeName} is not configured`);
+    return store.ensureLocal(cid, { signal, fetchBlock: (blockCid, options = {}) => {
+      if (!this.networkManager?.fetchArtifactBlock) throw new Error('Artifact networking is not configured');
+      return this.networkManager.fetchArtifactBlock(blockCid, { ...options, artifactCid: cid });
+    } });
+  }
+
+  async publishArtifact(cid) {
+    if (this.destroyed) throw new Error('StateManager is destroyed');
+    if (!this.networkManager?.announceArtifact) throw new Error('Artifact networking is not configured');
+    return this.networkManager.announceArtifact(cid);
+  }
+
+  async unpublishArtifact(cid, { storeName = 'default', unpin = false } = {}) {
+    if (this.destroyed) throw new Error('StateManager is destroyed');
+    if (!this.networkManager?.withdrawArtifact) throw new Error('Artifact networking is not configured');
+    await this.networkManager.withdrawArtifact(cid);
+    if (unpin) await this.getArtifactStore(storeName)?.unpin(cid);
+  }
+
   getWarmDeltas(namespace) {
     return this.dataState.getWarmDeltas(namespace);
   }
@@ -161,6 +272,136 @@ export class StateManager {
 
   getHotBuffer(key) {
     return this.dataState.getHotBuffer(key);
+  }
+
+  /**
+   * Admit a ComputeManager task-graph cache artifact into the CRDT authority
+   * ledger. ComputeManager may record local artifacts, but this StateManager
+   * record is the durable admission decision peers should trust.
+   * @param {Object} artifact
+   * @param {Object} options
+   * @returns {Object}
+   */
+  admitTaskGraphCacheArtifact(artifact = {}, options = {}) {
+    if (!this.isInitialized) {
+      throw new Error('StateManager not initialized');
+    }
+    if (!artifact || typeof artifact !== 'object') {
+      throw new Error('admitTaskGraphCacheArtifact requires an artifact object');
+    }
+    const cacheKey = String(options.cacheKey || artifact.cacheKey || '').trim();
+    if (!cacheKey) {
+      throw new Error('admitTaskGraphCacheArtifact requires artifact.cacheKey');
+    }
+    const admittedAt = Number.isFinite(options.admittedAt) ? options.admittedAt : Date.now();
+    const invalidationRefs = normalizeStringList(
+      options.invalidationRefs ?? artifact.invalidationRefs ?? artifact.admission?.invalidationRefs,
+      []
+    );
+    const record = {
+      schema: STATE_TASK_GRAPH_CACHE_ARTIFACT_ADMISSION_SCHEMA,
+      admissionId: String(
+        options.admissionId
+          || artifact.admission?.admissionId
+          || `task-graph-cache-admission:${cacheKey}:${admittedAt}`
+      ),
+      cacheKey,
+      artifactId: artifact.artifactId || `${cacheKey}:artifact`,
+      artifactSchema: artifact.schema || null,
+      artifactStatus: artifact.status || null,
+      cacheScope: artifact.cacheScope || options.cacheScope || null,
+      cacheKeySource: artifact.cacheKeySource || options.cacheKeySource || null,
+      inputHash: artifact.inputHash || options.inputHash || null,
+      resultHash: artifact.resultHash || options.resultHash || null,
+      status: options.status || 'admitted',
+      admitted: true,
+      authority: options.authority || 'state-manager',
+      validatorId: options.validatorId || artifact.admission?.validatorId || null,
+      reason: options.reason || 'state-manager-cache-artifact-admission',
+      invalidationRefs,
+      admittedAt,
+      acceptedAt: admittedAt,
+      expiresAt: options.expiresAt ?? artifact.expiresAt ?? null,
+      sourceNodeId: options.sourceNodeId || this.state.get('nodeId') || null,
+      artifact: cloneStateManagerValue(artifact)
+    };
+    this.writeScoped(STATE_TASK_GRAPH_CACHE_ARTIFACT_ADMISSION_NAMESPACE, cacheKey, record);
+    return cloneStateManagerValue(record);
+  }
+
+  /**
+   * Mark an admitted artifact as invalidated and write an audit record.
+   * @param {string|Object} cacheKeyOrArtifact
+   * @param {Object} options
+   * @returns {Object}
+   */
+  invalidateTaskGraphCacheArtifact(cacheKeyOrArtifact, options = {}) {
+    if (!this.isInitialized) {
+      throw new Error('StateManager not initialized');
+    }
+    const artifact = cacheKeyOrArtifact && typeof cacheKeyOrArtifact === 'object'
+      ? cacheKeyOrArtifact
+      : null;
+    const cacheKey = String(options.cacheKey || artifact?.cacheKey || cacheKeyOrArtifact || '').trim();
+    if (!cacheKey) {
+      throw new Error('invalidateTaskGraphCacheArtifact requires a cacheKey');
+    }
+    const existing = this.readScoped(STATE_TASK_GRAPH_CACHE_ARTIFACT_ADMISSION_NAMESPACE, cacheKey);
+    const invalidatedAt = Number.isFinite(options.invalidatedAt) ? options.invalidatedAt : Date.now();
+    const invalidationRefs = normalizeStringList(
+      options.invalidationRefs ?? artifact?.invalidationRefs ?? existing?.invalidationRefs,
+      []
+    );
+    const invalidation = {
+      schema: STATE_TASK_GRAPH_CACHE_ARTIFACT_INVALIDATION_SCHEMA,
+      invalidationId: String(options.invalidationId || `task-graph-cache-invalidation:${cacheKey}:${invalidatedAt}`),
+      cacheKey,
+      artifactId: artifact?.artifactId || existing?.artifactId || `${cacheKey}:artifact`,
+      status: 'invalidated',
+      authority: options.authority || 'state-manager',
+      reason: options.reason || 'state-manager-cache-artifact-invalidated',
+      invalidationRefs,
+      previousAdmissionStatus: existing?.status || null,
+      invalidatedAt,
+      sourceNodeId: options.sourceNodeId || this.state.get('nodeId') || null
+    };
+    this.writeScoped(
+      STATE_TASK_GRAPH_CACHE_ARTIFACT_INVALIDATION_NAMESPACE,
+      invalidation.invalidationId,
+      invalidation
+    );
+    if (existing) {
+      this.writeScoped(STATE_TASK_GRAPH_CACHE_ARTIFACT_ADMISSION_NAMESPACE, cacheKey, {
+        ...existing,
+        status: 'invalidated',
+        admitted: false,
+        invalidatedAt,
+        invalidation
+      });
+    }
+    return cloneStateManagerValue(invalidation);
+  }
+
+  getTaskGraphCacheArtifactAdmission(cacheKey) {
+    if (!this.isInitialized) {
+      throw new Error('StateManager not initialized');
+    }
+    const key = String(cacheKey || '').trim();
+    if (!key) return null;
+    const record = this.readScoped(STATE_TASK_GRAPH_CACHE_ARTIFACT_ADMISSION_NAMESPACE, key);
+    return record ? cloneStateManagerValue(record) : null;
+  }
+
+  listTaskGraphCacheArtifactAdmissions(options = {}) {
+    if (!this.isInitialized) {
+      throw new Error('StateManager not initialized');
+    }
+    const includeInvalidated = options.includeInvalidated !== false;
+    return this.listNamespaceKeys(STATE_TASK_GRAPH_CACHE_ARTIFACT_ADMISSION_NAMESPACE)
+      .map((key) => this.readScoped(STATE_TASK_GRAPH_CACHE_ARTIFACT_ADMISSION_NAMESPACE, key))
+      .filter((record) => record && (includeInvalidated || record.admitted === true))
+      .map((record) => cloneStateManagerValue(record))
+      .sort((a, b) => String(a.cacheKey || '').localeCompare(String(b.cacheKey || '')));
   }
 
   /**
@@ -522,14 +763,83 @@ export class StateManager {
    * @returns {Function} unsubscribe
    */
   observeNamespace(namespace, callback) {
-    const nsMap = this._getNamespaceMap(namespace);
-    const handler = (event) => {
+    let nsMap = this._getNamespaceMap(namespace);
+    let observedKeys = new Set(nsMap.keys());
+    let replacementTransaction = null;
+    let active = true;
+
+    const currentNamespaceMap = () => {
+      const value = this.state.get(namespace);
+      return value instanceof Y.Map ? value : null;
+    };
+
+    let namespaceHandler;
+    const rebindNamespaceMap = (nextMap, transaction = null) => {
+      if (!active || nextMap === nsMap) return;
+
+      const previousKeys = observedKeys;
+      const nextEntries = nextMap ? Array.from(nextMap.entries()) : [];
+      const nextKeys = new Set(nextEntries.map(([key]) => key));
+
+      nsMap?.unobserve(namespaceHandler);
+      nsMap = nextMap;
+      observedKeys = nextKeys;
+      replacementTransaction = transaction;
+      nsMap?.observe(namespaceHandler);
+
+      // A nested Y.Map can lose a concurrent assignment to the namespace key.
+      // Replaying the winning map keeps consumers from retaining keys that only
+      // existed in the detached map and gives them one coherent replacement view.
+      for (const key of previousKeys) {
+        if (!nextKeys.has(key)) {
+          if (!active || currentNamespaceMap() !== nsMap) return;
+          callback(undefined, key);
+        }
+      }
+      for (const [key, value] of nextEntries) {
+        if (!active || currentNamespaceMap() !== nsMap) return;
+        callback(value, key);
+      }
+    };
+
+    namespaceHandler = (event, transaction) => {
+      if (!active || event.target !== nsMap) return;
+
+      const currentMap = currentNamespaceMap();
+      if (currentMap !== nsMap) {
+        rebindNamespaceMap(currentMap, transaction);
+        return;
+      }
+
+      // The replacement snapshot already contains every change from the Yjs
+      // transaction that installed the winning nested map.
+      if (transaction === replacementTransaction) return;
+
       event.keysChanged.forEach((key) => {
+        if (!active || event.target !== nsMap || currentNamespaceMap() !== nsMap) return;
+        if (nsMap.has(key)) {
+          observedKeys.add(key);
+        } else {
+          observedKeys.delete(key);
+        }
         callback(nsMap.get(key), key);
       });
     };
-    nsMap.observe(handler);
-    return () => nsMap.unobserve(handler);
+
+    const rootHandler = (event, transaction) => {
+      if (!active || !event.keysChanged.has(namespace)) return;
+      rebindNamespaceMap(currentNamespaceMap(), transaction);
+    };
+
+    nsMap.observe(namespaceHandler);
+    this.state.observe(rootHandler);
+
+    return () => {
+      if (!active) return;
+      active = false;
+      nsMap?.unobserve(namespaceHandler);
+      this.state.unobserve(rootHandler);
+    };
   }
 
   /**
@@ -625,6 +935,17 @@ export class StateManager {
   }
 
   /**
+   * Request a full Yjs state sync from peers once the backing network is live.
+   * PeerComputeProvider is created during StateManager initialization, which can
+   * happen before NodeKernel connects the NetworkManager.
+   */
+  async requestProviderSync() {
+    if (!this.libp2pProvider?.requestSync) return false;
+    await this.libp2pProvider.requestSync();
+    return true;
+  }
+
+  /**
    * Clear all state
    * @returns {void}
    */
@@ -643,16 +964,27 @@ export class StateManager {
    * @returns {Promise<void>}
    */
   async destroy() {
-    try {
+    if (this.destroying) return this.destroying;
+    this.destroyed = true;
+    this.destroying = (async () => {
+      const errors = [];
+      const cleanup = async (operation) => { try { await operation(); } catch (error) { errors.push(error); } };
+      // Agent runners acknowledge cancellation before private journals close.
+      for (const store of [...this.agentRecordStores.values()]) await cleanup(() => store.destroy());
+      // Local artifact bytes live outside Yjs but remain owned by this manager.
+      // Destroy handles without deleting their optional persistent records.
+      await cleanup(() => this.dataState.destroyArtifactStores());
+      await cleanup(() => this.dataState.destroyLocalArtifactCaches());
+
       // Cleanup libp2p provider
       if (this.libp2pProvider) {
-        this.libp2pProvider.destroy();
+        await cleanup(() => this.libp2pProvider.destroy());
         this.libp2pProvider = null;
       }
       
       // Cleanup IndexedDB provider
       if (this.indexeddbProvider) {
-        this.indexeddbProvider.destroy();
+        await cleanup(() => this.indexeddbProvider.destroy());
         this.indexeddbProvider = null;
       }
       
@@ -661,15 +993,14 @@ export class StateManager {
       this.globalSubscribers.clear();
       
       // Destroy Yjs document
-      this.ydoc.destroy();
+      await cleanup(() => this.ydoc.destroy());
       
       this.isInitialized = false;
       console.log('[StateManager] Destroyed');
       
-    } catch (error) {
-      console.error('[StateManager] Destroy failed:', error);
-      throw error;
-    }
+      if (errors.length) throw new AggregateError(errors, 'StateManager cleanup failed');
+    })();
+    return this.destroying;
   }
 
   /**
@@ -720,6 +1051,8 @@ export class StateManager {
    * @returns {Object} Statistics
    */
   getStats() {
+    const localArtifactCaches = this.dataState.getLocalArtifactCacheStats();
+    const artifacts = this.dataState.getArtifactStoreStats();
     return {
       isInitialized: this.isInitialized,
       keyCount: this.state.size,
@@ -729,7 +1062,14 @@ export class StateManager {
       hasP2PSync: !!this.libp2pProvider,
       docName: this.config.docName,
       topic: this.config.topic,
-      hotBufferCount: this.dataState?.listHotBuffers?.().length || 0
+      hotBufferCount: this.dataState?.listHotBuffers?.().length || 0,
+      localArtifactCacheCount: localArtifactCaches.caches,
+      localArtifactCacheEntryCount: localArtifactCaches.entries,
+      localArtifactCacheResidentBytes: localArtifactCaches.residentBytes,
+      localArtifactCachePendingCount: localArtifactCaches.pending,
+      artifactStoreCount: artifacts.stores,
+      artifactStoredBytes: artifacts.storedBytes,
+      artifactPendingCount: artifacts.pending
     };
   }
 }

@@ -22,6 +22,7 @@ import { generateKeyPair, privateKeyToProtobuf, publicKeyToProtobuf } from '@lib
 import { multiaddr } from '@multiformats/multiaddr';
 import { NetworkScheduler, DEFAULT_SCHEDULER_PROFILE } from './NetworkScheduler.js';
 import { TopologyController } from './TopologyController.js';
+import { PeerConnectionRecovery } from './inference/PeerConnectionRecovery.js';
 import { isDebugOutputEnabled } from '../utils/debugOutput.js';
 
 const DEFAULT_PUBSUB_TOPIC = 'peercompute-state-sync';
@@ -41,6 +42,7 @@ const DEFAULT_RELAY_POST_DIRECT_HOLD_MS = 15000;
 const DEFAULT_RELAY_ELECTION_STICKY_MS = 30000;
 const DEFAULT_DIAL_FAILURE_BACKOFF_BASE_MS = 1500;
 const DEFAULT_DIAL_FAILURE_BACKOFF_MAX_MS = 30000;
+const MAX_PRESENCE_CAPABILITIES_BYTES = 16 * 1024;
 const TRANSIENT_DIAL_FAILURE_PATTERNS = [
   'no_reservation',
   'reservation',
@@ -63,6 +65,18 @@ const debugLog = (...args) => {
 };
 const debugWarn = (...args) => {
   if (DEBUG_P2P) console.warn(...args);
+};
+
+const clonePresenceCapabilities = (capabilities) => {
+  if (!capabilities || typeof capabilities !== 'object' || Array.isArray(capabilities)) return null;
+  try {
+    const json = JSON.stringify(capabilities);
+    if (!json || json.length > MAX_PRESENCE_CAPABILITIES_BYTES) return null;
+    const cloned = JSON.parse(json);
+    return cloned && typeof cloned === 'object' && !Array.isArray(cloned) ? cloned : null;
+  } catch (_) {
+    return null;
+  }
 };
 
 const getByteLength = (data) => {
@@ -630,6 +644,9 @@ export class NetworkManager {
       directoryQueryTimeoutMs: Number.isFinite(config.directoryQueryTimeoutMs)
         ? Math.max(1000, config.directoryQueryTimeoutMs)
         : 5000,
+      presenceCapabilitiesProvider: typeof config.presenceCapabilitiesProvider === 'function'
+        ? config.presenceCapabilitiesProvider
+        : null,
       onPublishError: typeof config.onPublishError === 'function' ? config.onPublishError : null,
       onPublishSuccess: typeof config.onPublishSuccess === 'function' ? config.onPublishSuccess : null
     };
@@ -661,6 +678,16 @@ export class NetworkManager {
     );
 
     this.libp2p = null;
+    this.artifactTransport = null;
+    this.artifactDiscovery = null;
+    this.artifactStarting = null;
+    this.artifactPendingStore = null;
+    this.artifactStopping = null;
+    this.peerInferenceService = null;
+    this.peerInferenceStarting = null;
+    this.peerInferenceOwner = null;
+    this.peerInferenceStopping = null;
+    this._applicationPrivateKey = null;
     this.peerId = null;
     this.isConnected = false;
     this.joinedAt = null;
@@ -952,7 +979,8 @@ export class NetworkManager {
       : webRTC();
     const relayTransport = circuitRelayTransport();
     this.relayTransport = relayTransport;
-    const privateKey = useGossipsub ? await generateKeyPair('Ed25519') : null;
+    const privateKey = await generateKeyPair('Ed25519');
+    this._applicationPrivateKey = privateKey;
 
     const connectionManagerConfig = {
       minConnections: 0,
@@ -1024,7 +1052,7 @@ export class NetworkManager {
       debugWarn('[NetworkManager] Libp2p init failed', err?.message || err);
       throw err;
     }
-    if (privateKey && this.libp2p?.peerId) {
+    if (useGossipsub && privateKey && this.libp2p?.peerId) {
       this.libp2p.peerId.privateKey = privateKeyToProtobuf(privateKey);
       this.libp2p.peerId.publicKey = publicKeyToProtobuf(privateKey.publicKey);
     }
@@ -1037,6 +1065,7 @@ export class NetworkManager {
 
   async connect() {
     if (this.isConnected) return;
+    if (this.peerConnectionRecovery?.closed) this.peerConnectionRecovery = null;
     if (!this.libp2p) {
       throw new Error('NetworkManager not initialized');
     }
@@ -1131,7 +1160,22 @@ export class NetworkManager {
     await this._logLocalAnnounceAddrs('redial-bootstrap');
   }
 
+  _getPeerConnectionRecovery() {
+    return this.peerConnectionRecovery ??= new PeerConnectionRecovery(this);
+  }
+
+  recoverPeerInferenceConnection(peerId, options) {
+    return this._getPeerConnectionRecovery().recover(peerId, options);
+  }
+
+  retainPeerInferenceConnection(connection, options) {
+    return this._getPeerConnectionRecovery().retain(connection, options);
+  }
+
   async disconnect() {
+    await this._stopPeerInferenceService();
+    await this.peerConnectionRecovery?.stop();
+    await this._stopArtifactTransport();
     this.isConnected = false;
     this._stopScheduler();
     this._clearPresenceTimer();
@@ -1164,6 +1208,135 @@ export class NetworkManager {
     this.relayReservationPeers.clear();
     this.firstDirectUpgradeAt = null;
     this.peerId = null;
+  }
+
+  async createArtifactTransport(store, options = {}) {
+    if (this.artifactStopping) await this.artifactStopping;
+    if (this.artifactTransport) {
+      if (this.artifactTransport.store !== store) throw new Error('Artifact transport already owns a different store');
+      if (this.artifactTransport.requiresCleanup) throw new Error('Artifact transport cleanup must succeed before restarting');
+      return this.artifactTransport;
+    }
+    if (this.artifactStarting) {
+      if (this.artifactPendingStore !== store) throw new Error('Artifact transport is starting with a different store');
+      return this.artifactStarting;
+    }
+    if (!this.libp2p || !this._applicationPrivateKey) throw new Error('Initialize NetworkManager before enabling artifacts');
+    this.artifactPendingStore = store;
+    this.artifactStarting = (async () => {
+      const [{ IpfsArtifactTransport }, { ArtifactProviderDiscovery }] = await Promise.all([
+        import('./IpfsArtifactTransport.js'), import('./ArtifactProviderRecord.js')
+      ]);
+      const transport = new IpfsArtifactTransport({
+        store, relayAddresses: this.config.bootstrapPeers || [],
+        rtcConfiguration: { iceServers: [], ...this.config.webrtc?.rtcConfiguration },
+        allowInsecureLocalConnections: this.config.allowLocalDial === true,
+        ...options,
+        store
+      });
+      transport.setPublicBlockCids([]);
+      let discovery;
+      try {
+        await transport.start();
+        discovery = new ArtifactProviderDiscovery(this, transport, store, options.discovery);
+        await discovery.start();
+        this.artifactTransport = transport;
+        this.artifactDiscovery = discovery;
+        return transport;
+      } catch (error) {
+        await discovery?.stop().catch(() => {});
+        try { await transport.stop(); }
+        catch (cleanupError) {
+          this.artifactTransport = transport;
+          this.artifactDiscovery = discovery ?? null;
+          throw new AggregateError([error, cleanupError], 'Artifact transport startup cleanup failed');
+        }
+        throw error;
+      }
+    })();
+    try { return await this.artifactStarting; } finally { this.artifactStarting = null; this.artifactPendingStore = null; }
+  }
+
+  getArtifactTransport() { return this.artifactTransport; }
+
+  getPublishedArtifactCids() { return [...(this.artifactDiscovery?.publicArtifacts ?? [])].slice(0, 128); }
+
+  async createPeerInferenceService(options = {}) {
+    if (this.peerInferenceStopping) await this.peerInferenceStopping;
+    const owner = options.owner ?? Symbol('peer-inference-owner');
+    if (this.peerInferenceService || this.peerInferenceStarting) {
+      if (this.peerInferenceOwner !== owner) throw new Error('Peer inference service already belongs to another owner');
+      if (this.peerInferenceService?.closed) throw new Error('Peer inference service cleanup must succeed before restarting');
+      return this.peerInferenceService ?? this.peerInferenceStarting;
+    }
+    if (!this.libp2p || !this.isConnected) throw new Error('Connect NetworkManager before enabling peer inference');
+    this.peerInferenceOwner = owner;
+    this.peerInferenceStarting = (async () => {
+      const { PeerInferenceService } = await import('./inference/PeerInferenceService.js');
+      const service = new PeerInferenceService(this, { ...options, owner });
+      try { await service.start(); this.peerInferenceService = service; return service; }
+      catch (error) {
+        try { await service.stop(); }
+        catch (cleanupError) {
+          this.peerInferenceService = service;
+          throw new AggregateError([error, cleanupError], 'Peer inference startup cleanup failed');
+        }
+        this.peerInferenceOwner = null; throw error;
+      }
+    })();
+    try { return await this.peerInferenceStarting; }
+    finally { this.peerInferenceStarting = null; }
+  }
+
+  getPeerInferenceService() { return this.peerInferenceService; }
+
+  async releasePeerInferenceService(owner) {
+    if (this.peerInferenceOwner !== owner) return false;
+    await this._stopPeerInferenceService(); return true;
+  }
+
+  async _stopPeerInferenceService() {
+    if (this.peerInferenceStopping) return this.peerInferenceStopping;
+    this.peerInferenceStopping = (async () => {
+      if (this.peerInferenceStarting) await this.peerInferenceStarting.catch(() => {});
+      await this.peerInferenceService?.stop();
+      this.peerInferenceService = null; this.peerInferenceOwner = null;
+    })();
+    try { await this.peerInferenceStopping; } finally { this.peerInferenceStopping = null; }
+  }
+
+  async announceArtifact(cid) {
+    if (!this.artifactDiscovery) throw new Error('Artifact transport is not enabled');
+    return this.artifactDiscovery.announce(cid);
+  }
+
+  async findArtifactProviders(cid, options) {
+    if (!this.artifactDiscovery) throw new Error('Artifact transport is not enabled');
+    return this.artifactDiscovery.find(cid, options);
+  }
+
+  async withdrawArtifact(cid) {
+    if (!this.artifactDiscovery) throw new Error('Artifact transport is not enabled');
+    return this.artifactDiscovery.withdraw(cid);
+  }
+
+  async fetchArtifactBlock(cid, options) {
+    if (!this.artifactDiscovery) throw new Error('Artifact transport is not enabled');
+    return this.artifactDiscovery.fetchBlock(cid, options);
+  }
+
+  async _stopArtifactTransport() {
+    if (this.artifactStopping) return this.artifactStopping;
+    this.artifactStopping = (async () => {
+      if (this.artifactStarting) await this.artifactStarting.catch(() => {});
+      try { await this.artifactDiscovery?.stop(); }
+      finally {
+        this.artifactDiscovery = null;
+        await this.artifactTransport?.stop();
+        this.artifactTransport = null;
+      }
+    })();
+    try { await this.artifactStopping; } finally { this.artifactStopping = null; }
   }
 
   async sendToPeer(peerId, message) {
@@ -1521,6 +1694,7 @@ export class NetworkManager {
 
     this.libp2p.addEventListener('connection:open', (evt) => {
       const conn = evt.detail;
+      this._getPeerConnectionRecovery().observe(conn, { openedNow: true });
       const peerId = conn?.remotePeer?.toString?.();
       if (!peerId) return;
       const now = Date.now();
@@ -1841,6 +2015,7 @@ export class NetworkManager {
       maxConnections: message.maxConnections,
       activeConnections: message.activeConnections,
       relayConnected: message.relayConnected ?? null,
+      capabilities: clonePresenceCapabilities(message.capabilities),
       lastSeen: Date.now(),
       joinedAt,
       via: 'presence'
@@ -2453,6 +2628,7 @@ export class NetworkManager {
     if (Array.isArray(payload.multiaddrs) && payload.multiaddrs.length > 0) {
       this._rememberPeerAddresses(from, payload.multiaddrs);
     }
+    this.peerConnectionRecovery?.notifyRelayReady(from);
     await this._maybeDialPeer(from, 'relay-assist-ready', payload.multiaddrs || null, { force: true });
   }
 
@@ -2908,6 +3084,7 @@ export class NetworkManager {
   _buildPresencePayload() {
     if (!this.peerId) return null;
     const activeConnections = this._getActiveDialedPeerCount();
+    const capabilities = this._getPresenceCapabilities();
     return {
       type: 'presence',
       from: this.peerId,
@@ -2924,8 +3101,22 @@ export class NetworkManager {
       transportMaxConnections: this._getTransportMaxConnections(this.config.maxConnections),
       activeConnections,
       relayConnected: this._hasBootstrapRelayConnections(),
+      ...(capabilities ? { capabilities } : {}),
       multiaddrs: this._getAnnounceAddrs()
     };
+  }
+
+  _getPresenceCapabilities() {
+    if (typeof this.config.presenceCapabilitiesProvider !== 'function') return null;
+    try {
+      return clonePresenceCapabilities(this.config.presenceCapabilitiesProvider({
+        peerId: this.peerId,
+        networkManager: this
+      }));
+    } catch (error) {
+      debugWarn('[NetworkManager] Presence capabilities provider failed', error);
+      return null;
+    }
   }
 
   async _publishPresenceNow() {
@@ -3822,6 +4013,7 @@ export class NetworkManager {
   async _maybeDialPeer(peerId, source, addrs = null, options = {}) {
     if (!this.libp2p || !peerId || peerId === this.peerId) return;
     if (this.bootstrapPeerIds.has(peerId)) return;
+    if (this.peerConnectionRecovery?.pending.has(peerId)) return;
     const active = this._getConnectionsForPeer(peerId);
     const hasDirect = active.some((conn) => isTrulyDirectAddr(conn?.remoteAddr));
     const hasRelay = active.some((conn) => isRelayAddr(conn?.remoteAddr));
@@ -4220,6 +4412,13 @@ export class NetworkManager {
     this._clearRelayPruneTimer(peerId);
     relayed.forEach((conn) => {
       if (conn?.status && conn.status !== 'open') return;
+      // Both endpoints allow a new relay to negotiate a protocol before pruning
+      // it. Only that connection's bounded inference lease extends this grace.
+      const protectedMs = this._getPeerConnectionRecovery().protectionMs(conn);
+      if (protectedMs > 0) {
+        this._scheduleRelayPrune(peerId, protectedMs);
+        return;
+      }
       conn.close?.().catch?.(() => {});
     });
   }
