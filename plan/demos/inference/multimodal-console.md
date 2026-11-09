@@ -427,7 +427,7 @@ highlights this demo alongside the others.
 
 ## Global and Personal conversations — November 8
 
-The standalone console defaults to Global, with a persisted display-name label.
+The standalone console defaults to Personal. Global has a persisted display-name label.
 Each channel owns its draft, target, output mode, transcript and bounded model
 history. Saved agents stay in Personal so private identity/context is never
 incorporated into Global generation. The world management-only console has no
@@ -454,3 +454,11 @@ peers connect through SecretWorkshop and exchange text/images/PCM live and at
 late join without console errors or Personal publication. External production
 builds and trusted internal5189 desktop/390px/320px checks pass; no model is
 downloaded or run during these transport/UI checks. Pages remains unchanged.
+
+### Default revised to Personal — November8 follow-up
+
+Personal now opens first and is the first tab. Explicit Global selection enables
+public prompt/result publication for that conversation; incoming Global events
+remain bound to their own feed even while Personal is selected. Initial Personal
+model context must never be reused by a later Global turn. This supersedes the
+previous default-Global paragraph; peer transport and media behavior are unchanged.

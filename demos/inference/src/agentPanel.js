@@ -728,9 +728,9 @@ export async function mountInferencePanel({ container = document.body, stateMana
           if (current.id === 'personal' && agentIdFor(selectedChat)) void restoreAgentHistory(selectedChat);
           view.prompt.focus();
         } });
-      const initial = channels.getChannel('global'); histories = initial.histories;
+      const initial = channels.getChannel(channels.active); histories = initial.histories;
       view.transcript = initial.view.transcript; view.empty = initial.view.empty;
-      globalFeed = createGlobalChatFeed(initial.view);
+      globalFeed = createGlobalChatFeed(channels.getChannel('global').view);
       globalChat = globalChatFactory({ getNetworkManager: () => runtime?.networkManager,
         onEvent: (event) => alive() ? globalFeed.append(event) : undefined,
         onStatus: (message) => { if (alive()) channels.setStatus(message); } });

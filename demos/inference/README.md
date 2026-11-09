@@ -61,14 +61,15 @@ fit or successful execution of every publisher export.
 
 ## Chat, images and voice
 
-**Global** is the default tab. Set your display name to share your submitted
-prompts, image attachments and generated text, images and spoken replies with
-other connected participants. Audio appears with playback controls; other
-people's messages never start inference or enter your model's context.
+**Personal** is the default tab. It has its own draft and conversation history
+and does not publish to the Global feed. Saved-agent conversations open here.
+Personal can still use a remote inference provider when your routing choice
+allows it.
 
-**Personal** has its own draft and conversation history and does not publish to
-the Global feed. Saved-agent conversations open here. Personal can still use a
-remote inference provider when your routing choice allows it. Names are labels;
+Choose **Global** and set your display name to share your submitted prompts,
+image attachments and generated text, images and spoken replies with other
+connected participants. Audio appears with playback controls; other people's
+messages never start inference or enter your model's context. Names are labels;
 authenticated peer connections identify senders.
 
 Recent Global messages are held in bounded memory and can be fetched from their

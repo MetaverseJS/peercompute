@@ -57,39 +57,45 @@ async function fixture(t, options = {}) {
       name: 'Alice', text: phase === 'prompt' ? 'Hello' : 'A model reply', ...extra });
     window.pixel = (red = 255) => ({ data: new Uint8Array([red, 0, 255 - red, 255]), width: 1, height: 1, channels: 4 });
     window.speech = () => ({ samples: new Float32Array([0, 0.5, -0.5, 2, -2]), sampleRate: 16000 });
+    if (options.openGlobal !== false) channels.select('global');
   }, options);
   return page;
 }
 
-test('Global is initially selected, Personal keeps separate transcript, context and composer drafts', async (t) => {
-  const page = await fixture(t);
-  assert.equal(await page.getByRole('tab', { name: 'Global', exact: true }).getAttribute('aria-selected'), 'true');
-  assert.equal(await page.getByRole('log', { name: 'Global conversation' }).isVisible(), true);
-  assert.equal(await page.getByRole('log', { name: 'Conversation', exact: true, includeHidden: true }).isVisible(), false);
+test('Personal is initially selected, Global requires selection and keeps separate context and composer drafts', async (t) => {
+  const page = await fixture(t, { openGlobal: false });
+  assert.equal(await page.getByRole('tab', { name: 'Personal', exact: true }).getAttribute('aria-selected'), 'true');
+  assert.deepEqual(await page.getByRole('tab').allTextContents(), ['Personal', 'Global']);
+  assert.equal(await page.getByRole('log', { name: 'Global conversation', includeHidden: true }).isVisible(), false);
+  assert.equal(await page.getByRole('log', { name: 'Conversation', exact: true }).isVisible(), true);
+  assert.equal(await page.getByRole('textbox', { name: 'Display name' }).count(), 0);
   const state = await page.evaluate(() => {
-    prompt.value = 'Public draft'; attachment = { name: 'public.png' };
-    channels.getChannel('global').histories.set('mixed', [{ content: 'public context' }]);
-    channels.select('personal'); prompt.value = 'Private draft'; attachment = { name: 'private.png' };
+    prompt.value = 'Private draft'; attachment = { name: 'private.png' };
     channels.getChannel('personal').histories.set('mixed', [{ content: 'private context' }]);
     personalView.transcript.append(Object.assign(document.createElement('p'), { textContent: 'Private response' }));
     channels.select('global');
+    prompt.value = 'Public draft'; attachment = { name: 'public.png' };
+    channels.getChannel('global').histories.set('mixed', [{ content: 'public context' }]);
+    channels.select('personal');
     return { active: channels.active, text: prompt.value, attachment, selections,
       publicContext: channels.getChannel('global').histories.get('mixed'), privateContext: channels.getChannel('personal').histories.get('mixed'),
       publicText: channels.getChannel('global').view.transcript.textContent };
   });
-  assert.equal(state.active, 'global'); assert.equal(state.text, 'Public draft'); assert.equal(state.attachment.name, 'public.png');
+  assert.equal(state.active, 'personal'); assert.equal(state.text, 'Private draft'); assert.equal(state.attachment.name, 'private.png');
   assert.equal(state.publicContext[0].content, 'public context'); assert.equal(state.privateContext[0].content, 'private context');
-  assert(!state.publicText.includes('Private')); assert.deepEqual(state.selections, [['global', 'personal'], ['personal', 'global']]);
-  await page.getByRole('tab', { name: 'Personal', exact: true }).click();
-  assert.equal(await page.getByRole('textbox', { name: 'Message', exact: true }).inputValue(), 'Private draft');
-  assert.equal(await page.getByRole('textbox', { name: 'Display name' }).count(), 0);
+  assert(!state.publicText.includes('Private')); assert.deepEqual(state.selections, [['personal', 'global'], ['global', 'personal']]);
+  await page.getByRole('tab', { name: 'Global', exact: true }).click();
+  assert.equal(await page.getByRole('textbox', { name: 'Message', exact: true }).inputValue(), 'Public draft');
+  assert.equal(await page.getByRole('textbox', { name: 'Display name' }).count(), 1);
 });
 
 test('tab keyboard navigation and busy state preserve an immutable submission origin', async (t) => {
-  const page = await fixture(t);
-  await page.getByRole('tab', { name: 'Global', exact: true }).focus(); await page.keyboard.press('ArrowRight');
-  assert.equal(await page.getByRole('tab', { name: 'Personal', exact: true }).evaluate((element) => element === document.activeElement), true);
+  const page = await fixture(t, { openGlobal: false });
+  await page.getByRole('tab', { name: 'Personal', exact: true }).focus(); await page.keyboard.press('ArrowRight');
+  assert.equal(await page.getByRole('tab', { name: 'Global', exact: true }).evaluate((element) => element === document.activeElement), true);
   await page.keyboard.press('Home');
+  assert.equal(await page.getByRole('tab', { name: 'Personal', exact: true }).getAttribute('aria-selected'), 'true');
+  await page.keyboard.press('End');
   const state = await page.evaluate(() => {
     channels.nameInput.value = 'Frozen author'; const origin = { channel: channels.getChannel(channels.active), name: channels.getName() };
     channels.setBusy(true); const changed = channels.select('personal');

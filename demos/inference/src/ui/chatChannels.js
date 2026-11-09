@@ -48,14 +48,17 @@ export function createChatChannels({ panel, personalView, onSelect, storage,
   const channels = new Map(), tabs = {};
   const instance = crypto.randomUUID();
   panel.insertBefore(element, personalView.transcript);
-  for (const id of ['global', 'personal']) {
+  // Moving Personal into its wrapper must not invalidate Global's insertion
+  // point when Personal is the first tab.
+  const insertionPoint = personalView.transcript.nextSibling;
+  for (const id of ['personal', 'global']) {
     const title = id === 'global' ? 'Global' : 'Personal';
     const tab = node('button', '', title); tab.type = 'button'; tab.id = `pc-chat-${instance}-${id}-tab`;
     tab.setAttribute('role', 'tab');
     const container = node('section', 'pc-chat-channel-panel'); container.id = `pc-chat-${instance}-${id}`;
     container.setAttribute('role', 'tabpanel'); container.setAttribute('aria-labelledby', tab.id);
     tab.setAttribute('aria-controls', container.id);
-    panel.insertBefore(container, personalView.transcript);
+    panel.insertBefore(container, insertionPoint);
     const view = { transcript: views[id].transcript, empty: views[id].empty };
     if (id === 'global') view.transcript.setAttribute('aria-label', 'Global conversation');
     container.append(view.transcript);
@@ -63,7 +66,7 @@ export function createChatChannels({ panel, personalView, onSelect, storage,
       targetKey: 'mixed', generateImage: false, speakReplies: false });
     tabs[id] = tab; tablist.append(tab);
   }
-  let active = 'global', busy = false, disposed = false;
+  let active = 'personal', busy = false, disposed = false;
   function render() {
     for (const [id, channel] of channels) {
       const selected = id === active;
@@ -86,7 +89,7 @@ export function createChatChannels({ panel, personalView, onSelect, storage,
   tablist.onkeydown = (event) => {
     if (busy || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
     event.preventDefault();
-    const next = event.key === 'Home' ? 'global' : event.key === 'End' ? 'personal' : active === 'global' ? 'personal' : 'global';
+    const next = event.key === 'Home' ? 'personal' : event.key === 'End' ? 'global' : active === 'global' ? 'personal' : 'global';
     select(next); tabs[next].focus();
   };
   const saveName = () => {

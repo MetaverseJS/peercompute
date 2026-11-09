@@ -223,20 +223,37 @@ test("Global and Personal isolate context, drafts and agents while sharing named
     await page.goto(origin + "/__global_acceptance");
     await mount();
     phase = "default";
-    assert.equal(await tab("Global").getAttribute("aria-selected"), "true");
+    assert.equal(await tab("Personal").getAttribute("aria-selected"), "true");
+    assert.deepEqual(await page.getByRole("tab").allTextContents(), ["Personal", "Global"]);
     assert.equal(await activeLog().count(), 1);
     assert.equal(await page.evaluate(() => publications.length), 0);
-    check("Default Global, one visible conversation, no unsolicited publication");
+    assert.equal(await page.getByRole("textbox", { name: "Display name", exact: true }).count(), 0);
+    check("Default Personal, one visible conversation, no unsolicited publication");
+    if (evidence) {
+      for (const size of [{ width: 1280, height: 900, name: "desktop" }, { width: 390, height: 844, name: "mobile" }]) {
+        await page.setViewportSize(size);
+        await page.screenshot({ path: evidence + "/personal-default-" + size.name + ".png" });
+      }
+      await page.setViewportSize({ width: 1200, height: 900 });
+    }
+    await send("PERSONAL_SECRET_STARTUP");
+    await activeLog().getByText("Reply to PERSONAL_SECRET_STARTUP", { exact: true }).waitFor();
+    assert.equal(await page.evaluate(() => publications.length), 0);
+    await clickTab("Global");
+    assert.doesNotMatch(await activeLog().textContent(), /PERSONAL_SECRET_STARTUP/);
     const nameInput = page.getByLabel("Display name", { exact: true });
     await nameInput.fill("Acceptance Alice");
     await nameInput.blur();
     await send("Public first");
     await activeLog().getByText("Reply to Public first", { exact: true }).waitFor();
+    assert.doesNotMatch(JSON.stringify(await page.evaluate(() => calls.filter((c) => c.type === "execute").at(-1).messages)), /PERSONAL_SECRET_STARTUP/);
     let events = await page.evaluate(() => publications.map((e) => ({ phase: e.phase, text: e.text, name: e.name, turnId: e.turnId })));
     assert.equal(events.length, 2);
     assert.deepEqual(events.map((e) => e.phase), ["prompt", "result"]);
     assert(events.every((e) => e.name === "Acceptance Alice"));
     assert.equal(events[0].turnId, events[1].turnId);
+    assert.doesNotMatch(await page.evaluate(() => JSON.stringify(publications)), /PERSONAL_SECRET_STARTUP/);
+    check("Startup Personal turn stays private after explicit Global selection");
     check("Named public prompt and result share one turn");
     phase = "privacy";
     await prompt().fill("Unsent global draft");
@@ -350,6 +367,8 @@ test("Global and Personal isolate context, drafts and agents while sharing named
     await page.evaluate(() => panel.dispose());
     assert(await page.evaluate(() => serviceRecords.every((s) => s.closed)));
     await mount();
+    assert.equal(await tab("Personal").getAttribute("aria-selected"), "true");
+    await clickTab("Global");
     assert.equal(await nameInput.inputValue(), "Acceptance Alice");
     check("Name persists across remount and owned Global service closes");
     phase = "shared-default";

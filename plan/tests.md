@@ -4271,7 +4271,7 @@ references (link sets overlap the115total). No runtime/app/build changes.
 - Service: real local Noise/WebSocket peer streams; authenticated author/scope,
   allowlisted public fields, replay/malformed/oversized input rejection, digest
   verified image/PCM frames, bounded fanout/history, late joins and disposal.
-- UI: default Global/display-name persistence, independent Personal drafts and
+- UI: default Personal, explicit Global/display-name persistence, independent drafts and
   model context, no received-event execution, no Personal publication, frozen
   origin during generation/ASR, perturn text/image/audio, no remote autoplay,
   saved-agent Personal history, management-only exclusion and clear/cleanup.
@@ -4289,3 +4289,8 @@ references (link sets overlap the115total). No runtime/app/build changes.
   Actual isolated SecretWorkshop browsers verify live and late-join text/image/PCM
   without Personal publication. Internal TLS preview checks cover desktop,390px
   and320px; no physical GPU/model or microphone-quality claim.
+
+- Follow-up default is Personal: verify the first submitted prompt stays out of
+  public events and later Global context, incoming Global events remain hidden
+  from Personal, and explicit Global still shares named prompts/results. Verify
+  Personal-first tab order and Home/End keyboard navigation.

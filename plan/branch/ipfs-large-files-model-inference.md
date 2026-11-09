@@ -1339,3 +1339,5 @@ and original media are preserved; existing generated Pages assets are unchanged.
 ### November 8 — Global/Personal chat
 
 User requests a default named Global feed for explicitly Global prompts and generated results, alongside an isolated Personal tab. Saved agent contexts remain Personal; local-first/peer model routing is unchanged. Shared history is bounded and available from online authors, not a permanent archive. New reusable chat transport and UI must preserve world management-only mounts. User explicitly holds all GitHub Pages deployments pending further instruction; this work remains local/internal.
+
+- Later November8 steering: Personal is the initial tab, listed first; Global sharing requires selecting Global. Preserve independent drafts/context, named shared output, recent-peer history and the no-Pages-deploy hold.
