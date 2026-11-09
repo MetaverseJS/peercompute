@@ -14,6 +14,13 @@ The root node should exist on a domain secured with SSL enabling all executable 
 
 ## Project Goals:
 
+November8 Android microphone follow-up: reproduce touch-first audio startup and
+repeated-hold lockout; make pending resume/worklet startup cancellable and unlock
+audio on release without starting a late recording. Implemented:54focused cases
+and three consumer builds pass; internal previews updated and checked. Safari/Mac Studio report remains
+unconfirmed without browser/OS versions and exact error; document the macOS Tahoe
+requirement separately. Physical Android and Safari hardware checks remain open.
+
 November8 model-network follow-up: disable image generation without an eligible provider while preserving image draft intent on provider loss; show every peer inference model with host counts in network status. Implemented and published as913af7f4 through main:/docs;247distinct cases, three consumer builds and staging/internal/public visual/network checks pass. All54changed public assets match. The model-demo branch remains available.
 
 November 8 main integration complete: refreshed root/package READMEs for the shipped model, agent and world application; merged feature/ipfs-artifacts-webgpu into main as de73dfd0 while preserving upstream history. Both branches are pushed, and GitHub Pages now publishes the existing verified docs build from main:/docs. README links/commands, all45 release checks, merge ancestry/tree preservation and public file hashes pass. The feature branch remains available.

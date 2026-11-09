@@ -988,7 +988,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     voiceState = state;
     if (!alive()) return;
     if (!signal?.aborted && state.status !== 'idle' && state.status !== 'closed') {
-      setStatus(({ 'requesting-microphone': 'Waiting for microphone permission… keep holding Talk.', recording: 'Listening… release Talk to send.',
+      setStatus(({ 'requesting-microphone': 'Starting microphone… allow access if asked, and keep holding Talk.', recording: 'Listening… release Talk to send.',
         transcribing: 'Transcribing voice…', synthesizing: 'Preparing spoken reply…', playing: 'Speaking…' })[state.status] ?? state.status);
     }
     updateControls();
@@ -1151,7 +1151,15 @@ export async function mountInferencePanel({ container = document.body, stateMana
       if (voiceState.recording) {
         void Promise.resolve().then(() => voiceSession.stop()).catch((error) => { hold.controller.abort(error); showError(error); });
       } else if (!hold.captureReady) {
-        hold.controller.abort(new DOMException('Microphone was not ready. Hold Talk again to record.', 'AbortError'));
+        // Touch activation arrives on pointerup, not pointerdown. Resume here,
+        // inside that gesture, so the next hold can record. This only unlocks
+        // audio; the released hold is cancelled and must never open a late mic.
+        try {
+          void Promise.resolve(voiceAudio?.unlock?.()).catch((error) => {
+            if (alive() && voiceHold === hold) showError(error);
+          });
+        } catch (error) { showError(error); }
+        hold.controller.abort(new DOMException('Microphone startup cancelled. Allow access if asked, then hold Talk again to record.', 'AbortError'));
       }
       if (alive()) updateControls();
     },

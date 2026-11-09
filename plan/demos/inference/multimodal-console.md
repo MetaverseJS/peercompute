@@ -394,3 +394,24 @@ Library-only artifacts are not inference providers.
 Published913af7f4: availability, locality, loss/recovery, directory counts and
 mobile rendering are covered by the247-case accepted regression evidence;
 canonical inference/CubeChat/Earth builds and public UI/network checks pass.
+
+
+## Android microphone startup — November 8
+
+Touch pointerdown is not the activation event that mouse pointerdown is. A fresh
+touch-first session can suspend AudioContext.resume before permission; releasing
+Talk previously aborted capture but stranded the awaited startup, locking later
+attempts. Race resume and worklet loading against capture cancellation. On the
+release gesture, synchronously unlock the audio context before cancelling unready
+capture, so the next hold can start. Never begin microphone capture after release.
+Starting-microphone text covers engine startup and permission separately from
+Listening. Preserve hold-to-record, pointer cancellation and owned track cleanup.
+
+Native touch emulation with real WebAudio reproduces the serialized failure and
+verifies recovery; use no-userGesture CDP inspection to avoid masking it. Physical
+Android confirmation is still needed. Safari WebGPU is a separate version/OS
+question, with no exact error supplied for the reported Mac Studio.
+
+Completed locally:54focused cases, three external builds and staging/internal
+layout plus SecretWorkshop checks pass. Internal5189/5176/5187 previews updated;
+Pages/docs and main remain unchanged. Physical-device confirmation remains open.

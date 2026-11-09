@@ -58,7 +58,9 @@ export function createWorldAudio({ getAudioPose = () => ({}),
     record.abort = () => { record.cancelled = true; void finish(record, null, abortError()); };
     signal?.addEventListener('abort', record.abort, { once: true });
     try {
-      await unlock(); signal?.throwIfAborted();
+      // Mobile autoplay policy can leave resume pending until a later gesture.
+      // Releasing Talk must still settle startup and free the next recording.
+      await Promise.race([unlock(), record.promise]); signal?.throwIfAborted();
       if (record.finished || closed) throw abortError();
       if (!mediaDevices?.getUserMedia) throw new Error('Microphone capture requires HTTPS and browser microphone support');
       // If the permission prompt outlives cancellation, stop its late-granted tracks.
@@ -68,7 +70,7 @@ export function createWorldAudio({ getAudioPose = () => ({}),
       if (record.finished || closed) { for (const track of stream.getTracks()) track.stop(); throw abortError(); }
       record.stream = stream;
       moduleReady ??= context.audioWorklet.addModule(new URL('./captureProcessor.js', import.meta.url)).catch((error) => { moduleReady = null; throw error; });
-      await moduleReady;
+      await Promise.race([moduleReady, record.promise]);
       if (record.finished || closed) throw abortError();
       record.node = new AudioWorkletNodeImpl(context, 'world-microphone-capture', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
       record.node.port.onmessage = ({ data }) => { void finish(record, data); };

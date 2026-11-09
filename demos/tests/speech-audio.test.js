@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createWorldAudio } from '../shared/agents/speech/WorldAudio.js';
-function setup({ permission } = {}) {
+function setup({ permission, resume, module } = {}) {
   const nodes = [], sources = [], positions = []; let stopped = 0, context;
   const node = () => ({ connect() {}, disconnect() {} });
   class Context {
-    constructor() { context = this; this.destination = {}; this.listener = { setPosition(...p) { positions.push(p); }, setOrientation() {} }; this.audioWorklet = { addModule: async () => {} }; }
-    async resume() {} async close() { this.closed = true; }
+    constructor() { context = this; this.destination = {}; this.listener = { setPosition(...p) { positions.push(p); }, setOrientation() {} }; this.audioWorklet = { addModule: async () => module }; }
+    async resume() { return resume?.(); } async close() { this.closed = true; }
     createMediaStreamSource() { return node(); }
     createGain() { return { ...node(), gain: {} }; }
     createBuffer(channels, length, rate) { return { copyToChannel() {}, length, rate }; }
@@ -42,4 +42,33 @@ test('failed worklet releases microphone ownership and rejects the stopped recor
   const f = setup(); await f.audio.startRecording(); f.nodes[0].onprocessorerror();
   await assert.rejects(f.audio.stopRecording(), /processing failed/);
   assert.equal(f.stopped, 1); await f.audio.dispose();
+});
+
+test('cancel settles suspended audio startup and a later hold can record', { timeout: 3000 }, async () => {
+  let release, attempts = 0;
+  const pending = new Promise((resolve) => { release = resolve; });
+  const f = setup({ resume: () => ++attempts === 1 ? pending : Promise.resolve() });
+  const starting = f.audio.startRecording();
+  await f.audio.cancelRecording();
+  await assert.rejects(starting, { name: 'AbortError' });
+  assert.equal(f.nodes.length, 0); assert.equal(f.stopped, 0);
+  await f.audio.startRecording();
+  release(); await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(f.nodes.length, 1, 'late resume must not start the cancelled capture');
+  assert.equal((await f.audio.stopRecording()).samples.length, 1600);
+  assert.equal(f.stopped, 1); await f.audio.dispose();
+});
+
+test('abort settles a pending worklet load, releases tracks, and never captures after release', { timeout: 3000 }, async () => {
+  let ready;
+  const f = setup({ module: new Promise((resolve) => { ready = resolve; }) });
+  const controller = new AbortController(), starting = f.audio.startRecording({ signal: controller.signal });
+  await new Promise((resolve) => setImmediate(resolve));
+  controller.abort();
+  await assert.rejects(starting, { name: 'AbortError' });
+  assert.equal(f.stopped, 1); assert.equal(f.nodes.length, 0);
+  ready(); await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(f.nodes.length, 0);
+  await f.audio.startRecording(); await f.audio.stopRecording();
+  assert.equal(f.stopped, 2); await f.audio.dispose();
 });

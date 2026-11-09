@@ -291,6 +291,12 @@ enables NVIDIA Vulkan f16 for driver615.71 and newer; actual browser feature
 detection remains authoritative. The test override bypasses a driver correctness
 gate and is not applied to the user's browser. No FP32 fallback is implemented.
 
+Safari introduced WebGPU in Safari 26, but its macOS implementation requires
+macOS Tahoe 26 or later; installing Safari 26 on Sequoia alone does not enable it
+([WebKit requirements](https://bugs.webkit.org/show_bug.cgi?id=299237#c3)).
+Mac Studio hardware alone therefore does not establish support. Model runtime
+features, worker support and memory limits still need to pass the actual probes.
+
 The previously validated workaround is the Chrome startup switch
 `--enable-dawn-features=vulkan_enable_f16_on_nvidia`. There is no dedicated
 `chrome://flags` toggle for it. It must be applied to the

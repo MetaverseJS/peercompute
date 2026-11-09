@@ -4196,3 +4196,25 @@ An initial Earth harness check raced the scheduled network refresh; preserve its
 receipt and use bounded12s snapshot convergence. Timed retry waits169/2/2ms.
 No application changes were needed. Final evidence-only documentation preserves
 docs tree8e3e3e85063ebf32a9c6734245908c2ca84b6749.
+
+
+## Android microphone startup — November 8
+
+Use fresh documents and raw CDP evaluation with userGesture:false for touch-first
+audio tests; ordinary Playwright evaluate can grant activation and hide the bug.
+Exercise real WorldAudio/VoiceSession/panel with synthetic input and controlled
+inference. First release before capture must cancel, unblock controls and unlock
+audio; the next hold must record, and its release must dispatch exactly one ASR
+and conversation request. Test default and enforced autoplay policies. Unit cases
+cover pending resume, pending worklet, late permission, track cleanup and retry.
+No microphone or inference may start after a cancelled hold. Retain normal mouse,
+keyboard, cancellation and disposal suites. Browser emulation does not qualify a
+physical Android microphone or Safari WebGPU.
+
+Acceptance:54distinct cases pass (33audio/session/hold/console,19world speech,
+2actual-panel touch policies). The external six-case real-WebAudio probe also
+passes delayed permission/worklet. Removing release-time unlock in an external
+negative control fails the actual-panel test as expected; owned cleanup is bounded.
+All three consumer builds pass. Staging and exact internal previews pass across
+desktop/phone/narrow layouts and authenticated SecretWorkshop connections. These
+checks use software rendering and synthetic audio, with no model downloads.
