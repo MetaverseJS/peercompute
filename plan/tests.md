@@ -4264,3 +4264,28 @@ references (link sets overlap the115total). No runtime/app/build changes.
   demos/tests/demo-release.test.js and git diff whitespace. No new runtime tests
   are needed for this documentation-only change. Actual results are in log.md.
 - [Full status, scientific limits and next gates](reports/2026-11-08-library-status-audit.md).
+
+
+## Global inference chat — November 8 acceptance
+
+- Service: real local Noise/WebSocket peer streams; authenticated author/scope,
+  allowlisted public fields, replay/malformed/oversized input rejection, digest
+  verified image/PCM frames, bounded fanout/history, late joins and disposal.
+- UI: default Global/display-name persistence, independent Personal drafts and
+  model context, no received-event execution, no Personal publication, frozen
+  origin during generation/ASR, perturn text/image/audio, no remote autoplay,
+  saved-agent Personal history, management-only exclusion and clear/cleanup.
+- Browser fixtures use actual DOM/IndexedDB/VoiceSession with controlled model
+  execution and audio; they do not qualify a model, microphone or physical GPU.
+  Inspect desktop/mobile screenshots and console. Build consumers into external
+  temporary output directories only; docs/Pages must remain unchanged.
+- Commands and concrete results are recorded in plan/log.md; existing failure
+  baselines from the whole-library audit remain separate.
+
+- `npm run test:global-chat` is the focused28-case command. Final wider evidence:
+  75transport/room/inference cases,137existing UI cases,41shared cases and17release
+  checks pass (overlap with the focused command is intentional). A73-author
+  regression verifies rotating discovery/publish batches and pure status reads.
+  Actual isolated SecretWorkshop browsers verify live and late-join text/image/PCM
+  without Personal publication. Internal TLS preview checks cover desktop,390px
+  and320px; no physical GPU/model or microphone-quality claim.

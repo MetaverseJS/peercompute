@@ -12,7 +12,7 @@ window.addEventListener('pagehide', (event) => {
 async function startConsole() {
   try {
     window.inferencePanel = await mountInferencePanel({ container: document.querySelector('#panel'),
-      autoConnect: true, pwaInstallController });
+      autoConnect: true, enableGlobalChat: true, pwaInstallController });
   } catch (error) {
     const message = document.createElement('p'); message.textContent = error.message;
     document.querySelector('#panel').append(message);

@@ -11,6 +11,9 @@ import { createAgentChatSession } from './agents/agentChatSession.js';
 import { supportsTask as modelSupportsTask, hasInferenceCapacity } from '../../../peercompute/src/peercompute/inference/InferenceRouter.js';
 import { styleLanguagePrompt } from '../../../peercompute/src/peercompute/inference/promptStyle.js';
 import { bindHoldToRecord } from '../../shared/inference/HoldToRecord.js';
+import { createChatChannels } from './ui/chatChannels.js';
+import { createGlobalChatFeed } from './ui/globalChatFeed.js';
+import { createGlobalChatSession } from './ui/globalChatSession.js';
 import './panel.css';
 
 const defaultVoiceSession = async (options) => (await import('../../shared/inference/VoiceSession.js')).createVoiceSession(options);
@@ -18,8 +21,8 @@ const defaultAudio = async () => (await import('../../shared/agents/speech/World
 
 /** Shared chat surface; the facade owns storage, inference and networking. */
 export async function mountInferencePanel({ container = document.body, stateManager, computeManager,
-  networkManager, getContext, actions, runtimeBaseUrl, onClose, onRequestClose, autoConnect = false, managementOnly = false,
-  runtimeFactory = createInferenceRuntime, refreshIntervalMs = 5000, pwaInstallController,
+  networkManager, getContext, actions, runtimeBaseUrl, onClose, onRequestClose, autoConnect = false, managementOnly = false, enableGlobalChat = false,
+  runtimeFactory = createInferenceRuntime, globalChatFactory = createGlobalChatSession, refreshIntervalMs = 5000, pwaInstallController,
   voiceSessionFactory = defaultVoiceSession, audioFactory = defaultAudio, navigate = (url) => location.assign(url) } = {}) {
   const view = createPanelView(container);
   if (managementOnly) {
@@ -37,7 +40,8 @@ export async function mountInferencePanel({ container = document.body, stateMana
   }
   const generatedImages = createGeneratedImageRenderer(view.panel);
   const directTranscript = document.createElement('div'); directTranscript.hidden = true; view.panel.append(directTranscript);
-  const encoder = new TextEncoder(), histories = new Map(), preferenceTasks = new Set();
+  const encoder = new TextEncoder(), preferenceTasks = new Set();
+  let histories = new Map(), channels, globalFeed, globalChat, activeGlobalTurn;
   let runtime, operation, operationDone, requestId, attachment, imageController, imageLoading = false;
   let disposed = false, closing = false, disposingPromise, refreshPromise, refreshController, connectController, connectPromise, connectionFailure;
   let storedPromise, storedController, storedReadSignal, loadingStoredModel = false, deletingStoredModels = false;
@@ -114,11 +118,13 @@ export async function mountInferencePanel({ container = document.body, stateMana
     if (modelBrowser?.isStoredOpen()) view.storedStatus.textContent = message;
   };
   const scrollTranscript = () => {
+    if (channels?.active === 'global') { view.transcript.scrollTop = view.transcript.scrollHeight; return; }
     while (view.transcript.children.length > 24 || encoder.encode(view.transcript.textContent).byteLength > 128 * 1024) view.transcript.firstElementChild?.remove();
     generatedImages.prune();
     view.transcript.scrollTop = view.transcript.scrollHeight;
   };
   function updateControls() {
+    channels?.setBusy(!!operation || imageLoading || imageTransferPending || historyLoading || !!openingAgents);
     const target = selectedTarget();
     view.prompt.placeholder = view.generateImage.checked ? 'Describe an image…' : 'Message…';
     view.browse.disabled = startupReading || !!operation;
@@ -160,7 +166,9 @@ export async function mountInferencePanel({ container = document.body, stateMana
       ` No compatible ${view.generateImage.checked ? 'image-generation' : attachment ? 'vision' : 'text'} model is available for this choice. Load one or choose another target.`;
     else if (!attachmentConflict && target && !target.reason && !hasCapacity(target, requestTask())) view.modeStatus.textContent +=
       ' Compatible models have no available queue capacity. You can keep drafting; sending resumes when capacity is available.';
-    view.empty.textContent = target?.agentId && target.reason ? `${target.name}: ${target.reason}`
+    view.empty.textContent = channels?.active === 'global'
+      ? 'Global prompts and results are shared with everyone connected. Choose Personal for a separate conversation.'
+      : target?.agentId && target.reason ? `${target.name}: ${target.reason}`
       : supportsTask(target, requestTask()) ? view.generateImage.checked
         ? 'Describe an image to get started. Use ⚙ for chat options.'
         : 'Ask a question to get started. Use ⚙ for chat options.'
@@ -207,9 +215,12 @@ export async function mountInferencePanel({ container = document.body, stateMana
     if (!view.compatibility.open) view.compatibility.showModal();
   }
   function renderLists() {
-    const selected = view.target.value || 'mixed';
+    // The other channel may not have this target in its native select at all.
+    // Keep the channel's explicit choice through rebuilding options.
+    const selected = selectedChat || 'mixed';
     const previousTarget = targets.find((entry) => entry.key === selected);
-    const previousLabel = view.target.selectedOptions[0]?.textContent;
+    const previousLabel = view.target.value === selected ? view.target.selectedOptions[0]?.textContent
+      : previousTarget?.name ?? selected;
     sources = runtime.listModelSources();
     if (hubSelection && !sources.some((entry) => entry.key === hubSelection.key)) sources.push(hubSelection);
     targets = runtime.listInferenceTargets();
@@ -218,7 +229,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     for (const [key, label] of [['mixed', 'Mixed · local first, then peers'], ['local-only', 'Local only · automatic']]) {
       const option = document.createElement('option'); option.value = key; option.textContent = label; view.target.append(option);
     }
-    for (const head of agentHeads) {
+    for (const head of channels?.active === 'global' ? [] : agentHeads) {
       const option = document.createElement('option'); option.value = `agent:${head.agentId}`;
       option.textContent = `Agent · ${String(head.identity?.name ?? 'Unnamed agent').slice(0, 120)}`
         + (agentBlockReason(head) ? ` (${head.activity?.status || head.status || 'unavailable'})` : '');
@@ -246,7 +257,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     const id = agentIdFor(selectedChat), previous = agentHeads.find((entry) => entry.agentId === id);
     agentHeads = agentChat.list(); renderLists();
     const current = agentHeads.find((entry) => entry.agentId === id);
-    if (id && !operation && !historyLoading && previous?.revision !== current?.revision) void restoreAgentHistory(selectedChat);
+    if (id && channels?.active !== 'global' && !operation && !historyLoading && previous?.revision !== current?.revision) void restoreAgentHistory(selectedChat);
   }
   async function getAgentChat() {
     if (!agentChat && !agentsStarting) agentsStarting = (async () => {
@@ -263,7 +274,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     const version = ++historyVersion, id = agentIdFor(key);
     if (!id) return;
     historyLoading = true; updateControls();
-    const current = () => alive() && !controller.signal.aborted && version === historyVersion && selectedChat === key;
+    const current = () => alive() && channels?.active !== 'global' && !controller.signal.aborted && version === historyVersion && selectedChat === key;
     historyPromise = (async () => {
       try {
         const bridge = await getAgentChat();
@@ -310,6 +321,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
   }
   async function selectChat(key) {
     if (!alive() || operation) return;
+    if (agentIdFor(key) && channels?.active === 'global') channels.select('personal');
     const before = selectedChat, wasAgent = !!agentIdFor(before), isAgent = !!agentIdFor(key);
     if (before === key) { if (isAgent) await restoreAgentHistory(key); updateControls(); return; }
     historyController?.abort(); historyVersion++; historyLoading = false;
@@ -385,6 +397,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
   }
   async function refreshPeers() {
     if (!alive() || refreshPromise) return refreshPromise;
+    void globalChat?.refresh();
     const controller = new AbortController(); refreshController = controller;
     refreshPromise = (async () => {
       try {
@@ -698,6 +711,30 @@ export async function mountInferencePanel({ container = document.body, stateMana
   }
   try {
     runtime = await runtimeFactory({ stateManager, computeManager, networkManager, runtimeBaseUrl });
+    if (enableGlobalChat && !managementOnly) {
+      channels = createChatChannels({ panel: view.panel, personalView: { transcript: view.transcript, empty: view.empty },
+        onSelect({ previous, current }) {
+          imageInput?.cancel(); imageController?.abort(); historyController?.abort(); historyVersion++; historyLoading = false;
+          previous.draft = { text: view.prompt.value, attachment }; previous.targetKey = selectedChat;
+          previous.generateImage = view.generateImage.checked; previous.speakReplies = view.speakReplies.checked;
+          histories = current.histories; view.transcript = current.view.transcript; view.empty = current.view.empty;
+          selectedChat = current.targetKey; view.target.value = selectedChat;
+          view.prompt.value = current.draft.text; attachment = current.draft.attachment;
+          view.attachment.hidden = !attachment;
+          if (attachment) { view.attachmentImage.src = attachment.preview; view.attachmentName.textContent = attachment.name; }
+          else view.attachmentImage.removeAttribute('src');
+          view.imageFile.value = ''; view.generateImage.checked = current.generateImage; view.speakReplies.checked = current.speakReplies;
+          invalidateActions(); renderLists(); scrollTranscript();
+          if (current.id === 'personal' && agentIdFor(selectedChat)) void restoreAgentHistory(selectedChat);
+          view.prompt.focus();
+        } });
+      const initial = channels.getChannel('global'); histories = initial.histories;
+      view.transcript = initial.view.transcript; view.empty = initial.view.empty;
+      globalFeed = createGlobalChatFeed(initial.view);
+      globalChat = globalChatFactory({ getNetworkManager: () => runtime?.networkManager,
+        onEvent: (event) => alive() ? globalFeed.append(event) : undefined,
+        onStatus: (message) => { if (alive()) channels.setStatus(message); } });
+    }
     const preferences = runtime.getPreferences(); view.sharing.checked = preferences.sharing; view.hosting.checked = preferences.hostInference;
     syncMemoryBudgets();
     modelBrowser = createModelBrowser({ container: view.panel,
@@ -929,8 +966,13 @@ export async function mountInferencePanel({ container = document.body, stateMana
   });
   view.clearChat.onclick = () => {
     if (!alive() || operation || agentIdFor(view.target.value)) return;
-    histories.clear(); invalidateActions(); view.transcript.replaceChildren(view.empty); generatedImages.prune();
-    setStatus(view.configurationStatus.textContent = 'Conversation cleared. Ready for a new message.', { quiet: true });
+    histories.clear(); invalidateActions();
+    if (channels?.active === 'global') globalFeed.clear();
+    else view.transcript.replaceChildren(view.empty);
+    generatedImages.prune();
+    setStatus(view.configurationStatus.textContent = channels?.active === 'global'
+      ? 'Global view and your model context cleared here. Messages already shared remain on other peers.'
+      : 'Conversation cleared. Ready for a new message.', { quiet: true });
   };
   view.connect.onclick = () => run(async (signal) => {
     if (view.relay.value.trim()) await runtime.connect(view.relay.value.trim(), { signal });
@@ -1003,7 +1045,14 @@ export async function mountInferencePanel({ container = document.body, stateMana
             target = target === 'local-only' || policy === 'local-only' ? 'local-only' : 'mixed';
           }
           const id = input.requestId ?? crypto.randomUUID(); requestId = id;
-          try { return await runtime.generate(target, { ...input, requestId: id }); }
+          try {
+            const result = await runtime.generate(target, { ...input, requestId: id });
+            if (activeGlobalTurn && input.task === 'text-to-speech' && !input.signal?.aborted) {
+              globalChat.publish({ ...activeGlobalTurn, phase: 'audio', text: '', part: activeGlobalTurn.part++,
+                audio: { samples: result.audio, sampleRate: result.sampleRate } });
+            }
+            return result;
+          }
           finally { if (requestId === id) requestId = null; }
         } });
         return voiceSession;
@@ -1016,7 +1065,9 @@ export async function mountInferencePanel({ container = document.body, stateMana
     const label = routeLabel(event.route ?? (event.type === 'routing' || event.type === 'route' ? event : null));
     if (label) setStatus(`${voiceState.status === 'transcribing' ? 'Speech recognition' : 'Speech'} · ${label}`);
   }
-  async function submit(signal, { text = view.prompt.value.trim(), preserveDraft = false } = {}) {
+  async function submit(signal, { text = view.prompt.value.trim(), preserveDraft = false, origin } = {}) {
+      origin ??= { channel: channels?.active ?? 'personal', name: channels?.getName() ?? 'Guest' };
+      const publicTurn = origin.channel === 'global' ? { turnId: crypto.randomUUID(), name: origin.name, part: 0 } : null;
       const target = selectedTarget(), targetKey = target?.key ?? view.target.value;
       const agentId = target?.agentId;
       const task = requestTask(), createsImage = task === 'text-to-image', selectedImage = attachment;
@@ -1025,29 +1076,34 @@ export async function mountInferencePanel({ container = document.body, stateMana
       if (!hasCapacity(target, task)) throw new Error('Compatible models have no available queue capacity. Wait for capacity or choose another target.');
       if (selectedImage && !target.modalities?.includes('image')) throw new Error('This model accepts text only. Remove the image or choose an image model.');
       invalidateActions();
+      if (publicTurn && agentId) throw new Error('Saved agents belong to Personal chat.');
       if (agentId) {
         const bridge = await getAgentChat(), head = await bridge.get(agentId, { signal });
         const reason = agentBlockReason(head); if (reason) throw new Error(reason);
       }
-      const context = createsImage || agentId ? null : await getContext?.({ includeImage: false });
+      const context = createsImage || agentId || publicTurn ? null : await getContext?.({ includeImage: false });
       const contextText = (typeof context === 'string' ? context : context?.text ?? '').slice(0, 16000);
-      const instructions = createsImage || agentId ? '' : String(actions?.instructions ?? '').slice(0, 8000);
+      const instructions = createsImage || agentId || publicTurn ? '' : String(actions?.instructions ?? '').slice(0, 8000);
       // Requests carry one image. Replaying an earlier image's text-only answer
       // can make a small VLM describe that image instead of the current pixels.
       // Keep the visible transcript; replace model context only after success.
       const history = selectedImage || agentId ? [] : histories.get(targetKey) ?? [], message = text || 'Describe this image.';
       const messages = createsImage ? undefined : [...(contextText || instructions ? [{ role: 'system', content: contextText + '\n' + instructions }] : []),
         ...history.slice(-6), { role: 'user', content: styleLanguagePrompt(message, { task, concise: view.beConcise.checked }) }];
-      appendMessage(view, 'user', text, { image: selectedImage?.preview });
-      const reply = appendMessage(view, 'assistant', '', { targetName: target.automatic ? 'Choosing model…' : target.name });
+      if (publicTurn) globalChat.publish({ ...publicTurn, phase: 'prompt', text: message, image: selectedImage?.image });
+      else appendMessage(view, 'user', text, { image: selectedImage?.preview });
+      const reply = publicTurn ? document.createElement('p')
+        : appendMessage(view, 'assistant', '', { targetName: target.automatic ? 'Choosing model…' : target.name });
+      let modelName = target.name;
       const showRoute = (route) => {
         const label = routeLabel(route); if (!label || !alive() || signal.aborted) return;
-        reply.parentElement.querySelector('.pc-chat-speaker').textContent = agentId ? `Agent · ${target.name} · ${label}` : label;
-        reply.parentElement.dataset.routeTarget = String(route.target ?? '').slice(0, 256);
+        modelName = label;
+        if (!publicTurn) reply.parentElement.querySelector('.pc-chat-speaker').textContent = agentId ? `Agent · ${target.name} · ${label}` : label;
+        if (!publicTurn) reply.parentElement.dataset.routeTarget = String(route.target ?? '').slice(0, 256);
         setStatus(`Using ${label}`);
       };
       if (!preserveDraft) view.prompt.value = ''; clearAttachment(); scrollTranscript();
-      requestId = agentId ? null : crypto.randomUUID(); activeAgentId = agentId; voiceAgentId = agentId;
+      requestId = agentId ? null : crypto.randomUUID(); activeAgentId = agentId; voiceAgentId = agentId; activeGlobalTurn = publicTurn;
       setStatus('Choosing a compatible model…');
       try {
         const callbacks = {
@@ -1067,7 +1123,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
         showRoute(result.route);
         if (createsImage) {
           if (!target.outputModalities?.includes('image')) throw new Error('This target did not advertise image output');
-          await generatedImages.append(reply, result.image, { signal, prompt: text });
+          if (!publicTurn) await generatedImages.append(reply, result.image, { signal, prompt: text });
         } else {
           if (typeof result.text !== 'string') throw new Error('Model returned an invalid text response');
           reply.textContent = result.text;
@@ -1078,6 +1134,8 @@ export async function mountInferencePanel({ container = document.body, stateMana
             if (histories.size > 8) histories.delete(histories.keys().next().value);
           }
         }
+        if (publicTurn) globalChat.publish({ ...publicTurn, phase: 'result', modelName,
+          text: createsImage ? '' : result.text, ...(createsImage ? { image: result.image } : {}) });
         setStatus('Ready.', { quiet: true });
         if (!createsImage) {
           const notes = [];
@@ -1086,11 +1144,11 @@ export async function mountInferencePanel({ container = document.body, stateMana
           if (result.contextTruncated) notes.push('Older conversation turns were omitted to fit the model’s context.');
           if (notes.length) {
             const note = document.createElement('p'); note.className = 'pc-inference-note'; note.textContent = notes.join(' ');
-            reply.after(note); setStatus(notes.join(' '));
+            if (!publicTurn) reply.after(note); setStatus(notes.join(' '));
           }
         }
         try {
-          for (const proposal of (createsImage ? [] : actions?.propose(result.text) ?? []).slice(0, 4)) {
+          for (const proposal of (createsImage || publicTurn ? [] : actions?.propose(result.text) ?? []).slice(0, 4)) {
             const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Apply: ' + proposal.label;
             button.onclick = async () => { button.disabled = true; try { await proposal.apply(); } catch (error) { showError(error); } };
             view.proposed.append(button);
@@ -1109,8 +1167,13 @@ export async function mountInferencePanel({ container = document.body, stateMana
           }
         }
         return result;
-      } catch (error) { if (!reply.textContent) reply.textContent = error.name === 'AbortError' ? 'Cancelled.' : 'Request failed.'; throw error; }
-      finally { requestId = null; activeAgentId = null; voiceAgentId = null; scrollTranscript(); }
+      } catch (error) {
+        const text = error.name === 'AbortError' ? 'Cancelled.' : 'Request failed.';
+        if (publicTurn) globalChat.publish({ ...publicTurn, phase: 'error', text });
+        else if (!reply.textContent) reply.textContent = text;
+        throw error;
+      }
+      finally { requestId = null; activeAgentId = null; voiceAgentId = null; activeGlobalTurn = null; scrollTranscript(); }
   }
   async function send() {
     if (view.send.disabled) return;
@@ -1120,6 +1183,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
   const holdRecorder = bindHoldToRecord({ button: view.talk,
     onStart() {
       if (!alive() || view.talk.disabled || operation) return;
+      const origin = { channel: channels?.active ?? 'personal', name: channels?.getName() ?? 'Guest' };
       const hold = { controller: new AbortController(), released: false }; voiceHold = hold;
       void run(async (operationSignal) => {
         const signal = AbortSignal.any([operationSignal, hold.controller.signal]);
@@ -1139,7 +1203,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
         }
         signal.throwIfAborted();
         if (!result.text?.trim()) throw new Error('No speech recognized. Try again or type a message.');
-        await submit(signal, { text: result.text.trim(), preserveDraft: true });
+        await submit(signal, { text: result.text.trim(), preserveDraft: true, origin });
       }).finally(() => {
         if (voiceHold !== hold) return;
         voiceHold = null; holdRecorder.reset(); if (alive()) updateControls();
@@ -1172,6 +1236,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
   });
   view.agents.onclick = () => {
     if (!alive() || view.agents.disabled) return;
+    channels?.select('personal');
     openingAgents = (async () => {
       try {
         const controller = await runtime.getAgentController();
@@ -1262,6 +1327,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
       invalidateActions(); await operationDone; await refreshPromise; await connectPromise; await storedPromise; await startupReady; await Promise.allSettled([...preferenceTasks]);
       await openingAgents; await agentsStarting?.catch(() => {}); await historyPromise; await agentConsole?.dispose();
       await voiceStarting; await voiceSession?.dispose();
+      await globalChat?.close(); globalFeed?.dispose(); channels?.dispose();
       await runtime.dispose(); disposed = true; modelBrowser?.dispose(); histories.clear(); attachment = null; view.panel.remove(); onClose?.();
     })();
     try { await disposingPromise; }

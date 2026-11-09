@@ -423,3 +423,34 @@ The dedicated demo guide is demos/inference/README.md. Keep its startup, library
 chat/routing/voice controls, storage/browser constraints and links to model/agent
 plans there. The project root README introduces the PeerCompute library and only
 highlights this demo alongside the others.
+
+
+## Global and Personal conversations — November 8
+
+The standalone console defaults to Global, with a persisted display-name label.
+Each channel owns its draft, target, output mode, transcript and bounded model
+history. Saved agents stay in Personal so private identity/context is never
+incorporated into Global generation. The world management-only console has no
+Global service, tabs or composer. While a turn or attachment/history operation
+is active, tab/name controls are frozen; voice captures its origin before ASR.
+
+An independent GlobalInferenceChatService uses authenticated encrypted streams
+and matching network game/room/topology scope. Events contain only named public
+prompts/results/errors and bounded RGBA/PCM media. They never execute models.
+Late arrivals request unseen recent events directly from each online author; no
+unsigned third-party forwarding or permanent storage. A bounded session outbox
+lets local rendering/generation proceed offline. Delivery failures do not retry
+inference. Remote audio uses explicit playback controls, never autoplay.
+
+Separate UI modules manage channels and public turn presentation; generated
+image ownership and shared inference image/audio frame helpers are reused.
+Personal inference routing may use peers, but no Personal event enters Global.
+No GitHub Pages builds, generated docs updates, pushes or deployments are allowed
+for this slice pending the user's further instruction.
+
+Acceptance: default/name/channel privacy, voice/media, persistent-agent context,
+shared/world exclusion and lifecycle browser tests pass. Actual isolated browser
+peers connect through SecretWorkshop and exchange text/images/PCM live and at
+late join without console errors or Personal publication. External production
+builds and trusted internal5189 desktop/390px/320px checks pass; no model is
+downloaded or run during these transport/UI checks. Pages remains unchanged.

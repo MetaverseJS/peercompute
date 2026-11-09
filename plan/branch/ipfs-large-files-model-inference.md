@@ -1334,3 +1334,8 @@ User authorized pushing the reviewed library documentation to main. Commits
 173270e1/853c986c were selectively integrated as c640b991/b844a376 and pushed;
 the separate microphone runtime fix stays on this feature branch. Reviewed docs
 and original media are preserved; existing generated Pages assets are unchanged.
+
+
+### November 8 — Global/Personal chat
+
+User requests a default named Global feed for explicitly Global prompts and generated results, alongside an isolated Personal tab. Saved agent contexts remain Personal; local-first/peer model routing is unchanged. Shared history is bounded and available from online authors, not a permanent archive. New reusable chat transport and UI must preserve world management-only mounts. User explicitly holds all GitHub Pages deployments pending further instruction; this work remains local/internal.

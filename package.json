@@ -119,6 +119,7 @@
     "test:gguf:browser": "node peercompute/tests/runtime/gguf-inference.mjs",
     "test:peer-inference": "node --test peercompute/tests/unit/networkManager.inferenceRecovery.test.js peercompute/tests/unit/peerInferenceRecovery.test.js peercompute/tests/unit/peerInferenceNetwork.test.js peercompute/tests/unit/peerInferenceAudio.test.js peercompute/tests/unit/inferenceRouter.test.js peercompute/tests/unit/modelConsoleRuntime.test.js peercompute/tests/unit/residentModelRegistry.test.js",
     "test:peer-inference:browser": "node peercompute/tests/runtime/peer-inference.mjs",
+    "test:global-chat": "node --test demos/tests/global-inference-chat.test.js demos/tests/global-chat-ui.test.js demos/tests/inference-global-integration.test.js",
     "test:inference:ui": "node --test demos/tests/prompt-style.test.js demos/tests/hold-to-record.test.js demos/tests/network-status.test.js demos/tests/inference-panel.test.js demos/tests/chat-image-input.test.js demos/tests/console-voice.test.js demos/tests/voice-session.test.js demos/tests/unified-chat.test.js",
     "test:agent-layer": "node --test peercompute/tests/unit/agentRecordStore.test.js peercompute/tests/unit/agentRecordStoreBrowser.test.js peercompute/tests/unit/agentRouter.test.js peercompute/tests/unit/agentModelAdapter.test.js peercompute/tests/unit/agentRuntime.test.js demos/tests/agent-console.test.js demos/tests/agent-chat-session.test.js",
     "test:agent-layer:browser": "node demos/tests/agent-browser.mjs",

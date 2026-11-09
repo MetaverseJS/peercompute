@@ -61,6 +61,22 @@ fit or successful execution of every publisher export.
 
 ## Chat, images and voice
 
+**Global** is the default tab. Set your display name to share your submitted
+prompts, image attachments and generated text, images and spoken replies with
+other connected participants. Audio appears with playback controls; other
+people's messages never start inference or enter your model's context.
+
+**Personal** has its own draft and conversation history and does not publish to
+the Global feed. Saved-agent conversations open here. Personal can still use a
+remote inference provider when your routing choice allows it. Names are labels;
+authenticated peer connections identify senders.
+
+Recent Global messages are held in bounded memory and can be fetched from their
+original authors while they remain online. This is not a permanent archive.
+Offline Global turns wait in a bounded outbox for a connection; the status line
+reports pending or incomplete sharing. Clearing Global clears your view and
+context, not messages already received by other participants.
+
 Type in **Message** and press Enter to send; Shift+Enter inserts a newline. Use
 **+**, paste or drop an image to attach its bytes. Same-origin blob images work;
 arbitrary external image URLs are not fetched. Attaching a new image starts fresh
@@ -75,7 +91,8 @@ Responses identify the model and provider actually used.
 
 The image glyph enables **Generate image**; describe the result in the message
 box. It is disabled when the selected route has no capable image provider.
-Generated previews are not automatically shared. The ear glyph enables
+Generated previews are shared in Global and stay out of the public feed in
+Personal. The ear glyph enables
 **Speak replies**. These two output modes are mutually exclusive.
 
 Hold **Talk** to record, then release to transcribe and send. Keyboard users hold
@@ -177,6 +194,7 @@ Run these from the repository root:
 npm run test:artifacts
 npm run test:inference
 npm run test:inference:ui
+npm run test:global-chat
 npm run test:peer-inference
 npm run test:agent-layer
 ```

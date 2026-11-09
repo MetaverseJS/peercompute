@@ -1879,3 +1879,11 @@ ONNX package ceiling, and missing discovery of related browser conversions as
 near-term opportunities. See the [support priorities proposal](branch/ipfs-large-files-model-inference.md#november-5--broader-model-support-priorities-proposal).
 No additional runtime support is claimed; AGENT-01 ordering is unchanged pending
 the user's implementation direction.
+
+
+### November 8 — default Global inference conversation
+
+- Default Global tab with persisted display name, shared prompts/text/image/audio results, authenticated bounded recent history from online authors. Personal keeps separate draft/context and saved agent conversations. Receiving a Global message never executes a model.
+- Reuse modular channel/feed UI and an independent authenticated chat transport; embedded world model-management mounts do not join Global. Test privacy, media bounds, cancellation, late joins, voice and consumer builds. No GitHub Pages build/deploy or push until newly authorized.
+
+- Global/Personal implementation and validation complete locally: named public text/image/audio, isolated Personal agent context and drafts, rotating bounded discovery, actual SecretWorkshop peer exchange and late joins, controlled UI regressions, and external consumer builds. Internal preview is updated; public Pages and origin remain unchanged.
