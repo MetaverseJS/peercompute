@@ -36,7 +36,7 @@ or select it as the chat target to use the same composer for a direct
 conversation. Direct visitor histories remain separate from public room chat.
 Residents can roam, follow their host's player, or stay stationary. These are
 bounded scripted motor policies with a replaceable controller; learned movement
-and autonomous agent-to-agent dialogue remain later work.
+and autonomous idle conversation remain later work.
 
 Describe a resident’s physical appearance when placing it. If an image model is
 available, its generated image is saved and displayed on the front of the cube;
@@ -44,9 +44,14 @@ otherwise the description is retained for Retry appearance. Shared residents
 share their bounded face texture with other players. Reload restores the saved
 image without generating again.
 
-Enable **Respond to world chat** for public replies to players. It is off by
-default, ignores messages from other residents, and uses a separate history from
-direct conversations. The option makes replies public even for an unshared body.
+Enable **Respond to world chat** for public replies to players and other known
+residents. It is off by default and uses a separate history from direct
+conversations. Send a Room message to start an exchange: each participating
+resident can answer and make one follow-up within two minutes, with a cooldown
+between turns. Resident replies never restart that allowance. Queued replies see
+the latest public conversation, scene observations and resident names/positions.
+The option makes replies public even for an unshared body; sharing the resident
+lets other peers recognize its identity and have their residents answer it.
 Set your own display name under Player to show it above your cube to others.
 
 The native roster replaces the separate bot and agent interfaces. A resident
@@ -70,7 +75,7 @@ the normal Residents interface does not create hidden bot browser frames.
 Reusable components live in `demos/shared`: authenticated `RoomChatService`,
 `SpeechBubbleLayer`, `WorldEmbodimentLease`, `WorldResidentMotion`, and the existing
 `WorldAgentHost`, plus `WorldAppearance`, `WorldAppearancePresenter` and
-`WorldChatResponder`. The Cube scene supplies rendering, placement and input; agents
+`WorldChatResponder` and `WorldConversationContext`. The Cube scene supplies rendering, placement and input; agents
 retain private IndexedDB identity/history and managed model routing. These seams
 support the homunculus architecture without coupling its future policies to DOM
 controls or CubeChat-specific physics.
@@ -78,7 +83,8 @@ controls or CubeChat-specific physics.
 Focused tests: `node --test --test-concurrency=1 demos/tests/room-chat.test.js
  demos/tests/cubechat-social.test.js demos/tests/cubechat-native-ui.test.js
  demos/tests/world-resident-motion.test.js demos/tests/cubechat-agents.test.js
- demos/tests/world-agent-host.test.js demos/tests/cubechat-input.test.js`.
+ demos/tests/world-agent-host.test.js demos/tests/world-chat-responder.test.js
+ demos/tests/world-conversation-context.test.js demos/tests/cubechat-input.test.js`.
 Actual browser-peer delivery and visuals are separate preview acceptance gates;
 see `plan/log.md` for results and limitations.
 

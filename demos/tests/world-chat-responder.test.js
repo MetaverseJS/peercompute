@@ -4,7 +4,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { createWorldChatResponder, WORLD_CHAT_LIMITS as L } from '../shared/agents/WorldChatResponder.js';
 
 const body = (id = 'ada', extra = {}) => ({ key: `local:${id}`, agentId: id, name: id, local: true,
-  respondToWorldChat: true, status: 'idle', ...extra });
+  ownerPeerId: 'local-owner', respondToWorldChat: true, status: 'idle', ...extra });
 const message = (id = 'one', extra = {}) => ({ id, peerId: 'authenticated-peer', name: 'Human', text: `Public ${id}`, ...extra });
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
 const until = async check => { for (let i = 0; i < 100; i++) { if (check()) return; await delay(2); } throw Error('Condition did not settle'); };
@@ -20,7 +20,7 @@ function fixture(t, options = {}) {
 test('only opted local residents answer humans; public context contains no private metadata and duplicates never run', async t => {
   const f = fixture(t); f.bodies.push(body('remote', { local: false }), body('disabled', { respondToWorldChat: false }), body('paused', { status: 'paused' }));
   const human = message('one', { privateHistory: 'never copy', instruction: 'not an instruction' });
-  assert.equal(f.responder.receive({ ...human, agentId: 'other-agent' }).reason, 'resident-message');
+  assert.equal(f.responder.receive({ ...human, agentId: 'invalid agent' }).reason, 'invalid-message');
   assert.equal(f.responder.receive(human).queued, 1);
   assert.equal(f.responder.receive(human).reason, 'duplicate');
   await until(() => f.publications.length === 1);
@@ -45,7 +45,7 @@ test('one global response and one latest pending message per bounded resident, w
   gate.resolve(); await until(() => !f.responder.getStatus().active && !f.responder.getStatus().pending);
   assert.equal(calls.length, L.residents + 1);
   assert(calls.slice(1).every(call => call.id === 'queued99'));
-  assert.equal(publications.length, calls.length);
+  assert.equal(publications.length, calls.length - 1, 'Superseded in-flight human answer is never published');
 });
 
 test('unavailable queues without dispatch; availability changes from its own response do not cancel it', async t => {
@@ -166,4 +166,159 @@ test('failed publication is reported once without retry and malformed resident e
   const h = fixture(t, { getResidents: async () => { throw Error('Invalid async callback'); } });
   assert.equal(h.responder.receive(message()).queued, 0); await delay(5);
   assert.equal(h.replies.length, 0);
+});
+
+test('resident messages are remembered without opening a discussion or triggering inference', async t => {
+  const f = fixture(t);
+  assert.deepEqual(f.responder.receive(message('resident-only', { agentId: 'bert' })), { accepted: true, queued: 0 });
+  await delay(5); assert.equal(f.replies.length, 0);
+  assert.equal(f.responder.getStatus().contextMessages, 1);
+  f.responder.receive(message('human'));
+  await until(() => f.publications.length === 1);
+  assert.deepEqual(f.replies[0][2].context.messages.map(item => item.id), ['resident-only', 'human']);
+  assert.equal(f.replies[0][2].context.messages[0].agentId, 'bert');
+});
+
+test('two local residents hear current room replies, keep the pending human question, and stop after bounded turns', async t => {
+  let f, next = 0; const calls = [], outputs = [];
+  f = fixture(t, {
+    respond: async (resident, incoming, { context }) => {
+      calls.push({ resident: resident.agentId, incoming, context });
+      return `${resident.name} contribution ${calls.length}`;
+    },
+    publish: async output => {
+      outputs.push(output);
+      f.responder.receive({ ...output, peerId: 'local-owner', id: `echo${++next}` });
+    },
+  });
+  f.bodies.push(body('bert'));
+  f.responder.receive(message('human'));
+  await until(() => calls.length === 4 && !f.responder.getStatus().active);
+  assert.deepEqual(calls.map(call => call.resident), ['ada', 'bert', 'ada', 'bert']);
+  assert.equal(calls[0].incoming.agentId, undefined);
+  assert.equal(calls[1].incoming.agentId, undefined, 'Ada must not replace Bert’s pending human question');
+  assert.deepEqual(calls[1].context.messages.map(item => item.text), ['Public human', 'ada contribution 1']);
+  assert.equal(calls[2].incoming.agentId, 'bert'); assert.equal(calls[3].incoming.agentId, 'ada');
+  assert.equal(calls[3].context.messages.at(-1).text, 'ada contribution 3');
+  assert.equal(outputs.length, 4); assert.equal(f.responder.getStatus().pending, 0);
+  f.responder.receive(message('later-resident', { agentId: 'visitor-agent', text: 'Keep talking' }));
+  await delay(5); assert.equal(calls.length, 4, 'Resident messages never renew spent budgets');
+});
+
+test('two independent peer responders exchange resident turns without an endless network echo', async t => {
+  const peers = [], calls = [], outputs = [];
+  for (const owner of ['alpha', 'beta']) {
+    const f = fixture(t, {
+      respond: async (resident, incoming, { context }) => {
+        calls.push({ owner, incoming, context }); return `${resident.name} reply ${calls.length}`;
+      },
+      publish: async output => {
+        const event = { ...output, peerId: owner, id: `network${outputs.length}` }; outputs.push(event);
+        for (const peer of peers) {
+          peer.responder.receive(event);
+          assert.equal(peer.responder.receive(event).reason, 'duplicate');
+        }
+      },
+    });
+    f.bodies = [body(owner, { ownerPeerId: owner })]; peers.push(f);
+  }
+  for (const peer of peers) peer.responder.receive(message('human'));
+  await until(() => outputs.length === 4 && peers.every(peer => !peer.responder.getStatus().active));
+  for (const owner of ['alpha', 'beta']) {
+    const own = calls.filter(call => call.owner === owner), other = owner === 'alpha' ? 'beta' : 'alpha';
+    assert.equal(own.length, 2); assert.equal(own[1].incoming.agentId, other);
+    assert(own[1].context.messages.some(item => item.agentId === other && item.peerId === other));
+  }
+  assert(peers.every(peer => peer.responder.getStatus().pending === 0));
+  await delay(10); assert.equal(outputs.length, 4);
+});
+
+test('self echoes are retained but do not respond; matching agent IDs on another owner are distinct speakers', async t => {
+  const f = fixture(t);
+  f.responder.receive(message('human')); await until(() => f.publications.length === 1);
+  const echo = message('self', { agentId: 'ada', peerId: 'local-owner' });
+  assert.equal(f.responder.receive(echo).queued, 0);
+  assert.equal(f.responder.getStatus().contextMessages, 2);
+  assert.equal(f.responder.receive({ ...echo, id: 'remote', peerId: 'different-owner' }).queued, 1);
+  await until(() => f.replies.length === 2 && !f.responder.getStatus().active);
+  assert.equal(f.replies[1][1].peerId, 'different-owner');
+});
+
+test('repeated automatic follow-ups are suppressed without retry, while identical human answers remain valid', async t => {
+  const f = fixture(t);
+  f.responder.receive(message('human')); await until(() => f.publications.length === 1);
+  f.responder.receive(message('resident', { agentId: 'bert' }));
+  await until(() => f.statuses.some(status => status.reason === 'repeated-followup'));
+  assert.equal(f.replies.length, 2); assert.equal(f.publications.length, 1);
+  f.responder.sync(); await delay(5); assert.equal(f.replies.length, 2);
+  f.responder.receive(message('next-human')); await until(() => f.publications.length === 2);
+  assert.equal(f.publications[0][0].text, f.publications[1][0].text);
+});
+
+test('joining and re-enabling residents do not replenish this discussion’s response budgets', async t => {
+  const f = fixture(t);
+  f.responder.receive(message('human')); await until(() => f.publications.length === 1);
+  f.responder.receive(message('resident1', { agentId: 'bert' }));
+  await until(() => f.replies.length === 2 && !f.responder.getStatus().active);
+  f.bodies[0].respondToWorldChat = false; f.responder.sync();
+  f.bodies[0].respondToWorldChat = true; f.bodies.push(body('newcomer')); f.responder.sync();
+  assert.equal(f.responder.receive(message('resident2', { agentId: 'bert' })).queued, 0);
+  await delay(5); assert.equal(f.replies.length, 2);
+  f.bodies = []; f.responder.sync();
+  f.bodies = [body(), body('newcomer')]; f.responder.sync();
+  assert.equal(f.responder.receive(message('resident-after-rejoin', { agentId: 'bert' })).queued, 0);
+  f.responder.receive(message('next-human'));
+  await until(() => f.replies.length === 4 && !f.responder.getStatus().active);
+  assert.deepEqual(f.replies.slice(2).map(args => args[0].agentId).sort(), ['ada', 'newcomer']);
+});
+
+test('discussion expiry permits a slow initial human answer and its queued human recipients, but no follow-ups', async t => {
+  const gate = deferred(); let firstSignal;
+  const f = fixture(t, { discussionMs: 25, respond: async (resident, incoming, { signal }) => {
+    f.replies.push([resident, incoming]);
+    if (f.replies.length === 1) { firstSignal = signal; await gate.promise; }
+    return `Answer ${f.replies.length}`;
+  } });
+  f.bodies.push(body('bert'));
+  f.responder.receive(message('human')); await until(() => firstSignal);
+  await delay(35); assert.equal(firstSignal.aborted, false, 'Slow human inference must not time out with the social window');
+  assert.equal(f.responder.receive(message('late-resident', { agentId: 'visitor-agent' })).queued, 0);
+  gate.resolve(); await until(() => f.publications.length === 2 && !f.responder.getStatus().active);
+  assert.deepEqual(f.replies.map(args => args[1].id), ['human', 'human']);
+  assert.equal(f.responder.receive(message('later-resident', { agentId: 'visitor-agent' })).queued, 0);
+});
+
+test('expiry suppresses a late automatic follow-up without aborting or releasing dispatched inference', async t => {
+  const gate = deferred(); let followupSignal;
+  const f = fixture(t, { discussionMs: 35, respond: async (_resident, incoming, { signal }) => {
+    if (incoming.agentId) { followupSignal = signal; await gate.promise; }
+    return incoming.id;
+  } });
+  f.responder.receive(message('human')); await until(() => f.publications.length === 1);
+  f.responder.receive(message('resident', { agentId: 'bert' })); await until(() => followupSignal);
+  await delay(45);
+  assert.equal(followupSignal.aborted, false, 'Aborting inference would persistently pause AgentRuntime');
+  assert(f.responder.getStatus().active);
+  gate.resolve(); await until(() => !f.responder.getStatus().active);
+  assert.equal(f.publications.length, 1);
+  assert.equal(f.statuses.some(status => status.status === 'error'), false);
+});
+
+test('a superseded active turn cannot publish late or spend the new human discussion’s budget', async t => {
+  const gate = deferred(), calls = []; let staleSignal;
+  const f = fixture(t, { respond: async (_resident, incoming, { signal }) => {
+    calls.push(incoming.id);
+    if (incoming.id === 'old') { staleSignal = signal; await gate.promise; }
+    return incoming.id;
+  } });
+  f.responder.receive(message('old')); await until(() => staleSignal);
+  f.responder.receive(message('new')); assert.equal(staleSignal.aborted, false, 'Supersession must not pause the persisted agent');
+  assert.equal(calls.length, 1, 'Superseded inference keeps the single slot until cleanup');
+  gate.resolve(); await until(() => f.publications.length === 1 && !f.responder.getStatus().active);
+  assert.equal(f.publications[0][0].text, 'new');
+  f.responder.receive(message('followup', { agentId: 'bert' }));
+  await until(() => f.publications.length === 2 && !f.responder.getStatus().active);
+  assert.deepEqual(calls, ['old', 'new', 'followup']);
+  assert.equal(f.responder.receive(message('exhausted', { agentId: 'bert' })).queued, 0);
+  assert.equal(f.statuses.some(status => status.status === 'error'), false);
 });

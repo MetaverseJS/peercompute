@@ -6,6 +6,7 @@ import { WorldEmbodimentLease } from './WorldEmbodimentLease.js';
 import { createWorldAppearance } from './WorldAppearance.js';
 import { createWorldAppearancePresenter } from './WorldAppearancePresenter.js';
 import { createWorldChatResponder } from './WorldChatResponder.js';
+import { worldConversationContext, worldReplyPrompt, worldResidentName, worldPublicMessage } from './WorldConversationContext.js';
 import { routeAgentTask } from '../../../peercompute/src/peercompute/agents/AgentRouter.js';
 export { speechChunks } from '../../../peercompute/src/peercompute/inference/speech/chunks.js';
 
@@ -138,6 +139,9 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
         pendingPublicCaptions.delete(pendingKey);
         setBody({ ...normalizePublicAgent(entry), key, ownerPeerId: entry.ownerPeerId, local: false,
           ...(pending && pending.expires > Date.now() ? { caption: pending.text } : {}) }); current.add(key);
+        if (pending?.message && pending.expires > Date.now()) {
+          worldChat?.receive({ ...pending.message, name: worldResidentName(entry.name) });
+        }
       }
       catch { /* Wrong-world positions never enter the renderer. */ }
     }
@@ -247,13 +251,22 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     if (disposed) return;
     if (input?.agentId) {
       const body = list().find(entry => entry.agentId === input.agentId && entry.ownerPeerId === input.peerId);
-      if (body) caption(body.key, input.text);
+      if (body) {
+        caption(body.key, input.text);
+        return worldChat?.receive({ ...input, name: worldResidentName(body.name) });
+      }
       else if (typeof input.text === 'string' && encoder.encode(input.text).length <= 2048) {
         // The first reply can arrive before the next bounded body-directory poll.
         // Keep it only for that authenticated owner and expire it promptly.
+        // It cannot trigger inference until the body directory confirms them.
         for (const [key, value] of pendingPublicCaptions) if (value.expires <= Date.now()) pendingPublicCaptions.delete(key);
         const key = JSON.stringify([input.peerId, input.agentId]);
-        pendingPublicCaptions.delete(key); pendingPublicCaptions.set(key, { text: input.text, expires: Date.now() + 15000 });
+        let message;
+        try { message = worldPublicMessage(input); } catch { /* Legacy caption-only event. */ }
+        const previous = pendingPublicCaptions.get(key);
+        // A replay must not prolong the admission window or replace its text.
+        if (message && previous?.message?.id === message.id) return;
+        pendingPublicCaptions.delete(key); pendingPublicCaptions.set(key, { text: input.text, message, expires: Date.now() + 15000 });
         while (pendingPublicCaptions.size > 48) pendingPublicCaptions.delete(pendingPublicCaptions.keys().next().value);
       }
       return;
@@ -270,14 +283,21 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
       // message must not pause an otherwise healthy resident when hosts leave.
       const candidates = await agents.inference.listCandidates({ mode: head.policy.inferenceMode,
         task: 'text-generation', signal: combined, refresh: true });
+      combined.throwIfAborted();
       routeAgentTask({ task: 'text-generation', inferenceMode: head.policy.inferenceMode, candidates });
-      const messages = [...context.messages];
-      const observations = { kind: context.kind, world: worldLabel, position: liveBody(body).position, messages };
-      while (encoder.encode(JSON.stringify(observations)).length > 8192 && messages.length) messages.shift();
+      const currentHead = await agents.get(body.agentId);
+      combined.throwIfAborted();
+      const ownedBody = bodies.get(body.key);
+      if (!ownedBody?.local || !bindingOf(currentHead)?.respondToWorldChat || currentHead.recoveryRequired || currentHead.status === 'paused') {
+        throw new Error('World-chat responses are disabled');
+      }
+      const currentBody = liveBody({ ...ownedBody, name: currentHead.identity.name });
+      const observations = worldConversationContext({ world: worldLabel, self: currentBody,
+        scene: adapter.getContext?.(currentBody) ?? {}, residents: list(), messages: context.messages, incoming });
       const result = await agents.run(body.agentId, { task: 'text-generation', signal: combined,
         conversationId: await worldConversationId(worldId, 'public-room'),
-        prompt: `Reply briefly to this public world-chat message from ${incoming.name}. Your response will be visible to everyone in this room.\n${incoming.text}`,
-        worldContext: JSON.stringify(observations), maxNewTokens: 256 });
+        prompt: worldReplyPrompt({ world: worldLabel, self: currentBody, incoming }),
+        worldContext: observations, maxNewTokens: 256 });
       combined.throwIfAborted();
       const answer = result.result.text.trim().replaceAll('\0', '');
       if (encoder.encode(answer).length <= 2048) return answer;

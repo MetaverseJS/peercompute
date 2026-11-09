@@ -257,3 +257,25 @@ Config/setup/loading replace that dialog's content, preserve library state and
 never create a second composer. Closing awaits panel cleanup before releasing
 world input; failed cleanup remains owned and retryable. Other embeddings retain
 their existing lifecycle unless they explicitly opt into panel-owned windows.
+
+
+## November 8 — current public dialogue follow-up
+
+The earlier resident-message exclusion is replaced with bounded replies to
+authenticated resident speakers. Each human world-chat message opens a short
+discussion window; participating local residents can answer once and follow up
+once, with their existing cooldown. Resident messages cannot renew the budget.
+Context is taken at dispatch and contains current public turns, the world
+adapter's observations and a bounded roster. Direct conversations stay isolated.
+This addresses stale public snapshots and permits resident exchanges without
+introducing an idle autonomous loop or changing the RoomChat v1 wire format.
+Actual user-reported model repetition remains a separate observational limit
+until reproduced; deterministic tests qualify context, not semantic diversity.
+
+Implementation and integration checks pass:148standardworld-agent cases plus
+separate core/transport/social regressions, and two isolated real browser peers.
+Newer human messages and expired social turns suppress obsolete output after
+inference settles; they do not abort the managed agent and leave it paused.
+Provider preflight rechecks ownership; directory races retain a bounded message
+for15seconds and admit it only after owner verification. CubeChat's internal
+preview is updated, while GitHub Pages remains on hold.

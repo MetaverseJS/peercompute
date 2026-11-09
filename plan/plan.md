@@ -1889,3 +1889,12 @@ the user's implementation direction.
 - Global/Personal implementation and validation complete locally: named public text/image/audio, isolated Personal agent context and drafts, rotating bounded discovery, actual SecretWorkshop peer exchange and late joins, controlled UI regressions, and external consumer builds. Internal preview is updated; public Pages and origin remain unchanged.
 
 - November8 follow-up supersedes the initial default: **Personal** opens first; **Global** is an explicit choice for public prompts/results. The Global feed remains separate even before its tab is first opened. Public Pages deployment remains on hold.
+
+
+### November 8 — CubeChat resident conversation correction
+
+- Investigate repeated replies in the live world; initial read-only observation found only one of the reported two residents and no public traffic. Repetition is not yet reproduced.
+- Fix verified public-context defects: queued replies must see earlier resident turns, and known authenticated residents can address one another. Keep Respond to world chat opt-in, private-history isolation, fresh scene/roster grounding and bounded human-started follow-ups.
+- Verify two-resident context/ownership/cancellation and actual isolated browser peers. Shared components build toward the homunculus architecture; no learned movement or autonomous idle conversation is claimed. Internal preview only; GitHub Pages remains on hold.
+
+- Resident dialogue correction complete locally:148standardworld-agent,68social/input and71core/transport checks pass; CubeChat/Earth external builds pass. Two actual isolated peer browsers verify bounded resident exchange, fresh context, private-history isolation, room change and mobile/desktop layout. InternalCubeChat5176 is updated; publicPages remains unchanged. Original real-model repetition was not reproduced during the read-only live observation; model output quality remains distinct from these integration checks.

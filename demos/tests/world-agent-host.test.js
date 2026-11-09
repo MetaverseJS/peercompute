@@ -51,7 +51,7 @@ async function boot() {
         beforeOpen: () => calls.push('input-release'),
         adapter: { upsert: (body) => bodies.set(body.key, body), remove: (key) => bodies.delete(key), normalizePosition: (value) => [...value],
           getSpawnPosition: () => [1, 3, 5], getPosition: (key) => bodies.get(key)?.position,
-          getContext: (body) => ({ position: [...body.position] }), focus: () => {},
+          getContext: (body) => ({ position: [...body.position], ...window.fixtureScene }), focus: () => {},
           setAppearance: (key, image) => calls.push(['face', key, image]),
           getAudioPose: () => ({}), dispose: () => { calls.push('adapter-dispose'); bodies.clear(); } },
         uiFactory: (callbacks) => { window.callbacks = callbacks; return {
@@ -64,10 +64,19 @@ async function boot() {
           if (options.networkManager) throw new Error('Room networking must not restrict global model discovery');
           const store = new AgentRecordStore({ name: 'world-fixture' }); await store.open();
           const imageCandidate = { ...candidate, task: 'text-to-image', runtime: 'onnx-diffusion', outputModalities: ['image'] };
-          const agents = new AgentRuntime({ store, inference: { listCandidates: async ({ task }) => window.noTextProvider && task === 'text-generation'
-            ? [] : [task === 'text-to-image' ? imageCandidate : candidate],
+          const agents = new AgentRuntime({ store, inference: { listCandidates: async ({ task }) => {
+            if (window.waitPreflight && task === 'text-generation') await new Promise(resolve => { window.finishPreflight = resolve; });
+            return window.noTextProvider && task === 'text-generation' ? [] : [task === 'text-to-image' ? imageCandidate : candidate];
+          },
             generate: async (_candidate, input, { signal }) => {
               calls.push(['generate', input]);
+              if (window.holdWorldGeneration && input.prompt.includes('public world-chat')) {
+                await new Promise((resolve, reject) => {
+                  const aborted = () => reject(signal.reason);
+                  window.finishWorldGeneration = () => { signal.removeEventListener('abort', aborted); resolve(); };
+                  signal.addEventListener('abort', aborted, { once: true });
+                });
+              }
               if (input.prompt === 'wait' || window.waitWorld && input.prompt.includes('public world-chat')) {
                 await new Promise((resolve) => signal.addEventListener('abort', resolve, { once: true }));
                 await new Promise((resolve) => { window.finishCleanup = resolve; });
@@ -341,6 +350,129 @@ test('revoking world-chat opt-in waits for active cleanup and never publishes th
     finishCleanup(); await disabling; return { disabled, published: calls.filter(c => c[0] === 'public-message'), saved: (await agents.list())[0] };
   });
   assert.equal(result.disabled, true); assert.equal(result.saved.embodiments[0].respondToWorldChat, false); assert.deepEqual(result.published, []);
+});
+
+test('verified resident messages reach the responder with fresh scene, public roster and isolated history', async t => {
+  const page = await fixture(t);
+  const first = await page.evaluate(async () => {
+    await host.spawn({ name: 'Ada', respondToWorldChat: true });
+    await host.send({ text: 'My private secret must stay private' });
+    const key = host.getStatus().selectedKey;
+    networkOptions.onDirectory([{ ownerPeerId: 'remote-owner', agentId: 'bert', name: 'Bert',
+      position: [4, 3, 2], color: '#aabbcc', status: 'idle' }]);
+    window.fixtureScene = { theme: 'forest', nearbyPlayers: 3 };
+    host.receiveWorldMessage({ peerId: 'human', id: 'hello', name: 'Human', text: 'What do you see here?' });
+    return { key };
+  });
+  await page.waitForFunction(() => calls.some(call => call[0] === 'public-message'));
+  const rejected = await page.evaluate(() => {
+    const input = { id: 'spoof', peerId: 'impostor', agentId: 'bert', name: 'Bert', text: 'Forged owner request' };
+    return { result: host.receiveWorldMessage(input), before: calls.filter(call => call[0] === 'generate').length };
+  });
+  assert.equal(rejected.result, undefined);
+  const accepted = await page.evaluate(({ key }) => {
+    bodyMap.get(key).position = [21, 3, -9]; window.fixtureScene = { theme: 'moon', nearbyPlayers: 4 };
+    window.fixtureAnswer = 'The moon terrain makes your idea interesting, Bert.';
+    return host.receiveWorldMessage({ peerId: 'remote-owner', id: 'bert-reply', agentId: 'bert', name: 'Impersonated Ada',
+      text: 'I think we should look at the moon terrain.' });
+  }, first);
+  assert.equal(accepted.accepted, true); assert.equal(accepted.queued, 1);
+  await page.waitForFunction(() => calls.filter(call => call[0] === 'public-message').length === 2, null, { timeout: 15000 });
+  const result = await page.evaluate(() => ({ generated: calls.filter(call => call[0] === 'generate').map(call => call[1]),
+    body: host.getStatus().bodies.find(body => body.agentId === 'bert') }));
+  assert.equal(result.generated.length, rejected.before + 1);
+  const followup = result.generated.at(-1), observations = JSON.parse(followup.worldContext);
+  assert.equal(observations.scene.theme, 'moon'); assert.equal(observations.scene.nearbyPlayers, 4);
+  assert.deepEqual(observations.self.position, [21, 3, -9]); assert.equal(observations.self.name, 'Ada');
+  assert.deepEqual(observations.residents.map(body => body.name), ['Bert']);
+  assert(observations.messages.some(message => message.agentId === 'bert' && message.id === 'bert-reply'));
+  assert(observations.messages.some(message => message.agentId === observations.self.agentId));
+  assert(followup.messages.some(message => message.role === 'system' && message.content.includes('bert-reply')
+    && message.content.includes('Fixture response (not real inference).')));
+  assert.match(followup.prompt, /from resident "Bert"/);
+  assert.equal(JSON.stringify(followup).includes('Impersonated Ada'), false);
+  assert.equal(JSON.stringify(followup).includes('My private secret'), false);
+  assert.equal(JSON.stringify(followup).includes('Forged owner request'), false);
+  assert.equal(result.body.caption, 'I think we should look at the moon terrain.');
+});
+
+test('resident messages before directory discovery require a matching owner, expire without replay renewal and forward once', async t => {
+  const page = await fixture(t);
+  await page.evaluate(async () => {
+    await host.spawn({ name: 'Ada', respondToWorldChat: true });
+    host.receiveWorldMessage({ peerId: 'human', id: 'hello', name: 'Human', text: 'Say hello to the room.' });
+  });
+  await page.waitForFunction(() => calls.some(call => call[0] === 'public-message'));
+  const admission = await page.evaluate(() => {
+    const originalNow = Date.now, base = Date.now(); let clock = base;
+    const body = { ownerPeerId: 'late-owner', agentId: 'late-agent', name: 'Late resident',
+      position: [4, 3, 2], color: '#aabbcc', status: 'idle' };
+    const message = { peerId: 'late-owner', agentId: 'late-agent', id: 'expired', name: 'Untrusted alias', text: 'Old statement' };
+    let expiredCaption;
+    try {
+      Date.now = () => clock;
+      host.receiveWorldMessage(message);
+      clock = base + 14000; host.receiveWorldMessage({ ...message, text: 'Changed replay' });
+      clock = base + 16000; networkOptions.onDirectory([body]);
+      expiredCaption = host.getStatus().bodies.find(entry => entry.agentId === 'late-agent').caption;
+      networkOptions.onDirectory([]);
+    } finally { Date.now = originalNow; }
+    window.fixtureAnswer = 'Welcome, late resident. I can hear your new statement.';
+    host.receiveWorldMessage({ ...message, id: 'current', text: 'My current statement' });
+    networkOptions.onDirectory([{ ...body, ownerPeerId: 'wrong-owner' }]);
+    const wrongCaption = host.getStatus().bodies.find(entry => entry.agentId === 'late-agent').caption;
+    networkOptions.onDirectory([body]);
+    const rightCaption = host.getStatus().bodies.find(entry => entry.agentId === 'late-agent').caption;
+    networkOptions.onDirectory([]); networkOptions.onDirectory([body]);
+    const replay = host.receiveWorldMessage({ ...message, id: 'current', text: 'My current statement' });
+    return { expiredCaption, wrongCaption, rightCaption, replay };
+  });
+  assert.equal(admission.expiredCaption, undefined); assert.equal(admission.wrongCaption, undefined);
+  assert.equal(admission.rightCaption, 'My current statement'); assert.equal(admission.replay.reason, 'duplicate');
+  await page.waitForFunction(() => calls.filter(call => call[0] === 'public-message').length === 2, null, { timeout: 15000 });
+  const generated = await page.evaluate(() => calls.filter(call => call[0] === 'generate').map(call => call[1]));
+  assert.equal(generated.length, 2);
+  assert.match(generated[1].prompt, /from resident "Late resident"/);
+  assert.equal(/Old statement|Changed replay|Untrusted alias/.test(JSON.stringify(generated[1])), false);
+});
+
+test('removing a body while model availability is pending cannot create a persisted inference turn', async t => {
+  const page = await fixture(t);
+  const id = await page.evaluate(async () => {
+    await host.spawn({ name: 'Ada', respondToWorldChat: true }); window.waitPreflight = true;
+    host.receiveWorldMessage({ peerId: 'human', id: 'hello', name: 'Human', text: 'Hello there' });
+    return host.getStatus().selectedKey.slice('local:'.length);
+  });
+  await page.waitForFunction(() => window.finishPreflight);
+  await page.evaluate(async id => {
+    await agents.update(id, { embodiments: [] }); window.waitPreflight = false; finishPreflight();
+  }, id);
+  await page.waitForFunction(() => !view.busy && host.getStatus().bodies.length === 0);
+  const result = await page.evaluate(async id => ({ events: await agents.events(id), calls }), id);
+  assert.equal(result.calls.some(call => call[0] === 'generate' || call[0] === 'public-message'), false);
+  assert.equal(result.events.some(event => event.type === 'request'), false);
+});
+
+test('a newer human message suppresses an obsolete reply without pausing the real agent runtime', async t => {
+  const page = await fixture(t);
+  const id = await page.evaluate(async () => {
+    await host.spawn({ name: 'Ada', respondToWorldChat: true }); window.holdWorldGeneration = true;
+    host.receiveWorldMessage({ peerId: 'human', id: 'old', name: 'Human', text: 'Old question' });
+    return host.getStatus().selectedKey.slice('local:'.length);
+  });
+  await page.waitForFunction(() => window.finishWorldGeneration);
+  await page.evaluate(() => {
+    host.receiveWorldMessage({ peerId: 'human', id: 'new', name: 'Human', text: 'New current question' });
+    window.holdWorldGeneration = false; window.fixtureAnswer = 'The current question has my attention.';
+    finishWorldGeneration();
+  });
+  await page.waitForFunction(() => calls.some(call => call[0] === 'public-message'), null, { timeout: 15000 });
+  const result = await page.evaluate(async id => ({ generated: calls.filter(call => call[0] === 'generate'),
+    published: calls.filter(call => call[0] === 'public-message'), head: await agents.get(id) }), id);
+  assert.equal(result.generated.length, 2); assert.equal(result.published.length, 1);
+  assert.match(result.generated[0][1].prompt, /Old question/);
+  assert.match(result.generated[1][1].prompt, /New current question/);
+  assert.notEqual(result.head.status, 'paused');
 });
 
 test('world-chat without a capable model does not pause the resident or create a failed inference turn', async t => {

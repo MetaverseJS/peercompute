@@ -4294,3 +4294,12 @@ references (link sets overlap the115total). No runtime/app/build changes.
   public events and later Global context, incoming Global events remain hidden
   from Personal, and explicit Global still shares named prompts/results. Verify
   Personal-first tab order and Home/End keyboard navigation.
+
+
+### November 8 — CubeChat public resident dialogue regression plan
+
+- WorldChatResponder: current public context at dispatch, same-host/two-host resident exchange, self exclusion, per-human bounded follow-ups and deadline, human-message priority, duplicate suppression, disabled/removed ownership cancellation and no late publication.
+- WorldAgentHost/context builder: authenticated owner+agentId match, unknown/spoofed speaker cannot trigger inference, fresh scene/roster under8KiB, latest message retained under multibyte truncation, private visitor history excluded, unavailable models do not persist failures.
+- Actual browser acceptance: isolated room, two owned profiles/residents, actual SecretWorkshop encrypted RoomChat transport, deterministic inference capture, bounded exchange then silence, second topic, room isolation and desktop/mobile visual checks. This is not an actual model-quality benchmark. No production-room prompts or public deployment.
+
+- Completed: standard `npm run test:world-agents` includes the new responder/context cases and passes148/148; separate social/input68/68 and core/RoomChat71/71pass (overlapping suites, not summed). Actual two-browser SecretWorkshop room exchange passes two rounds, private owner/visitor freshness and isolation, dedup, room switch, desktop1440/mobile390 bounds and cleanup. External CubeChat/Earth builds pass. Reports: /home/cos/.cache/peercompute-resident-dialogue-20261108/. The controlled inference facade proves prompt/context flow, not real-model dialogue quality.
