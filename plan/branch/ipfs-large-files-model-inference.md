@@ -1291,3 +1291,26 @@ Completed and published as913af7f4:247distinct cases, three consumer builds,
 staging/internal/public UI and network checks pass;54changed public assets
 match. Main:/docs remains the publication source and both branches retain the
 change. Image intent is preserved during provider loss with explicit text recovery.
+
+
+### November 8 — Android microphone diagnosis
+
+The user reports repeated mic-not-ready on Android, plus a separate Safari WebGPU
+report from a Mac Studio without versions/error. Fix demonstrated console
+touch-first startup/cancellation lockout, retain hold recording semantics and
+validate owned touch audio plus internal preview consumers. Document Safari's
+macOS requirement without asserting the unknown report's exact cause. No broader
+voice redesign, new model qualification or Pages/main publication in this slice.
+
+Completed locally:54focused cases, three external builds and staging/internal
+layout plus SecretWorkshop checks pass. Internal5189/5176/5187 previews updated;
+Pages/docs and main remain unchanged. Physical-device confirmation remains open.
+
+
+### November 8 — keep project documentation library-first
+
+The root README describes PeerCompute, its cellular-automata topology insight,
+usage and architecture. Inference/agent operational detail belongs in
+demos/inference/README.md; other demos own their respective guides. Preserve
+original root media, retain implementation limits and avoid long release history
+in the project introduction. This corrects the earlier application-first framing.
