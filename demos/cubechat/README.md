@@ -153,3 +153,45 @@ network.queueEvent({ type: 'webrtc-offer', offer }, { reliable: true });
 ## Notes
 - Update `public/relay-config.json` with your relay bootstrap multiaddr.
 - Screen share metadata and player snapshots are carried via PeerCompute snapshots/events.
+
+## Residents who initiate conversations
+
+In **Residents**, create or edit a shared resident and enable **Initiate
+conversations** (off by default). With a compatible model already loaded locally
+or hosted by a peer, it can notice someone nearby, choose whether to greet them,
+and optionally face or approach them using the existing learned movement service.
+It can remain quiet. The option does not automatically download or load models.
+
+An encounter needs eight seconds within 60 world units. The host allows one
+social decision at a time, waits 90 seconds between a resident's attempts and ten
+minutes before approaching the same session identity again. Human activity takes
+priority and pauses new initiatives for 30 seconds. A resident pair can exchange
+at most four messages within one minute. **Respond to world chat** also permits
+answering a targeted greeting; it remains the separate choice for reacting to
+ordinary room messages. Other residents do not join a pair's automatic exchange.
+
+Public encounter memories retain observed presence, proposed social goals and
+chat delivery receipts. Private conversations and saved private context are not
+included in spontaneous public prompts. A transport receipt is not proof someone
+read a message. Goals are suggestions for future model decisions, not background
+jobs. Cooldowns are session-local; retained memories guide decisions after reload.
+Clones keep their selected shared past but require their new owner to enable
+initiative. Older clients can display greetings without participating in the new
+bounded conversation protocol.
+
+`WorldSocialInitiative` schedules bounded opportunities; `WorldSocialIntent`
+uses the managed model router for decisions; `WorldExperience` records evidence;
+`WorldChatResponder` and `RoomChatService` enforce pair identity and turn limits.
+This adds social initiative to the Humunculus foundation, not consciousness,
+open-ended training or unrestricted autonomous actions.
+
+Social contract checks: `npm run test:resident-social`. Actual production peer
+and model acceptance: `node demos/tests/world-social-browser.mjs` (owned browser
+profile, preview URL and evidence settings are documented in that script).
+
+Qualification: real peer delivery, turn limits, privacy, cancellation, mobile UI
+and reload persistence pass. Actual Qwen3.5 0.8B WebGPU checks returned valid
+quiet decisions, including with an outgoing personality. Generated introductions
+have been tested with controlled inference responses; natural greeting quality
+is not yet demonstrated for that small model. Initiative permits speech rather
+than forcing it.

@@ -75,3 +75,21 @@ test('a continuing follow retains later terminal outcomes with bounded transitio
   assert.equal(new Set(f.episodes.map(e => e.source.eventId)).size, 5);
   await f.experience.dispose();
 });
+
+test('unsolicited encounters never fabricate heard messages and distinguish delivery from reading', async () => {
+  const f = fixture(); await f.turn({ prompt: 'Private secret' });
+  const target = { id: 'human:visitor', peerId: 'visitor', name: 'Pat', kind: 'human' };
+  const turn = await f.experience.prepareEncounter({ key: f.body.key, agentId: f.body.agentId, conversationId: 'public-room', target });
+  assert.equal(f.episodes.at(-1).kind, 'encounter'); assert.equal(f.episodes.at(-1).source.kind, 'local-observation');
+  assert.doesNotMatch(turn.worldContext, /Private secret/);
+  await f.experience.rememberSocialDecision(turn, { decision: 'quiet' });
+  assert.equal(f.episodes.at(-1).kind, 'social-quiet');
+  await f.experience.rememberSocialDecision(turn, { decision: 'speak', goal: 'Ask about gardens' });
+  assert.equal(f.episodes.at(-1).kind, 'social-goal'); assert.match(f.episodes.at(-1).outcome, /Proposed/);
+  await f.experience.rememberDelivery({ key: f.body.key, conversationId: 'public-room', target, text: 'Hello!',
+    result: { delivery: { status: 'delivered', delivered: 1 } } });
+  assert.match(f.episodes.at(-1).outcome, /acknowledged by 1.*reading is unknown/);
+  assert.equal(f.episodes.at(-1).audience, 'public');
+  assert.equal(f.episodes.filter(e => e.kind === 'heard').length, 1);
+  await f.experience.dispose();
+});

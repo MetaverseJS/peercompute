@@ -7,7 +7,7 @@ import { normalizeAgentTask, packAgentContext } from '../../src/peercompute/agen
 import { AgentRuntime } from '../../src/peercompute/agents/AgentRuntime.js';
 import { AgentRecordStore } from '../../src/peercompute/agents/AgentRecordStore.js';
 
-const binding = { worldId: 'cubechat:lobby', position: [1, 2, 3], color: '#8fffd4', shared: true, respondToWorldChat: false, allowCloning: false, shareMemories: false, sharePrivateMemories: false };
+const binding = { worldId: 'cubechat:lobby', position: [1, 2, 3], color: '#8fffd4', shared: true, respondToWorldChat: false, initiateConversations: false, allowCloning: false, shareMemories: false, sharePrivateMemories: false };
 test('world bindings are optional, bounded, validated and copied without executable/private extra fields', () => {
   assert.equal('embodiments' in normalizeAgentInput({ name: 'Old agent' }), false);
   const value = normalizeAgentInput({ name: 'Ada', embodiments: [{ ...binding, callback: 'untrusted' }] });
@@ -105,4 +105,17 @@ test('private history sharing defaults off and public permission requires all ow
   assert.equal(normalizePublicAgent({ ...bodyForFace(), cloneable: true, sharesMemories: true, sharesPrivateMemories: true }).sharesPrivateMemories, true);
   assert.throws(() => normalizeAgentInput({ name: 'Ada', embodiments: [{ ...binding, sharePrivateMemories: 'yes' }] }));
   assert.throws(() => normalizePublicAgent({ ...bodyForFace(), sharesPrivateMemories: 'yes' }));
+});
+
+test('conversation initiative is a separate explicit persisted consent and legacy bindings stay off', () => {
+  const legacy = normalizeAgentInput({ name: 'Ada', embodiments: [{ ...binding, initiateConversations: undefined, respondToWorldChat: true }] });
+  assert.equal(legacy.embodiments[0].initiateConversations, false);
+  assert.equal(legacy.embodiments[0].respondToWorldChat, true);
+  const enabled = normalizeAgentInput({ name: 'Ada', embodiments: [{ ...binding, initiateConversations: true }] });
+  assert.equal(enabled.embodiments[0].initiateConversations, true);
+  assert.equal(enabled.embodiments[0].respondToWorldChat, false);
+  for (const invalid of ['yes', 1, null, {}]) assert.throws(() => normalizeAgentInput({ name: 'Ada', embodiments: [{ ...binding, initiateConversations: invalid }] }), /initiative/);
+  const body = normalizePublicAgent({ ...bodyForFace(), initiateConversations: true, socialStatus: 'considering' });
+  assert.equal(Object.hasOwn(body, 'initiateConversations'), false);
+  assert.equal(Object.hasOwn(body, 'socialStatus'), false);
 });

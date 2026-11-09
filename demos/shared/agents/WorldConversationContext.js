@@ -18,7 +18,8 @@ export function worldResidentName(value) {
 export function worldPublicMessage(value) {
   return { id: chatIdentifier(value.id), peerId: chatText(value.peerId, 160, 'Peer identity'),
     ...normalizeChatInput({ name: value.name, text: value.text,
-      ...(value.agentId === undefined ? {} : { agentId: value.agentId }) }) };
+      ...(value.agentId === undefined ? {} : { agentId: value.agentId }),
+      ...(value.social === undefined ? {} : { social: value.social }) }) };
 }
 
 function publicBody(value) {

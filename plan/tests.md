@@ -4375,3 +4375,37 @@ filtering, actual game-scoped attachment and stale removal. Desktop/mobile
 screenshots inspected; zero browser/cleanup errors. Actual inline compute ran;
 model advertisements were explicit fixtures, with no inference/download claim.
 Four external consumer builds and exact HTTPS5182 preview passed.
+
+### CubeChat social initiative — November 9 acceptance
+
+- Scheduler: proximity dwell, authenticated observed IDs, fairness, single slot,
+  model-unavailable backoff, resident/target cooldown including re-enable, human
+  priority, disappearing targets, edits/pause, monotonic TTL, bounded maps and
+  complete timer/controller cleanup. `world-social-initiative.test.js`.
+- Decision/context: strict JSON silence/speech, only observed approach/look-at,
+  bounded text/goals; managed adapter uses identity/goals/public episodes and no
+  private saved summary/journal. `world-social-intent.test.js`.
+- Experience/host: observations never become invented heard messages; proposed
+  social goals and transport receipts are distinct from completed actions/read
+  receipts. Human and owner preemption must not pause/recover AgentRuntime.
+- Protocol: real encrypted v2 streams, exact pair/authenticated author, immutable
+  root/deadline, contiguous four-turn cap, replay/expiry/cancel, third resident
+  exclusion, preserved v1 ordinary chat and fallback display.
+- Native UI/contracts: defaultfalse initiative, edit/revoke, distinct reactive
+  worldchat, explicit clone consent, bounded mobile status rendering.
+- Browser gate: two isolated owned browsers in a unique real SecretWorkshop room,
+  controlled language fixture for deterministic network cases and separate actual
+  localQwen0.8B decision qualification. Inspect desktop/mobile screenshots and
+  console, reload public memories, close owned browsers/server. External build
+  only, then exact internal HTTPS preview verification. No Pages writes/push.
+
+Final results:81/81 social contracts,32/32 host,32/32 native UI/bindings and62/62
+nearby regressions pass (overlapping suites). Additional final prompt/host suite
+runs34checks. Collision tests cover crossed roots, cleanup ownership, spent-turn
+carry, deadline preservation and tombstones. Final two-browser acceptance passes
+all six groups,10/10exact episodes after reload, zero page/console/HTTP/download/
+cleanup errors and inspected desktop/mobile visuals. Actual cached Qwen0.8B
+executes on managed worker-1 with26/26layers and native WebGPU buffers; valid quiet
+decisions persist correctly, including after balancing prompt wording. No actual
+spontaneous greeting is claimed; network dialogue uses a disclosed language
+fixture. Evidence: /home/cos/.cache/peercompute-social-initiative-20261109/.

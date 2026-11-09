@@ -1,8 +1,9 @@
 import { channel, encryptedConnection } from '../../../peercompute/src/peercompute/networkManager/inference/protocol.js';
 import { waitForPeerConnection } from '../../../peercompute/src/peercompute/networkManager/inference/waitForPeerConnection.js';
-import { ROOM_CHAT_PROTOCOL, ROOM_CHAT_LIMITS as L, chatError, chatText, chatFields,
-  normalizeChatInput, chatScope, chatIdentifier, deliveryStatus } from './roomChatContracts.js';
-export { ROOM_CHAT_PROTOCOL, ROOM_CHAT_LIMITS } from './roomChatContracts.js';
+import { ROOM_CHAT_PROTOCOL, ROOM_CHAT_PROTOCOL_V1, ROOM_CHAT_LIMITS as L, chatError, chatText, chatFields,
+  normalizeChatInput, validateSocialAuthor, chatScope, chatIdentifier, deliveryStatus } from './roomChatContracts.js';
+export { ROOM_CHAT_PROTOCOL, ROOM_CHAT_PROTOCOL_V1, ROOM_CHAT_LIMITS } from './roomChatContracts.js';
+const protocols = [ROOM_CHAT_PROTOCOL, ROOM_CHAT_PROTOCOL_V1];
 
 const owners = new WeakMap(), baseFields = ['type', 'recipient', 'scope', 'worldId'];
 const errorOf = (error) => error instanceof Error ? error : chatError(String(error));
@@ -103,7 +104,7 @@ export class RoomChatService {
     this.starting = (async () => {
       this.registered = true;
       try {
-        await this.node.handle(ROOM_CHAT_PROTOCOL, (stream, connection) => {
+        for (const protocol of protocols) await this.node.handle(protocol, (stream, connection) => {
           const peerId = connection?.remotePeer?.toString?.();
           if (this.closed || !encryptedConnection(connection) || !this._known(peerId)
               || [...this.inbound.values()].reduce((a, b) => a + b, 0) >= L.maximumInbound
@@ -111,7 +112,7 @@ export class RoomChatService {
             abortStream(stream, chatError('Encrypted room peer connection required or chat is busy', 'ERR_ROOM_CHAT_AUTH')); return;
           }
           this.inbound.set(peerId, (this.inbound.get(peerId) ?? 0) + 1);
-          this._track(this._handle(stream, connection).finally(() => {
+          this._track(this._handle(stream, connection, protocol).finally(() => {
             const count = this.inbound.get(peerId) - 1;
             if (count) this.inbound.set(peerId, count); else this.inbound.delete(peerId);
           }));
@@ -119,7 +120,7 @@ export class RoomChatService {
         if (!this.closed) this.started = true;
         return this;
       } catch (error) {
-        try { await this.node.unhandle(ROOM_CHAT_PROTOCOL); this.registered = false; owners.delete(this.node); }
+        try { await this.node.unhandle(protocols); this.registered = false; owners.delete(this.node); }
         catch (cleanup) { throw new AggregateError([error, cleanup], 'Room chat startup and cleanup failed'); }
         throw error;
       }
@@ -142,7 +143,7 @@ export class RoomChatService {
     for (const connection of connections().slice(0, 4)) {
       signal.throwIfAborted(); const op = operation([signal], Math.min(this.requestTimeoutMs, 1500)); let opening;
       try {
-        opening = Promise.resolve(connection.newStream(ROOM_CHAT_PROTOCOL, { signal: op.signal, runOnLimitedConnection: true }));
+        opening = Promise.resolve(connection.newStream(protocols, { signal: op.signal, runOnLimitedConnection: true }));
         const stream = await withAbort(opening, op.signal); op.signal.throwIfAborted();
         return { stream, connection };
       } catch (error) {
@@ -168,7 +169,8 @@ export class RoomChatService {
       chatIdentifier(ready.session); op.signal.throwIfAborted(); committed = true;
       await withAbort(io.write(this._envelope('message', peerId, { session: ready.session, id: message.id,
         text: message.text, name: message.name,
-        ...(message.agentId === undefined ? {} : { agentId: message.agentId }) }), op.signal), op.signal);
+        ...(message.agentId === undefined ? {} : { agentId: message.agentId }),
+        ...(message.social && stream.protocol === ROOM_CHAT_PROTOCOL ? { social: message.social } : {}) }), op.signal), op.signal);
       const ack = await withAbort(io.read(op.signal), op.signal); this._check(ack, peerId);
       if (ack.type === 'error') throw Object.assign(chatError(String(ack.message).slice(0, 256)), { rejected: true });
       chatFields(ack, [...baseFields, 'id', 'session']);
@@ -184,6 +186,7 @@ export class RoomChatService {
   }
   send(input, { signal } = {}) {
     this._active(); signal?.throwIfAborted(); const normalized = normalizeChatInput(input);
+    validateSocialAuthor(normalized, this.peerId);
     if (this.sends >= L.maximumSends) throw chatError('Room chat is still sending; wait for delivery', 'ERR_ROOM_CHAT_BUSY');
     const peers = [...(this.manager.peers?.keys() ?? [])].filter((id) => this._known(id));
     if (peers.length > L.maximumPeers) throw chatError('Room chat peer limit reached', 'ERR_ROOM_CHAT_BUSY');
@@ -208,7 +211,7 @@ export class RoomChatService {
     };
     return this._track(run());
   }
-  async _handle(stream, connection) {
+  async _handle(stream, connection, protocol = ROOM_CHAT_PROTOCOL) {
     const peerId = connection.remotePeer.toString(), op = operation([this.controller.signal], this.requestTimeoutMs);
     let release, accepted = false; const io = channel(stream);
     const abort = () => abortStream(stream, abortReason(op.signal)); op.signal.addEventListener('abort', abort, { once: true });
@@ -219,14 +222,17 @@ export class RoomChatService {
       if (hello.type !== 'hello') throw chatError('Room chat handshake required');
       await withAbort(io.write(this._envelope('ready', peerId, { session: this.session }), op.signal), op.signal);
       const value = await withAbort(io.read(op.signal), op.signal); this._check(value, peerId);
-      chatFields(value, [...baseFields, 'session', 'id', 'name', 'text', 'agentId']);
+      chatFields(value, [...baseFields, 'session', 'id', 'name', 'text', 'agentId', ...(protocol === ROOM_CHAT_PROTOCOL ? ['social'] : [])]);
       if (value.type !== 'message' || value.session !== this.session) throw chatError('Room chat session changed; message was not accepted');
       const id = chatIdentifier(value.id), input = normalizeChatInput({ name: value.name, text: value.text,
-        ...(value.agentId === undefined ? {} : { agentId: value.agentId }) });
+        ...(value.agentId === undefined ? {} : { agentId: value.agentId }),
+        ...(value.social === undefined ? {} : { social: value.social }) });
+      validateSocialAuthor(input, peerId);
       const key = `${peerId}:${id}`, now = this.now();
       for (const [seenKey, entry] of this.seen) if (now - entry.at >= L.replayMs) this.seen.delete(seenKey);
       const previous = this.seen.get(key);
-      if (previous && (previous.text !== input.text || previous.name !== input.name || previous.agentId !== input.agentId)) throw chatError('Conflicting duplicate room message');
+      if (previous && (previous.text !== input.text || previous.name !== input.name || previous.agentId !== input.agentId
+          || JSON.stringify(previous.social) !== JSON.stringify(input.social))) throw chatError('Conflicting duplicate room message');
       if (!previous) {
         if (this.seen.size >= L.replayEntries) throw chatError('Room chat replay window is full; try later', 'ERR_ROOM_CHAT_BUSY');
         this._rate(peerId); op.signal.throwIfAborted();
@@ -249,7 +255,7 @@ export class RoomChatService {
     this.closed = true; this.controller.abort(new DOMException('Room chat closed', 'AbortError'));
     this.closing = (async () => {
       await this.starting?.catch(() => {});
-      if (this.registered) { await this.boundNode.unhandle(ROOM_CHAT_PROTOCOL); this.registered = false; }
+      if (this.registered) { await this.boundNode.unhandle(protocols); this.registered = false; }
       await Promise.allSettled([...this.operations]);
       if (owners.get(this.boundNode) === this) owners.delete(this.boundNode);
       this.started = false; this.seen.clear(); this.rates.clear();

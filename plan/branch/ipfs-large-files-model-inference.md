@@ -1383,3 +1383,16 @@ November 9: user authorized NetViz All demos telemetry across games and standalo
 model hosts. Add shared operational reports and aggregate filters/model-host counts,
 then continue the next Humunculus/CubeChat slice after verification. Keep public
 Pages publication on hold; internal previews remain the review surface.
+
+November9 follow-through: implement the next documented social-initiative slice
+after NetViz. Native resident initiation opt-in, model choice of silence/greeting,
+nearby identity checks, bounded pair exchanges, public encounter/goal memories and
+human preemption. Keep the components reusable towards Humunculus. Do not turn
+cloning/history consent into permission for automatic new-host initiative. No
+Pages deployment or push; qualify external builds and internal previews.
+
+Social increment complete locally with tested consent, bounded pair arbitration,
+public memory and human priority. Actual Qwen0.8B qualification establishes valid
+silence, not natural introduction quality; retain that limit in user-facing
+results. Real peer delivery/reload/mobile acceptance passes. Internal CubeChat
+preview promoted; no public Pages change or push authorized.

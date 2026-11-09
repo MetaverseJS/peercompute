@@ -41,7 +41,7 @@ export function createWorldExperience({ worldId, adapter, memory, getBody, onSta
     catch (error) { if (!closed && error.name !== 'AbortError') report(`Resident memory: ${error.message}`); }
   }
   async function prepare({ key, agentId, conversationId, audience, requesterPeerId, who, prompt, statement = prompt,
-    eventId, scene = {}, publicConversationId, signal }) {
+    eventId, scene = {}, publicConversationId, signal, observation = false }) {
     signal = signalFor(signal); signal.throwIfAborted();
     const senses = observe(key, requesterPeerId), scope = { worldId, agentId, audience, conversationId };
     if (who?.agentId) {
@@ -69,11 +69,35 @@ export function createWorldExperience({ worldId, adapter, memory, getBody, onSta
         ...(scene.messages ? { messages: scene.messages.slice(-2) } : {}) };
     }
     if (size(context) > 8192) throw new Error('Resident context exceeds its conversation budget');
-    await save({ ...scope, kind: 'heard', who: speaker, where: senses.self.position,
-      outcome: 'The participant said this; it is not independently verified.', text: excerpt(statement, 1600),
-      source: { kind: 'authenticated-message', eventId: eventId || crypto.randomUUID(), peerId: speaker.peerId } }, signal);
+    await save({ ...scope, kind: observation ? 'encounter' : 'heard', who: speaker, where: senses.self.position,
+      outcome: observation ? 'A nearby participant was observed; no message was received.' : 'The participant said this; it is not independently verified.', text: excerpt(statement, 1600),
+      source: { kind: observation ? 'local-observation' : 'authenticated-message', eventId: eventId || crypto.randomUUID(), peerId: speaker.peerId } }, signal);
     signal.throwIfAborted();
     return { key, scope, speaker, senses, signal, prompt: worldIntentPrompt(prompt), worldContext: JSON.stringify(context) };
+  }
+  function prepareEncounter({ target, ...options }) {
+    const peerId = target.peerId || target.ownerPeerId;
+    return prepare({ ...options, audience: 'public', observation: true, requesterPeerId: peerId,
+      who: { peerId, name: target.name, ...(target.agentId ? { agentId: target.agentId } : {}) },
+      prompt: 'Consider this nearby encounter.', statement: `Observed ${target.name} (${target.id}) nearby.` });
+  }
+  async function rememberSocialDecision(turn, decision) {
+    const quiet = decision.decision === 'quiet';
+    await save({ ...turn.scope, kind: quiet ? 'social-quiet' : 'social-goal', who: turn.speaker,
+      where: turn.senses.self.position,
+      outcome: quiet ? 'The resident chose not to speak.' : 'Proposed social goal; not an instruction or completed action.',
+      text: quiet ? (decision.reason === 'invalid-output' ? 'No valid decision was produced.' : 'Remain quiet at this encounter.') : decision.goal || 'Exchange a brief public greeting.',
+      source: { kind: 'local-observation', eventId: crypto.randomUUID() } }, turn.signal);
+  }
+  async function rememberDelivery({ key, conversationId, target, text, result, eventId, signal }) {
+    const body = getBody(key); if (!body?.local) return;
+    // A transport ACK establishes receipt by a peer, never that a human read it.
+    const delivery = result?.delivery, acknowledged = Number(delivery?.delivered ?? 0);
+    await save({ worldId, agentId: body.agentId, audience: 'public', conversationId, kind: 'social-delivery',
+      who: { peerId: target.peerId || target.ownerPeerId, ...(target.agentId ? { agentId: target.agentId } : {}), name: target.name },
+      where: observe(key).self.position, outcome: acknowledged > 0 ? `Public chat acknowledged by ${acknowledged} peer(s); reading is unknown.`
+        : delivery?.status === 'local-only' ? 'Posted to local world chat; no remote recipients.' : 'Public chat attempted; remote receipt is unconfirmed.',
+      text: excerpt(text, 1600), source: { kind: 'local-observation', eventId: eventId || crypto.randomUUID() } }, signal);
   }
   async function finish(turn, result, { valid = () => true } = {}) {
     const reply = parseWorldReply(result);
@@ -126,7 +150,7 @@ export function createWorldExperience({ worldId, adapter, memory, getBody, onSta
     const pending = outcome(event).catch(error => report(`Resident outcome: ${error.message}`));
     writes.add(pending); void pending.finally(() => writes.delete(pending));
   });
-  return { prepare, finish, observe,
+  return { prepare, prepareEncounter, rememberSocialDecision, rememberDelivery, finish, observe,
     getStatus: () => ({ pendingIntentions: intentions.size, memory: !!memory }),
     async dispose() { closed = true; unsubscribe(); lifetime.abort(); intentions.clear(); await Promise.allSettled([...writes]); } };
 }

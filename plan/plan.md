@@ -1953,3 +1953,22 @@ stale/legacy visibility and scoped attachment correction. Internal preview:
 https://fastbox.tail5c077c.ts.net:5182/ . CubeChat, inference and Earth internal
 builds include reporters after reload. Public Pages remains unchanged. Next:
 plan-aligned, opted-in resident greetings and bounded mutual introductions.
+
+### November 9 — next Humunculus slice: social initiative
+
+NetViz is complete locally in bbced682. Implementing the next CubeChat milestone:
+opt-in model-selected greetings or silence after a nearby encounter, bounded
+paired public conversations and durable public social memories/goals. Reusable
+scheduler/decision/memory/transport components preserve human priority, private
+conversation isolation, existing learned movement and managed model routing.
+No provider causes backoff rather than downloads or a failed persisted agent run.
+Acceptance details live in demos/cubechat/plan.md and plan/tests.md; public Pages
+build/deploy/push remain on hold.
+
+Social-initiative slice implemented locally: owner opt-in, bounded nearby
+opportunities, model-selected silence/speech, authenticated pair exchanges,
+public episodic goals/receipts and human priority. Real peer/mobile/reload gates
+pass; actual managed Qwen0.8B returns valid quiet decisions. Its natural
+introduction quality remains unqualified; controlled responses establish the
+conversation mechanics. See CubeChat README/plan for limits and test evidence.
+Internal preview updated; no public Pages deployment or push.

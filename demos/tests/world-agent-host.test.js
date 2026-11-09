@@ -42,10 +42,14 @@ async function boot() {
       task: 'text-generation', modalities: ['text'], outputModalities: ['text'] };
     window.start = async () => {
       const bodies = new Map(); window.bodyMap = bodies;
-      host = installWorldAgents({ worldId: 'cubechat:test', worldLabel: 'CubeChat',
+      host = installWorldAgents({ worldId: 'cubechat:test', worldLabel: 'CubeChat', socialOptions: window.socialOptions ?? {},
         publishWorldMessage: async (input, options) => {
           options.signal.throwIfAborted(); calls.push(['public-message', input]);
           host.receiveWorldMessage({ ...input, peerId: window.fixturePeerId ?? 'owner', id: crypto.randomUUID() });
+          if (window.holdPublicReceipt) {
+            await new Promise(resolve => { window.releasePublicReceipt = resolve; });
+            return { delivery: { delivered: 1, status: 'delivered' } };
+          }
         },
         exclusiveEmbodiments: window.exclusiveBodies ?? false,
         getRuntimeOptions: () => ({ networkManager: window.roomManager }),
@@ -55,7 +59,7 @@ async function boot() {
           getContext: (body) => ({ position: [...body.position], ...window.fixtureScene }), focus: () => {},
           setAppearance: (key, image) => calls.push(['face', key, image]),
           ...(window.embodiedFixture ? {
-            observe: () => ({ self: { position: [1, 3, 5] }, participants: [{ id: 'human:owner', peerId: 'owner', kind: 'human', name: 'Owner', position: [25, 3, 5] }], requesterId: 'human:owner', obstacles: [] }),
+            observe: key => ({ self: { id: `resident:${bodies.get(key)?.ownerPeerId}:${bodies.get(key)?.agentId}`, position: [1, 3, 5] }, participants: window.fixtureParticipants ?? [{ id: 'human:owner', peerId: 'owner', kind: 'human', name: 'Owner', position: [25, 3, 5], distance: 24 }], requesterId: 'human:owner', obstacles: [] }),
             setIntent: (key, intent) => { calls.push(['intent', key, intent]); window.lastIntent = { key, ...intent }; },
             setMovement: (key, mode) => calls.push(['movement', key, mode]),
             subscribeOutcomes: listener => { window.physicalOutcome = listener; return () => { window.physicalOutcome = null; }; },
@@ -77,6 +81,10 @@ async function boot() {
           },
             generate: async (_candidate, input, { signal }) => {
               calls.push(['generate', input]);
+              if (window.waitSocial && input.prompt.includes('brief public encounter')) {
+                await new Promise(resolve => signal.addEventListener('abort', resolve, { once: true }));
+                calls.push(['social-aborted']); signal.throwIfAborted();
+              }
               if (window.holdWorldGeneration && input.prompt.includes('public world-chat')) {
                 await new Promise((resolve, reject) => {
                   const aborted = () => reject(signal.reason);
@@ -688,4 +696,107 @@ test('profile chunk permissions read persisted consent even while an older direc
   });
   assert.equal(result.cached.cloneable, true);
   assert.deepEqual(result.authoritative, { cloneable: false, sharesMemories: false, sharesPrivateMemories: false });
+});
+
+test('opted-in residents greet nearby people through managed inference and retain only public encounter memories', async t => {
+  const page = await fixture(t);
+  const id = await page.evaluate(async () => {
+    await host.dispose(); window.embodiedFixture = true;
+    window.socialOptions = { tickMs: 100, dwellMs: 0, humanQuietMs: 0 };
+    window.fixtureAnswer = JSON.stringify({ decision: 'speak', text: 'Hello there!', intent: null, goal: 'Learn about their garden' });
+    await start(); const head = await host.spawn({ name: 'Ada', initiateConversations: true, localOnly: true, shared: true });
+    return head.agentId;
+  });
+  try { await page.waitForFunction(() => calls.some(c => c[0] === 'public-message'), null, { timeout: 8000 }); }
+  catch (error) { console.error('Social start diagnostic', await page.evaluate(() => ({ status: host.getStatus(), calls, view }))); throw error; }
+  const result = await page.evaluate(async id => ({
+    published: calls.filter(c => c[0] === 'public-message'), head: await agents.get(id), events: await agents.events(id),
+    episodes: await episodeStore.snapshot({ agentId: id, worldId: 'cubechat:test' }),
+    bodies: host.getStatus().bodies, social: host.getStatus().social,
+  }), id);
+  assert.equal(result.published.length, 1); assert.equal(result.published[0][1].text, 'Hello there!');
+  assert.equal(result.published[0][1].social.turn, 0); assert.equal(result.published[0][1].social.targetPeerId, 'owner');
+  assert.equal(result.head.status, 'waiting'); assert(!result.events.some(e => ['request', 'prepared', 'dispatched'].includes(e.type)));
+  assert(result.episodes.some(e => e.kind === 'encounter')); assert(!result.episodes.some(e => e.kind === 'heard'));
+  assert(result.episodes.some(e => e.kind === 'social-goal')); assert(result.episodes.every(e => e.audience === 'public'));
+  await page.waitForTimeout(350);
+  assert.equal(await page.evaluate(() => calls.filter(c => c[0] === 'public-message').length), 1, 'cooldown prevents repeated greeting');
+});
+
+test('a human can preempt speculative speech without pausing the resident or publishing stale text', async t => {
+  const page = await fixture(t);
+  const id = await page.evaluate(async () => {
+    await host.dispose(); window.embodiedFixture = true; window.waitSocial = true;
+    window.socialOptions = { tickMs: 100, dwellMs: 0, humanQuietMs: 1000 };
+    await start(); const head = await host.spawn({ name: 'Ada', initiateConversations: true, localOnly: true });
+    return head.agentId;
+  });
+  await page.waitForFunction(() => calls.some(c => c[0] === 'generate'));
+  const result = await page.evaluate(async id => {
+    window.fixtureAnswer = '{"text":"Human reply","intent":null}';
+    await host.send({ key: 'local:' + id, text: 'Talk to me instead' });
+    return { head: await agents.get(id), calls, status: host.getStatus(), events: await agents.events(id) };
+  }, id);
+  assert(result.calls.some(c => c[0] === 'social-aborted'));
+  assert.equal(result.calls.filter(c => c[0] === 'public-message').length, 0);
+  assert.equal(result.head.status, 'completed'); assert.notEqual(result.head.recoveryRequired, true);
+  assert.equal(result.events.filter(e => e.type === 'request').length, 1);
+});
+
+test('no model creates no failed resident run, and opting out prevents later automatic work', async t => {
+  const page = await fixture(t);
+  const id = await page.evaluate(async () => {
+    await host.dispose(); window.embodiedFixture = true; window.noTextProvider = true;
+    window.socialOptions = { tickMs: 100, dwellMs: 0, humanQuietMs: 0 };
+    await start(); return (await host.spawn({ name: 'Ada', initiateConversations: true })).agentId;
+  });
+  await page.waitForFunction(() => host.getStatus().bodies.some(b => b.socialStatus === 'waiting-for-model'));
+  const result = await page.evaluate(async id => {
+    await host.edit({ key: 'local:' + id, initiateConversations: false }); window.noTextProvider = false;
+    return { head: await agents.get(id), calls, episodes: await episodeStore.snapshot({ agentId: id, worldId: 'cubechat:test' }) };
+  }, id);
+  assert.equal(result.head.status, 'waiting'); assert.equal(result.head.embodiments[0].initiateConversations, false);
+  assert(!result.calls.some(c => c[0] === 'generate')); assert.equal(result.episodes.length, 0);
+  await page.waitForTimeout(250); assert.equal(await page.evaluate(() => calls.filter(c => c[0] === 'generate').length), 0);
+});
+
+test('a greeting committed before human interruption still records the eventual transport receipt', async t => {
+  const page = await fixture(t);
+  const id = await page.evaluate(async () => {
+    await host.dispose(); window.embodiedFixture = true; window.holdPublicReceipt = true;
+    window.socialOptions = { tickMs: 100, dwellMs: 0, humanQuietMs: 0 };
+    window.fixtureAnswer = '{"decision":"speak","text":"Hello!","intent":null}';
+    await start(); return (await host.spawn({ name: 'Ada', initiateConversations: true })).agentId;
+  });
+  await page.waitForFunction(() => window.releasePublicReceipt);
+  await page.evaluate(() => { window.cancelledSocial = host.cancel(); releasePublicReceipt(); });
+  const result = await page.evaluate(async id => {
+    await cancelledSocial;
+    return { episodes: await episodeStore.snapshot({ agentId: id, worldId: 'cubechat:test' }), calls, head: await agents.get(id) };
+  }, id);
+  assert.equal(result.calls.filter(c => c[0] === 'public-message').length, 1);
+  assert.equal(result.episodes.filter(e => e.kind === 'social-delivery').length, 1);
+  assert.match(result.episodes.find(e => e.kind === 'social-delivery').outcome, /acknowledged by 1/);
+  assert.equal(result.head.status, 'waiting');
+});
+
+test('social follow-ups cancel promptly when their observed participant leaves', async t => {
+  const page = await fixture(t);
+  const id = await page.evaluate(async () => {
+    await host.dispose(); window.embodiedFixture = true; window.waitSocial = true; await start();
+    const head = await host.spawn({ name: 'Ada', respondToWorldChat: true });
+    window.fixtureParticipants = [{ id: 'resident:visitor:bert', ownerPeerId: 'visitor', agentId: 'bert', kind: 'resident', name: 'Bert', position: [25,3,5], distance: 24 }];
+    networkOptions.onDirectory([{ agentId: 'bert', ownerPeerId: 'visitor', name: 'Bert', position: [25,3,5], color: '#8fffd4', status: 'idle' }]);
+    const startedAt = Date.now();
+    host.receiveWorldMessage({ id: 'greeting', peerId: 'visitor', agentId: 'bert', name: 'Bert', text: 'Hello Ada',
+      social: { rootId: 'root', rootPeerId: 'visitor', rootAgentId: 'bert', targetPeerId: 'owner', targetAgentId: head.agentId,
+        startedAt, expiresAt: startedAt + 60000, turn: 0 } });
+    return head.agentId;
+  });
+  await page.waitForFunction(() => calls.some(c => c[0] === 'generate'));
+  await page.evaluate(() => { window.fixtureParticipants = []; });
+  await page.waitForFunction(() => calls.some(c => c[0] === 'social-aborted'), null, { timeout: 3000 });
+  const result = await page.evaluate(async id => ({ head: await agents.get(id), events: await agents.events(id), calls }), id);
+  assert.equal(result.head.status, 'waiting'); assert(!result.events.some(e => e.type === 'request'));
+  assert(!result.calls.some(c => c[0] === 'public-message' || c[0] === 'intent'));
 });

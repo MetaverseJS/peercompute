@@ -1,9 +1,10 @@
-import { chatIdentifier, chatText, normalizeChatInput, ROOM_CHAT_LIMITS } from '../chat/roomChatContracts.js';
+import { chatIdentifier, chatText, normalizeChatInput, validateSocialAuthor, ROOM_SOCIAL_LIMITS, ROOM_CHAT_LIMITS } from '../chat/roomChatContracts.js';
 
 export const WORLD_CHAT_LIMITS = Object.freeze({ residents: 16, contextMessages: 16, contextBytes: 8192,
   seenEntries: 1024, seenMs: 300000, cooldownMs: 5000, discussionMs: 120000, turnsPerResident: 2 });
 const encoder = new TextEncoder();
-const eligible = body => body?.local === true && body.respondToWorldChat === true
+const socialEligible = body => body?.initiateConversations === true || body?.respondToWorldChat === true;
+const eligible = body => body?.local === true && socialEligible(body)
   && body.status !== 'paused' && !body.recoveryRequired;
 const abortReason = () => new DOMException('World-chat resident is no longer active', 'AbortError');
 function displayName(value) {
@@ -19,23 +20,31 @@ function displayName(value) {
  * The host verifies resident authors against its authenticated owner/body directory,
  * and owns inference and publication. No private history is read here.
  * Opt-in revocation cancels work but retains the single slot until it settles. */
-export function createWorldChatResponder({ getResidents, respond, publish, onStatus = () => {},
-  now = () => performance.now(), cooldownMs = WORLD_CHAT_LIMITS.cooldownMs,
+export function createWorldChatResponder({ getResidents, respond, publish, onStatus = () => {}, onDelivered = () => {},
+  now = () => performance.now(), wallNow = Date.now, cooldownMs = WORLD_CHAT_LIMITS.cooldownMs,
   discussionMs = WORLD_CHAT_LIMITS.discussionMs } = {}) {
-  if (![getResidents, respond, publish, onStatus, now].every(value => typeof value === 'function')
+  if (![getResidents, respond, publish, onStatus, onDelivered, now, wallNow].every(value => typeof value === 'function')
       || !Number.isFinite(cooldownMs) || cooldownMs < 0 || cooldownMs > 60000
       || !Number.isFinite(discussionMs) || discussionMs <= 0 || discussionMs > 300000) {
     throw new TypeError('World chat requires callbacks, a bounded cooldown and a discussion deadline');
   }
-  const residents = new Map(), seen = new Map();
+  const residents = new Map(), seen = new Map(), socialRoots = new Map();
   let context = [], contextBytes = 0, active, timer, discussionTimer, discussion, closed = false, disposal, order = 0;
   const notify = value => { try { Promise.resolve(onStatus(Object.freeze(value))).catch(() => {}); } catch { /* Observer only. */ } };
   const clearTimer = () => { clearTimeout(timer); timer = undefined; };
   const publicContext = () => Object.freeze({ kind: 'public-room-chat', messages: Object.freeze(context.map(entry => entry.message)) });
   const isSelf = (body, message) => message.agentId === body.agentId
     && (!body.ownerPeerId || message.peerId === body.ownerPeerId);
+  const participant = (body, social, root) => body.agentId === (root ? social.rootAgentId : social.targetAgentId)
+    && body.ownerPeerId === (root ? social.rootPeerId : social.targetPeerId);
   function remaining(key, entry, pending) {
     const budget = discussion?.residents.get(key);
+    if (discussion?.kind === 'social') {
+      const social = pending?.message.social;
+      if (!social || discussion.socialRoot.closed || !socialEligible(entry.body)
+          || social.turn >= ROOM_SOCIAL_LIMITS.turns - 1 || now() >= discussion.expiresAt
+          || !participant(entry.body, social, (social.turn + 1) % 2 === 0)) return false;
+    } else if (entry.body.respondToWorldChat !== true || pending?.message.social) return false;
     return pending?.discussion === discussion && budget?.agentId === entry.body.agentId
       && budget.turns < WORLD_CHAT_LIMITS.turnsPerResident
       && (pending.message.agentId === undefined || now() < discussion.expiresAt);
@@ -50,6 +59,8 @@ export function createWorldChatResponder({ getResidents, respond, publish, onSta
     // A slow initial answer still belongs to its human. The deadline applies
     // only to autonomous follow-ups. Already-dispatched inference owns the slot
     // until it finishes; aborting it would persistently pause AgentRuntime.
+    // Explicit social threads use ephemeral inference and can stop immediately.
+    if (discussion.kind === 'social' && active?.discussion === discussion) active.controller.abort(abortReason());
     for (const entry of residents.values()) if (entry.pending?.message.agentId !== undefined) entry.pending = null;
     schedule();
   }
@@ -80,12 +91,15 @@ export function createWorldChatResponder({ getResidents, respond, publish, onSta
     }
     for (const key of residents.keys()) if (!retained.has(key)) residents.delete(key);
     if (active && residents.get(active.key) !== active.entry) active.controller.abort(abortReason());
+    if (active && (active.discussion.kind === 'social' ? !socialEligible(active.entry.body)
+      : active.entry.body.respondToWorldChat !== true)) active.controller.abort(abortReason());
   }
   function stillOwned(run) {
     if (closed) throw abortReason();
     reconcile();
     run.controller.signal.throwIfAborted();
     if (closed || residents.get(run.key) !== run.entry || run.discussion !== discussion) throw abortReason();
+    if (run.discussion.kind === 'social' && run.discussion.socialRoot.closed) throw abortReason();
     if (run.message.agentId !== undefined && now() >= run.discussion.expiresAt) {
       throw new DOMException('World-chat discussion expired', 'AbortError');
     }
@@ -122,15 +136,23 @@ export function createWorldChatResponder({ getResidents, respond, publish, onSta
       const isCurrent = () => { try { stillOwned(run); return true; } catch { return false; } };
       const answer = await respond(run.body, run.message, { signal: run.controller.signal, context: publicContext(), isCurrent });
       stillOwned(run);
+      if (typeof answer === 'string' && !answer.trim()) {
+        if (run.discussion.kind === 'social') run.discussion.socialRoot.closed = true;
+        notify({ key, status: 'idle', messageId: run.message.id, reason: 'quiet' }); return;
+      }
       // Output is validated, never silently truncated or retried after publication.
-      const output = normalizeChatInput({ agentId: run.body.agentId, name: displayName(run.body.name), text: answer });
+      const output = normalizeChatInput({ agentId: run.body.agentId, name: displayName(run.body.name), text: answer,
+        ...(run.message.social ? { social: { ...run.message.social, turn: run.message.social.turn + 1 } } : {}) });
       const normalized = output.text.trim().replace(/\s+/gu, ' ');
       if (run.message.agentId !== undefined && normalized === budget.lastOutput) {
         notify({ key, status: 'idle', messageId: run.message.id, reason: 'repeated-followup' }); return;
       }
       notify({ key, status: 'publishing', messageId: run.message.id });
       stillOwned(run);
-      await publish(output, { signal: run.controller.signal });
+      const result = await publish(output, { signal: run.controller.signal });
+      // Delivery is an observed fact even if a human supersedes the thread while
+      // its already-committed transport acknowledgment is returning.
+      try { await onDelivered({ body: run.body, incoming: run.message, output, result }); } catch { /* Observer only. */ }
       budget.lastOutput = normalized;
       stillOwned(run); notify({ key, status: 'idle', messageId: run.message.id });
     }).catch(error => {
@@ -140,6 +162,55 @@ export function createWorldChatResponder({ getResidents, respond, publish, onSta
     }).finally(() => { if (active === run) active = null; schedule(); });
   }
   function sync() { if (!closed) { reconcile(); schedule(); } }
+  function acceptSocial(message, clock) {
+    const social = message.social, key = `${social.rootPeerId}:${social.rootId}`;
+    const identity = JSON.stringify({ ...social, turn: 0 });
+    for (const [id, root] of socialRoots) if (clock - root.at >= WORLD_CHAT_LIMITS.seenMs) socialRoots.delete(id);
+    let root = socialRoots.get(key);
+    if (root) {
+      if (root.identity !== identity || root.closed || clock >= root.expiresAt || social.turn !== root.lastTurn + 1) return false;
+      root.lastTurn = social.turn;
+      return discussion?.socialRoot === root;
+    }
+    if (social.turn !== 0 || socialRoots.size >= ROOM_SOCIAL_LIMITS.roots) return false;
+    const pair = [`${social.rootPeerId}:${social.rootAgentId}`, `${social.targetPeerId}:${social.targetAgentId}`].sort().join('|');
+    root = { key, pair, identity, at: clock, expiresAt: clock + Math.min(discussionMs, social.expiresAt - wallNow()), lastTurn: 0, closed: false };
+    socialRoots.set(key, root);
+    const participants = new Map([...residents].filter(([, entry]) => socialEligible(entry.body)
+      && (participant(entry.body, social, true) || participant(entry.body, social, false)))
+      .map(([key, entry]) => [key, { agentId: entry.body.agentId, turns: participant(entry.body, social, true) ? 1 : 0, lastOutput: null }]));
+    const humanPending = Boolean(active && active.discussion.kind !== 'social')
+      || [...residents.values()].some(entry => entry.pending && entry.pending.message.agentId === undefined);
+    const socialPending = discussion?.kind === 'social' && !discussion.socialRoot.closed
+      && discussion.socialRoot.lastTurn < ROOM_SOCIAL_LIMITS.turns - 1 && clock < discussion.expiresAt;
+    if (!social.targetAgentId || !participants.size || humanPending) { root.closed = true; return false; }
+    // A delayed competing greeting cannot reopen a quiet/completed encounter.
+    if (discussion?.kind === 'social' && discussion.socialRoot.pair === pair
+        && !socialPending && clock < discussion.expiresAt) { root.closed = true; return false; }
+    if (socialPending && discussion.socialRoot.pair === pair) {
+      // Crossed greetings must converge regardless of which local echo arrived
+      // first. Compare code units, never locale-dependent collation.
+      if (key > discussion.socialRoot.key) {
+        for (const [id, entry] of residents) if (participant(entry.body, social, true)) {
+          const budget = discussion.residents.get(id);
+          if (budget) budget.turns = Math.min(WORLD_CHAT_LIMITS.turnsPerResident, budget.turns + 1);
+        }
+        root.closed = true; return false;
+      }
+      for (const [id, budget] of participants) {
+        const previous = discussion.residents.get(id);
+        if (previous?.agentId === budget.agentId) {
+          budget.turns = Math.min(WORLD_CHAT_LIMITS.turnsPerResident, budget.turns + previous.turns);
+        }
+      }
+      root.expiresAt = Math.min(root.expiresAt, discussion.expiresAt);
+      discussion.socialRoot.closed = true;
+      if (active?.discussion === discussion) active.controller.abort(abortReason());
+    } else if (active || socialPending) { root.closed = true; return false; }
+    for (const entry of residents.values()) entry.pending = null;
+    discussion = { kind: 'social', socialRoot: root, expiresAt: root.expiresAt, residents: participants };
+    expireDiscussion(); return true;
+  }
   function receive(input) {
     if (closed) return { accepted: false, queued: 0, reason: 'closed' };
     let message;
@@ -147,7 +218,10 @@ export function createWorldChatResponder({ getResidents, respond, publish, onSta
       message = Object.freeze({ id: chatIdentifier(input?.id), peerId: chatIdentifier(input?.peerId),
         name: chatText(input?.name ?? 'Guest', ROOM_CHAT_LIMITS.nameBytes, 'Display name'),
         text: chatText(input?.text, ROOM_CHAT_LIMITS.textBytes, 'Message'),
-        ...(input?.agentId === undefined ? {} : { agentId: chatIdentifier(input.agentId) }) });
+        ...normalizeChatInput({ name: input?.name ?? 'Guest', text: input?.text,
+          ...(input?.agentId === undefined ? {} : { agentId: input.agentId }),
+          ...(input?.social === undefined ? {} : { social: input.social }) }) });
+      validateSocialAuthor(message, message.peerId, wallNow());
     } catch { return { accepted: false, queued: 0, reason: 'invalid-message' }; }
     const clock = now(), key = `${message.peerId}:${message.id}`;
     for (const [id, at] of seen) if (clock - at >= WORLD_CHAT_LIMITS.seenMs) seen.delete(id);
@@ -158,11 +232,15 @@ export function createWorldChatResponder({ getResidents, respond, publish, onSta
     context.push({ message, bytes }); contextBytes += bytes;
     while (context.length > WORLD_CHAT_LIMITS.contextMessages || contextBytes > WORLD_CHAT_LIMITS.contextBytes) contextBytes -= context.shift().bytes;
     reconcile();
+    if (message.social && !acceptSocial(message, clock)) return { accepted: true, queued: 0 };
     if (message.agentId === undefined) {
+      if (discussion?.kind === 'social') discussion.socialRoot.closed = true;
+      if (active?.discussion.kind === 'social') active.controller.abort(abortReason());
       // Freeze the participants and their spent budgets for this human turn.
       // Removing/re-enabling or joining a resident cannot buy extra replies.
-      discussion = { expiresAt: clock + discussionMs,
-        residents: new Map([...residents].map(([key, entry]) => [key, { agentId: entry.body.agentId, turns: 0, lastOutput: null }])) };
+      discussion = { kind: 'human', expiresAt: clock + discussionMs,
+        residents: new Map([...residents].filter(([, entry]) => entry.body.respondToWorldChat === true)
+          .map(([key, entry]) => [key, { agentId: entry.body.agentId, turns: 0, lastOutput: null }])) };
       // Keep any dispatched inference alive until cleanup. stillOwned suppresses
       // its superseded output without turning a healthy persisted agent paused.
       expireDiscussion();
@@ -180,7 +258,7 @@ export function createWorldChatResponder({ getResidents, respond, publish, onSta
   function dispose() {
     if (disposal) return disposal;
     closed = true; clearTimer(); clearTimeout(discussionTimer); discussion = null;
-    residents.clear(); seen.clear(); context = []; contextBytes = 0;
+    residents.clear(); seen.clear(); socialRoots.clear(); context = []; contextBytes = 0;
     active?.controller.abort(abortReason());
     disposal = Promise.resolve(active?.done).then(() => {}); return disposal;
   }

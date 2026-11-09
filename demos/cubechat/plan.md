@@ -249,3 +249,36 @@ Corrected action prompting is qualified with actual local Qwen3.5 0.8B WebGPU
 inference for both new and legacy identities. Both approached the correct player
 and stopped at approximately10.6units; no CPU inference or scripted movement
 substitute was used. Full-history private-sharing integration acceptance passed: 71 core tests, 27 host tests, 21 native UI tests and an actual two-browser encrypted transfer with public-only and explicitly opted-in private histories. The internal HTTPS preview is updated; Pages remains unchanged.
+
+### November 9 — bounded social initiative
+
+Implementing the next explicit meet-and-follow follow-up: opt-in nearby greetings,
+mutual introductions and remembered social goals. Existing and cloned residents
+start with initiation off. Public world chat remains separately opt-in. Reuse
+managed inference and the learned motor; avoid speculative AgentRuntime journal
+runs so cancellation cannot pause a healthy resident. Permit silence and validate
+any target/action against current observations. No automatic model loading.
+
+Bound each pair to four messages/60seconds and retain root identity/deadline/turn
+across authenticated messages; preserve v1 display compatibility. Host limits:
+8second proximity dwell under60units,90second resident and10minute target cooldown,
+30second human-priority/no-model backoff and one speculative model request at a
+time. Public observed/decided/delivery/action memories must never imply fabricated
+human messages or completed actions. Exclude private histories and saved context
+from public prompts. Validate through focused scheduler/protocol/privacy/lifecycle
+checks, actual peer browsers and actual small local model decisions. Internal
+preview only; GitHub Pages and push remain on hold.
+
+#### Social implementation and qualification outcome
+
+Implemented locally: native consent, reusable encounter/decision components,
+public episode/goal/receipt retention, encrypted pair protocol with old-client
+fallback, simultaneous-greeting arbitration and immediate human/owner/target-loss
+cancellation. Final81social tests,32host tests,32native UI/contracts and62nearby
+regressions pass (overlap retained; not summed). Two actual isolated peer browsers
+pass all six network/privacy/lifecycle/visual/reload groups. Quiet and sociable
+actual Qwen0.8B probes use26/26GPU layers with no downloads; both choose silence.
+A balanced prompt revision still chooses silence. Thus generated conversational
+quality remains a model-specific qualification task, not a claimed learning result.
+The deterministic fixture proves transport/orchestration, not LLM creativity.
+Internal CubeChat5176 is updated; public Pages/deploy/push remain on hold.

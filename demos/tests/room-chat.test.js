@@ -7,7 +7,8 @@ import { noise } from 'peercompute-artifact-noise';
 import { plaintext } from '@libp2p/plaintext';
 import { yamux } from '@libp2p/yamux';
 import { identify } from '@libp2p/identify';
-import { RoomChatService, ROOM_CHAT_PROTOCOL, ROOM_CHAT_LIMITS } from '../shared/chat/RoomChatService.js';
+import { RoomChatService, ROOM_CHAT_PROTOCOL, ROOM_CHAT_PROTOCOL_V1, ROOM_CHAT_LIMITS } from '../shared/chat/RoomChatService.js';
+import { createWorldChatResponder } from '../shared/agents/WorldChatResponder.js';
 import { channel } from '../../peercompute/src/peercompute/networkManager/inference/protocol.js';
 
 const scope = { gameId: 'cubechat', roomId: 'test-room', topologyId: 'mesh' }, worldId = 'cubechat:test-room';
@@ -33,9 +34,9 @@ async function fixture(t, count = 2, options = {}) {
   return entries;
 }
 const envelope = (recipient, type, extra = {}) => ({ type, recipient: recipient.node.peerId.toString(), scope, worldId, ...extra });
-async function raw(sender, receiver, { hello = {}, message = {}, session } = {}) {
+async function raw(sender, receiver, { hello = {}, message = {}, session, protocol = ROOM_CHAT_PROTOCOL } = {}) {
   const connection = sender.node.getConnections().find((entry) => entry.remotePeer.equals(receiver.node.peerId));
-  const stream = await connection.newStream(ROOM_CHAT_PROTOCOL), io = channel(stream), signal = AbortSignal.timeout(2000);
+  const stream = await connection.newStream(protocol), io = channel(stream), signal = AbortSignal.timeout(2000);
   try {
     await io.write(envelope(receiver, 'hello', hello), signal);
     const ready = await io.read(signal);
@@ -254,4 +255,47 @@ test('cancel during pending dial never sends later; an absent peer remains bound
   const started = performance.now(), timedOut = await a.service.send({ text: 'No indefinite wait' });
   assert.equal(timedOut.delivery.status, 'failed'); assert(performance.now() - started < 500);
   assert.match(timedOut.delivery.recipients[0].error, /timed out/); assert.equal(b.messages.length, 0);
+});
+
+test('social v2 binds turn authors to encrypted owners and v1 fallback retains display without autonomy metadata', { timeout: 15000 }, async t => {
+  const [a, b] = await fixture(t), startedAt = Date.now();
+  const social = { rootId: crypto.randomUUID(), rootPeerId: a.service.peerId, rootAgentId: 'ada',
+    targetPeerId: b.service.peerId, targetAgentId: 'bert', startedAt, expiresAt: startedAt + 60000, turn: 0 };
+  const sent = await a.service.send({ agentId: 'ada', name: 'Ada', text: 'Hello Bert', social });
+  assert.equal(sent.delivery.status, 'delivered'); assert.deepEqual(b.messages[0].social, social);
+  assert.equal(b.messages[0].peerId, social.rootPeerId);
+  assert.throws(() => a.service.send({ agentId: 'ada', text: 'Impersonation', social: { ...social, rootPeerId: b.service.peerId } }));
+  assert.equal((await raw(a, b, { message: { agentId: 'ada', social: { ...social, turn: 1 } } })).type, 'error');
+  assert.equal((await raw(a, b, { message: { agentId: 'ada', social: { ...social, expiresAt: startedAt + 60001 } } })).type, 'error');
+  const id = crypto.randomUUID();
+  assert.equal((await raw(a, b, { message: { id, agentId: 'ada', social } })).type, 'ack');
+  assert.equal((await raw(a, b, { message: { id, agentId: 'ada', social: { ...social, targetAgentId: 'different' } } })).type, 'error');
+  await b.node.unhandle(ROOM_CHAT_PROTOCOL);
+  const fallback = await a.service.send({ agentId: 'ada', name: 'Ada', text: 'Legacy hello', social: { ...social, rootId: crypto.randomUUID() } });
+  assert.equal(fallback.delivery.status, 'delivered');
+  assert.equal(b.messages.at(-1).agentId, 'ada'); assert.equal(b.messages.at(-1).text, 'Legacy hello');
+  assert.equal(Object.hasOwn(b.messages.at(-1), 'social'), false);
+  assert.equal((await raw(a, b, { protocol: ROOM_CHAT_PROTOCOL_V1, message: { agentId: 'ada', social } })).type, 'error');
+});
+
+test('real encrypted peers exchange exactly four targeted social turns without unrelated resident activation', { timeout: 15000 }, async t => {
+  const [a, b] = await fixture(t), calls = [], residents = [];
+  for (const [entry, agentId] of [[a, 'ada'], [b, 'bert']]) {
+    const bodies = [agentId, 'unrelated'].map(id => ({ key: id, agentId: id, name: id, local: true,
+      ownerPeerId: entry.service.peerId, initiateConversations: true, respondToWorldChat: false, status: 'idle' }));
+    const responder = createWorldChatResponder({ getResidents: () => bodies, cooldownMs: 0,
+      respond: async (body, incoming) => { calls.push({ agentId: body.agentId, turn: incoming.social.turn + 1 }); return `Turn ${incoming.social.turn + 1}`; },
+      publish: (output, options) => entry.service.send(output, options) });
+    residents.push(responder); t.after(() => responder.dispose());
+    const previous = entry.service.onMessage;
+    entry.service.onMessage = message => { previous(message); responder.receive(message); };
+  }
+  const startedAt = Date.now(), social = { rootId: crypto.randomUUID(), rootPeerId: a.service.peerId,
+    rootAgentId: 'ada', targetPeerId: b.service.peerId, targetAgentId: 'bert', startedAt, expiresAt: startedAt + 60000, turn: 0 };
+  await a.service.send({ agentId: 'ada', text: 'Tell me about yourself', social });
+  await until(() => a.messages.length === 4 && b.messages.length === 4 && residents.every(item => !item.getStatus().active));
+  assert.deepEqual(calls, [{ agentId: 'bert', turn: 1 }, { agentId: 'ada', turn: 2 }, { agentId: 'bert', turn: 3 }]);
+  assert.deepEqual(a.messages.map(item => item.social.turn), [0, 1, 2, 3]);
+  assert(a.messages.every(item => item.social.rootId === social.rootId && item.social.expiresAt === social.expiresAt));
+  await delay(10); assert.equal(calls.length, 3);
 });
