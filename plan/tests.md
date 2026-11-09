@@ -4354,3 +4354,24 @@ owned isolated-room browser verifies default checkbox states and a live
 SecretWorkshop WSS connection, with zero page/console errors. Browser cleaned up.
 Public Pages files remain untouched. Build logs and preview-check.json are under
 /home/cos/.cache/peercompute-meet-follow-20261109/.
+
+### NetViz All demos — November 9 acceptance
+
+Verify signed-source and bounded telemetry admission; absence of prompt/file/private
+state; opt-out and clean connect/reconnect/dispose; stale/replay handling; actual
+local host enable/disable/load state. Check aggregation without invented links,
+unique per-model hosts, app/role filtering and selected game scope. Exercise
+multiple actual browser network instances via SecretWorkshop, compare world/model
+reports, inspect mobile/desktop render and console, and preserve legacy session
+inspector/chaos overlay behavior. Build consumers into external cache only.
+Initial model-provider unit gate: 3/3 passed.
+
+NetViz All demos results:107/107 core/transport/regression checks,12/12 viewer
+aggregation/relay checks,14/14 model/provider/runtime checks and27/27 host
+regressions pass (overlapping suites). Both existing session inspector and native
+viewer smoke pass. Production-browser integration through SecretWorkshop verifies
+three publishers, same-model two-host aggregation, disable/busy changes, app
+filtering, actual game-scoped attachment and stale removal. Desktop/mobile
+screenshots inspected; zero browser/cleanup errors. Actual inline compute ran;
+model advertisements were explicit fixtures, with no inference/download claim.
+Four external consumer builds and exact HTTPS5182 preview passed.

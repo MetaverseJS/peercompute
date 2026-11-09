@@ -61666,3 +61666,50 @@ and performance, and retain a physics-based motorcycle.
 - Findings: shared session beacons support cross-demo discovery, but Attach switches a single topology/room. It retains gameId=netviz and inbound pc-snapshot scope checking rejects other demo game IDs. Actual graph aggregation across all demos is absent. Inference uses bare NetworkManager, bypassing NodeKernel NetViz session/telemetry publication; world agents deliberately use a separate model connection.
 - Commands: curl --fail --silent --show-error --max-time15 against https://fastbox.tail5c077c.ts.net:4173/netviz/ returned PeerCompute NetViz and Attach controls. An isolated headless Playwright browser opened the same URL with render=off&autoConnect=1, awaited connected, observed6500ms, then disconnected and closed. Result: live SecretWorkshop WSS connection, one local telemetry record and one cubechat/global/cubechat session beacon; zero page errors. This validates discovery, not cross-demo graph attachment or global completeness. No test server started.
 - Recommendation only: shared bounded telemetry for NodeKernel and standalone model connections, then an All demos aggregate view with world/model layers and observed/stale status. It would show reporting reachable peers, not guarantee a census of the entire distributed network. No runtime edits, model calls/downloads, public Pages changes or push. Documentation touched: plan/log.md and plan/plan.md; git diff --check run before local documentation checkpoint.
+
+### 2026-11-09T10:35:43-09:00 — NetViz All demos approved; next Humunculus slice queued
+
+- Prompts: "do it." authorizes the cross-demo telemetry/viewer implementation; while work was underway the user added "when you're done there implement the next humunculus/cubechat slice". Exact delivery timestamps unavailable; heading is the current record time. NetViz completes first; inspect the existing CubeChat plan for the subsequent slice. Public Pages builds/deploys/pushes remain on hold.
+- ICC MCP work + explicit full CLI refresh/work engaged; source fresh at a4f52d9a. Generic oracle flagged pre-existing unqualified chaos fallback paths, not a task-specific acceptance verdict. Created durable netviz-global-20261109 plan, clean preflights and disjoint published core/viewer/root leases. Read current telemetry/scope/relay lifecycle and local inference hosting paths. A premature read of the still-running CLI work JSON failed without mutating state; waited for completion.
+- Design: bounded signed-source operational telemetry on the existing globally routed NetViz session topic; native NetworkManager lifecycle owns publication so NodeKernel and standalone inference both participate. No chat, prompt, file, exact position or private model-state payloads. All demos observes reporting network instances, with app/role filters, explicit stale state, real reported links and hosted-model groups. Existing single-session attach retains room isolation and gains the selected game identifier.
+- Root changes: demos/inference/src/modelNetworkTelemetry.js owns a composable operational compute provider with exact cleanup; runtime.js binds owned and borrowed managers; WorldAgentHost.js labels its separate model connection with its demo application. Three tests in demos/tests/model-telemetry.test.js pass via node --test; logs in /home/cos/.cache/peercompute-netviz-global-20261109. Core/viewer changes and actual browser acceptance are in progress.
+
+- Core implementation/review gates:107/107 new and existing network, scheduler,
+  NodeKernel, real signed-gossipsub and Noise inference tests pass. Independent
+  review caught opt-out messages falling through to gameplay dispatch, timed-out
+  hosting-state waiters, and unavailable model data masquerading as zero hosts;
+  all fixed with regression coverage. Reports are signed peer claims, not proof
+  that reported GPU performance or model service availability is accurate.
+- Viewer gates:12/12 aggregation/relay tests, existing inspector smoke and native
+  desktop/mobile UI/filter/reconnect smoke pass. Root model/provider/runtime
+  tests14/14 and host regressions27/27 pass. External production builds passed
+  NetViz12.61s, CubeChat13.99s, inference12.95s and Earth21.17s (existing chunk
+  warnings only). No docs/ generated assets.
+- Added reusable demos/tests/network-telemetry-browser.mjs: production fixture
+  NodeKernel plus two standalone managers and local fixture inference descriptors
+  across independent rooms/contexts through SecretWorkshop; real compute counters
+  come from executed inline tasks. No inference call or model download. First
+  fixture build failed on Vite default target rejecting top-level await; made
+  its test target explicit and moved fixture startup into an async function so
+  dynamic protocol imports can finish after entry evaluation. Actual browser
+  acceptance remains in progress; failed build log retained externally.
+
+- Production integration passed with three independent browser contexts plus the
+  production viewer over SecretWorkshop: one actual NodeKernel in its own game/room
+  and two standalone model managers in distinct scopes. Each executed an actual
+  inline compute task. Explicit test model descriptors (no model inference)
+  aggregated to two hosts, then one after disabling hosting; busy state, app
+  filtering, genuine cross-game warm snapshot attachment and stale-host exclusion
+  passed. Desktop/mobile screenshots inspected; zero page/console/cleanup errors,
+  four recorded warnings. Fixture TLA entry initially timed out on dynamic import;
+  async startup fixed it. Passed report: browser/report.json in the task cache.
+- Updated internal external-build roots for CubeChat5176, inference5189 and
+  Earth5187, preserving old missing hashed assets for open tabs. Launched owned
+  persistent NetViz preview5182 from external serve-netviz.mjs; immediate first
+  curl raced server startup and was retried. Exact trusted HTTPS preview opened
+  in an isolated headless browser, defaulted to All demos, connected to
+  SecretWorkshop and closed without errors. No public docs build/deploy or push.
+- All scoped agents finished; core and viewer leases ended. Package script
+  test:network-telemetry exposes the focused contract/aggregation/provider suite.
+  Final diff guard/local checkpoint and ICC refresh follow before beginning the
+  next user-authorized CubeChat social-initiative slice.

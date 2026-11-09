@@ -22,6 +22,9 @@
       --text-dim: rgba(0, 255, 106, 0.7);
     }
 
+    [hidden] { display: none !important; }
+    #observed-summary, #hosted-models, .status, .peer-list, #inspect-body { overflow-wrap: anywhere; white-space: pre-wrap; }
+    select, input { min-width: 0; max-width: 100%; }
     * {
       box-sizing: border-box;
     }
@@ -368,7 +371,17 @@
       </div>
       <div class="console-section">
         <div class="control-group">
-          <div class="group-title">Topology</div>
+          <div class="group-title">Network view</div>
+          <div class="field"><label for="network-view">View</label><select id="network-view"><option value="all">All demos</option><option value="session">Selected session</option></select></div>
+          <div id="observed-controls">
+            <div class="field"><label for="application-filter">Application</label><select id="application-filter"><option value="">All applications</option></select></div>
+            <div class="field"><label for="role-filter">Connection</label><select id="role-filter"><option value="">All roles</option><option value="world">World</option><option value="models">Models</option><option value="compute">Compute</option><option value="observer">Observer</option></select></div>
+            <div id="observed-summary" class="status">Waiting for reports.</div>
+            <div class="group-title">Hosted models</div>
+            <div id="hosted-models" class="status">No fresh reports advertise hosted models.</div>
+          </div>
+          <div class="group-title">Selected session</div>
+          <div class="field"><label for="game-id">Game ID</label><input id="game-id" value="netviz" spellcheck="false" /></div>
           <div class="field">
             <label for="topology-select">Topology</label>
             <select id="topology-select">
@@ -470,7 +483,7 @@
         <div class="panel-title">What is NetViz?</div>
         <div id="help-body">
           NetViz is a live topology + telemetry view of the PeerCompute network.
-          The center cube is your local node; amber cubes are peers and blue-white icosahedrons are relays.
+          All demos combines reachable operational reports without joining their game rooms. Each node is a network instance, not necessarily a separate computer. Cyan cubes are model connections, green cubes are world connections and gray cubes have stale reports. Session-only nodes are older builds without full telemetry. Blue-white icosahedrons are known relays.
           Amber links show direct WebRTC connections, green arcs show relay-facilitated links with a spur to the relay,
           and blue-white arcs show peers keeping a relay connection (pubsub activity).
           Pulses indicate message direction along each link.
@@ -501,7 +514,11 @@
         <div class="panel-title">Legend</div>
         <div class="legend">
           <div><span class="legend-amber">LOCAL</span> your node</div>
-          <div><span class="legend-amber">PEER</span> connected peers</div>
+          <div><span class="legend-amber">PEER</span> reporting network instance</div>
+          <div><span style="color:#00ffd4">MODELS</span> model connection</div>
+          <div><span style="color:#00ff6a">WORLD</span> world connection</div>
+          <div><span style="color:#89949a">STALE</span> report older than 15 seconds</div>
+          <div><span>SESSION ONLY</span> legacy beacon, no operational report</div>
           <div><span>GHOST</span> inferred nodes (no telemetry yet)</div>
           <div><span class="legend-relay">RELAY</span> relay servers</div>
           <div><span class="legend-amber">WEBRTC</span> direct peer link (amber)</div>

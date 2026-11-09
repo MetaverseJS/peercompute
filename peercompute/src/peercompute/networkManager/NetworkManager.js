@@ -23,6 +23,7 @@ import { multiaddr } from '@multiformats/multiaddr';
 import { NetworkScheduler, DEFAULT_SCHEDULER_PROFILE } from './NetworkScheduler.js';
 import { TopologyController } from './TopologyController.js';
 import { PeerConnectionRecovery } from './inference/PeerConnectionRecovery.js';
+import { NetworkTelemetryService, NETWORK_TELEMETRY_TOPIC } from './NetworkTelemetryService.js';
 import { isDebugOutputEnabled } from '../utils/debugOutput.js';
 
 const DEFAULT_PUBSUB_TOPIC = 'peercompute-state-sync';
@@ -575,6 +576,9 @@ export class NetworkManager {
     const scopedPresenceTopic = buildScopedTopic(topicPrefix, topologyId, roomId, 'presence');
     const discoveryTopic = config.discoveryTopic || 'peercompute._peer-discovery._p2p._pubsub';
     const additionalPubsubTopics = normalizeTopicList(config.additionalPubsubTopics);
+    if (config.enableNetworkTelemetry !== false && !additionalPubsubTopics.includes(NETWORK_TELEMETRY_TOPIC)) {
+      additionalPubsubTopics.push(NETWORK_TELEMETRY_TOPIC);
+    }
     const expandedGossipsubOptions = expandScoreParamTopics(gossipsubOptions, [
       config.pubsubTopic || (useScopedTopics ? scopedPubsubTopic : DEFAULT_PUBSUB_TOPIC),
       config.directTopic || (useScopedTopics ? scopedDirectTopic : DEFAULT_DIRECT_TOPIC),
@@ -600,6 +604,8 @@ export class NetworkManager {
       allowDiscoveryDialWhenIsolated: config.allowDiscoveryDialWhenIsolated === true,
       enforceTopologyScope: config.enforceTopologyScope !== false,
       enableTelemetry: config.enableTelemetry !== false,
+      enableNetworkTelemetry: config.enableNetworkTelemetry !== false,
+      networkTelemetryPublish: config.networkTelemetryPublish !== false,
       enableTopologyController: config.enableTopologyController !== false,
       enableRelayDirectPeers: config.enableRelayDirectPeers !== false,
       topologyTickMs: Number.isFinite(config.topologyTickMs) ? Math.max(250, config.topologyTickMs) : 1500,
@@ -673,6 +679,10 @@ export class NetworkManager {
     this.debugOutput = typeof this.config.debugOutput === 'boolean'
       ? this.config.debugOutput
       : isDebugOutputEnabled();
+    if (this.config.enableNetworkTelemetry !== false && !this.config.additionalPubsubTopics.includes(NETWORK_TELEMETRY_TOPIC)) {
+      this.config.additionalPubsubTopics.push(NETWORK_TELEMETRY_TOPIC);
+    }
+    this.networkTelemetryService = new NetworkTelemetryService(this);
     this.bootstrapPeerIds = new Set(
       normalizedBootstrapPeers.map(getPeerIdFromAddr).filter(Boolean)
     );
@@ -1129,6 +1139,7 @@ export class NetworkManager {
       this._startScheduler();
     }
     this._startTopologyController();
+    this.networkTelemetryService.start();
   }
 
   _refreshRelayTransport() {
@@ -1173,6 +1184,7 @@ export class NetworkManager {
   }
 
   async disconnect() {
+    await this.networkTelemetryService.stop();
     await this._stopPeerInferenceService();
     await this.peerConnectionRecovery?.stop();
     await this._stopArtifactTransport();
@@ -1258,6 +1270,10 @@ export class NetworkManager {
   }
 
   getArtifactTransport() { return this.artifactTransport; }
+
+  getNetworkTelemetryService() { return this.networkTelemetryService; }
+
+  setNetworkTelemetryProvider(provider) { return this.networkTelemetryService.setProvider(provider); }
 
   getPublishedArtifactCids() { return [...(this.artifactDiscovery?.publicArtifacts ?? [])].slice(0, 128); }
 
@@ -1841,6 +1857,8 @@ export class NetworkManager {
       const { topic, data } = evt.detail || {};
       if (!topic || !data) return;
       if (!this.allowedTopics.has(topic)) return;
+      // Telemetry is handled before scope admission and never enters game-state handlers.
+      if (this.networkTelemetryService.handlePubsubMessage(evt.detail)) return;
 
       let parsed = null;
       try {

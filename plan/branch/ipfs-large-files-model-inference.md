@@ -1378,3 +1378,8 @@ User approved meet-and-follow and added editing existing residents and cloning t
   the recent-episode sample with full retained selected world-history transfer,
   bounded credited chunks, permission rechecks, and atomic destination import.
   No same-identity authority migration or automatic future-memory merging.
+
+November 9: user authorized NetViz All demos telemetry across games and standalone
+model hosts. Add shared operational reports and aggregate filters/model-host counts,
+then continue the next Humunculus/CubeChat slice after verification. Keep public
+Pages publication on hold; internal previews remain the review surface.

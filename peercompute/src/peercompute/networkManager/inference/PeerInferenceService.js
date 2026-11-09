@@ -85,8 +85,8 @@ export class PeerInferenceService {
       throw failure('Peer inference identity or scope mismatch');
     }
   }
-  async _state(signal, ownReservation = 0, manifestCid) {
-    const state = localState(await withAbort(this.getLocalState(), signal), this.hostingEnabled,
+  async _state(signal, ownReservation = 0, manifestCid, statePromise) {
+    const state = localState(await withAbort(statePromise ?? this.getLocalState({ signal }), signal), this.hostingEnabled,
       { defaultMaxNewTokens: MODEL_POLICY.maxNewTokens });
     // The application reports local work as well. Inbound work is also busy
     // during upload/admission so simultaneous requestors do not see false idle.
@@ -96,6 +96,21 @@ export class PeerInferenceService {
     }
     if (this.inbound.size > ownReservation) { state.busy = true; state.idleForMs = 0; }
     return state;
+  }
+  /** Public operational summary of this node's advertised hosts; never queries peers. */
+  async getTelemetrySummary({ signal = this.controller.signal } = {}) {
+    if (this.closed || !this.hostingEnabled) return [];
+    // A broken application callback must not accumulate one pending read every
+    // telemetry tick, even when it ignores cancellation.
+    if (this.telemetryStatePending) throw new Error('Local hosted-model telemetry read is still pending');
+    const pending = Promise.resolve().then(() => this.getLocalState({ signal }));
+    this.telemetryStatePending = pending;
+    const clear = () => { if (this.telemetryStatePending === pending) this.telemetryStatePending = null; };
+    pending.then(clear, clear);
+    const state = await this._state(signal, 0, undefined, this.telemetryStatePending);
+    if (this.closed || !this.hostingEnabled || signal.aborted) return [];
+    return state.hostedModels.map(({ manifestCid, name, task, runtime, modalities, busy }) =>
+      ({ manifestCid, name, task, runtime, modalities, busy }));
   }
   setHostingEnabled(enabled) {
     this.hostingEnabled = Boolean(enabled);

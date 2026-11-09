@@ -19,6 +19,7 @@ import { findHuggingFaceConversions } from './huggingface/conversionFinder.js';
 import { validateHubPackage, reuseVerifiedHubFiles } from './modelHubPackage.js';
 import { attachModelRuntimeController } from './modelRuntimeController.js';
 import { createModelNetworkConnection } from './modelNetworkConnection.js';
+import { createModelNetworkTelemetry } from './modelNetworkTelemetry.js';
 import { AgentRuntime } from '../../../peercompute/src/peercompute/agents/AgentRuntime.js';
 import { createAgentModelAdapter } from './agentModelAdapter.js';
 import wasmUrl from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url';
@@ -53,7 +54,7 @@ export async function checkGgufCapabilities() {
 
 /** Reusable app facade; storage and execution remain owned by PeerCompute managers. */
 export async function createInferenceRuntime({ stateManager, computeManager, networkManager,
-  storeName = 'inference-models', runtimeBaseUrl, collectGpuEvidence = false,
+  storeName = 'inference-models', runtimeBaseUrl, collectGpuEvidence = false, telemetryApplication = 'inference',
   memoryBudgets, preferenceStorage, residentModelSlots = 8, auxiliaryWorkerSlots = 0, probeDeviceCapabilities = collectModelDeviceCapabilities,
   ggufRuntimeOptions = { n_ctx: 2048, n_batch: 64, n_gpu_layers: 99999, n_threads: 1 } } = {}) {
   if (!Number.isInteger(residentModelSlots) || residentModelSlots < 1 || residentModelSlots > 8) {
@@ -100,10 +101,14 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
   }
   let agents, agentsStarting, disposingAgents = false;
   const auxiliaryServices = new Map();
+  const networkTelemetry = createModelNetworkTelemetry({ computeManager: compute, application: telemetryApplication });
+  networkTelemetry.attach(networkManager);
   const networkConnection = createModelNetworkConnection({ store, manager: networkManager,
     async createManager(config) {
       const { NetworkManager } = await import('../../../peercompute/src/peercompute/networkManager/NetworkManager.js');
-      return new NetworkManager(config);
+      const manager = new NetworkManager(config);
+      networkTelemetry.attach(manager);
+      return manager;
     } });
   try {
     await store.open();
@@ -142,6 +147,7 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
       } });
     if (networkConnection.networkReady) networkConnection.startArtifacts();
   } catch (error) {
+    networkTelemetry.dispose();
     await diffusionService?.dispose().catch(() => {});
     await ggufService?.dispose().catch(() => {});
     await service?.dispose().catch(() => {});
@@ -349,6 +355,7 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
       const failures = disposed.filter((result) => result.status === 'rejected').map((result) => result.reason);
       if (failures.length) throw new AggregateError(failures, 'Some managed model services could not finish cleanup');
       await networkConnection.dispose();
+      networkTelemetry.dispose();
       if (ownsCompute) await compute.destroy();
       if (ownsState) await state.destroy();
     },

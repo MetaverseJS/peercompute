@@ -5,6 +5,10 @@ import { NURBSCurve } from 'three/examples/jsm/curves/NURBSCurve.js';
 const COLORS = {
   local: 0xfff2a6,
   remote: 0xffb13b,
+  models: 0x00ffd4,
+  world: 0x00ff6a,
+  stale: 0x89949a,
+  session: 0x7c6c9c,
   ghost: 0x8a5f1f,
   relay: 0xcaf6ff,
   host: 0x00ffd4,
@@ -706,6 +710,10 @@ export class NetworkVisualizer {
       }
       const color = isRelay
         ? COLORS.relay
+        : peer.stale ? COLORS.stale
+        : peer.sessionOnly ? COLORS.session
+        : peer.role === 'models' ? COLORS.models
+        : peer.role === 'world' ? COLORS.world
         : isRoot
           ? COLORS.root
           : isHost
@@ -722,7 +730,7 @@ export class NetworkVisualizer {
           : isHost
             ? 0x163038
             : 0x2a1a00;
-      let emissiveIntensity = isRelay ? 0.85 : isRoot ? 1.0 : isHost ? 0.8 : 0.65;
+      let emissiveIntensity = peer.stale ? 0.15 : isRelay ? 0.85 : isRoot ? 1.0 : isHost ? 0.8 : 0.65;
       let scale = isRoot ? 1.35 : isHost ? 1.15 : 1;
       if (isLocal && !isRelay) {
         emissive = 0xffd98a;

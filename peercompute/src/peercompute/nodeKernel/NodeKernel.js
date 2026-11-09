@@ -626,6 +626,8 @@ export class NodeKernel {
         roomId: this.config.roomId,
         pubsubTopic: this.config.stateTopic,
         additionalPubsubTopics: this.config.additionalPubsubTopics,
+        enableNetworkTelemetry: this.config.enableNetworkTelemetry,
+        networkTelemetryPublish: this.config.networkTelemetryPublish,
         allowDiscoveryDialWhenIsolated: this.config.allowDiscoveryDialWhenIsolated,
         allowLocalDial: this.config.allowLocalDial,
         webrtc: this.config.webrtc,
@@ -716,6 +718,10 @@ export class NodeKernel {
         gpuHub: this.gpuHub || null
       });
       await this.computeManager.initialize();
+      this.networkTelemetryRelease = this.networkManager.setNetworkTelemetryProvider(() => ({
+        application: this.config.gameId, role: this.config.networkTelemetryRole || 'world',
+        compute: this.computeManager?.getStats?.() ?? null
+      }));
       this.computeManager.setCommitDeltaHandler((delta) => {
         this.stateManager?.commitDelta?.(delta);
       });
@@ -760,6 +766,7 @@ export class NodeKernel {
     this._stopNetVizDebugTelemetryLoop();
     this._stopNetVizSessionBroadcast();
     this._stopNetVizNetworkSessionLoop();
+    this.networkTelemetryRelease?.(); this.networkTelemetryRelease = null;
 
     if (writeStopped && stateManager?.write) {
       await attempt('state-status', () => stateManager.write('status', 'stopped'));
@@ -969,6 +976,7 @@ export class NodeKernel {
       url.searchParams.set('topologyType', this.config.topology || 'distributed');
       url.searchParams.set('topologyId', this.config.topologyId || 'default-topology');
       url.searchParams.set('room', this.config.roomId || 'default-room');
+      url.searchParams.set('gameId', this.config.gameId || 'default-game');
       url.searchParams.set('autoConnect', '1');
       if (this.netVizDebugSessionId) {
         url.searchParams.set('attachSession', this.netVizDebugSessionId);

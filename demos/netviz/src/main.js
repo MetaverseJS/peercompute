@@ -3,6 +3,8 @@ import { loadRelayConfig, normalizeBootstrapPeers } from './relayConfig.js';
 import { buildPubsubEdges, buildRelayState } from './relayOverlay.js';
 import { TelemetryStore } from './telemetryStore.js';
 import { NetworkVisualizer } from './visualizer.js';
+import { buildObservedNetwork, attachedScope, describeObservedPeer } from './observedNetwork.js';
+import { renderObservedSummary } from './observedNetworkUi.js';
 
 const canvas = document.getElementById('netviz-canvas');
 const statusEl = document.getElementById('status');
@@ -11,6 +13,13 @@ const connectBtn = document.getElementById('connect-btn');
 const topologySelect = document.getElementById('topology-select');
 const topologyIdInput = document.getElementById('topology-id');
 const roomInput = document.getElementById('room-input');
+const gameIdInput = document.getElementById('game-id');
+const networkViewSelect = document.getElementById('network-view');
+const applicationFilter = document.getElementById('application-filter');
+const roleFilter = document.getElementById('role-filter');
+const observedSummary = document.getElementById('observed-summary');
+const hostedModels = document.getElementById('hosted-models');
+const observedControls = document.getElementById('observed-controls');
 const attachSessionSelect = document.getElementById('attach-session-select');
 const attachSessionBtn = document.getElementById('attach-session-btn');
 const sessionInspectorBody = document.getElementById('session-inspector-body');
@@ -116,6 +125,10 @@ let lastConnectionPolicy = null;
 const logEntries = [];
 let topologyType = 'distributed';
 let topologyId = 'netviz-topology';
+let gameId = 'netviz';
+let networkView = 'all';
+let observedView = buildObservedNetwork();
+const isAllDemos = () => networkView === 'all';
 let localMetric = { x: 0, y: 0, z: 0 };
 let localMetricInitialized = false;
 let dragActive = false;
@@ -783,7 +796,11 @@ const readQueryParams = () => {
     showP2P,
     showIP,
     autoConnect,
-    attachSession
+    attachSession,
+    gameId: params.get('gameId')?.trim() || '',
+    view: params.get('view') || '',
+    application: params.get('application') || '',
+    role: params.get('role') || ''
   };
 };
 
@@ -802,6 +819,13 @@ const resolveChaosApiBase = (value) => {
 
 const applyQueryParams = () => {
   const query = readQueryParams();
+  gameId = query.gameId || 'netviz';
+  if (gameIdInput) gameIdInput.value = gameId;
+  networkView = query.view === 'session' || (!query.view && (query.attachSession || query.gameId || (query.room && query.topologyId))) ? 'session' : 'all';
+  if (networkViewSelect) networkViewSelect.value = networkView;
+  if (applicationFilter && query.application) { const option = document.createElement('option'); option.value = option.textContent = query.application; applicationFilter.append(option); applicationFilter.value = query.application; }
+  if (roleFilter) roleFilter.value = query.role;
+  if (observedControls) observedControls.hidden = !isAllDemos();
   if (query.topologyType) {
     topologyType = normalizeTopologyType(query.topologyType);
     if (topologySelect) topologySelect.value = topologyType;
@@ -875,6 +899,10 @@ const syncQueryParams = ({
     }
     params.set(key, String(value));
   };
+  setParam('gameId', gameIdInput?.value?.trim() || gameId);
+  setParam('view', networkView);
+  setParam('application', applicationFilter?.value || '');
+  setParam('role', roleFilter?.value || '');
   setParam(QUERY_PARAM_ROOM, room);
   setParam(QUERY_PARAM_TOPOLOGY, topologyId);
   setParam(QUERY_PARAM_TOPOLOGY_TYPE, nextType);
@@ -1139,7 +1167,13 @@ const removeAttachSession = (sessionId) => {
 };
 
 const applyAttachSessionInputs = (session) => {
-  topologyType = normalizeTopologyType(session.topologyType);
+  const scope = attachedScope(session);
+  gameId = scope.gameId;
+  if (gameIdInput) gameIdInput.value = gameId;
+  networkView = 'session';
+  if (networkViewSelect) networkViewSelect.value = networkView;
+  if (observedControls) observedControls.hidden = true;
+  topologyType = normalizeTopologyType(scope.topologyType);
   topologyId = session.topologyId || 'netviz-topology';
   if (topologySelect) topologySelect.value = topologyType;
   if (topologyIdInput) topologyIdInput.value = topologyId;
@@ -2097,6 +2131,7 @@ const setConfigInputsDisabled = (disabled) => {
     topologySelect,
     topologyIdInput,
     roomInput,
+    gameIdInput,
     renderModeSelect,
     connectionRadiusInput,
     maxConnectionsInput,
@@ -2682,6 +2717,10 @@ const buildChaosNodeInfo = (peerId) => {
 };
 
 const buildNodeInfo = (peerId) => {
+  if (isAllDemos()) {
+    const info = describeObservedPeer(observedView.peers.find((peer) => peer.peerId === peerId));
+    if (info) return info;
+  }
   const displayedPeer = lastDisplayedPeersById.get(peerId) || null;
   if (
     displayedPeer?.source === 'ip-topology'
@@ -2774,6 +2813,16 @@ const buildNodeInfo = (peerId) => {
 };
 
 const buildEdgeInfo = (fromId, toId, edgeType = 'edge') => {
+  if (isAllDemos()) {
+    const edge = observedView.edges.find((value) => buildEdgeKey(value.from, value.to) === buildEdgeKey(fromId, toId));
+    if (edge) return { title: 'Reported connection', lines: [
+      `From: ${fromId}`, `To: ${toId}`, `Transport: ${edge.via}`,
+      `Signaling: ${edge.signalingPath} · media: ${edge.mediaPath}`,
+      `Report: ${edge.stale ? 'stale' : 'recent'}`,
+      `Reported by ${edge.reportedBy.length} endpoint(s)`,
+      'Connection reported by an endpoint; no link is inferred from proximity.'
+    ] };
+  }
   const edgeKey = buildEdgeKey(fromId, toId);
   const edgeMeta = lastDisplayedEdgesByKey.get(edgeKey)
     || lastP2PEdgesByKey.get(edgeKey)
@@ -2935,7 +2984,39 @@ const updateRelayStatus = () => {
   }
 };
 
+const updateObservedHud = () => {
+  syncAttachSessionsFromNode();
+  renderSessionInspector();
+  updateRelayStatus();
+  observedView = buildObservedNetwork(networkManager?.getNetworkTelemetryService?.()?.list() || [], {
+    application: applicationFilter?.value || '', role: roleFilter?.value || '',
+    includeGhosts: !shouldHideGhosts(), legacySessions: [...attachSessions.values()], relayIds: relayPeerIds
+  });
+  renderObservedSummary({ summaryElement: observedSummary, modelsElement: hostedModels, applicationSelect: applicationFilter }, observedView);
+  visualizer.setTopologyMode('emergent');
+  const chaosOverlay = buildChaosOverlay();
+  const chaosP2P = buildChaosP2POverlay(chaosOverlay.topology);
+  const p2pPeers = mergePeersForDisplay(observedView.peers, chaosP2P.peers);
+  const p2pEdges = mergeEdgesForDisplay(observedView.edges, chaosP2P.edges);
+  const peers = mergePeersForDisplay(shouldShowP2PTopology() ? p2pPeers : [], shouldShowIPTopology() ? chaosOverlay.peers : []);
+  const edges = mergeEdgesForDisplay(shouldShowP2PTopology() ? p2pEdges : [], shouldShowIPTopology() ? chaosOverlay.edges : []);
+  lastPeerView = observedView.peers;
+  lastP2PPeersById = new Map(p2pPeers.map((peer) => [peer.peerId, peer]));
+  lastP2PEdgesByKey = new Map(p2pEdges.map((edge) => [buildEdgeKey(edge.from, edge.to), edge]));
+  lastDisplayedPeersById = new Map(peers.map((peer) => [peer.peerId, peer]));
+  lastDisplayedEdgesByKey = new Map(edges.map((edge) => [buildEdgeKey(edge.from, edge.to), edge]));
+  lastChaosOverlay = { ...chaosOverlay, peerInfo: new Map([...chaosOverlay.peerInfo, ...chaosP2P.peerInfo]), edgeInfo: new Map([...chaosOverlay.edgeInfo, ...chaosP2P.edgeInfo]) };
+  visualizer.updatePeers(peers, localPeerId, edges, []);
+  setStatus([`Status: ${connectionState} · All demos`, 'Shared operational reports; game room traffic stays scoped.']);
+  peerListEl.textContent = observedView.peers.length ? observedView.peers.map((peer) => {
+    const label = peer.sessionOnly ? 'SESSION ONLY' : peer.inferred ? 'ENDPOINT' : peer.stale ? 'STALE' : peer.role?.toUpperCase() || 'PEER';
+    return `${label} ${formatPeerId(peer.peerId)} · ${peer.application || peer.gameId || 'unknown'}`;
+  }).join('\n') : 'Waiting for reporting peers. Older demo builds may appear only as sessions.';
+};
+
 const updateHud = () => {
+  if (isAllDemos()) { updateObservedHud(); return; }
+  visualizer.setTopologyMode(topologyType);
   telemetryStore.prune(15000);
   syncAttachSessionsFromNode();
   renderSessionInspector();
@@ -3134,6 +3215,10 @@ const resetRuntimeState = () => {
   lastPeerView = [];
   connectionErrors.clear();
   telemetryStore.clear();
+  observedView = buildObservedNetwork();
+  lastDisplayedPeersById.clear();
+  lastDisplayedEdgesByKey.clear();
+  renderObservedSummary({ summaryElement: observedSummary, modelsElement: hostedModels, applicationSelect: applicationFilter }, observedView);
   setDragActive(false);
   dragMoved = false;
   skipNextClick = false;
@@ -3263,7 +3348,6 @@ const connect = async () => {
       topologyId,
       topicPrefix: 'pc',
       useScopedTopics: true,
-      enableTopologyController: true,
       enforceTopologyScope: true,
       allowDiscoveryDialWhenIsolated: true,
       topologyMetric: localMetric,
@@ -3281,7 +3365,9 @@ const connect = async () => {
       enableNetVizSessionBroadcast: false,
       enableNetVizSessionDiscovery: true,
       deltaNamespace: 'telemetry',
-      gameId: 'netviz',
+      gameId: gameIdInput?.value?.trim() || gameId,
+      networkTelemetryPublish: false,
+      enableTopologyController: !isAllDemos(),
       roomId,
       presenceIntervalMs: 15000,
       maxConnections,
@@ -3395,6 +3481,13 @@ const attachDebugHandles = () => {
       chaosApiBase,
       chaosFeed,
       attachSessions: Array.from(attachSessions.values()),
+      gameId: networkManager?.config?.gameId || gameId,
+      view: networkView,
+      filters: { application: applicationFilter?.value || '', role: roleFilter?.value || '' },
+      reports: networkManager?.getNetworkTelemetryService?.()?.list() || [],
+      observed: observedView,
+      displayedPeers: Array.from(lastDisplayedPeersById.values()),
+      displayedEdges: Array.from(lastDisplayedEdgesByKey.values()),
       rtcPath: { ...rtcPathState },
       relayRetentionDebug: networkManager?.getRelayRetentionDebug?.() || (networkManager ? {
         dropRelayBootstrapOnDirect: networkManager.config?.webrtc?.dropRelayBootstrapOnDirect,
@@ -3482,7 +3575,7 @@ const setDragActive = (next) => {
 };
 
 const handlePointerDown = (event) => {
-  if (topologyType !== 'distributed') return;
+  if (isAllDemos() || topologyType !== 'distributed') return;
   if (!localPeerId) return;
   const hit = visualizer.pick(event.clientX, event.clientY);
   if (!hit || hit.type !== 'node' || hit.peerId !== localPeerId) return;
@@ -3550,6 +3643,19 @@ topologySelect?.addEventListener('change', () => {
   visualizer.setTopologyMode(topologyType);
   updateHud();
   syncInputsToUrl();
+});
+
+gameIdInput?.addEventListener('input', () => { gameId = gameIdInput.value.trim() || 'netviz'; syncInputsToUrl(); });
+
+networkViewSelect?.addEventListener('change', () => {
+  networkView = networkViewSelect.value === 'session' ? 'session' : 'all';
+  if (observedControls) observedControls.hidden = !isAllDemos();
+  setDragActive(false);
+  updateHud();
+  syncQueryParams(readUrlInputState());
+});
+for (const control of [applicationFilter, roleFilter]) control?.addEventListener('change', () => {
+  updateHud(); syncQueryParams(readUrlInputState());
 });
 
 topologyIdInput?.addEventListener('input', () => {

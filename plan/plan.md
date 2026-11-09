@@ -1937,3 +1937,19 @@ connections lack NodeKernel telemetry publication. A complete observed-network
 view needs shared telemetry plus an All demos aggregator with separate world/model
 connections. Live internal NetViz discovery verified; no implementation or Pages
 publication in this survey. Details and evidence are in plan/log.md.
+
+### November 9 — All demos NetViz implementation approved
+
+Implement shared bounded operational telemetry for world and model connections,
+an aggregate NetViz graph with demo/role filters and model-host/compute summaries,
+and fix single-session game scope. Validate independent browser peers across
+rooms and standalone inference, lifecycle/staleness, and internal previews.
+No GitHub Pages build/deploy/push. Once this slice passes, continue the next
+CubeChat Humunculus plan milestone, beginning with bounded social initiative.
+
+NetViz implementation and acceptance complete locally: shared signed operational
+reports, actual cross-room aggregation, model-host counts, compute counters,
+stale/legacy visibility and scoped attachment correction. Internal preview:
+https://fastbox.tail5c077c.ts.net:5182/ . CubeChat, inference and Earth internal
+builds include reporters after reload. Public Pages remains unchanged. Next:
+plan-aligned, opted-in resident greetings and bounded mutual introductions.
