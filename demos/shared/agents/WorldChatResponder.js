@@ -119,7 +119,8 @@ export function createWorldChatResponder({ getResidents, respond, publish, onSta
       budget.turns++;
       notify({ key, status: 'responding', messageId: run.message.id });
       stillOwned(run);
-      const answer = await respond(run.body, run.message, { signal: run.controller.signal, context: publicContext() });
+      const isCurrent = () => { try { stillOwned(run); return true; } catch { return false; } };
+      const answer = await respond(run.body, run.message, { signal: run.controller.signal, context: publicContext(), isCurrent });
       stillOwned(run);
       // Output is validated, never silently truncated or retried after publication.
       const output = normalizeChatInput({ agentId: run.body.agentId, name: displayName(run.body.name), text: answer });

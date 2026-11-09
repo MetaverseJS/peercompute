@@ -61563,3 +61563,98 @@ and performance, and retain a physics-based motorcycle.
 - Files touched: demos/cubechat/plan.md, plan/plan.md, plan/branch/ipfs-large-files-model-inference.md, plan/tests.md and this log. Commands: date/git status/log, rg/sed/cat source review, ICC repo-resolve/work/task-plan/agent-preflight/agent-session; no application test/build/browser session is needed for documentation-only advice. Final diff/guard validation and local planning checkpoint follow; no application or learning claims.
 
 - Documentation validation: git diff --check and whole-diff ICC guard pass without violations. Read-only review agrees on the meet-and-follow slice and flags five-second remote body interpolation as a later perceived-responsiveness concern. No runtime tests were executed or claimed. The recommendation is recorded as proposed, not approved implementation; local planning commit and ICC freshness receipts remain under /home/cos/.cache/peercompute-homunculus-next-20261109/.
+
+### 2026-11-09T09:18:26-09:00 — implement CubeChat meet-and-follow; editing and cloning follow-up
+
+- User approved the proposed resident milestone with “do it!”, then requested editing existing residents and cloning them onto the visitor's node. Exact message delivery timestamps are unavailable; heading is the first retained command time for approval, and clone follow-up is retained by 2026-11-09T09:26:22-09:00. GitHub Pages deployment/push remains explicitly on hold.
+- Read ICC skill and coordination references, plan/log and live world host, conversations, appearance, persistence, ComputeManager and CubeChat physics. Resumed from clean planning commit 8ccddb4b; ICC task cubechat-meet-follow-20261109 records six implementation/verification items. Four scoped preflights passed before publishing disjoint root/policy/scene/memory leases. Runtime evidence lives outside Git at /home/cos/.cache/peercompute-meet-follow-20261109/.
+- Implementing a trained compact sensorimotor policy with reproducible training, managed local worker execution and physical outcome checks; richer bounded world senses and model-selected typed intentions; separate scoped episodic IndexedDB memory; owner edits and opt-in peer profile cloning with fresh identity/body/memory. Clone defaults to personality/goals/appearance only pending optional user preference; never copy private chat or authority. Public names remain labels, not cross-session authentication: network identities currently rotate on reconnect, so recalled names do not establish returning-player identity.
+- Source edits/tests underway in disjoint scopes; no implementation acceptance or learned performance claim yet. Commands so far: git status/log, date, rg/sed/cat, ICC assistant-status/work/task-plan/agent-preflight/agent-session. No Pages assets touched.
+
+### 2026-11-09T09:31:59-09:00 — clone memory inheritance clarification
+
+- User chose “Also copy memories that the source owner explicitly shares.” Exact delivery time unavailable; heading is the first retained command after the answer. Extend the clone profile with a separate owner opt-in for bounded public world memories. Keep private conversations excluded, and label imported episodes as inherited claims rather than the clone's own verified experiences. Fresh-memory behavior remains when the owner does not opt in.
+- Initial host regression19/19 passed (28.53s), initial motor7/7 and memory/profile49/49 reported by scoped workers; these are intermediate evidence, not final acceptance. Discovered world runtime's three-worker model cap would leave no slot for the motor when language/ASR/TTS are all resident; add a separate reserved auxiliary-worker allowance without increasing the model count. Production GPU and scene integration still pending.
+
+### 2026-11-09T09:36:48-09:00 — resident continuity and default history sharing
+
+- User requests residents feel continuous between peers, “alive and jumping between hosts,” and one history-sharing checkbox checked by default at creation. Exact delivery timestamp unavailable; heading is first retained command after the message. New resident UI will expose one default-checked history-sharing opt-in, preserving legacy records' existing permission values. Public/private history scope and actual move versus independently active clone are pending explicit clarification; no authority transfer is being represented as a clone.
+- Core audit confirms real same-identity migration is not provided by current local epoch-zero authority or same-origin body locks; it needs a durable, recipient-bound staged handoff and retired-owner receipt. Continue finishing authorized learned movement/edit/clone work while that choice is pending.
+- Production motor qualification: reproducible1,378-parameter imitation policy,40/40held-out approach and40/40moving-target follow versus zero/random0/40; actual GPU192comparisons maximumabsoluteerror3.59e-6. Real CubeAgentLayer/Cannon integration approached45→10.513units, followedto9.483units duringthinking, stoppedontargetloss, andreportedblockedatwall;279WebGPUdispatches, no page/console errors, reservation cleanupzero. Evidence under /home/cos/.cache/peercompute-meet-follow-20261109/. Policy learns planar movement, not obstacle navigation or online adaptation.
+- Expandedhost22/22, memory/profile55/55 andscene/input/social62/62passed before final permission/UI refinements. Review identified stale model intents overriding new manual commands and late resident-followup actions past discussion expiry; adding control revisions and a responder-owned validity check before applying physical actions.
+
+- Real two-owned-browser production acceptance through SecretWorkshop passed native creation/defaulthistory, owneredit, encryptedprofiletransfer, newcloneUUID/body, inheritedepisode details/private-sentinel exclusion and reload. Desktop/mobile visuals inspected; no page/console/HTTP/request errors. Discovery emitted recoverable dial warnings. Evidence /home/cos/.cache/peercompute-meet-clone-live-20261109/run1/report.json. Controlled language facade in that test is explicitly separated from motor qualification.
+- A subsequent actual Qwen3.5 2B Vision peer inference completed in3.53s but returned intent:null for “Come closer to me, then stop nearby.” No physical action was falsely reported. The contract's null-first example and inherited prohibition on unexecuted claims likely biased inaction; replaced pseudo-union syntax with valid concrete action JSON examples, explicit proposal capability and future-intent versus completed-action distinction. Preserve the failed model receipt at meet-clone-live-20261109/real-model/report.json; repeat that bounded actual-model check after rebuilding. This is prompt/model qualification, not a controller failure.
+
+### 2026-11-09T09:54:34-09:00 — independent clone branches; creator chooses private history
+
+- User chose “Clone: both remain active, sharing their past but developing separately.” This resolves the earlier move/handoff question: no single-owner migration protocol is needed for this effort. Then requested both history choices on creation. Exact delivery timestamps are unavailable; heading is the first retained command after both replies.
+- New resident creation defaults public history sharing on and private-conversation inclusion off. Both options are editable; the private notice explicitly states other players cloning the resident can read included conversations. Legacy consent is preserved. Expand inheritance from the initial eight-episode sample to the bounded retained world history, preserve audience/conversation channels, and atomically import the selected snapshot before activating the clone. Source grant revocation and per-chunk bounds remain mandatory. This is a fork, not synchronized future memories or authority migration.
+- Actual local-model qualification now passes with Qwen3.5 0.8B GGUF Q4_K_M, a fresh owned external test profile and a single553MiB package download. Both new and legacy identities produced the exact observed human target and approach intent; actual scene distance14→10.595/10.600 and final velocityzero. Managed LLM worker offloaded26/26layers and the motor made55WebGPUdispatches. No user profile/model changes or browser/request/cleanup errors; owned browser/server closed. Evidence /home/cos/.cache/peercompute-meet-clone-live-20261109/local-model-prompt/report.json. The earlier Qwen2B failure is retained; a later peer retest found no host and sent no request, so the corrected contract is qualified on local0.8B, not requalified2B.
+
+- Full-history integration first pass: host34/34 including twelve public episodes,
+  explicit private inclusion, preserved private channel, and capacity rollback;
+  final staged-activation host26/26 verifies no advertised body while history is
+  pending. Core v2 qualification reports68/68 with a real Noise transfer exceeding
+  3MiB, digest/sequence/credit bounds, revocation/cancellation and atomic capacity
+  failure. Read-only review caught two issues before release: staging the body
+  before memory commit, now reordered; and cached directory grants potentially
+  lagging an owner edit, addressed with an authoritative persisted-permission
+  callback checked during each profile chunk. Final gates remain in progress.
+
+- Final history core: 71/71 tests passed, including a 1,800-episode encrypted Noise
+  transfer exceeding 3 MiB, credited chunks/digest validation, private consent
+  revoked during export, authoritative persisted grants despite stale directory
+  cache, destination capacity/no-eviction and atomic rollback. Identity bounds
+  match the underlying agent contract. Final host integration: 27/27 passed,
+  including held-import staging, fresh branches, full selected snapshots,
+  conversation isolation and persisted revocation. Native two-checkbox UI: 21/21
+  passed. Shared host API defaults remain opt-in for other demos; CubeChat's visible
+  default-checked control supplies its explicit grant.
+- Final two-browser production acceptance passed in 28.76 s through SecretWorkshop:
+  a public-only clone received 42 public/zero private episodes; after explicit
+  creator opt-in, a second received 42 public/two private turns. Forty public
+  entries were declared owned fixtures, and the private turns came from actual
+  controlled-language conversation. Payloads 97,937/100,604 bytes crossed two
+  credited chunks of the v2 encrypted profile protocol. Independent subsequent
+  memories stayed off the source/sibling; both reloaded with fresh identities and
+  preserved audience, conversation, timestamps and attribution. Source stayed
+  active. Desktop/mobile screenshots inspected; zero page/console/HTTP/request/
+  download/cleanup errors, with recoverable discovery warnings retained. Evidence:
+  /home/cos/.cache/peercompute-meet-clone-live-20261109/history-v2-live/report.json.
+- Broader validation: world suite 112/112, Earth/voice 29/29, scene/input/social
+  64/64 plus saved-follow restoration 27/27, intent/experience 9/9, trainer CLI
+  7/7. Suites overlap; do not sum them as unique tests. Core baseline initially
+  102/103 due one stale expected-statistics assertion, reproduced with HEAD
+  source/test and fixed by explicitly expecting existing zero-valued artifact
+  counters; that nine-test file passed afterward. Initial failed model/prompt and
+  protocol-deadline expectation receipts remain preserved.
+- ICC full refresh and bounded audit completed: selected runtime source was fresh,
+  no guard violations or blocking audit findings; audit warned only about
+  intentional uncommitted changes. Generic readiness score 93 is not a target
+  oracle: its generic oracle has no authored criteria and no imported ICC-format
+  runtime event. Actual acceptance rests on the executed unit, physical GPU,
+  real-model, encrypted two-browser and visual evidence above. Final internal
+  build, preview verification, local checkpoint and refreshed Git history follow.
+
+- Final external builds passed: CubeChat 13.16 s, Earth 20.24 s, inference 11.25 s
+  (existing chunk-size warnings only). Published only the internal CubeChat root
+  at /home/cos/.cache/peercompute-meet-follow-20261109/final/cubechat, preserving
+  125 missing old hashed assets for existing tabs. The trusted HTTPS response at
+  https://fastbox.tail5c077c.ts.net:5176/ exactly matches the new index SHA256
+  c2f65d0da1415eb781b8025121b259ede3363d2d7d381e1fa88c14428dc42b92.
+- Owned headless validation of that exact preview, in an isolated empty room,
+  passed: public history checked, private conversations unchecked, connected to
+  the SecretWorkshop WSS backend, zero page/console errors. Browser closed; the
+  existing user preview servers remain running. No models downloaded by this
+  final check. Evidence: preview-check.json and preview-mobile.png in the task
+  cache directory. docs/ has no changes; no origin push or Pages build/deploy.
+
+- Final checkpoint preparation: inspected the exact-preview mobile screenshot and
+  default public/private controls. `git diff --check` passed. Final ICC full
+  reindex completed in 108 s; subsequent source-drift inspection identified only
+  the two final evidence documentation updates, with runtime source unchanged.
+  All three scoped implementation/review agents have finished and ended leases.
+  Stage the qualified task changes, run the staged guard, then create a local
+  checkpoint and refresh ICC source/Git evidence. No further runtime edits or
+  public deployment are needed for the agreed milestone.

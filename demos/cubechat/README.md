@@ -34,9 +34,41 @@ Delivery status reports peer acknowledgments; it is not a read receipt.
 Open **Residents** in the hamburger menu, name a resident and place it in the world. Click its cube
 or select it as the chat target to use the same composer for a direct
 conversation. Direct visitor histories remain separate from public room chat.
-Residents can roam, follow their host's player, or stay stationary. These are
-bounded scripted motor policies with a replaceable controller; learned movement
-and autonomous idle conversation remain later work.
+Residents start stationary. Ask a capable language model to “come here,” follow
+someone, stop or look at another observed participant. The model proposes a typed
+intention; a trained 1,378-parameter neural controller produces continuous movement
+through a local ComputeManager WebGPU worker. Movement continues while a resident
+thinks or speaks. Physics reports arrival, blocked movement and lost targets.
+This first policy learned planar approach/follow/braking from demonstrations; it
+does not yet learn online or plan around obstacles. The optional **Roam (scripted)**
+setting remains a separate baseline.
+
+Use **Edit** on a resident you own to change its name, personality, goals,
+appearance and preferences while retaining its identity and memories. **Clone to
+this node** creates your own independently active resident from an owner's shared
+profile. The new resident has a new local identity; this is not a transfer of the
+original execution authority.
+
+New residents have **Share resident history** checked by default. This shares
+their personality, appearance and retained public world experiences with clones.
+**Include private conversations** is a separate option, off by default. Enabling
+it lets people cloning that resident read its retained private conversations.
+Existing residents keep their saved permissions. Public and private conversation
+channels remain separate on the clone. Both branches stay active and develop
+independently; future memories are not automatically synchronized.
+
+The complete selected snapshot is transferred in bounded encrypted chunks and
+saved before the new body appears. Imported episodes identify their donor and
+remain distinct from the clone's own experiences. If the destination cannot retain
+the whole snapshot, cloning fails without a partially activated body.
+
+Resident episodes persist separately from the short chat journal in a
+StateManager-owned IndexedDB store: at most 512 per conversation scope, 4,096 total,
+4 MiB of episode payload and 30 days. A snapshot includes retained episodes from
+this world, not expired events or legacy chat journals from before this feature.
+Retrieval uses text matching and recency, not embeddings. Display names can be
+remembered, but a new peer connection is not proof that a returning name is the
+same person.
 
 Describe a resident’s physical appearance when placing it. If an image model is
 available, its generated image is saved and displayed on the front of the cube;
@@ -75,7 +107,8 @@ the normal Residents interface does not create hidden bot browser frames.
 Reusable components live in `demos/shared`: authenticated `RoomChatService`,
 `SpeechBubbleLayer`, `WorldEmbodimentLease`, `WorldResidentMotion`, and the existing
 `WorldAgentHost`, plus `WorldAppearance`, `WorldAppearancePresenter` and
-`WorldChatResponder` and `WorldConversationContext`. The Cube scene supplies rendering, placement and input; agents
+`WorldChatResponder`, `WorldConversationContext`, `WorldExperience`, `WorldIntent`,
+`ResidentMotorService` and core `WorldMemoryStore`/`ResidentProfile`. The Cube scene supplies rendering, placement and input; agents
 retain private IndexedDB identity/history and managed model routing. These seams
 support the homunculus architecture without coupling its future policies to DOM
 controls or CubeChat-specific physics.
@@ -85,6 +118,12 @@ Focused tests: `node --test --test-concurrency=1 demos/tests/room-chat.test.js
  demos/tests/world-resident-motion.test.js demos/tests/cubechat-agents.test.js
  demos/tests/world-agent-host.test.js demos/tests/world-chat-responder.test.js
  demos/tests/world-conversation-context.test.js demos/tests/cubechat-input.test.js`.
+Learned-policy and lifecycle tests: `npm run test:resident-motor`.
+World intentions/memory integration: `npm run test:resident-experience`.
+Reproduce training: `npm run train:resident-motor` (see its help before overwriting
+the committed checkpoint). Real production worker/physics checks live in
+`demos/tests/world-motor-browser.mjs` and `demos/tests/cubechat-embodiment-browser.mjs`.
+
 Actual browser-peer delivery and visuals are separate preview acceptance gates;
 see `plan/log.md` for results and limitations.
 

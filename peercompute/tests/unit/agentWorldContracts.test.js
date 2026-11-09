@@ -7,7 +7,7 @@ import { normalizeAgentTask, packAgentContext } from '../../src/peercompute/agen
 import { AgentRuntime } from '../../src/peercompute/agents/AgentRuntime.js';
 import { AgentRecordStore } from '../../src/peercompute/agents/AgentRecordStore.js';
 
-const binding = { worldId: 'cubechat:lobby', position: [1, 2, 3], color: '#8fffd4', shared: true, respondToWorldChat: false };
+const binding = { worldId: 'cubechat:lobby', position: [1, 2, 3], color: '#8fffd4', shared: true, respondToWorldChat: false, allowCloning: false, shareMemories: false, sharePrivateMemories: false };
 test('world bindings are optional, bounded, validated and copied without executable/private extra fields', () => {
   assert.equal('embodiments' in normalizeAgentInput({ name: 'Old agent' }), false);
   const value = normalizeAgentInput({ name: 'Ada', embodiments: [{ ...binding, callback: 'untrusted' }] });
@@ -80,3 +80,29 @@ test('appearance references are private and world-chat replies default off', () 
   assert.throws(() => normalizeAgentInput({ name: 'A', embodiments: [{ ...binding, appearancePrompt: 'é'.repeat(1025) }] }));
 });
 function bodyForFace() { return { agentId: 'agent', name: 'Ada', color: '#44ffaa', position: [0, 3, 0], status: 'idle' }; }
+
+test('cloning requires explicit owner preference and movement is a bounded persisted preference', () => {
+  const legacy = normalizeAgentInput({ name: 'Ada', embodiments: [{ ...binding, allowCloning: undefined }] });
+  assert.equal(legacy.embodiments[0].allowCloning, false);
+  assert.equal(legacy.embodiments[0].shareMemories, false);
+  const current = normalizeAgentInput({ name: 'Ada', embodiments: [{ ...binding, allowCloning: true, movement: 'follow' }] });
+  assert.equal(current.embodiments[0].allowCloning, true); assert.equal(current.embodiments[0].movement, 'follow');
+  assert.equal(normalizePublicAgent({ ...bodyForFace(), cloneable: true }).cloneable, true);
+  assert.equal(normalizePublicAgent({ ...bodyForFace(), cloneable: true, sharesMemories: true }).sharesMemories, true);
+  for (const change of [{ movement: 'run-code' }, { allowCloning: 'yes' }, { shareMemories: 'yes' }]) assert.throws(() => normalizeAgentInput({ name: 'Ada', embodiments: [{ ...binding, ...change }] }));
+  assert.throws(() => normalizePublicAgent({ ...bodyForFace(), cloneable: 'yes' }));
+});
+
+
+test('private history sharing defaults off and public permission requires all owner grants', () => {
+  const legacy = normalizeAgentInput({ name: 'Ada', embodiments: [{ ...binding, sharePrivateMemories: undefined }] });
+  assert.equal(legacy.embodiments[0].sharePrivateMemories, false);
+  const granted = normalizeAgentInput({ name: 'Ada', embodiments: [{ ...binding, sharePrivateMemories: true }] });
+  assert.equal(granted.embodiments[0].sharePrivateMemories, true);
+  for (const grants of [{}, { cloneable: true }, { sharesMemories: true }]) {
+    assert.equal(normalizePublicAgent({ ...bodyForFace(), ...grants, sharesPrivateMemories: true }).sharesPrivateMemories, false);
+  }
+  assert.equal(normalizePublicAgent({ ...bodyForFace(), cloneable: true, sharesMemories: true, sharesPrivateMemories: true }).sharesPrivateMemories, true);
+  assert.throws(() => normalizeAgentInput({ name: 'Ada', embodiments: [{ ...binding, sharePrivateMemories: 'yes' }] }));
+  assert.throws(() => normalizePublicAgent({ ...bodyForFace(), sharesPrivateMemories: 'yes' }));
+});

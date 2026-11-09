@@ -149,6 +149,11 @@ class CubeChat {
       scene: this.scene,
       physics: this.physics,
       getPlayerPosition: () => this.physics.getPosition(this.network.localPlayer.id) ?? this.network.localPlayer.position,
+      getParticipants: () => [...this.scene.players].map(([peerId, mesh]) => ({
+        id: `human:${peerId}`, peerId,
+        name: mesh.userData.playerName || (peerId === this.network.peerId ? this.network.localPlayer.name : '') || 'Anonymous',
+        position: mesh.position.toArray(), velocity: this.physics.getPlayerBody(peerId)?.velocity.toArray() ?? [0, 0, 0]
+      })),
       onSelect: (key) => host?.openConversation(key)
     });
     try {
@@ -176,7 +181,7 @@ class CubeChat {
               return this.roomChat.send({ text, name: this.network.localPlayer.name || 'Anonymous' }, { signal });
             },
             onPlayerCaption: text => this.speechBubbles?.show(this.network.peerId, text),
-            onMovement: ({ key, mode }) => layer.setMovement(key, mode),
+            onMovement: ({ key, mode }) => options.onEdit({ key, movement: mode }),
             onSettings: section => this.settingsUi?.open(section)
           });
           this.worldUi = ui; ui.setEnabled?.(this.started); return ui;
@@ -832,7 +837,7 @@ class CubeChat {
 
       // Step physics simulation
       this.physics.step(deltaTime);
-      this.agentLayer?.update(deltaTime);
+      this.agentLayer?.afterPhysics(deltaTime);
 
       // Sync visual representation with physics
       this.syncPhysicsToScene();

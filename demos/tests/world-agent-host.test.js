@@ -36,6 +36,7 @@ async function boot() {
     const { installWorldAgents, speechChunks, worldConversationId } = await import('/demos/shared/agents/WorldAgentHost.js');
     const { AgentRuntime } = await import('/peercompute/src/peercompute/agents/AgentRuntime.js');
     const { AgentRecordStore } = await import('/peercompute/src/peercompute/agents/AgentRecordStore.js');
+    const { WorldMemoryStore } = await import('/peercompute/src/peercompute/agents/WorldMemoryStore.js');
     Object.assign(window, { calls: [], view: {}, speechChunks, worldConversationId });
     const candidate = { key: 'local', local: true, available: true, manifestCid: 'fixture', sessionId: 'fixture', runtime: 'transformers.js',
       task: 'text-generation', modalities: ['text'], outputModalities: ['text'] };
@@ -53,6 +54,12 @@ async function boot() {
           getSpawnPosition: () => [1, 3, 5], getPosition: (key) => bodies.get(key)?.position,
           getContext: (body) => ({ position: [...body.position], ...window.fixtureScene }), focus: () => {},
           setAppearance: (key, image) => calls.push(['face', key, image]),
+          ...(window.embodiedFixture ? {
+            observe: () => ({ self: { position: [1, 3, 5] }, participants: [{ id: 'human:owner', peerId: 'owner', kind: 'human', name: 'Owner', position: [25, 3, 5] }], requesterId: 'human:owner', obstacles: [] }),
+            setIntent: (key, intent) => { calls.push(['intent', key, intent]); window.lastIntent = { key, ...intent }; },
+            setMovement: (key, mode) => calls.push(['movement', key, mode]),
+            subscribeOutcomes: listener => { window.physicalOutcome = listener; return () => { window.physicalOutcome = null; }; },
+          } : {}),
           getAudioPose: () => ({}), dispose: () => { calls.push('adapter-dispose'); bodies.clear(); } },
         uiFactory: (callbacks) => { window.callbacks = callbacks; return {
           open: () => { callbacks.onOpen?.(); view.open = true; }, dispose: () => { view.open = false; calls.push('ui-dispose'); },
@@ -86,14 +93,18 @@ async function boot() {
                 ...(input.task === 'text-to-image' ? { image: { width: 2, height: 2, channels: 4, data: new Uint8Array(16).fill(123) } } : {}) };
             }, cancel: async () => {} } });
           window.agents = agents;
-          return { networkReady: true, networkManager: { peerId: window.fixturePeerId ?? 'owner' }, getAgentController: async () => agents,
+          const memories = new Map();
+          const stateManager = { getWorldMemoryStore: name => memories.get(name),
+            createWorldMemoryStore: ({ name }) => { const memory = new WorldMemoryStore({ name }); memories.set(name, memory); window.episodeStore = memory; return memory; } };
+          return { stateManager, networkReady: true, networkManager: { peerId: window.fixturePeerId ?? 'owner' }, getAgentController: async () => agents,
             listInferenceTargets: () => window.imageAvailable ? [imageCandidate] : [],
             service: { getStatus: () => ({ status: 'ready', manifestCid: 'fixture', sessionId: 'fixture' }) },
             store: { getManifest: async () => ({ model: imageCandidate }) }, refreshPeers: async () => {},
-            dispose: async () => { await agents.dispose(); await store.destroy(); calls.push('runtime-dispose'); } };
+            dispose: async () => { await agents.dispose(); await store.destroy(); for (const memory of memories.values()) await memory.close(); calls.push('runtime-dispose'); } };
         },
         serviceFactory: (options) => { window.networkOptions = options; return {
           start: async () => calls.push('network-start'), close: async () => calls.push('network-close'),
+          requestProfile: async (owner, args) => { calls.push(['clone-request', owner, args]); return window.remoteProfile; },
           request: async (...args) => { calls.push(['remote-request', args]); return { text: 'Remote fixture response', finishReason: 'stop' }; },
         }; },
         speechFactory: async () => ({ getStatus: () => ({ status: 'ready' }), prepare: async () => calls.push('prepare-voice'),
@@ -498,4 +509,183 @@ test('public resident text arriving before its body is anchored only to its auth
   });
   assert.equal(result.wrong.caption, undefined); assert.equal(result.matched.caption, 'First public reply');
   assert.equal(result.reappeared.caption, undefined);
+});
+
+test('owner edits persist identity and private history; local clones start new bodies without private history', async t => {
+  const page = await fixture(t);
+  const result = await page.evaluate(async () => {
+    await host.spawn({ name: 'Ada', instructions: 'Be curious', goals: ['Meet people'] });
+    const key = host.getStatus().selectedKey, original = view.selected.agentId;
+    await host.send({ text: 'Private secret only for Ada.' });
+    await callbacks.onEdit({ key, name: 'Ada revised', instructions: 'Be patient', goals: ['Listen'], localOnly: true,
+      movement: 'stationary', allowCloning: true, shared: true, respondToWorldChat: true });
+    const head = await agents.get(original), published = networkOptions.listLocalAgents()[0];
+    const clone = await callbacks.onClone({ key });
+    const cloneEvents = await agents.events(clone.agentId);
+    await host.dispose(); await start();
+    return { original, head, published, clone, cloneEvents, restored: host.getStatus().bodies };
+  });
+  assert.equal(result.head.agentId, result.original); assert.equal(result.head.identity.name, 'Ada revised');
+  assert.equal(result.head.policy.inferenceMode, 'local-only'); assert.equal(result.published.cloneable, true);
+  assert.equal(result.published.instructions, undefined); assert.equal(result.published.goals, undefined);
+  assert.notEqual(result.clone.agentId, result.original); assert.equal(result.clone.identity.instructions, 'Be patient');
+  assert.deepEqual(result.clone.goals, ['Listen']); assert.equal(result.clone.context.summary, '');
+  assert.equal(result.clone.embodiments[0].respondToWorldChat, false); assert.equal(result.clone.embodiments[0].allowCloning, false);
+  assert.equal(JSON.stringify(result.cloneEvents).includes('Private secret'), false);
+  assert.equal(result.restored.length, 2);
+});
+
+test('remote clone uses authenticated owner profile and cannot edit the source or bypass opt-in', async t => {
+  const page = await fixture(t);
+  const result = await page.evaluate(async () => {
+    const descriptor = { agentId: 'peer-agent', ownerPeerId: 'peer-owner', name: 'Peer Ada', position: [0, 3, 0], color: '#aabbcc', status: 'idle' };
+    networkOptions.onDirectory([descriptor]); const key = 'peer-owner:peer-agent';
+    let denied, editDenied;
+    try { await host.clone({ key }); } catch (error) { denied = error.message; }
+    try { await host.edit({ key, name: 'Hijacked' }); } catch (error) { editDenied = error.message; }
+    networkOptions.onDirectory([{ ...descriptor, cloneable: true }]);
+    window.remoteProfile = { schema: 'peercompute.resident-profile.v1', sourceAgentId: 'peer-agent', name: 'Peer Ada',
+      instructions: 'Explore', goals: ['Look around'], appearancePrompt: '', color: '#aabbcc' };
+    const clone = await host.clone({ key, name: 'My Ada' });
+    return { denied, editDenied, clone, calls };
+  });
+  assert.match(result.denied, /not enabled cloning/); assert.match(result.editDenied, /Only the owner/);
+  assert.equal(result.clone.identity.name, 'My Ada'); assert.notEqual(result.clone.agentId, 'peer-agent');
+  assert.deepEqual(result.calls.find(c => c[0] === 'clone-request').slice(1), ['peer-owner', { agentId: 'peer-agent' }]);
+});
+
+test('embodied replies use real durable scoped memory and display text instead of JSON after reload', async t => {
+  const page = await fixture(t);
+  const result = await page.evaluate(async () => {
+    await host.dispose(); window.embodiedFixture = true; await start();
+    await host.spawn({ name: 'Ada' }); const key = host.getStatus().selectedKey, agentId = view.selected.agentId;
+    window.fixtureAnswer = JSON.stringify({ text: 'I will come closer.', intent: { type: 'approach', targetId: 'human:owner' } });
+    await host.send({ key, text: 'Please come here.' });
+    physicalOutcome({ ...lastIntent, status: 'arrived', position: [15, 3, 5], policyId: 'controlled-physical-fixture', backend: 'fixture' });
+    await new Promise(resolve => setTimeout(resolve, 20));
+    const originalMessages = view.messages;
+    await host.dispose(); await start(); await host.openConversation(key);
+    const restoredMessages = view.messages;
+    window.fixtureAnswer = JSON.stringify({ text: 'We met here earlier.', intent: null });
+    await host.send({ key, text: 'Do you remember meeting me?' });
+    const input = calls.filter(c => c[0] === 'generate').at(-1)[1];
+    return { originalMessages, restoredMessages, input, memory: await episodeStore.stats(), agentId };
+  });
+  assert.equal(result.originalMessages[1].text, 'I will come closer.');
+  assert.equal(result.restoredMessages[0].text, 'Please come here.'); assert.equal(result.restoredMessages[1].text, 'I will come closer.');
+  const input = JSON.stringify(result.input.messages); assert.match(input, /verified-action/); assert.match(input, /approach: arrived/);
+  assert.equal(result.memory.retainedEntries >= 3, true);
+});
+
+test('clone history copies only owner-shared public episodes and labels their donor', async t => {
+  const page = await fixture(t);
+  const result = await page.evaluate(async () => {
+    await host.dispose(); window.embodiedFixture = true; await start();
+    await host.spawn({ name: 'Ada', shareMemories: true }); const key = host.getStatus().selectedKey, source = view.selected.agentId;
+    const make = async (audience, conversationId, text) => episodeStore.append({ agentId: source, worldId: 'cubechat:test', audience,
+      conversationId, kind: 'heard', who: { peerId: 'owner', name: 'Owner' }, where: [1, 3, 5], outcome: 'A participant said this', text,
+      source: { kind: 'authenticated-message', eventId: crypto.randomUUID(), peerId: 'owner' } });
+    const publicId = await worldConversationId('cubechat:test', 'public-room');
+    for (let i = 0; i < 12; i++) await make('public', publicId, `We met at the blue cube, episode ${i}.`);
+    await make('private', await worldConversationId('cubechat:test', 'owner'), 'Private password conversation.');
+    const profile = await networkOptions.getProfile({ agentId: source });
+    const clone = await host.clone({ key });
+    const episodes = await episodeStore.retrieve({ agentId: clone.agentId, worldId: 'cubechat:test', audience: 'public', conversationId: publicId });
+    await host.edit({ key, sharePrivateMemories: true });
+    const privateProfile = await networkOptions.getProfile({ agentId: source });
+    const privateClone = await host.clone({ key });
+    const inheritedPrivate = await episodeStore.retrieve({ agentId: privateClone.agentId, worldId: 'cubechat:test',
+      audience: 'private', conversationId: await worldConversationId('cubechat:test', 'owner') });
+    const inheritedPublic = await episodeStore.retrieve({ agentId: privateClone.agentId, worldId: 'cubechat:test', audience: 'public', conversationId: publicId });
+    await host.edit({ key, shareMemories: false });
+    const optedOut = await networkOptions.getProfile({ agentId: source });
+    return { source, profile, clone, episodes, optedOut, privateProfile, privateClone, inheritedPrivate, inheritedPublic };
+  });
+  assert.equal(result.profile.memories.length, 12); assert.equal(result.clone.inheritedMemories, 12);
+  assert(result.profile.memories.some(e => e.text.endsWith('episode 0.')));
+  assert.equal(result.episodes[0].source.kind, 'shared-memory'); assert.equal(result.episodes[0].source.sourceAgentId, result.source);
+  assert.match(result.episodes[0].text, /blue cube/); assert.equal(JSON.stringify(result.profile).includes('Private password'), false);
+  assert.equal(result.optedOut.memories, undefined);
+  assert.equal(result.privateProfile.memories.length, 13); assert.equal(result.privateClone.inheritedMemories, 13);
+  assert.equal(result.inheritedPrivate.length, 1); assert.match(result.inheritedPrivate[0].text, /Private password/);
+  assert.equal(JSON.stringify(result.inheritedPublic).includes('Private password'), false);
+});
+
+test('explicit stationary selection stops a model intention even when saved preference was already stationary', async t => {
+  const page = await fixture(t);
+  const result = await page.evaluate(async () => {
+    await host.dispose(); window.embodiedFixture = true; await start();
+    await host.spawn({ name: 'Ada', movement: 'stationary' }); const key = host.getStatus().selectedKey;
+    window.fixtureAnswer = JSON.stringify({ text: 'I will follow.', intent: { type: 'follow', targetId: 'human:owner' } });
+    await host.send({ text: 'Follow me' });
+    await host.edit({ key, movement: 'stationary' });
+    return { key, actions: calls.filter(c => c[0] === 'intent' || c[0] === 'movement') };
+  });
+  assert.equal(result.actions[0][2].type, 'follow');
+  assert.deepEqual(result.actions.at(-1), ['movement', result.key, 'stationary']);
+});
+
+test('failed full-history import leaves no activated clone or partial inherited memories', async t => {
+  const page = await fixture(t);
+  const result = await page.evaluate(async () => {
+    await host.dispose(); window.embodiedFixture = true; await start();
+    await host.spawn({ name: 'Ada', shareMemories: true }); const key = host.getStatus().selectedKey, source = view.selected.agentId;
+    await episodeStore.append({ agentId: source, worldId: 'cubechat:test', audience: 'public',
+      conversationId: await worldConversationId('cubechat:test', 'public-room'), kind: 'heard',
+      who: { peerId: 'owner', name: 'Owner' }, where: [1, 3, 5], outcome: 'Heard', text: 'Retain this original memory.',
+      source: { kind: 'authenticated-message', eventId: 'source-event', peerId: 'owner' } });
+    episodeStore.maximumEntries = 1;
+    let failure; try { await host.clone({ key }); } catch (error) { failure = error.message; }
+    await new Promise(resolve => setTimeout(resolve, 20));
+    return { failure, bodies: host.getStatus().bodies, heads: await agents.list(), stats: await episodeStore.stats(), source };
+  });
+  assert.match(result.failure, /capacity|retain|space|limit/i);
+  assert.equal(result.heads.length, 1); assert.equal(result.heads[0].agentId, result.source);
+  assert.equal(result.bodies.length, 1); assert.equal(result.stats.retainedEntries, 1);
+});
+
+test('a clone has no advertised body until its whole inherited history is durable', async t => {
+  const page = await fixture(t);
+  await page.evaluate(async () => {
+    await host.dispose(); window.embodiedFixture = true; await start();
+    await host.spawn({ name: 'Ada', shareMemories: true }); const key = host.getStatus().selectedKey, source = view.selected.agentId;
+    await host.send({ text: 'Remember this public test setup.' });
+    await host.edit({ key, sharePrivateMemories: true });
+    const inherit = episodeStore.inheritSnapshot.bind(episodeStore);
+    episodeStore.inheritSnapshot = async (...args) => {
+      await new Promise(resolve => { window.releaseHistory = resolve; }); return inherit(...args);
+    };
+    window.cloning = host.clone({ key });
+  });
+  await page.waitForFunction(() => window.releaseHistory);
+  const staged = await page.evaluate(async () => ({ heads: await agents.list(), bodies: host.getStatus().bodies,
+    published: networkOptions.listLocalAgents() }));
+  assert.equal(staged.heads.length, 2); assert.equal(staged.bodies.length, 1); assert.equal(staged.published.length, 1);
+  assert.equal(staged.heads.filter(h => h.embodiments.length === 0).length, 1);
+  const after = await page.evaluate(async () => { releaseHistory(); const head = await cloning; return { head, bodies: host.getStatus().bodies }; });
+  assert.equal(after.bodies.length, 2); assert.equal(after.head.inheritedMemories, 2);
+});
+
+test('profile chunk permissions read persisted consent even while an older directory refresh is pending', async t => {
+  const page = await fixture(t);
+  await page.evaluate(async () => {
+    await host.spawn({ name: 'Ada', shareMemories: true }); window.sourceId = view.selected.agentId;
+    const originalList = agents.list.bind(agents); let held = false;
+    agents.list = async (...args) => {
+      const snapshot = await originalList(...args);
+      if (!held) { held = true; await new Promise(resolve => { window.releaseList = resolve; }); }
+      return snapshot;
+    };
+    await agents.update(sourceId, { name: 'Ada before revocation' });
+  });
+  await page.waitForFunction(() => window.releaseList);
+  const result = await page.evaluate(async () => {
+    const head = await agents.get(sourceId);
+    await agents.update(sourceId, { embodiments: head.embodiments.map(binding => ({ ...binding, shareMemories: false, allowCloning: false })) });
+    const cached = networkOptions.listLocalAgents()[0];
+    const authoritative = await networkOptions.getProfilePermissions({ agentId: sourceId });
+    releaseList(); return { cached, authoritative };
+  });
+  assert.equal(result.cached.cloneable, true);
+  assert.deepEqual(result.authoritative, { cloneable: false, sharesMemories: false, sharesPrivateMemories: false });
 });

@@ -289,9 +289,9 @@ test('discussion expiry permits a slow initial human answer and its queued human
 });
 
 test('expiry suppresses a late automatic follow-up without aborting or releasing dispatched inference', async t => {
-  const gate = deferred(); let followupSignal;
-  const f = fixture(t, { discussionMs: 35, respond: async (_resident, incoming, { signal }) => {
-    if (incoming.agentId) { followupSignal = signal; await gate.promise; }
+  const gate = deferred(); let followupSignal, mayAct;
+  const f = fixture(t, { discussionMs: 35, respond: async (_resident, incoming, { signal, isCurrent }) => {
+    if (incoming.agentId) { followupSignal = signal; await gate.promise; mayAct = isCurrent(); }
     return incoming.id;
   } });
   f.responder.receive(message('human')); await until(() => f.publications.length === 1);
@@ -302,6 +302,7 @@ test('expiry suppresses a late automatic follow-up without aborting or releasing
   gate.resolve(); await until(() => !f.responder.getStatus().active);
   assert.equal(f.publications.length, 1);
   assert.equal(f.statuses.some(status => status.status === 'error'), false);
+  assert.equal(mayAct, false, 'The host must suppress physical actions as well as late text');
 });
 
 test('a superseded active turn cannot publish late or spend the new human discussion’s budget', async t => {

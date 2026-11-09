@@ -13,6 +13,7 @@ import { DataState } from './DataState.js';
 import { LocalArtifactCache } from './LocalArtifactCache.js';
 import { ArtifactStore } from '../artifacts/ArtifactStore.js';
 import { AgentRecordStore } from '../agents/AgentRecordStore.js';
+import { WorldMemoryStore } from '../agents/WorldMemoryStore.js';
 
 export const STATE_TASK_GRAPH_CACHE_ARTIFACT_ADMISSION_SCHEMA = 'peercompute.state.task-graph-cache-artifact-admission.v0';
 export const STATE_TASK_GRAPH_CACHE_ARTIFACT_INVALIDATION_SCHEMA = 'peercompute.state.task-graph-cache-artifact-invalidation.v0';
@@ -92,6 +93,7 @@ export class StateManager {
     this.isInitialized = false;
     this.persistenceFailed = false;
     this.agentRecordStores = new Map();
+    this.worldMemoryStores = new Map();
   }
 
   /**
@@ -238,6 +240,20 @@ export class StateManager {
   }
 
   getAgentRecordStore(name = 'default') { return this.agentRecordStores.get(name) || null; }
+
+  /** Private scoped episodes persist separately from operation journals and Yjs. */
+  createWorldMemoryStore(options = {}) {
+    if (this.destroyed) throw new Error('StateManager is destroyed');
+    const name = options.name || 'default';
+    if (this.worldMemoryStores.has(name)) throw new Error(`World memory store ${name} is already registered`);
+    const store = new WorldMemoryStore({ ...options, name, onDestroy: closed => {
+      if (this.worldMemoryStores.get(name) === closed) this.worldMemoryStores.delete(name);
+      options.onDestroy?.(closed);
+    } });
+    this.worldMemoryStores.set(name, store); return store;
+  }
+
+  getWorldMemoryStore(name = 'default') { return this.worldMemoryStores.get(name) || null; }
 
   async ensureArtifact(cid, { storeName = 'default', signal } = {}) {
     if (this.destroyed) throw new Error('StateManager is destroyed');
@@ -971,6 +987,7 @@ export class StateManager {
       const cleanup = async (operation) => { try { await operation(); } catch (error) { errors.push(error); } };
       // Agent runners acknowledge cancellation before private journals close.
       for (const store of [...this.agentRecordStores.values()]) await cleanup(() => store.destroy());
+      for (const store of [...this.worldMemoryStores.values()]) await cleanup(() => store.destroy());
       // Local artifact bytes live outside Yjs but remain owned by this manager.
       // Destroy handles without deleting their optional persistent records.
       await cleanup(() => this.dataState.destroyArtifactStores());

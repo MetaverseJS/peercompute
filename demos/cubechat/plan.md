@@ -201,3 +201,51 @@ Evaluate memory retrieval and actual movement separately from prose fluency.
 Afterward: bounded self-initiated greetings, mutual introductions and remembered
 social goals. Fly connectome, full3D body generation, policy mobility and open-ended
 self-training remain later experiments. No GitHub Pages build/deploy or push.
+
+#### November 9 implementation acceptance
+
+- Train and retain a compact MLP for continuous approach/follow/braking actions; compare held-out rollouts with zero/random weights. Run it locally through a managed worker and verify actual WebGPU/CPU backend reporting, cancellation and scene disposal.
+- Supply bounded participant identities/poses/velocities and obstacles to reusable perception/action contracts. LLM chooses a validated observed target; physics verifies outcomes independently. Keep motion running while language is busy; legacy roam is an explicitly scripted baseline.
+- Persist scoped event memories separately from the short journal; retrieve relevant episodes after reload without exposing private conversations to world chat. Participant display names are remembered labels, not proof of stable reconnect identity.
+- Owners edit personality, goals, appearance, sharing and movement. Owners can opt into sharing a whitelisted clone profile. A clone receives a new local identity/body and fresh memories, never the original authority/private history.
+- Verify headless UI and two real isolated peer browsers, then update only the internal CubeChat preview. GitHub Pages remains on hold.
+
+#### November 9 validation and continuity follow-up
+
+The learned motor, bounded perception/intent bridge, scoped episodes, native owner
+editor and encrypted peer cloning are implemented. Actual production WebGPU and
+Cannon acceptance pass; the two-browser SecretWorkshop clone check verifies saved
+identity, shared-memory provenance and private-history exclusion. New residents
+have one default-checked **Share resident history** option; existing entitlements
+remain unchanged. Current transfer is at most eight public episodes and creates
+an independent clone. It is not full-history replication or same-identity migration.
+
+A true host move needs staged durable transfer, a recipient-bound activation grant,
+source retirement and idempotent recovery after interruption. Existing local
+execution authority cannot provide that guarantee. User clarification is pending
+on move-versus-active-clone behavior and whether private conversations may be part
+of shared history; no migration or private-history transfer has been enabled.
+
+Initial real Qwen2B action selection returned no intention despite successful peer
+inference. The response contract now uses valid action examples and distinguishes
+proposed movement from completed outcomes. Controller correctness and actual
+language-model adherence remain separate acceptance gates.
+
+#### November 9 final direction — branching residents
+
+The user resolved continuity as **cloning**: both residents remain active with a
+shared past, then develop independently. Creation now shows **Share resident
+history** (on) and **Include private conversations** (off). The creator controls
+both, and enabling private sharing explicitly discloses who can read it.
+
+This supersedes the eight-episode transfer sample and the pending move/private
+questions above. Transfer all retained selected world episodes over a credited,
+digest-checked profile stream; preserve audience/conversation IDs and import
+atomically before placing a body. Capacity failure must leave no partial clone.
+The existing retention bounds still apply; legacy journals predating the episode
+store are not converted into purported verified world experiences.
+
+Corrected action prompting is qualified with actual local Qwen3.5 0.8B WebGPU
+inference for both new and legacy identities. Both approached the correct player
+and stopped at approximately10.6units; no CPU inference or scripted movement
+substitute was used. Full-history private-sharing integration acceptance passed: 71 core tests, 27 host tests, 21 native UI tests and an actual two-browser encrypted transfer with public-only and explicitly opted-in private histories. The internal HTTPS preview is updated; Pages remains unchanged.

@@ -1908,3 +1908,23 @@ approach/stop/follow controller behind a thin M0 sensor/action/trajectory interf
 Awareness and memory are the cheapest visible increment. Existing motion remains
 a scripted baseline until trained weights control actual continuous actions.
 See demos/cubechat/plan.md; no runtime implementation or deployment in this review.
+
+### November 9 — meet-and-follow approved; edit and clone residents
+
+Implementation in progress: bounded world senses and LLM-selected approach/follow/stop/look intentions; a genuinely trained compact local movement policy through ComputeManager; outcome-backed, audience-scoped episodic memory. Owner editing and explicit clone sharing produce a new resident on the requesting node, copying personality/goals/appearance with fresh memories and authority. Physical control remains independent of language latency. No cross-reconnect human authentication or autonomous self-training claim. Internal preview only; Pages stays on hold.
+
+- Continuity clarification: the user chose independently active clone branches,
+  not single-owner migration. New residents expose public-history sharing enabled
+  by default and private-conversation inclusion disabled by default. Full retained
+  selected world history is transferred and saved before a clone body activates;
+  conversation audiences remain separate and later experiences diverge.
+
+- November 9 implementation verified: bounded world perception and typed model
+  intentions, an actual trained WebGPU motor, scoped episodic persistence, owner
+  editing and independent peer clones with explicit public/private history
+  choices. Full selected retained history is imported before body activation.
+  Real local model actions, physical GPU control and two-browser encrypted history
+  transfer pass. Current limits remain: fixed planar learned controller, no
+  learned obstacle planning/online training, bounded episode retention and no
+  automatic future-memory synchronization. Only internal preview publication is
+  authorized; GitHub Pages remains on hold.

@@ -1360,3 +1360,21 @@ intention/action interface, demonstrated by learned approach/stop/follow. Curren
 kinematic/scripted motor is not a trained controller. Detailed proposed sequence
 and acceptance scene are in demos/cubechat/plan.md. Await direction on scope; this
 review changes planning records only and preserves the Pages deployment hold.
+
+### November 9 — accepted CubeChat resident increment
+
+User approved meet-and-follow and added editing existing residents and cloning them onto their own node. Build reusable bounded senses, typed model intentions, trained local continuous movement, scoped episodic memory, owner edit controls and opt-in public clone profiles. Clones start with fresh identity, authority and memories. Validate actual policy execution separately from controlled language fixtures. Internal preview only; do not build/push/deploy GitHub Pages.
+
+- Follow-up supersedes the separate default-off clone/history controls: new
+  residents expose one **Share resident history** checkbox, checked by default.
+  Current scope copies personality, appearance and up to eight public world
+  episodes to an independent new resident; inherited episodes retain donor
+  attribution. Existing residents' permissions are preserved. Same-identity host
+  migration and private-history sharing await clarification and a separate durable
+  authority-handoff implementation; do not label cloning as migration.
+
+- Final continuity choice: independent active clone branches, with creator choices
+  for public history (default on) and private conversations (default off). Replace
+  the recent-episode sample with full retained selected world-history transfer,
+  bounded credited chunks, permission rechecks, and atomic destination import.
+  No same-identity authority migration or automatic future-memory merging.

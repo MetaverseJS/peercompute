@@ -40,9 +40,19 @@ before(async () => {
           const physics = { world, bodies: new Map([['real-peer', humanBody]]) };
           const shell = { scene, camera, floor, renderer: { domElement: canvas }, players: humanPlayers, worldThemeId: 'tron' };
           window.selected = []; window.worldClicks = 0;
+          window.participants = [{ id: 'human:owner-peer', kind: 'human', peerId: 'owner-peer', name: 'Owner', position: [0,3,20], velocity: [0,0,0] }];
+          window.motorCalls = [];
+          window.controlledMotor = { infer: async requests => {
+            motorCalls.push(structuredClone(requests));
+            return { backend:'fixture', policyId:'controlled-motor-fixture', worker:false, results: requests.map(({id,observation:o}) => {
+              const distance=Math.hypot(...o.relativePosition), speed=Math.min(5,Math.max(0,(distance-o.stopDistance)*2));
+              return {id,acceleration:o.relativePosition.map((v,i)=>Math.max(-12,Math.min(12,((distance?v/distance*speed:0)-o.velocity[i])*4)))};
+            }) };
+          } };
+          window.advance = async count => { for(let i=0;i<count;i++) { physics.world.step(1/60); layer.afterPhysics(1/60); if(layer.motor.pending) await layer.motor.pending.done; } };
           canvas.addEventListener('click', () => worldClicks++);
           window.layer = new CubeAgentLayer({ scene: shell, physics, getPlayerPosition: () => ({ x: 0, y: 3, z: 20 }),
-            onSelect: key => selected.push(key), ...options });
+            onSelect: key => selected.push(key), getParticipants: () => participants, ...options });
           Object.assign(window, { THREE, CANNON, shell, physics, humanBody });
           window.base = { key: 'local:agent-1', agentId: 'agent-1', ownerPeerId: 'owner-peer', name: 'Ada',
             color: '#4cd4a1', position: [0, 3, 0], status: 'idle', local: true };
@@ -92,45 +102,41 @@ test('agent positions are copied and bounded without accepting strings or nonfin
   }
 });
 
-test('agent cubes have distinct scene and kinematic collision ownership while human peers remain untouched', async t => {
+test('agent cubes have distinct dynamic local and kinematic remote ownership while humans remain untouched', async t => {
   const page = await fixture(t);
   const result = await page.evaluate(() => {
     layer.upsert(base); layer.upsert({ ...base, key: 'remote-peer:agent-1', ownerPeerId: 'remote-peer', local: false, position: [12, 3, 0] });
     const first = layer.entries.get(base.key);
     layer.upsert({ ...base, name: 'Updated Ada', status: 'thinking', position: [2, 3, 1], color: '#ff8844' });
     return { size: layer.entries.size, children: layer.group.children.length, bodies: physics.world.bodies.length,
-      kinematic: first.body.type === CANNON.Body.KINEMATIC, same: first === layer.entries.get(base.key),
+      kinematic: first.body.type === CANNON.Body.DYNAMIC, same: first === layer.entries.get(base.key),
       position: first.mesh.position.toArray(), collision: first.body.position.toArray(), color: first.mesh.material.color.getHexString(),
       intensity: first.mesh.material.emissiveIntensity, players: [...shell.players.keys()], bodyKeys: [...physics.bodies.keys()] };
   });
   assert.deepEqual(result, { size: 2, children: 2, bodies: 3, kinematic: true, same: true, position: [0, 3, 0], collision: [0, 3, 0],
     color: 'ff8844', intensity: .4, players: ['real-peer'], bodyKeys: ['real-peer'] });
   assert.equal(await page.evaluate(() => {
-    humanBody.position.set(0, 3, 12); humanBody.velocity.set(0, 0, -10); humanBody.linearDamping = 0;
+    layer.setMovement(base.key, 'stationary'); humanBody.position.set(0, 3, 12); humanBody.velocity.set(0, 0, -10); humanBody.linearDamping = 0;
     for (let index = 0; index < 120; index++) physics.world.step(1 / 60);
     return humanBody.position.z >= 3.8;
   }), true, 'the stationary agent is an actual Cannon collision body');
 });
 
-test('one local body follows, pauses during thinking, and keeps live pose through metadata refresh', async t => {
+test('one physical body follows during thinking and speaking, stops when paused, and retains live pose', async t => {
   const page = await fixture(t);
-  const result = await page.evaluate(() => {
-    layer.upsert(base); layer.setMovement(base.key, 'follow');
-    const body = layer.entries.get(base.key).body;
-    for (let index = 0; index < 180; index++) { physics.world.step(1 / 60); layer.update(1 / 60); }
-    const moved = layer.getPosition(base.key);
-    layer.upsert({ ...base, status: 'thinking' });
-    for (let index = 0; index < 180; index++) { physics.world.step(1 / 60); layer.update(1 / 60); }
-    const paused = layer.getPosition(base.key), context = layer.getContext(base);
-    layer.upsert({ ...base, status: 'idle' }); layer.setMovement(base.key, 'stationary'); layer.update(60);
-    return { moved, paused, context, stationary: layer.getPosition(base.key), oneBody: body === layer.entries.get(base.key).body,
-      bodyY: body.position.y, velocityY: body.velocity.y, entries: layer.entries.size, totalBodies: physics.world.bodies.length };
+  const result = await page.evaluate(async () => {
+    layer.upsert(base); layer.setMotor(controlledMotor); layer.setMovement(base.key,'follow');
+    const body=layer.entries.get(base.key).body; await advance(120); const moved=layer.getPosition(base.key);
+    participants[0].position=[0,3,60]; layer.upsert({...base,status:'thinking'}); await advance(120); const thinking=layer.getPosition(base.key);
+    layer.upsert({...base,status:'speaking'}); await advance(60); const speaking=layer.getPosition(base.key);
+    layer.upsert({...base,status:'paused'}); await advance(60); const paused=layer.getPosition(base.key);
+    return {moved,thinking,speaking,paused,oneBody:body===layer.entries.get(base.key).body,
+      y:body.position.y,vy:body.velocity.y,calls:motorCalls.length,context:layer.getContext(base)};
   });
-  assert(result.moved[2] > 9.9 && result.moved[2] <= 10.00001); assert(Math.abs(result.moved[1] - 3) < 1e-9);
-  assert.deepEqual(result.paused, result.moved); assert.deepEqual(result.stationary, result.moved);
-  assert.deepEqual(result.context.agent.position, result.moved);
-  assert.equal(result.oneBody, true); assert.equal(result.bodyY, 3); assert.equal(result.velocityY, 0);
-  assert.equal(result.entries, 1); assert.equal(result.totalBodies, 2);
+  assert(result.moved[2]>4&&result.moved[2]<11); assert(result.thinking[2]>result.moved[2]+4);
+  assert(result.speaking[2]>result.thinking[2]+2); assert.deepEqual(result.paused,result.speaking);
+  assert.equal(result.y,3); assert.equal(result.vy,0); assert.equal(result.oneBody,true); assert(result.calls>10);
+  assert.deepEqual(result.context.agent.position,result.paused);
 });
 
 test('remote body updates interpolate without running local movement or changing unrelated owner identities', async t => {
@@ -152,23 +158,21 @@ test('remote body updates interpolate without running local movement or changing
   assert.match(result.denied, /owner/); assert.equal(result.count, 2);
 });
 
-test('injected motor policies retain layer speed, grounding and paused-state bounds', async t => {
-  const page = await fixture(t);
-  const result = await page.evaluate(async () => {
-    layer.dispose();
-    const { CubeAgentLayer } = await import('/demos/cubechat/src/agents/CubeAgentLayer.js');
-    const calls = [];
-    layer = new CubeAgentLayer({ scene: shell, physics, getPlayerPosition: () => [0, 3, 20],
-      motionFactory: ({ key }) => ({ setMode: (mode) => calls.push([key, mode]),
-        step: ({ position, dt }) => { calls.push(['step', dt]); return [position[0] + 1000, 500, position[2]]; } }) });
-    layer.upsert(base); layer.setMovement(base.key, 'follow'); layer.update(60);
-    const moved = layer.getPosition(base.key);
-    layer.upsert({ ...base, status: 'thinking' }); layer.update(60);
-    return { moved, paused: layer.getPosition(base.key), calls };
+test('managed motor actions are bounded and invalid targets or remote authority cannot move bodies', async t => {
+  const page=await fixture(t);
+  const result=await page.evaluate(async()=>{
+    layer.upsert(base); participants[0].position=[200,3,0];
+    layer.setMotor({infer:async requests=>({results:requests.map(({id})=>({id,acceleration:[1e9,0]}))})});
+    layer.setIntent(base.key,{type:'follow',targetId:'human:owner-peer'}); await advance(120);
+    const body=layer.entries.get(base.key).body, moved=layer.getPosition(base.key), speed=Math.hypot(body.velocity.x,body.velocity.z);
+    let invalid=false;try{layer.setIntent(base.key,{type:'follow',targetId:'human:missing'});}catch{invalid=true;}
+    layer.upsert({...base,key:'remote',ownerPeerId:'other',local:false,position:[40,3,0]});
+    let remote=false;try{layer.setIntent('remote',{type:'stop'});}catch{remote=true;}
+    participants=[];await advance(30);const stopped=body.velocity.toArray();
+    return {moved,speed,invalid,remote,stopped};
   });
-  assert(Math.abs(result.moved[0] - 2) < 1e-9); assert(Math.abs(result.moved[1] - 3) < 1e-9);
-  assert.deepEqual(result.paused, result.moved);
-  assert.deepEqual(result.calls, [['local:agent-1', 'follow'], ['step', 0.1]]);
+  assert(result.moved[0]>5&&result.moved[0]<12);assert(result.speed<=5.201);assert.equal(result.moved[1],3);
+  assert.equal(result.invalid,true);assert.equal(result.remote,true);assert.deepEqual(result.stopped,[0,0,0]);
 });
 
 test('terrain visual height stays separate from flat-world collision height without periodic hopping', async t => {
@@ -423,4 +427,115 @@ test('resident captions reuse the shared presenter and fit default desktop/390px
       for (const corner of item.corners) assert.ok(Math.abs(corner[0]) < 1 && Math.abs(corner[1]) < 1, `${width}: ${JSON.stringify(corner)}`);
     }
   }
+});
+
+test('bounded observations identify same-named humans distinctly and include current resident/obstacle poses', async t=>{
+ const page=await fixture(t);
+ const result=await page.evaluate(()=>{
+  layer.upsert(base);layer.upsert({...base,key:'other:agent2',agentId:'agent2',ownerPeerId:'other',name:'Visitor',local:false,position:[10,3,5]});
+  participants=[{id:'human:one',peerId:'one',name:'Same name',position:[5,3,0],velocity:[1,0,0]},
+   {id:'human:two',peerId:'two',name:'Same name',position:[8,3,0],velocity:[0,0,1]},
+   ...Array.from({length:50},(_,i)=>({id:'human:p'+i,peerId:'p'+i,name:'More',position:[20+i,3,0]}))];
+  const value=layer.observe(base.key,{requesterPeerId:'two'});return value;
+ });
+ assert.equal(result.participants.length,16);assert.equal(result.requesterId,'human:two');assert.equal(result.participants[0].id,'human:two');
+ assert(result.participants.some(p=>p.id==='human:one'));assert(result.participants.some(p=>p.id==='resident:other:agent2'));
+ assert(result.obstacles.length<=8);assert.equal(result.self.agentId,'agent-1');assert.deepEqual(result.self.velocity,[0,0,0]);
+});
+
+test('no motor means no hidden follow fallback and stale asynchronous actions cannot override stop', async t=>{
+ const page=await fixture(t);
+ const result=await page.evaluate(async()=>{
+  layer.upsert(base);const outcomes=[];layer.subscribeOutcomes(e=>outcomes.push(e));
+  layer.setIntent(base.key,{type:'follow',targetId:'human:owner-peer',requestId:'first'});await advance(15);const without=layer.getPosition(base.key);
+  let release;layer.setMotor({infer:requests=>new Promise(resolve=>{release=()=>resolve({results:requests.map(({id})=>({id,acceleration:[12,12]}))});})});
+  for(let i=0;i<6;i++){physics.world.step(1/60);layer.update(1/60);}await Promise.resolve();
+  const pending=layer.motor.pending.done;layer.setIntent(base.key,{type:'stop',requestId:'stop'});release();await pending;await advance(12);
+  const stopped=layer.getPosition(base.key);return {without,stopped,outcomes,commands:layer.motor.commands.size};
+ });
+ assert.deepEqual(result.without,[0,3,0]);assert.deepEqual(result.stopped,result.without);assert.equal(result.commands,0);
+ assert(result.outcomes.some(e=>e.status==='failed'&&e.requestId==='first'));assert(result.outcomes.some(e=>e.status==='stopped'&&e.requestId==='stop'));
+});
+
+test('saved movement changes apply once while unchanged thinking updates preserve live neural intentions', async t=>{
+ const page=await fixture(t);
+ const result=await page.evaluate(async()=>{
+  layer.upsert({...base,movement:'stationary'});layer.setMotor(controlledMotor);layer.setIntent(base.key,{type:'follow',targetId:'human:owner-peer',requestId:'live'});
+  layer.upsert({...base,movement:'stationary',status:'thinking'});await advance(60);const moving=layer.getPosition(base.key);
+  const intent=layer.motor.intents.get(base.key).requestId;
+  layer.upsert({...base,movement:'roam'});const cleared=!layer.motor.intents.has(base.key);
+  layer.upsert({...base,movement:'stationary'});await advance(12);return {moving,intent,cleared,velocity:layer.entries.get(base.key).body.velocity.toArray()};
+ });
+ assert(result.moving[2]>1);assert.equal(result.intent,'live');assert.equal(result.cleared,true);assert.deepEqual(result.velocity,[0,0,0]);
+});
+
+test('a failed managed motor halts once without repeatedly requesting an unsupported controller', async t=>{
+ const page=await fixture(t);
+ const result=await page.evaluate(async()=>{
+  layer.upsert({...base,movement:'stationary'});let requests=0;const outcomes=[];layer.subscribeOutcomes(value=>outcomes.push(value));
+  layer.setMotor({infer:async()=>{requests++;throw Error('WebGPU unavailable');}});
+  layer.setIntent(base.key,{type:'follow',targetId:'human:owner-peer'});await advance(360);
+  return {requests,position:layer.getPosition(base.key),failures:outcomes.filter(e=>e.status==='failed').length};
+ });
+ assert.deepEqual(result,{requests:1,position:[0,3,0],failures:1});
+});
+
+test('manual intentions and pause lifecycle advance a monotonic observed revision; looking reports applied orientation once', async t=>{
+ const page=await fixture(t);
+ const result=await page.evaluate(async()=>{
+  layer.upsert({...base,movement:'stationary'});const revisions=[layer.observe(base.key).self.intentRevision],outcomes=[];
+  layer.subscribeOutcomes(e=>outcomes.push(e));participants[0].position=[20,3,0];
+  layer.setIntent(base.key,{type:'look-at',targetId:'human:owner-peer',requestId:'look'});revisions.push(layer.observe(base.key).self.intentRevision);await advance(12);
+  const yaw=layer.entries.get(base.key).mesh.rotation.y;
+  layer.setMovement(base.key,'stationary');revisions.push(layer.observe(base.key).self.intentRevision);
+  layer.upsert({...base,movement:'stationary',status:'paused'});revisions.push(layer.observe(base.key).self.intentRevision);
+  layer.upsert({...base,movement:'stationary',status:'idle'});revisions.push(layer.observe(base.key).self.intentRevision);
+  layer.remove(base.key);layer.upsert({...base,movement:'stationary'});revisions.push(layer.observe(base.key).self.intentRevision);
+  return {revisions,yaw,outcomes};
+ });
+ assert(result.revisions.every((n,i)=>i===0||n>result.revisions[i-1]));assert(Math.abs(result.yaw-Math.PI/2)<1e-9);
+ assert.equal(result.outcomes.filter(e=>e.requestId==='look'&&e.status==='arrived').length,1);
+});
+
+test('private local residents stay out of all other resident senses and physical target lookup', async t=>{
+ const page=await fixture(t);
+ const result=await page.evaluate(()=>{
+  layer.upsert(base);layer.upsert({...base,key:'local:hidden',agentId:'hidden',name:'Private identity',position:[5,3,5],shared:false});
+  layer.upsert({...base,key:'local:public',agentId:'public',name:'Public identity',position:[15,3,5],shared:true});
+  const sensed=layer.observe(base.key);let rejected=false;try{layer.setIntent(base.key,{type:'follow',targetId:'resident:owner-peer:hidden'});}catch{rejected=true;}
+  return {sensed,rejected,rendered:layer.entries.size,ownPrivate:layer.observe('local:hidden').self.name};
+ });
+ assert(!JSON.stringify(result.sensed).includes('Private identity'));assert(!result.sensed.participants.some(p=>p.agentId==='hidden'));
+ assert(!result.sensed.obstacles.some(o=>o.position[0]===5&&o.position[2]===5));assert(result.sensed.participants.some(p=>p.agentId==='public'));
+ assert.equal(result.rejected,true);assert.equal(result.rendered,3);assert.equal(result.ownPrivate,'Private identity');
+});
+
+test('restored owner follow retains its body while the owner is absent, then follows only after observation returns', async t=>{
+ const page=await fixture(t);
+ const result=await page.evaluate(async()=>{
+  participants[0].position=[0,3,400];const outcomes=[];layer.subscribeOutcomes(e=>outcomes.push(e));
+  layer.upsert({...base,movement:'follow'});layer.setMotor(controlledMotor);const body=layer.entries.get(base.key).body;
+  await advance(60);const waiting={position:layer.getPosition(base.key),calls:motorCalls.length,outcomes:[...outcomes]};
+  let manualRejected=false,modelRejected=false;
+  try{layer.setMovement(base.key,'follow');}catch{manualRejected=true;}
+  try{layer.setIntent(base.key,{type:'follow',targetId:'human:owner-peer'});}catch{modelRejected=true;}
+  participants[0].position=[0,3,20];await advance(120);
+  return {waiting,manualRejected,modelRejected,position:layer.getPosition(base.key),calls:motorCalls.length,same:body===layer.entries.get(base.key).body};
+ });
+ assert.deepEqual(result.waiting.position,[0,3,0]);assert.equal(result.waiting.calls,0);
+ assert.equal(result.waiting.outcomes.filter(e=>e.status==='target-lost').length,1);
+ assert.equal(result.manualRejected,true);assert.equal(result.modelRejected,true);assert.equal(result.same,true);
+ assert(result.calls>0&&result.position[2]>4);
+});
+
+test('restored follow can wait for the owner session identity without leaving a duplicate or missing body', async t=>{
+ const page=await fixture(t);
+ const result=await page.evaluate(async()=>{
+  participants=[];layer.upsert({...base,ownerPeerId:'',movement:'follow'});layer.setMotor(controlledMotor);await advance(30);
+  const first=layer.entries.get(base.key).body;
+  participants=[{id:'human:owner-peer',peerId:'owner-peer',name:'Owner',position:[0,3,20],velocity:[0,0,0]}];
+  layer.upsert({...base,movement:'follow'});await advance(90);
+  return {same:first===layer.entries.get(base.key).body,count:layer.entries.size,target:layer.motor.intents.get(base.key).targetId,position:layer.getPosition(base.key)};
+ });
+ assert.equal(result.same,true);assert.equal(result.count,1);assert.equal(result.target,'human:owner-peer');assert(result.position[2]>2);
 });

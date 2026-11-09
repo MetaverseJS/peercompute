@@ -32,8 +32,14 @@ export function normalizeAgentEmbodiments(input) {
     worlds.add(worldId);
     if (!/^#[a-f0-9]{6}$/i.test(binding.color ?? '') || typeof binding.shared !== 'boolean') throw new Error('Invalid agent body settings');
     if (binding.respondToWorldChat !== undefined && typeof binding.respondToWorldChat !== 'boolean') throw new Error('Invalid world chat preference');
+    if (binding.allowCloning !== undefined && typeof binding.allowCloning !== 'boolean') throw new Error('Invalid resident cloning preference');
+    if (binding.shareMemories !== undefined && typeof binding.shareMemories !== 'boolean') throw new Error('Invalid resident memory-sharing preference');
+    if (binding.sharePrivateMemories !== undefined && typeof binding.sharePrivateMemories !== 'boolean') throw new Error('Invalid resident private-memory-sharing preference');
+    if (binding.movement !== undefined && !['stationary', 'follow', 'roam'].includes(binding.movement)) throw new Error('Invalid resident movement preference');
     const result = { worldId, position: normalizeWorldPosition(binding.position), color: binding.color, shared: binding.shared,
-      respondToWorldChat: binding.respondToWorldChat ?? false };
+      respondToWorldChat: binding.respondToWorldChat ?? false, allowCloning: binding.allowCloning ?? false, shareMemories: binding.shareMemories ?? false,
+      sharePrivateMemories: binding.sharePrivateMemories ?? false,
+      ...(binding.movement === undefined ? {} : { movement: binding.movement }) };
     if (binding.appearancePrompt !== undefined) {
       if (typeof binding.appearancePrompt !== 'string' || binding.appearancePrompt.includes('\0')
           || utf8.encode(binding.appearancePrompt).length > 2048) throw new Error('Invalid appearance prompt');
@@ -58,6 +64,13 @@ export function normalizePublicAgent(value) {
   if (!/^#[a-f0-9]{6}$/i.test(value.color ?? '') || !['idle', 'thinking', 'speaking', 'paused'].includes(value.status)) {
     throw new Error('Invalid public agent body');
   }
+  if (value.cloneable !== undefined && typeof value.cloneable !== 'boolean') throw new Error('Invalid public clone permission');
+  if (value.sharesMemories !== undefined && typeof value.sharesMemories !== 'boolean') throw new Error('Invalid public memory-sharing permission');
+  if (value.sharesPrivateMemories !== undefined && typeof value.sharesPrivateMemories !== 'boolean') throw new Error('Invalid public private-memory-sharing permission');
   return { agentId, name, color: value.color, position: normalizeWorldPosition(value.position), status: value.status,
+    ...(value.cloneable === undefined ? {} : { cloneable: value.cloneable }),
+    ...(value.sharesMemories === undefined ? {} : { sharesMemories: value.sharesMemories }),
+    ...(value.sharesPrivateMemories === undefined ? {} : { sharesPrivateMemories:
+      value.cloneable === true && value.sharesMemories === true && value.sharesPrivateMemories }),
     ...(value.face ? { face: normalizeAgentFace(value.face) } : {}) };
 }

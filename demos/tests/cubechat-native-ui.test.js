@@ -88,6 +88,13 @@ async function fixture(t, { mobile = false, enabled = true } = {}) {
         residents.push(agent); ui.setAgents(residents); ui.open(); ui.select(agent); ui.setMessages([]);
       },
       onMovement: async input => { calls.push({ type: 'movement', ...input }); },
+      onEdit: async input => {
+        calls.push({ type: 'edit', input });
+        if (window.failEdit) throw Error('Profile save failed');
+        if (window.holdEdit) await hold('edit');
+        residents = residents.map(agent => agent.key === input.key ? { ...agent, ...input } : agent); ui.setAgents(residents);
+      },
+      onClone: async input => { calls.push({ type: 'clone', input }); if (window.failClone) throw Error('Cloning permission changed'); },
       onAppearance: async input => {
         calls.push({ type: 'appearance', ...input });
         if (window.holdAppearance) await hold('appearance');
@@ -348,12 +355,12 @@ test('Residents is one accessible roster with owner-only movement/recovery/remov
   await dialog.getByRole('textbox', { name: 'Physical appearance', exact: true }).fill('  A friendly blue robot face  ');
   assert.equal(await dialog.getByRole('textbox', { name: 'Physical appearance', exact: true }).getAttribute('maxlength'), '1000');
   assert.equal(await dialog.getByRole('checkbox', { name: 'Respond to world chat', exact: true }).isChecked(), false);
-  assert.equal(await dialog.getByRole('combobox', { name: 'Movement', exact: true }).inputValue(), 'roam');
+  assert.equal(await dialog.getByRole('combobox', { name: 'Movement', exact: true }).inputValue(), 'stationary');
   await dialog.getByRole('button', { name: 'Place resident', exact: true }).click();
   await dialog.waitFor({ state: 'hidden' });
   const created = await page.evaluate(() => calls.find(call => call.type === 'spawn').input);
-  assert.deepEqual(created, { name: 'New resident', goals: ['Listen', 'Help visitors'], appearancePrompt: 'A friendly blue robot face', respondToWorldChat: false, localOnly: false, shared: true });
-  assert.deepEqual(await page.evaluate(() => calls.filter(call => call.type === 'movement').at(-1)), { type: 'movement', key: 'local:new', mode: 'roam' });
+  assert.deepEqual(created, { name: 'New resident', instructions: '', allowCloning: true, shareMemories: true, sharePrivateMemories: false, movement: 'stationary', goals: ['Listen', 'Help visitors'], appearancePrompt: 'A friendly blue robot face', respondToWorldChat: false, localOnly: false, shared: true });
+  assert.deepEqual(await page.evaluate(() => calls.filter(call => call.type === 'movement').at(-1)), { type: 'movement', key: 'local:new', mode: 'stationary' });
   assert.equal(await page.evaluate(() => ui.getTarget()), 'local:new');
   await openResidents(page);
   assert.match(await dialog.locator('[data-agent-key="local:new"]').innerText(), /Appearance saved/);
@@ -467,4 +474,84 @@ test('mobile chat and Residents wrap within the viewport and suspend touch HUD o
     await openResidents(page);
     await page.screenshot({ path: join(process.env.CUBE_NATIVE_UI_EVIDENCE, 'native-residents-mobile.png') });
   }
+});
+
+test('owner profile editor saves appearance, identity, policy and clone consent without exposing peer private controls', async t => {
+  const page=await fixture(t);
+  await page.evaluate(()=>{residents[0]={...residents[0],instructions:'Keep owner instructions private',goals:['Explore'],appearancePrompt:'Blue cube',movement:'stationary',localOnly:true,shared:true,allowCloning:false};ui.setAgents(residents);ui.openResidents();});
+  const roster=page.getByRole('dialog',{name:'Residents',exact:true});
+  assert.equal(await roster.getByRole('button',{name:'Edit Peer resident',exact:true}).count(),0);
+  assert.equal(await roster.getByRole('button',{name:'Clone Peer resident',exact:true}).count(),0);
+  await roster.getByRole('button',{name:'Edit Ada',exact:true}).click();
+  const editor=page.getByRole('dialog',{name:'Edit resident',exact:true});
+  if(process.env.CUBE_SCENE_ARTIFACTS){await mkdir(process.env.CUBE_SCENE_ARTIFACTS,{recursive:true});await page.screenshot({path:join(process.env.CUBE_SCENE_ARTIFACTS,'desktop-resident-editor.png'),fullPage:true});}
+  assert.equal(await editor.getByRole('textbox',{name:'Resident instructions',exact:true}).inputValue(),'Keep owner instructions private');
+  await editor.getByRole('textbox',{name:'Resident name',exact:true}).fill('Ada updated');
+  await editor.getByRole('textbox',{name:'Resident instructions',exact:true}).fill('Be curious');
+  await editor.getByRole('textbox',{name:'Resident goals',exact:true}).fill('Meet visitors\nLearn shapes');
+  await editor.getByRole('textbox',{name:'Physical appearance',exact:true}).fill('A green cube face');
+  await editor.getByRole('combobox',{name:'Movement',exact:true}).selectOption('follow');
+  await editor.getByRole('checkbox',{name:'Respond to world chat',exact:true}).check();
+  assert.equal(await editor.getByRole('checkbox',{name:'Include private conversations',exact:true}).isChecked(),false);
+  await editor.getByRole('checkbox',{name:'Share resident history',exact:true}).check();
+  await editor.getByRole('checkbox',{name:'Include private conversations',exact:true}).check();
+  await editor.getByRole('button',{name:'Save resident',exact:true}).click();await editor.waitFor({state:'hidden'});
+  const saved=await page.evaluate(()=>calls.find(c=>c.type==='edit').input);
+  assert.deepEqual(saved,{key:'local:ada',name:'Ada updated',instructions:'Be curious',goals:['Meet visitors','Learn shapes'],appearancePrompt:'A green cube face',movement:'follow',localOnly:true,shared:true,respondToWorldChat:true,allowCloning:true,shareMemories:true,sharePrivateMemories:true});
+  await roster.getByRole('button',{name:'Clone Ada updated',exact:true}).click();
+  assert.deepEqual(await page.evaluate(()=>calls.find(c=>c.type==='clone').input),{key:'local:ada'});
+});
+
+test('peer clone action requires advertised permission and failed profile saves preserve the draft', async t => {
+  const page=await fixture(t,{mobile:true});
+  await page.evaluate(()=>{residents[1]={...residents[1],cloneable:true,instructions:'Do not expose peer private fields'};ui.setAgents(residents);ui.openResidents();});
+  const roster=page.getByRole('dialog',{name:'Residents',exact:true});
+  await roster.getByRole('button',{name:'Clone Peer resident',exact:true}).click();
+  assert.deepEqual(await page.evaluate(()=>calls.find(c=>c.type==='clone').input),{key:'peer:remote'});
+  assert.equal(await roster.getByText('Do not expose peer private fields',{exact:true}).count(),0);
+  await roster.getByRole('button',{name:'Edit Ada',exact:true}).click();const editor=page.getByRole('dialog',{name:'Edit resident',exact:true});
+  await editor.getByRole('textbox',{name:'Resident name',exact:true}).fill('Unsaved Ada');await page.evaluate(()=>window.failEdit=true);
+  await editor.getByRole('button',{name:'Save resident',exact:true}).click();await editor.getByRole('status').filter({hasText:'Profile save failed'}).waitFor();
+  assert.equal(await editor.getByRole('textbox',{name:'Resident name',exact:true}).inputValue(),'Unsaved Ada');
+  const box=await editor.evaluate(e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height,screenW:innerWidth,screenH:innerHeight,overflow:document.documentElement.scrollWidth>innerWidth};});
+  assert(box.x>=0&&box.y>=0&&box.x+box.w<=box.screenW+1&&box.y+box.h<=box.screenH+1&&!box.overflow);
+  if(process.env.CUBE_SCENE_ARTIFACTS){await mkdir(process.env.CUBE_SCENE_ARTIFACTS,{recursive:true});await page.screenshot({path:join(process.env.CUBE_SCENE_ARTIFACTS,'mobile-resident-editor.png'),fullPage:true});}
+});
+
+test('one history-sharing control defaults on for new residents and preserves legacy consent on unrelated edits', async t=>{
+ const page=await fixture(t);await openResidents(page);
+ const dialog=page.getByRole('dialog',{name:'Residents',exact:true});await dialog.locator('summary').click();
+ const history=dialog.getByRole('checkbox',{name:'Share resident history',exact:true});
+ assert.equal(await history.isChecked(),true);assert.equal(await history.isEnabled(),true);
+ assert.equal(await dialog.getByRole('checkbox',{name:/Allow peers to clone|Share public world memories/}).count(),0);
+ await page.evaluate(()=>{residents[0]={...residents[0],allowCloning:true,shareMemories:false};ui.setAgents(residents);});
+ await dialog.getByRole('button',{name:'Edit Ada',exact:true}).click();const editor=page.getByRole('dialog',{name:'Edit resident',exact:true});
+ assert.equal(await editor.getByRole('checkbox',{name:'Share resident history',exact:true}).isChecked(),false);
+ await editor.getByRole('textbox',{name:'Resident name',exact:true}).fill('Rename only');await editor.getByRole('button',{name:'Save resident',exact:true}).click();await editor.waitFor({state:'hidden'});
+ const request=await page.evaluate(()=>calls.find(c=>c.type==='edit').input);assert.equal(Object.hasOwn(request,'allowCloning'),false);assert.equal(Object.hasOwn(request,'shareMemories'),false);assert.equal(Object.hasOwn(request,'sharePrivateMemories'),false);
+});
+
+test('creation has public history on and private conversations off, with explicit consent and dependency gates', async t=>{
+ const page=await fixture(t);await openResidents(page);const dialog=page.getByRole('dialog',{name:'Residents',exact:true});await dialog.locator('summary').click();
+ const history=dialog.getByRole('checkbox',{name:'Share resident history',exact:true}),privateChoice=dialog.getByRole('checkbox',{name:'Include private conversations',exact:true});
+ assert.equal(await history.isChecked(),true);assert.equal(await privateChoice.isChecked(),false);assert.equal(await privateChoice.isEnabled(),true);
+ assert.equal(await dialog.getByText(/other players who clone this resident can read them/).count(),1);
+ await privateChoice.check();await history.uncheck();assert.equal(await privateChoice.isDisabled(),true);assert.equal(await privateChoice.isChecked(),false);
+ await history.check();await privateChoice.check();await dialog.getByRole('checkbox',{name:'Let peers talk to this resident',exact:true}).uncheck();
+ assert.equal(await privateChoice.isDisabled(),true);assert.equal(await privateChoice.isChecked(),false);
+ await dialog.getByRole('checkbox',{name:'Let peers talk to this resident',exact:true}).check();await privateChoice.check();
+ await dialog.getByRole('textbox',{name:'Resident name',exact:true}).fill('History sharing resident');await dialog.getByRole('button',{name:'Place resident',exact:true}).click();await dialog.waitFor({state:'hidden'});
+ assert.equal(await page.evaluate(()=>calls.find(c=>c.type==='spawn').input.sharePrivateMemories),true);
+ await openResidents(page);assert.equal(await privateChoice.isChecked(),false);assert.equal(await history.isChecked(),true);
+});
+
+test('owner can revoke private history without changing public history; unrelated edits retain existing private consent', async t=>{
+ const page=await fixture(t);await page.evaluate(()=>{residents[0]={...residents[0],allowCloning:true,shareMemories:true,sharePrivateMemories:true,shared:true};ui.setAgents(residents);ui.openResidents();});
+ const roster=page.getByRole('dialog',{name:'Residents',exact:true});await roster.getByRole('button',{name:'Edit Ada',exact:true}).click();
+ const editor=page.getByRole('dialog',{name:'Edit resident',exact:true});assert.equal(await editor.getByRole('checkbox',{name:'Include private conversations',exact:true}).isChecked(),true);
+ await editor.getByRole('textbox',{name:'Resident name',exact:true}).fill('Ada renamed');await editor.getByRole('button',{name:'Save resident',exact:true}).click();await editor.waitFor({state:'hidden'});
+ assert.equal(await page.evaluate(()=>Object.hasOwn(calls.find(c=>c.type==='edit').input,'sharePrivateMemories')),false);
+ await roster.getByRole('button',{name:'Edit Ada renamed',exact:true}).click();await editor.getByRole('checkbox',{name:'Include private conversations',exact:true}).uncheck();
+ await editor.getByRole('button',{name:'Save resident',exact:true}).click();await editor.waitFor({state:'hidden'});
+ const request=await page.evaluate(()=>calls.filter(c=>c.type==='edit').at(-1).input);assert.equal(request.sharePrivateMemories,false);assert.equal(Object.hasOwn(request,'shareMemories'),false);
 });

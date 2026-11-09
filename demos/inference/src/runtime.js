@@ -54,10 +54,13 @@ export async function checkGgufCapabilities() {
 /** Reusable app facade; storage and execution remain owned by PeerCompute managers. */
 export async function createInferenceRuntime({ stateManager, computeManager, networkManager,
   storeName = 'inference-models', runtimeBaseUrl, collectGpuEvidence = false,
-  memoryBudgets, preferenceStorage, residentModelSlots = 8, probeDeviceCapabilities = collectModelDeviceCapabilities,
+  memoryBudgets, preferenceStorage, residentModelSlots = 8, auxiliaryWorkerSlots = 0, probeDeviceCapabilities = collectModelDeviceCapabilities,
   ggufRuntimeOptions = { n_ctx: 2048, n_batch: 64, n_gpu_layers: 99999, n_threads: 1 } } = {}) {
   if (!Number.isInteger(residentModelSlots) || residentModelSlots < 1 || residentModelSlots > 8) {
     throw new Error('Managed model slots must be between one and eight');
+  }
+  if (!Number.isInteger(auxiliaryWorkerSlots) || auxiliaryWorkerSlots < 0 || auxiliaryWorkerSlots > 2) {
+    throw new Error('Auxiliary worker slots must be between zero and two');
   }
   let deviceCapabilities = null, deviceCheck;
   const ownsState = !stateManager;
@@ -66,7 +69,7 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
     enablePersistence: false, disableNetworkProvider: true, disableBroadcast: true,
   });
   const compute = computeManager ?? new ComputeManager({ requireWorkers: true, enableWorkers: true,
-    enableWebGPU: true, minWorkers: 1, targetWorkers: 1, maxWorkers: residentModelSlots, autoScaleWorkers: false,
+    enableWebGPU: true, minWorkers: 1, targetWorkers: 1, maxWorkers: residentModelSlots + auxiliaryWorkerSlots, autoScaleWorkers: false,
     workerBootstrapTimeoutMs: 60_000 });
   const memoryPolicy = createModelMemoryBudgets({ computeManager: compute, owned: ownsCompute, initial: memoryBudgets });
   const admissionOptions = memoryPolicy.admissionOptions;

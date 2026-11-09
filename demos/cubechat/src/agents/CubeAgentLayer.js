@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { WorldResidentMotion } from '../../../shared/agents/WorldResidentMotion.js';
 import { SpeechBubbleLayer } from '../../../shared/world/SpeechBubbleLayer.js';
+import { MOTOR_DYNAMICS as MOTOR } from '../../../shared/agents/motor/motorContracts.js';
+import { CubeResidentMotor } from './CubeResidentMotor.js';
 
 const HALF_SIZE = 3;
 const MAX_COORDINATE = 1_000_000;
@@ -33,8 +35,10 @@ function normalizeDescriptor(value) {
   if (value.caption !== undefined && (typeof value.caption !== 'string' || value.caption.length > 4096)) {
     throw new TypeError('Invalid agent caption');
   }
+  if (value.movement !== undefined && !['roam', 'stationary', 'follow'].includes(value.movement)) throw new TypeError('Invalid resident movement preference');
   return { key, agentId, ownerPeerId, name, color: value.color, status: value.status, local: value.local,
-    position: normalizeCubeAgentPosition(value.position), caption: value.caption ?? '' };
+    position: normalizeCubeAgentPosition(value.position), caption: value.caption ?? '', shared: value.shared === true,
+    ...(value.movement !== undefined ? { movement: value.movement } : {}) };
 }
 
 function textSprite(text) {
@@ -73,15 +77,20 @@ function disposeSprite(sprite) {
 /** Scene bodies only. The shared host owns persistence, authority and conversations. */
 export class CubeAgentLayer {
   constructor({ scene, physics, getPlayerPosition, onSelect, captionDurationMs = 12_000, maximumAgents = 64,
-    motionFactory = (options) => new WorldResidentMotion(options), remoteInterpolationSeconds = 5 } = {}) {
+    motionFactory = (options) => new WorldResidentMotion(options), remoteInterpolationSeconds = 5,
+    getParticipants = () => [] } = {}) {
     if (!scene?.scene?.isScene || !scene.camera?.isCamera || !scene.renderer?.domElement
         || !physics?.world || typeof getPlayerPosition !== 'function') throw new TypeError('Cube agent scene dependencies are required');
     if (!Number.isInteger(maximumAgents) || maximumAgents < 1 || maximumAgents > 256
         || !Number.isInteger(captionDurationMs) || captionDurationMs < 1 || captionDurationMs > 60_000
         || !Number.isFinite(remoteInterpolationSeconds) || remoteInterpolationSeconds < 0.1 || remoteInterpolationSeconds > 15) throw new RangeError('Invalid agent layer limits');
     if (typeof motionFactory !== 'function') throw new TypeError('A resident motion factory is required');
-    Object.assign(this, { scene, physics, getPlayerPosition, onSelect, captionDurationMs, maximumAgents, motionFactory, remoteInterpolationSeconds });
-    this.entries = new Map(); this.closed = false; this.selectedKey = null;
+    if (typeof getParticipants !== 'function') throw new TypeError('World participants must be observable');
+    Object.assign(this, { scene, physics, getPlayerPosition, getParticipants, onSelect, captionDurationMs, maximumAgents, motionFactory, remoteInterpolationSeconds });
+    this.entries = new Map(); this.closed = false; this.selectedKey = null; this.intentRevision = 0;
+    this.motor = new CubeResidentMotor({ getEntries: () => this.entries, observe: key => this.observe(key) });
+    this.onPhysicsStep = () => this.beforePhysics();
+    this.physics.world.addEventListener('preStep', this.onPhysicsStep);
     this.captions = new SpeechBubbleLayer({ scene: scene.scene, camera: scene.camera,
       getAnchor: key => this.entries.get(key)?.mesh, durationMs: captionDurationMs, maximum: maximumAgents, offsetY: 6 });
     this.group = new THREE.Group(); this.group.name = 'CubeChat agents'; scene.scene.add(this.group);
@@ -125,11 +134,59 @@ export class CubeAgentLayer {
 
   getPosition(key) { return this.entries.get(key)?.mesh.position.toArray() ?? null; }
 
-  setMovement(key, mode) {
+  setMovement(key, mode, { restore = false } = {}) {
     const entry = this.entries.get(key);
     if (!entry?.descriptor.local) throw new Error('Only the resident owner can control movement');
-    entry.motion.setMode(mode);
+    if (!['stationary', 'follow', 'roam'].includes(mode)) throw new TypeError('Unknown movement mode');
+    if (mode === 'follow') {
+      const owner = this.observe(key).participants.find(p => p.peerId === entry.descriptor.ownerPeerId && p.kind === 'human');
+      if (!owner && !restore) throw new Error('The owner is not currently observed');
+      this.motor.setIntent(key, { type: 'follow', targetId: owner?.id ?? `human:${entry.descriptor.ownerPeerId}` }, { restoredOwner: restore });
+    } else if (mode === 'stationary') this.motor.setIntent(key, { type: 'stop' });
+    else this.motor.clear(key);
+    entry.motion.setMode(mode); entry.movement = mode;
+    entry.intentRevision = ++this.intentRevision;
     return mode;
+  }
+
+  setMotor(service) { this.motor.setService(service); }
+  subscribeOutcomes(listener) { return this.motor.subscribe(listener); }
+  setIntent(key, intent) {
+    const result = this.motor.setIntent(key, intent);
+    this.entries.get(key).intentRevision = ++this.intentRevision;
+    return result;
+  }
+  getMotorStatus() { return this.motor.getStatus(); }
+
+  /** Plain observations only. Peer IDs are session identities, never inferred from display names. */
+  observe(key, { requesterPeerId } = {}) {
+    const entry = this.entries.get(key); if (!entry) throw new Error('Resident body is unavailable');
+    const position = entry.mesh.position.toArray(), participants = [], seen = new Set();
+    const append = value => {
+      if (!value || typeof value.id !== 'string' || value.id.length > 300 || seen.has(value.id)) return;
+      let pose; try { pose = this.normalizePosition(value.position); } catch { return; }
+      const relativePosition = pose.map((v, i) => v - position[i]), distance = Math.hypot(relativePosition[0], relativePosition[2]);
+      if (distance > 250) return;
+      const velocity = Array.isArray(value.velocity) && value.velocity.length === 3 && value.velocity.every(Number.isFinite) ? value.velocity.map(v => Math.max(-50, Math.min(50, v))) : [0, 0, 0];
+      participants.push({ id: value.id, kind: value.kind, name: String(value.name ?? 'Anonymous').slice(0, 120),
+        ...(value.peerId ? { peerId: value.peerId } : {}), ...(value.agentId ? { agentId: value.agentId, ownerPeerId: value.ownerPeerId } : {}),
+        position: pose, relativePosition, velocity, distance }); seen.add(value.id);
+    };
+    for (const person of this.getParticipants().slice(0, 128)) append({ ...person, kind: 'human' });
+    for (const [otherKey, other] of this.entries) if (otherKey !== key && (!other.descriptor.local || other.descriptor.shared)) append({
+      id: `resident:${other.descriptor.ownerPeerId}:${other.descriptor.agentId}`, kind: 'resident', name: other.descriptor.name,
+      ownerPeerId: other.descriptor.ownerPeerId, agentId: other.descriptor.agentId, position: other.mesh.position.toArray(), velocity: other.body.velocity.toArray() });
+    participants.sort((a, b) => Number(b.peerId === requesterPeerId) - Number(a.peerId === requesterPeerId) || a.distance - b.distance || a.id.localeCompare(b.id));
+    const privateBodies = new Set([...this.entries.values()].filter(other => other.descriptor.local && !other.descriptor.shared).map(other => other.body));
+    const obstacles = this.physics.world.bodies.filter(body => body !== entry.body && !privateBodies.has(body) && body.shapes.some(shape => shape.type === CANNON.Shape.types.BOX))
+      .map(body => ({ position: [body.position.x, this.groundHeight(body.position.x, body.position.z) + HALF_SIZE, body.position.z], radius: Math.min(30, body.boundingRadius || 3) }))
+      .filter(body => Math.hypot(body.position[0] - position[0], body.position[2] - position[2]) < 80)
+      .sort((a, b) => Math.hypot(a.position[0] - position[0], a.position[2] - position[2]) - Math.hypot(b.position[0] - position[0], b.position[2] - position[2])).slice(0, 8);
+    return { observedAt: Date.now(), self: { id: `resident:${entry.descriptor.ownerPeerId}:${entry.descriptor.agentId}`,
+      agentId: entry.descriptor.agentId, ownerPeerId: entry.descriptor.ownerPeerId, name: entry.descriptor.name,
+      position, velocity: entry.body.velocity.toArray(), status: entry.descriptor.status, intentRevision: entry.intentRevision },
+    participants: participants.slice(0, 16), obstacles,
+    ...(requesterPeerId && participants.some(p => p.peerId === requesterPeerId) ? { requesterId: `human:${requesterPeerId}` } : {}) };
   }
 
   place(entry, position) {
@@ -145,31 +202,39 @@ export class CubeAgentLayer {
     entry.descriptor.position = [...position];
   }
 
-  /** Called after the world's physics step. Only local owners run steering. */
-  update(dt) {
+  /** Cannon invokes this once per fixed substep, after damping and before integration. */
+  beforePhysics() {
+    if (this.closed) return;
+    for (const [key, entry] of this.entries) {
+      if (!entry.descriptor.local) continue;
+      entry.body.position.y = HALF_SIZE; entry.body.velocity.y = 0; entry.body.force.y = 0;
+      const speed = Math.hypot(entry.body.velocity.x, entry.body.velocity.z);
+      if (speed > MOTOR.maxSpeed) { entry.body.velocity.x *= MOTOR.maxSpeed / speed; entry.body.velocity.z *= MOTOR.maxSpeed / speed; }
+      if (entry.descriptor.status === 'paused') { this.motor.halt(entry); continue; }
+      // Roam remains an explicitly labelled scripted baseline. Follow/approach
+      // use only the managed neural policy and never silently fall back to it.
+      if (!this.motor.intents.has(key) && entry.movement === 'roam') {
+        const previous = entry.mesh.position.toArray(), next = entry.motion.step({ position: previous,
+          target: previous, dt: MOTOR.fixedDt, status: 'idle', obstacles: this.observe(key).obstacles.map(o => o.position) });
+        for (const [axis, index] of [['x', 0], ['z', 2]]) {
+          const desired = Math.max(-MOTOR.maxSpeed, Math.min(MOTOR.maxSpeed, (next[index] - previous[index]) / MOTOR.fixedDt));
+          const acceleration = Math.max(-MOTOR.maxAcceleration, Math.min(MOTOR.maxAcceleration, (desired - entry.body.velocity[axis]) * 4));
+          entry.body.force[axis] += MOTOR.mass * acceleration;
+        }
+      }
+    }
+    this.motor.beforeStep();
+  }
+
+  /** Physics owns local XZ integration; the renderer only contours visual height. */
+  afterPhysics(dt) {
     if (this.closed) return;
     if (!Number.isFinite(dt) || dt < 0) throw new TypeError('Invalid resident timestep');
-    const player = this.getPlayerPosition();
-    const target = this.normalizePosition(Array.isArray(player) ? player : [player?.x ?? 0, player?.y ?? 3, player?.z ?? 0]);
-    const humans = [...(this.physics.bodies?.values() ?? [])].slice(0, 192)
-      .map((body) => [body.position.x, body.position.y, body.position.z]);
     for (const [key, entry] of this.entries) {
       const previous = entry.mesh.position.toArray();
       let next;
       if (entry.descriptor.local) {
-        const obstacles = [...this.entries].filter(([otherKey]) => otherKey !== key)
-          .map(([, other]) => other.mesh.position.toArray()).concat(humans).slice(0, 256);
-        next = entry.descriptor.status === 'idle'
-          ? this.normalizePosition(entry.motion.step({ position: [...previous], target: [...target], dt: Math.min(dt, 0.1), status: entry.descriptor.status, obstacles }))
-          : [...previous];
-        // Replaceable application policies still share the motor's speed and
-        // grounded-body boundary. No network descriptor selects executable code.
-        const distance = Math.hypot(next[0] - previous[0], next[2] - previous[2]), maximum = 20 * Math.min(dt, 0.1);
-        if (distance > maximum) {
-          next[0] = previous[0] + (next[0] - previous[0]) / distance * maximum;
-          next[2] = previous[2] + (next[2] - previous[2]) / distance * maximum;
-        }
-        next[1] = this.groundHeight(next[0], next[2]) + HALF_SIZE;
+        next = [entry.body.position.x, this.groundHeight(entry.body.position.x, entry.body.position.z) + HALF_SIZE, entry.body.position.z];
       } else {
         // Interpolate one directory sample behind the owner (five seconds by
         // default). No extrapolated authority or remote gravity is simulated.
@@ -181,10 +246,13 @@ export class CubeAgentLayer {
         next = distance ? previous.map((value, index) => value + delta[index] / distance * travel) : previous;
       }
       if (Math.hypot(next[0] - previous[0], next[2] - previous[2]) > 0.00001) entry.mesh.rotation.y = Math.atan2(next[0] - previous[0], next[2] - previous[2]);
-      this.place(entry, this.normalizePosition(next));
+      if (entry.descriptor.local) { entry.mesh.position.fromArray(this.normalizePosition(next)); entry.descriptor.position = [...next]; }
+      else this.place(entry, this.normalizePosition(next));
     }
     this.captions.update();
   }
+
+  update(dt) { this.afterPhysics(dt); }
 
   getSpawnPosition() {
     const raw = this.getPlayerPosition();
@@ -215,10 +283,12 @@ export class CubeAgentLayer {
       mesh.userData.agentKey = descriptor.key;
       const outline = new THREE.LineSegments(this.edgeGeometry, new THREE.LineBasicMaterial({ color: descriptor.color }));
       mesh.add(outline);
-      const body = new CANNON.Body({ type: CANNON.Body.KINEMATIC, mass: 0, fixedRotation: true,
+      const body = new CANNON.Body({ type: descriptor.local ? CANNON.Body.DYNAMIC : CANNON.Body.KINEMATIC,
+        mass: descriptor.local ? MOTOR.mass : 0, linearDamping: MOTOR.linearDamping, fixedRotation: true,
         shape: new CANNON.Box(new CANNON.Vec3(HALF_SIZE, HALF_SIZE, HALF_SIZE)) });
+      if (descriptor.local) body.linearFactor.set(1, 0, 1);
       entry = { mesh, baseMaterial: mesh.material, faceMaterial: null, outline, body, descriptor: null, label: null, captionTimer: null,
-        target: [...descriptor.position], remoteStart: [...descriptor.position], remoteElapsed: 0, motion };
+        target: [...descriptor.position], remoteStart: [...descriptor.position], remoteElapsed: 0, motion, movement: 'roam', intentRevision: ++this.intentRevision };
       Object.defineProperty(entry, 'caption', { get: () => this.entries.get(descriptor.key) === entry
         ? this.captions.entries.get(descriptor.key)?.sprite ?? null : null });
       this.group.add(mesh); this.physics.world.addBody(body); this.entries.set(descriptor.key, entry);
@@ -251,7 +321,15 @@ export class CubeAgentLayer {
       }
     }
     entry.descriptor = descriptor;
-    this.place(entry, livePosition); this.captions.update();
+    if (previous && descriptor.local && (previous.status === 'paused') !== (descriptor.status === 'paused')) entry.intentRevision = ++this.intentRevision;
+    if (!previous || !descriptor.local) this.place(entry, livePosition);
+    else entry.descriptor.position = [...livePosition];
+    if (descriptor.local && descriptor.status === 'paused') this.motor.halt(entry);
+    if (descriptor.local && descriptor.movement !== undefined && (previous?.movement !== descriptor.movement
+        || (descriptor.movement === 'follow' && previous?.ownerPeerId !== descriptor.ownerPeerId))) {
+      this.setMovement(descriptor.key, descriptor.movement, { restore: true });
+    }
+    this.captions.update();
     return descriptor.key;
   }
 
@@ -327,7 +405,7 @@ export class CubeAgentLayer {
   remove(key) {
     const entry = this.entries.get(key);
     if (!entry) return false;
-    clearTimeout(entry.captionTimer); this.captions.remove(key); disposeSprite(entry.label);
+    this.motor.clear(key); clearTimeout(entry.captionTimer); this.captions.remove(key); disposeSprite(entry.label);
     entry.mesh.removeFromParent(); entry.faceMaterial?.map?.dispose(); entry.faceMaterial?.dispose();
     entry.baseMaterial.dispose(); entry.outline.material.dispose();
     this.physics.world.removeBody(entry.body); this.entries.delete(key);
@@ -340,6 +418,7 @@ export class CubeAgentLayer {
   dispose() {
     if (this.closed) return;
     this.closed = true; this.clear(); this.captions.dispose(); this.group.removeFromParent();
+    this.physics.world.removeEventListener('preStep', this.onPhysicsStep); this.motor.dispose();
     this.canvas.removeEventListener('pointerdown', this.onPointerDown, true);
     this.canvas.removeEventListener('click', this.onClick, true);
     this.canvas.removeEventListener('keydown', this.onKeyDown, true);

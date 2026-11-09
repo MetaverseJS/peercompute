@@ -4,11 +4,13 @@ import { agentIdentifier } from './AgentContracts.js';
 import { normalizePublicAgent, normalizeAgentFace, worldAgentText, WORLD_AGENT_LIMITS } from './WorldAgentContracts.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
+import { normalizeResidentProfile, RESIDENT_PROFILE_MAX_BYTES } from './ResidentProfile.js';
 
 export const AGENT_CONVERSATION_PROTOCOL = '/peercompute/world-agents/1.0.0';
+export const AGENT_PROFILE_PROTOCOL = '/peercompute/world-agent-profiles/2.0.0';
 export const AGENT_CONVERSATION_LIMITS = Object.freeze({ maximumPeers: 32, maximumRequests: 8,
   maximumPerPeer: 2, queryTimeoutMs: 5000, requestTimeoutMs: 300000, refreshMs: 5000,
-  recordTtlMs: 15000, replayEntries: 1024 });
+  recordTtlMs: 15000, replayEntries: 1024, profileTimeoutMs: 30000, profileChunkBytes: 65536 });
 const L = AGENT_CONVERSATION_LIMITS, owners = new WeakMap();
 const encoder = new TextEncoder(), decoder = new TextDecoder('utf-8', { fatal: true });
 const fail = (message, code = 'ERR_AGENT_CONVERSATION') => Object.assign(new Error(message), { code });
@@ -72,18 +74,22 @@ function reply(value) {
 
 /** Private owner-directed conversations. No remote history, authority, model loading or code is accepted. */
 export class AgentConversationService {
-  constructor({ networkManager, worldId, listLocalAgents, respond, getAppearance, onDirectory = () => {},
-    queryTimeoutMs = L.queryTimeoutMs, requestTimeoutMs = L.requestTimeoutMs, now = () => performance.now() } = {}) {
+  constructor({ networkManager, worldId, listLocalAgents, respond, getAppearance, getProfile, getProfilePermissions, onDirectory = () => {},
+    queryTimeoutMs = L.queryTimeoutMs, requestTimeoutMs = L.requestTimeoutMs, profileTimeoutMs = L.profileTimeoutMs, now = () => performance.now() } = {}) {
     if (!networkManager || typeof listLocalAgents !== 'function' || typeof respond !== 'function'
         || typeof onDirectory !== 'function' || typeof now !== 'function') throw new TypeError('Agent conversation callbacks and manager are required');
     if (getAppearance !== undefined && typeof getAppearance !== 'function') throw new TypeError('Invalid appearance callback');
-    Object.assign(this, { manager: networkManager, listLocalAgents, respond, getAppearance, onDirectory, now });
+    if (getProfile !== undefined && typeof getProfile !== 'function') throw new TypeError('Invalid profile callback');
+    if (getProfilePermissions !== undefined && typeof getProfilePermissions !== 'function') throw new TypeError('Invalid profile permission callback');
+    Object.assign(this, { manager: networkManager, listLocalAgents, respond, getAppearance, getProfile, getProfilePermissions, onDirectory, now });
     this.worldId = worldAgentText(worldId, 240, 'world');
     this.queryTimeoutMs = bounded(queryTimeoutMs, 15000, 100);
     this.requestTimeoutMs = bounded(requestTimeoutMs, L.requestTimeoutMs, 100);
+    this.profileTimeoutMs = bounded(profileTimeoutMs, 60000, 100);
     this.controller = new AbortController(); this.records = new Map(); this.seen = new Map();
     this.inbound = new Map(); this.outbound = new Map(); this.operations = new Set(); this.pending = new Set();
     this.faceReads = new Map();
+    this.profileReads = new Map();
     this.closed = false; this.registered = false; this.started = false; this.lastErrors = [];
     this.disconnect = (event) => {
       const peerId = event.detail?.remotePeer?.toString?.() ?? event.detail?.toString?.();
@@ -119,6 +125,13 @@ export class AgentConversationService {
           }
           this._track(this._handle(stream, connection));
         }, { maxInboundStreams: 4, maxOutboundStreams: 4, runOnLimitedConnection: true });
+        this.profileRegistered = true;
+        await this.node.handle(AGENT_PROFILE_PROTOCOL, (stream, connection) => {
+          if (this.closed || this.operations.size >= 40 || !encryptedConnection(connection)) {
+            stream.abort(fail('Encrypted resident profile connection required', 'ERR_AGENT_AUTH')); return;
+          }
+          this._track(this._handleProfile(stream, connection));
+        }, { maxInboundStreams: 2, maxOutboundStreams: 2, runOnLimitedConnection: true });
         if (this.closed) return this;
         this.started = true;
         this.node.addEventListener('peer:disconnect', this.disconnect);
@@ -127,7 +140,9 @@ export class AgentConversationService {
         void this.refresh().catch(() => {});
         return this;
       } catch (error) {
-        try { await this.node.unhandle(AGENT_CONVERSATION_PROTOCOL); this.registered = false; owners.delete(this.node); }
+        try { await this.node.unhandle(AGENT_CONVERSATION_PROTOCOL); this.registered = false;
+          if (this.profileRegistered) { await this.node.unhandle(AGENT_PROFILE_PROTOCOL); this.profileRegistered = false; }
+          owners.delete(this.node); }
         catch (cleanup) { throw new AggregateError([error, cleanup], 'Agent protocol startup and cleanup failed'); }
         throw error;
       }
@@ -164,7 +179,7 @@ export class AgentConversationService {
     return this.node.getConnections().filter((entry) => encryptedConnection(entry) && entry.remotePeer.toString() === peerId)
       .sort((a, b) => Number(b.encryption === 'native') - Number(a.encryption === 'native'));
   }
-  async _open(peerId, signal) {
+  async _open(peerId, signal, protocol = AGENT_CONVERSATION_PROTOCOL) {
     signal.throwIfAborted(); this._active();
     let connections = this._connections(peerId);
     if (!connections.length && this.manager.peers?.has(peerId) && this.manager._maybeDialPeer) {
@@ -189,7 +204,7 @@ export class AgentConversationService {
       const op = operation([signal, this.controller.signal], Math.min(2000, this.queryTimeoutMs));
       let opening;
       try {
-        opening = Promise.resolve(connection.newStream(AGENT_CONVERSATION_PROTOCOL, { signal: op.signal, runOnLimitedConnection: true }));
+        opening = Promise.resolve(connection.newStream(protocol, { signal: op.signal, runOnLimitedConnection: true }));
         const stream = await withAbort(opening, op.signal); op.signal.throwIfAborted(); this._active();
         return { stream, connection };
       } catch (error) {
@@ -391,6 +406,132 @@ export class AgentConversationService {
       finally { release?.(); op.signal.removeEventListener('abort', abort); this.outbound.delete(requestId); this._finish(entry); }
     })());
   }
+  async _handleProfile(stream, connection) {
+    const peerId = connection.remotePeer.toString(), entry = this._entry(peerId, null, this.profileTimeoutMs), { op } = entry;
+    const io = channel(stream); let input, key, run, release;
+    const abort = () => stream.abort(reason(op.signal)); op.signal.addEventListener('abort', abort, { once: true });
+    const streamClosed = event => { if (event.error) op.controller.abort(asError(event.error)); };
+    stream.addEventListener('close', streamClosed);
+    try {
+      const first = operation([op.signal], this.queryTimeoutMs);
+      try { input = await io.read(first.signal); } finally { first.dispose(); }
+      this._check(input, peerId); this._facePeer(peerId);
+      fields(input, [...envelopeFields, 'requestId', 'agentId']);
+      if (input.type !== 'profile') throw fail('Unknown resident profile operation');
+      agentIdentifier(input.requestId); agentIdentifier(input.agentId);
+      if (this._busy(peerId)) throw fail('Resident profile service is busy', 'ERR_AGENT_BUSY');
+      const recent = (this.profileReads.get(peerId) ?? []).filter(at => this.now() - at < 10000);
+      if (recent.length >= 16) throw fail('Resident profile request rate exceeded', 'ERR_AGENT_BUSY');
+      if (!this.profileReads.has(peerId) && this.profileReads.size >= L.maximumPeers) this.profileReads.delete(this.profileReads.keys().next().value);
+      recent.push(this.now()); this.profileReads.set(peerId, recent);
+      key = `profile:${crypto.randomUUID()}`; this.inbound.set(key, entry);
+      release = this.manager.retainPeerInferenceConnection?.(connection, { timeoutMs: this.profileTimeoutMs + 1000 });
+      const current = async (withMemories = false, withPrivate = false) => {
+        this._facePeer(peerId);
+        const body = (await this._local(op.signal)).find(item => item.agentId === input.agentId);
+        if (!body?.cloneable || !this.getProfile) throw fail('Resident cloning is not enabled', 'ERR_AGENT_NOT_SHARED');
+        if (withMemories && !body.sharesMemories) throw fail('Resident memory sharing is not enabled', 'ERR_AGENT_NOT_SHARED');
+        if (withPrivate && !body.sharesPrivateMemories) throw fail('Resident private memory sharing is not enabled', 'ERR_AGENT_NOT_SHARED');
+        // A directory may be cached. Hosts can supply a direct persisted grant
+        // read so revocation is effective before the next directory refresh.
+        const permission = this.getProfilePermissions ? await withAbort(this.getProfilePermissions({ agentId: input.agentId,
+          signal: op.signal }), op.signal) : body;
+        if (permission?.cloneable !== true || (withMemories && permission.sharesMemories !== true)
+            || (withPrivate && (permission.sharesMemories !== true || permission.sharesPrivateMemories !== true))) {
+          throw fail('Resident profile sharing permission was revoked', 'ERR_AGENT_NOT_SHARED');
+        }
+        return { ...body, sharesPrivateMemories: body.sharesPrivateMemories === true
+          && permission.sharesMemories === true && permission.sharesPrivateMemories === true };
+      };
+      await current();
+      run = Promise.resolve(this.getProfile({ agentId: input.agentId, requesterPeerId: peerId, signal: op.signal }));
+      const rawProfile = await withAbort(run, op.signal);
+      const body = await current(!!rawProfile?.memories?.length,
+        Array.isArray(rawProfile?.memories) && rawProfile.memories.some(memory => memory?.audience === 'private'));
+      const profile = normalizeResidentProfile(rawProfile, { worldId: this.worldId, includePrivate: body.sharesPrivateMemories === true });
+      if (profile.sourceAgentId !== input.agentId) throw fail('Resident profile identity changed');
+      const withMemories = !!profile.memories?.length, includesPrivate = !!profile.memories?.some(memory => memory.audience === 'private');
+      await current(withMemories, includesPrivate); op.signal.throwIfAborted();
+      // Freeze one snapshot; credits bound in-flight data while permission checks
+      // cover revocation during an asynchronous read and between every chunk.
+      const data = encoder.encode(JSON.stringify(profile));
+      await io.write(this._envelope('profile', peerId, { requestId: input.requestId,
+        byteLength: data.length, sha256: faceDigest(data), includesPrivate }), op.signal);
+      for (let offset = 0; ;) {
+        const credit = await io.read(op.signal); this._check(credit, peerId);
+        fields(credit, [...envelopeFields, 'requestId', 'offset']);
+        if (credit.type !== 'profile-credit' || credit.requestId !== input.requestId || credit.offset !== offset) throw fail('Invalid profile transfer credit');
+        await current(withMemories, includesPrivate); op.signal.throwIfAborted();
+        if (offset === data.length) break;
+        const end = Math.min(offset + L.profileChunkBytes, data.length);
+        await io.write(this._envelope('profile-chunk', peerId, { requestId: input.requestId, offset, byteLength: end - offset }), op.signal);
+        await current(withMemories, includesPrivate); op.signal.throwIfAborted();
+        await io.rpc.write(data.subarray(offset, end), { signal: op.signal }); offset = end;
+      }
+      await io.write(this._envelope('profile-done', peerId, { requestId: input.requestId }), op.signal);
+      await closeFaceStream(stream, op.signal);
+    } catch (cause) {
+      const error = asError(cause);
+      if (!op.signal.aborted) {
+        try { await io.write(this._envelope('error', peerId, { requestId: input?.requestId,
+          code: String(error.code ?? 'ERR_AGENT_PROFILE').slice(0, 80), message: String(error.message).slice(0, 256) }), op.signal);
+          await closeFaceStream(stream, op.signal); } catch { stream.abort(error); }
+      } else stream.abort(error);
+    } finally {
+      stream.removeEventListener('close', streamClosed);
+      op.signal.removeEventListener('abort', abort); op.controller.abort(fail('Resident profile stream finished'));
+      await run?.catch(() => {}); release?.(); if (key) this.inbound.delete(key); this._finish(entry);
+    }
+  }
+  requestProfile(ownerPeerId, input, { signal } = {}) {
+    this._active(); this._facePeer(ownerPeerId); fields(input, ['agentId']);
+    const agentId = agentIdentifier(input.agentId), requestId = crypto.randomUUID();
+    if (ownerPeerId === this.peerId || this._busy(ownerPeerId)) throw fail('Resident profile owner unavailable or busy', 'ERR_AGENT_BUSY');
+    const entry = this._entry(ownerPeerId, signal, this.profileTimeoutMs), { op } = entry;
+    this.outbound.set(requestId, entry);
+    return this._track((async () => {
+      let stream, release;
+      const abort = () => stream?.abort(reason(op.signal)); op.signal.addEventListener('abort', abort, { once: true });
+      try {
+        const opened = await this._open(ownerPeerId, op.signal, AGENT_PROFILE_PROTOCOL); stream = opened.stream;
+        release = this.manager.retainPeerInferenceConnection?.(opened.connection, { timeoutMs: this.profileTimeoutMs + 1000 });
+        this._facePeer(ownerPeerId); const io = channel(stream);
+        const read = async () => {
+          const response = await io.read(op.signal); this._check(response, ownerPeerId); this._facePeer(ownerPeerId);
+          if (response.type === 'error') throw fail(String(response.message).slice(0, 256), response.code);
+          if (response.requestId !== requestId) throw fail('Unexpected resident profile request identity');
+          return response;
+        };
+        await io.write(this._envelope('profile', ownerPeerId, { requestId, agentId }), op.signal);
+        const response = await read();
+        fields(response, [...envelopeFields, 'requestId', 'byteLength', 'sha256', 'includesPrivate']);
+        if (response.type !== 'profile' || !/^[a-f0-9]{64}$/.test(response.sha256 ?? '')
+            || typeof response.includesPrivate !== 'boolean') throw fail('Unexpected resident profile reply');
+        const data = new Uint8Array(bounded(response.byteLength, RESIDENT_PROFILE_MAX_BYTES));
+        for (let offset = 0; ;) {
+          await io.write(this._envelope('profile-credit', ownerPeerId, { requestId, offset }), op.signal);
+          const part = await read();
+          if (offset === data.length) {
+            fields(part, [...envelopeFields, 'requestId']);
+            if (part.type !== 'profile-done') throw fail('Incomplete resident profile transfer');
+            break;
+          }
+          fields(part, [...envelopeFields, 'requestId', 'offset', 'byteLength']);
+          if (part.type !== 'profile-chunk' || part.offset !== offset
+              || part.byteLength !== Math.min(L.profileChunkBytes, data.length - offset)) throw fail('Invalid resident profile chunk');
+          const frame = await io.rpc.read({ signal: op.signal });
+          if (frame.byteLength !== part.byteLength) throw fail('Invalid resident profile chunk length');
+          data.set(frame.subarray(), offset); offset += frame.byteLength;
+          if (offset === data.length && faceDigest(data) !== response.sha256) throw fail('Resident profile digest mismatch');
+        }
+        const profile = normalizeResidentProfile(JSON.parse(decoder.decode(data)), { worldId: this.worldId, includePrivate: response.includesPrivate });
+        if (profile.sourceAgentId !== agentId) throw fail('Resident profile identity mismatch');
+        if (!!profile.memories?.some(memory => memory.audience === 'private') !== response.includesPrivate) throw fail('Resident profile audience mismatch');
+        await closeFaceStream(stream, op.signal); return profile;
+      } catch (error) { stream?.abort(asError(error)); throw error; }
+      finally { release?.(); op.signal.removeEventListener('abort', abort); this.outbound.delete(requestId); this._finish(entry); }
+    })());
+  }
   request(ownerPeerId, input, { signal } = {}) {
     this._active(); agentIdentifier(ownerPeerId, 'owner peer'); fields(input, ['agentId', 'prompt']);
     const agentId = agentIdentifier(input.agentId), text = prompt(input.prompt), requestId = crypto.randomUUID();
@@ -434,9 +575,11 @@ export class AgentConversationService {
       let error;
       try { if (this.registered) await this.node.unhandle(AGENT_CONVERSATION_PROTOCOL); this.registered = false; }
       catch (cause) { error = cause; }
+      try { if (this.profileRegistered) await this.node.unhandle(AGENT_PROFILE_PROTOCOL); this.profileRegistered = false; }
+      catch (cause) { error ??= cause; }
       this.node?.removeEventListener('peer:disconnect', this.disconnect);
       await Promise.allSettled([...this.operations]);
-      this.records.clear(); this.faceReads.clear(); this._publish();
+      this.records.clear(); this.faceReads.clear(); this.profileReads.clear(); this._publish();
       if (error) throw error;
       if (owners.get(this.node) === this) owners.delete(this.node);
       this.started = false;

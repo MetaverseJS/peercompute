@@ -4314,3 +4314,43 @@ M1 requires actual trained-policy browser execution, held-out approach/stop/foll
 outcomes, numerical parity, per-resident state and control continuity during slow
 LLM calls. Scripted baselines and deterministic inference fixtures do not prove
 neural movement or learning. This planning prompt runs no application tests.
+
+### CubeChat meet-and-follow, edit and clone (November 9; pending)
+
+- Intent parser: unobserved/stale/foreign targets, invalid ranges and malformed output cannot move a body; plain text still chats. LLM output selects intent rather than command-word scripting.
+- Memory: exact world/agent/audience/conversation isolation, verified outcome provenance, bounds/eviction/expiry reporting and persistence after close/reopen. No private memory in public context or clone profile.
+- Trained motor: reproducible checkpoint/provenance, held-out physical rollouts with zero/random-weight comparisons, learned action parity and real worker GPU execution; no silent scripted fallback. Owner authority, moving during inference, stop/target loss/obstacles and disposal.
+- Edit/clone: only owner edits, conflict-safe persistence, appearance replacement, remote source opt-in checked before/after transfer, new destination identity/body, private history/authority excluded, fresh-memory default; UI desktop/mobile.
+- Integration: existing world dialogue/voice/appearance, CubeChat input/social and Earth adapter regression; external builds and exact internal HTTPS link. No Pages build/deploy/push.
+
+November9 results: managed motor8/8 plus192actualGPUcomparisons, reproducible
+training80/80held-out episodes versuszero/random0/80; realCannon approach/follow,
+wallblocking/targetloss and279GPUdispatches withzero leakedreservations. Native
+scene/UI/input/social64/64 plus27/27saved-follow restore slice; host24/24,
+intent/experience9/9, sharedworld112/112, Earth/voice29/29, memory/profile55/55.
+Broadercore103cases initially102pass/1fail; the sole failure reproduced onHEAD
+(an old stats expectation omitted three existing artifact-store fields), and the
+corrected full assertion's9-casefile now passes. These suites overlap.
+
+Actual two-browser SecretWorkshop clone acceptance passed native UI, public memory
+inheritance/donor provenance, private isolation and reload; screenshots fit desktop
+and390pxmobile. Language was controlled there. A separate real peer Qwen2B call
+completed but declined the requested action; revised contract has unit coverage,
+with actual language adherence being qualified separately. External inference and
+Earth builds pass; CubeChat production acceptance build passes. No Pages generated
+assets or deployment. See plan/log.md and external evidence paths for scope.
+
+Final full-history revision: 71/71 core profile/memory tests, 27/27 world-host
+integration tests and 21/21 native private-choice UI tests pass. Actual v2 browser
+transfer delivered 42 public/zero private episodes by default, then 42 public/two
+private turns after explicit opt-in; scopes, attribution, reload and independently
+changing branches verified. Source stayed active. Actual local Qwen0.8B new and
+legacy identities selected the correct target; both physically approached and
+stopped through the managed learned controller. No further GPU rerun was needed
+for subsequent history-only changes. Final preview uses a fresh external build.
+
+Final exact-preview smoke: trusted HTTPS5176 index matches the new external build;
+owned isolated-room browser verifies default checkbox states and a live
+SecretWorkshop WSS connection, with zero page/console errors. Browser cleaned up.
+Public Pages files remain untouched. Build logs and preview-check.json are under
+/home/cos/.cache/peercompute-meet-follow-20261109/.

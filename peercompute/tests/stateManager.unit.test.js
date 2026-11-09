@@ -298,7 +298,10 @@ test('StateManager owns local artifact caches without Yjs or network replication
     localArtifactCacheCount: 1,
     localArtifactCacheEntryCount: 1,
     localArtifactCacheResidentBytes: cache.getStats().residentBytes,
-    localArtifactCachePendingCount: 0
+    localArtifactCachePendingCount: 0,
+    artifactStoreCount: 0,
+    artifactStoredBytes: 0,
+    artifactPendingCount: 0
   });
 
   await sm.destroy();

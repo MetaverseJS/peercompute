@@ -1,3 +1,8 @@
+import { createWorldExperience } from './WorldExperience.js';
+import { createResidentMotorService } from './motor/ResidentMotorService.js';
+import { originalWorldPrompt, parseWorldReply } from './WorldIntent.js';
+import { createResidentProfile, normalizeResidentProfile } from '../../../peercompute/src/peercompute/agents/ResidentProfile.js';
+import { normalizeAgentFace } from '../../../peercompute/src/peercompute/agents/WorldAgentContracts.js';
 import { createWorldAgentUi } from './worldAgentUi.js';
 import { AgentConversationService } from '../../../peercompute/src/peercompute/agents/AgentConversationService.js';
 import { normalizePublicAgent, WORLD_AGENT_LIMITS, worldAgentText } from '../../../peercompute/src/peercompute/agents/WorldAgentContracts.js';
@@ -35,7 +40,8 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
   let runtime, agents, network, worldManager, speech, audio, ui, selectedKey, disposed = false, closing, unsubscribe;
   let refreshing, networkStarting, modelStarting, networkTimer, panel, panelOpening, panelClosing, panelShell, panelReturnFocus, embodimentLease;
   let operation, operationDone, voicePreparation, voicePreparationDone, recordingStart, voiceEnabled = false, recording = false;
-  let appearance, appearancePresenter, worldChat;
+  let appearance, appearancePresenter, worldChat, experience, motor, memory;
+  let publicEpoch = 0;
   const appearanceStates = new Map();
   const worldChatDisabled = new Set();
   const pendingPublicCaptions = new Map();
@@ -105,9 +111,14 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
         try {
           setBody({ ...normalizePublicAgent({ agentId: head.agentId, name: head.identity.name,
             position: binding.position, color: binding.color, status: statusOf(head),
+            ...(binding.allowCloning ? { cloneable: binding.shared === true } : {}),
+            ...(binding.shareMemories ? { sharesMemories: binding.shared === true && binding.allowCloning === true } : {}),
+            ...(binding.sharePrivateMemories ? { sharesPrivateMemories: binding.shared === true && binding.allowCloning === true && binding.shareMemories === true } : {}),
             ...(binding.face ? { face: appearance.publicRef(head) } : {}) }),
           key, ownerPeerId: worldNetwork()?.peerId ?? '', local: true,
           recoveryRequired: !!head.recoveryRequired, shared: binding.shared,
+          instructions: head.identity.instructions, goals: head.goals, localOnly: head.policy.inferenceMode === 'local-only',
+          allowCloning: !!binding.allowCloning, shareMemories: !!binding.shareMemories, sharePrivateMemories: !!binding.sharePrivateMemories, ...(binding.movement ? { movement: binding.movement } : {}),
           respondToWorldChat: !!binding.respondToWorldChat, appearancePrompt: binding.appearancePrompt ?? '',
           appearanceStatus: binding.face ? 'ready' : binding.appearancePrompt ? 'waiting' : '',
           ...appearanceStates.get(head.agentId) });
@@ -159,9 +170,15 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     const conversationId = await worldConversationId(worldId, requesterPeerId || 'owner');
     const context = JSON.stringify(adapter.getContext?.(descriptor) ?? { world: worldLabel, position: descriptor.position });
     if (encoder.encode(context).length > 8192) throw new Error('World observations exceed the conversation budget');
-    const result = await agents.run(agentId, { prompt, conversationId, worldContext: context,
+    const turn = await experience?.prepare({ key: descriptor.key, agentId, conversationId, audience: 'private',
+      requesterPeerId: requesterPeerId || worldNetwork()?.peerId, prompt, scene: JSON.parse(context),
+      publicConversationId: await worldConversationId(worldId, 'public-room'), signal });
+    const result = await agents.run(agentId, { prompt: turn?.prompt ?? prompt, conversationId, worldContext: turn?.worldContext ?? context,
       maxNewTokens: 512, task: 'text-generation', signal });
-    return { text: result.result.text, finishReason: result.result.finishReason ?? 'stop' };
+    const current = await agents.get(agentId);
+    const output = turn ? await experience.finish(turn, result.result.text, { valid: () => !!bindingOf(current)
+      && (!requesterPeerId || bindingOf(current).shared) && current.status !== 'paused' }) : result.result;
+    return { text: output.text, finishReason: result.result.finishReason ?? 'stop' };
   }
   async function ensureModelNetwork() {
     if (disposed || runtime.networkReady || modelStarting) return modelStarting;
@@ -183,7 +200,21 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
       const next = serviceFactory({ networkManager: worldNetwork(), worldId,
         listLocalAgents: () => list().filter((body) => body.local && bindingOf(heads.get(body.agentId))?.shared)
           .map(normalizePublicAgent), respond, onDirectory: directory,
-        getAppearance: ({ agentId, signal, sha256 }) => appearance.getLocal(agentId, { signal, sha256, sharedOnly: true }) });
+        getAppearance: ({ agentId, signal, sha256 }) => appearance.getLocal(agentId, { signal, sha256, sharedOnly: true }),
+        getProfile: async ({ agentId, signal }) => {
+          signal?.throwIfAborted(); const head = await agents.get(agentId); signal?.throwIfAborted();
+          if (!bodies.get(localKey(agentId))?.local) throw new Error('This node no longer owns the resident body');
+          return sharedProfile(head, { signal });
+        },
+        getProfilePermissions: async ({ agentId, signal }) => {
+          // Profile chunks must not rely on a possibly coalesced directory
+          // refresh when the owner revokes sharing during a transfer.
+          const head = await agents.get(agentId); signal?.throwIfAborted();
+          const binding = bindingOf(head), owned = bodies.get(localKey(agentId))?.local === true;
+          const cloneable = owned && binding?.shared === true && binding?.allowCloning === true;
+          const sharesMemories = cloneable && binding?.shareMemories === true;
+          return { cloneable, sharesMemories, sharesPrivateMemories: sharesMemories && binding?.sharePrivateMemories === true };
+        } });
       try { await next.start(); lifetime.signal.throwIfAborted(); network = next; }
       catch (error) { await next.close(); throw error; }
       await refreshLocal();
@@ -206,22 +237,125 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
         after = page.at(-1).sequence;
       }
       transcripts.set(key, events.filter((event) => event.conversationId === channel && ['request', 'result'].includes(event.type))
-        .slice(-24).map((event) => ({ role: event.type === 'request' ? 'user' : 'assistant', text: event.text })));
+        .slice(-24).map((event) => ({ role: event.type === 'request' ? 'user' : 'assistant', text: event.type === 'request'
+          ? originalWorldPrompt(event.text) : parseWorldReply(event.text).text })));
     }
     showMessages(key);
     ui.setStatus(descriptor.status === 'paused' ? 'Paused. Resume to start a new conversation.' : `Talk to ${descriptor.name}.`);
   }
-  async function spawn({ name, goals = [], localOnly = false, shared = true, appearancePrompt = '', respondToWorldChat = false }) {
+  async function spawn({ name, goals = [], localOnly = false, shared = true, appearancePrompt = '', respondToWorldChat = false,
+    instructions, shareMemories = false, sharePrivateMemories = false, allowCloning = shareMemories, movement = 'stationary' }) {
     await ready; alive();
     requireConversationIdle();
     if (list().filter((body) => body.local).length >= WORLD_AGENT_LIMITS.agents) throw new Error('This world already has 16 local agents');
     worldAgentText(name, 240, 'name');
     const position = adapter.normalizePosition(await adapter.getSpawnPosition());
     const head = await agents.create({ name, goals, inferenceMode: localOnly ? 'local-only' : 'network-assisted',
-      instructions: `You inhabit a body in ${worldLabel}. Talk directly with the visitor. World observations describe your surroundings. Do not claim to move or act when no action was executed.`,
-      embodiments: [{ worldId, position, color: '#8fffd4', shared, appearancePrompt, respondToWorldChat }] });
+      instructions: instructions ?? `You inhabit a body in ${worldLabel}. Talk directly with the visitor. World observations describe your surroundings. You may propose supported body intentions; the world executes them and reports outcomes. Describe intended actions as intentions, and completed actions only when verified.`,
+      embodiments: [{ worldId, position, color: '#8fffd4', shared, appearancePrompt, respondToWorldChat, allowCloning, shareMemories, sharePrivateMemories, movement }] });
     await agents.resume(head.agentId); await refreshLocal(); await select(localKey(head.agentId));
     if (appearancePrompt.trim()) void generateAppearance({ key: localKey(head.agentId) }).catch(fail);
+    return agents.get(head.agentId);
+  }
+  async function sharedProfile(head, { signal, ownerCopy = false } = {}) {
+    const episodes = memory && bindingOf(head)?.shareMemories ? await memory.snapshot({
+      agentId: head.agentId, worldId, includePrivate: bindingOf(head)?.sharePrivateMemories === true,
+    }, { signal }) : [];
+    const current = await agents.get(head.agentId); signal?.throwIfAborted();
+    if (!bodies.get(localKey(head.agentId))?.local) throw new Error('Resident body ownership changed');
+    const binding = bindingOf(current);
+    if (!binding) throw new Error('Resident body was removed');
+    return createResidentProfile(ownerCopy ? { ...current, embodiments: [{ ...binding, shared: true, allowCloning: true }] }
+      : current, worldId, { memories: episodes });
+  }
+  async function edit({ key, name, instructions, goals, appearancePrompt, movement, shared, respondToWorldChat, allowCloning, shareMemories, sharePrivateMemories, localOnly }) {
+    await ready; alive(); requireConversationIdle();
+    const body = bodies.get(key); if (!body?.local) throw new Error('Only the owner can edit this resident; clone it to customize your own');
+    const head = await agents.get(body.agentId), binding = bindingOf(head);
+    if (!binding) throw new Error('This resident is no longer in this world');
+    if (movement === 'follow' && adapter.observe && !adapter.observe(key).participants.some(item => item.kind === 'human' && item.peerId === body.ownerPeerId)) {
+      throw new Error('The owner must be nearby before selecting Follow');
+    }
+    const next = { ...binding };
+    for (const [field, value] of Object.entries({ appearancePrompt, movement, shared, respondToWorldChat, allowCloning, shareMemories, sharePrivateMemories })) {
+      if (value !== undefined) next[field] = value;
+    }
+    if (appearancePrompt !== undefined && appearancePrompt !== binding.appearancePrompt) {
+      delete next.face; delete next.appearanceRequestId; appearanceStates.delete(head.agentId);
+    }
+    // Detect a profile too large to share before committing the opt-in.
+    if (next.shared && next.allowCloning) createResidentProfile({ ...head,
+      identity: { name: name ?? head.identity.name, instructions: instructions ?? head.identity.instructions },
+      goals: goals ?? head.goals, embodiments: [next] }, worldId);
+    const saved = await agents.update(head.agentId, { name, instructions, goals,
+      ...(localOnly === undefined ? {} : { inferenceMode: localOnly ? 'local-only' : 'network-assisted' }),
+      embodiments: head.embodiments.map(item => item.worldId === worldId ? next : item) }, { expectedRevision: head.revision });
+    await refreshLocal();
+    if (movement !== undefined) adapter.setMovement?.(key, movement);
+    if (selectedKey === key) ui.select(bodies.get(key));
+    ui.setStatus('Resident saved. Existing identity and memories are preserved.');
+    if (appearancePrompt?.trim() && appearancePrompt !== binding.appearancePrompt) void generateAppearance({ key }).catch(fail);
+    return saved;
+  }
+  async function clone({ key, name }) {
+    await ready; alive(); requireConversationIdle();
+    const body = bodies.get(key); if (!body) throw new Error('This resident is no longer in the world');
+    if (list().filter(item => item.local).length >= WORLD_AGENT_LIMITS.agents) throw new Error('This world already has 16 local agents');
+    const created = await runOperation(async signal => {
+      let profile;
+      if (body.local) {
+        const head = await agents.get(body.agentId), binding = bindingOf(head);
+        if (!binding) throw new Error('This resident is no longer in the world');
+        // Explicit owner cloning does not require publishing the profile.
+        profile = await sharedProfile(head, { signal, ownerCopy: true });
+      } else {
+        if (!body.cloneable) throw new Error('The owner has not enabled cloning for this resident');
+        if (!network?.requestProfile) throw new Error('Resident profile sharing is unavailable');
+        profile = normalizeResidentProfile(await network.requestProfile(body.ownerPeerId, { agentId: body.agentId }, { signal }), { worldId, includePrivate: body.sharesPrivateMemories === true });
+        if (profile.sourceAgentId !== body.agentId) throw new Error('Resident clone identity mismatch');
+      }
+      let image;
+      if (profile.face) {
+        image = body.local ? await appearance.getLocal(body.agentId, { signal, sha256: profile.face.sha256 })
+          : await appearance.loadRemote({ ...body, face: profile.face }, { network, signal });
+        if (!image) throw new Error('Resident appearance changed; retry cloning');
+      }
+      signal.throwIfAborted();
+      const head = await agents.create({ name: name ?? profile.name, instructions: profile.instructions, goals: profile.goals,
+        inferenceMode: 'network-assisted', embodiments: [] });
+      try {
+        const inherited = profile.memories ?? [];
+        if (inherited.length && !memory) throw new Error('This world cannot save inherited memories');
+        // The staged identity stays paused and has no body until the entire
+        // selected history is durable. Never advertise a partially copied life.
+        if (inherited.length) await memory.inheritSnapshot({ agentId: head.agentId, worldId, episodes: inherited,
+          sourceAgentId: profile.sourceAgentId, sourcePeerId: body.ownerPeerId || worldNetwork()?.peerId || agents.store.hostId }, { signal });
+        const attachmentId = image ? crypto.randomUUID() : null;
+        const binding = { worldId, position: adapter.normalizePosition(await adapter.getSpawnPosition()), color: profile.color,
+          shared: true, respondToWorldChat: false, allowCloning: false, movement: 'stationary', appearancePrompt: profile.appearancePrompt,
+          ...(image ? { face: { ...normalizeAgentFace(image), attachmentId } } : {}) };
+        await agents.store.withRun(head.agentId, ({ head: current, signal: lockedSignal }) => agents.store.commit(head.agentId, {
+          expectedRevision: current.revision, head: { ...current, embodiments: [binding] },
+          event: { type: 'cloned-profile', text: `Personality and appearance copied with ${inherited.length} inherited memories.`,
+            sourceAgentId: profile.sourceAgentId, ...(attachmentId ? { attachmentIds: [attachmentId] } : {}) },
+          attachments: image ? [{ id: attachmentId, width: image.width, height: image.height, channels: 4, data: image.data }] : [],
+        }, { signal: lockedSignal }), { signal });
+        await agents.resume(head.agentId); await refreshLocal();
+        return { ...await agents.get(head.agentId), inheritedMemories: inherited.length };
+      } catch (error) {
+        try {
+          const scopes = new Map((profile.memories ?? []).map(episode => [JSON.stringify([episode.audience, episode.conversationId]),
+            { agentId: head.agentId, worldId, audience: episode.audience, conversationId: episode.conversationId }]));
+          for (const scope of scopes.values()) await memory?.forget(scope);
+          await agents.remove(head.agentId);
+        } catch (cleanup) { fail(new Error(`Clone failed; incomplete identity ${head.agentId}: ${cleanup.message}`)); }
+        throw error;
+      }
+    });
+    await select(localKey(created.agentId)); ui.setStatus(created.inheritedMemories
+      ? `Resident cloned to this node with ${created.inheritedMemories} inherited memories, preserving their public/private channels.`
+      : 'Resident cloned to this node with a new identity and fresh memories.');
+    return created;
   }
   async function generateAppearance({ key }) {
     await ready; alive(); requireConversationIdle();
@@ -271,10 +405,13 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
       }
       return;
     }
-    return worldChat?.receive(input);
+    const received = worldChat?.receive(input);
+    if (received?.accepted) publicEpoch++;
+    return received;
   }
-  async function replyToWorld(body, incoming, { signal, context }) {
+  async function replyToWorld(body, incoming, { signal, context, isCurrent = () => true }) {
     alive(); requireConversationIdle();
+    const epoch = publicEpoch;
     return runOperation(async ownedSignal => {
       const combined = AbortSignal.any([ownedSignal, signal]);
       const head = await agents.get(body.agentId), binding = bindingOf(head);
@@ -294,12 +431,19 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
       const currentBody = liveBody({ ...ownedBody, name: currentHead.identity.name });
       const observations = worldConversationContext({ world: worldLabel, self: currentBody,
         scene: adapter.getContext?.(currentBody) ?? {}, residents: list(), messages: context.messages, incoming });
+      const conversationId = await worldConversationId(worldId, 'public-room');
+      const prompt = worldReplyPrompt({ world: worldLabel, self: currentBody, incoming });
+      const turn = await experience?.prepare({ key: body.key, agentId: body.agentId, conversationId, audience: 'public',
+        requesterPeerId: incoming.peerId, who: { peerId: incoming.peerId, name: incoming.name,
+          ...(incoming.agentId ? { agentId: incoming.agentId } : {}) }, eventId: incoming.id,
+        prompt, statement: incoming.text, scene: JSON.parse(observations), signal: combined });
       const result = await agents.run(body.agentId, { task: 'text-generation', signal: combined,
-        conversationId: await worldConversationId(worldId, 'public-room'),
-        prompt: worldReplyPrompt({ world: worldLabel, self: currentBody, incoming }),
-        worldContext: observations, maxNewTokens: 256 });
+        conversationId, prompt: turn?.prompt ?? prompt, worldContext: turn?.worldContext ?? observations, maxNewTokens: 512 });
       combined.throwIfAborted();
-      const answer = result.result.text.trim().replaceAll('\0', '');
+      const after = await agents.get(body.agentId);
+      const output = turn ? await experience.finish(turn, result.result.text, { valid: () => isCurrent() && epoch === publicEpoch
+        && bindingOf(after)?.respondToWorldChat && after.status !== 'paused' && !worldChatDisabled.has(body.key) }) : result.result;
+      const answer = output.text.trim().replaceAll('\0', '');
       if (encoder.encode(answer).length <= 2048) return answer;
       let excerpt = '';
       for (const character of answer) { if (encoder.encode(excerpt + character).length > 2045) break; excerpt += character; }
@@ -472,12 +616,13 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
   }
   ui = uiFactory({ worldLabel, onOpen: beforeOpen, onSpawn: spawn, onSelect: select, onSend: send, onModels: models,
     onVoice: enableVoice, onRecord: record, onCancel: cancel, onClose: cancel, onRemove: remove, onResume: resume,
-    onAppearance: generateAppearance, onWorldChat: setWorldChat });
+    onAppearance: generateAppearance, onWorldChat: setWorldChat, onEdit: edit, onClone: clone });
   const ready = (async () => {
     const options = await getRuntimeOptions(); worldManager = options.networkManager;
     // World conversations use the room's identity; model discovery uses the
     // global model network so hosts in the standalone console remain eligible.
-    runtime = await runtimeFactory({ ...options, networkManager: undefined, residentModelSlots: 3 });
+    runtime = await runtimeFactory({ ...options, networkManager: undefined, residentModelSlots: 3,
+      auxiliaryWorkerSlots: adapter.setMotor ? 1 : 0 });
     lifetime.signal.throwIfAborted(); agents = await runtime.getAgentController();
     appearance = createWorldAppearance({ runtime, agents, worldId, onStatus: event => {
       if (disposed) return;
@@ -485,6 +630,16 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
         appearanceError: ['error', 'unavailable'].includes(event.status) ? event.message : '' });
       void refreshLocal().catch(fail);
     } });
+    if (adapter.observe && adapter.setIntent && adapter.subscribeOutcomes) {
+      if (runtime.computeManager) { motor = createResidentMotorService({ computeManager: runtime.computeManager }); adapter.setMotor?.(motor); }
+      if (runtime.stateManager?.createWorldMemoryStore) {
+        const name = `${agents.store?.name ?? 'world-agents'}-episodes`.slice(0, 80);
+        memory = runtime.stateManager.getWorldMemoryStore(name) ?? runtime.stateManager.createWorldMemoryStore({ name });
+        await memory.open();
+      }
+      experience = createWorldExperience({ worldId, adapter, memory, getBody: key => bodies.get(key),
+        onStatus: text => { if (!disposed) ui.setStatus(text); } });
+    }
     appearancePresenter = createWorldAppearancePresenter({ appearance, adapter, getNetwork: () => network });
     if (typeof publishWorldMessage === 'function') worldChat = createWorldChatResponder({
       getResidents: () => list().map(body => ({ ...body,
@@ -513,10 +668,11 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     open() { ui.open(); },
     openConversation(key) { return select(key).catch(fail); },
     getStatus: () => ({ worldId, bodies: list(), selectedKey, voiceEnabled, recording, disposed, network: !!network,
+      experience: experience?.getStatus(), motor: motor?.getStatus(),
       exclusiveEmbodiments: !!embodimentLease, crossTabOwnership: embodimentLease?.supported ?? null }),
     // The scene owns these operations; exposed for embedding and acceptance
     // checks without invoking GPU work through a hidden global test harness.
-    spawn, send, remove, resume, enableVoice, cancel, generateAppearance, setWorldChat, receiveWorldMessage,
+    spawn, edit, clone, send, remove, resume, enableVoice, cancel, generateAppearance, setWorldChat, receiveWorldMessage,
     get runtime() { return runtime; },
     async dispose() {
       if (closing) return closing;
@@ -525,6 +681,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
         await ready.catch(() => {}); await cancel(); await networkStarting; await modelStarting; await closePanel();
         await worldChat?.dispose(); await appearancePresenter?.dispose(); await appearance?.dispose();
         await network?.close(); network = null;
+        adapter.setMotor?.(null); await experience?.dispose(); await motor?.dispose();
         await speech?.dispose(); await audio?.dispose(); await runtime?.dispose();
         await refreshing; await adapter.dispose(); await embodimentLease?.close();
         ui.dispose(); bodies.clear(); heads.clear(); transcripts.clear(); pendingPublicCaptions.clear();
