@@ -1,17 +1,17 @@
 # CPU Compute Worker [cpuworker] (Summary)
 
-Status: draft; CPU-bound compute worker.
+Status: implemented through computeManager/computeWorker.js → workerTaskHost.js → taskRuntime.js. The older compute/CPUComputeWorker.js is a scaffold, not this runtime.
 
 ## Purpose
 - Execute compute jobs that are not GPU-friendly or are low-latency.
 
 ## Responsibilities
-- Run deterministic CPU tasks off the main thread.
+- Run CPU tasks off the main thread; deterministic behavior is the application's responsibility.
 - Return results and timing metrics to ComputeManager.
 
 ## Inputs
 - Job payloads and data buffers.
-- Execution hints (priority, timeout).
+- Cancellation signal, progress callback, transferables and worker affinity.
 
 ## Outputs
 - Result buffers or structured outputs.
@@ -21,7 +21,7 @@ Status: draft; CPU-bound compute worker.
 - Web Worker; no DOM access.
 
 ## Failure Modes
-- Timeouts or stalled workers.
+- Stalled workers; ordinary local tasks do not enforce a per-task execution timeout.
 - Large payload transfers causing frame stalls.
 
 ## Testing

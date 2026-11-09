@@ -14,6 +14,20 @@ The root node should exist on a domain secured with SSL enabling all executable 
 
 ## Project Goals:
 
+November8 complete library/source audit: all1,047 authored files (25,002,942bytes,
+466,636lines), including full root/Multiscale logs and every plan, have been read
+with gap-free coverage. See [current status](reports/2026-11-08-library-status-audit.md).
+Implemented foundations include managed workers, graphs/affinity, explicit remote
+tasks, resource accounting and retained artifacts; automatic throughput-optimal
+CA topology remains unproven. Correct stale API/scaffold/worker claims while keeping
+the root README concise and preserving all15media. Fresh core834/837 has3failures;
+Multiscale206/206 passes but does not close historical browser/quorum/numerical
+failures. Next library gates: reconcile core/Eshkol baseline, qualify remote trust
+and actual chaos impairment, then compare measured CA topology/placement against
+fixed baselines. Agent learning/mobility and full scientific validation stay open.
+This documentation audit changes no runtime, build, deployment or remote branch.
+
+
 November8 documentation correction: root README leads with the core conjecture of
 cellular-automata compute-topology emergence and serves as a concise library introduction, usage example
 and architecture guide. Keep all original diagrams/screenshots; move demo details

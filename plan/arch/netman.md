@@ -15,8 +15,8 @@ Status: active; core implemented with tests. See plan/log.md for details.
 
 ## Clock Policy
 - independent: managers tick freely; events drive network bursts.
-- kernel: NodeKernel drives a fixed tick for determinism.
-- hybrid: independent loops with kernel sync points.
+- kernel: NodeKernel drives a fixed scheduler tick; this does not establish
+  deterministic distributed execution. Hybrid clock mode remains a design idea.
 - NodeKernel can drive scheduler via tickScheduler when in kernel mode.
 
 ## Message Model (pc-v1)
@@ -24,19 +24,20 @@ Status: active; core implemented with tests. See plan/log.md for details.
 - Types: snapshot, command, event, presence, clock, ack.
 - Serialization: JSON now; optional CBOR later.
 
-## Profiles (defaults)
+## Suggested profiles
 - Action/FPS: input 30-60 Hz, snapshot 10-20 Hz, interpolation 100-150 ms, keepalive 1000 ms.
 - Co-op: input 10-20 Hz, snapshot 5-10 Hz, interpolation 150-250 ms, keepalive 1500 ms.
 - Turn-based: event-driven, snapshot on turn, keepalive 3000 ms.
 - Sandbox: input 5-10 Hz, snapshot 2-5 Hz, reliable edit events, keepalive 2000 ms.
 
 ## Topology Modes
-- Authority-hosted: first joiner or lowest peerId is authority.
+- Authority-hosted: applications supply authorityId/setAuthority; first-joiner
+  or lowest-peerId election is an application policy, not built-in election.
 - Mesh snapshots: each peer publishes its own entity state.
 - Hybrid: pubsub discovery with optional direct streams.
 
 ## Pubsub
-- Gossipsub is the default mesh; floodsub remains as a fallback.
+- Floodsub is the library default; Gossipsub is configurable.
 - Topics are scoped by topologyId/roomId and shard id when sharding is enabled.
 
 ## Relay Scaling (Phase 1 - Implemented 2026-01-12)
@@ -66,8 +67,8 @@ Status: active; core implemented with tests. See plan/log.md for details.
 - registerStateProvider(fn)
 - registerWarmDeltaProvider(fn, options)
 - registerCommandProvider(fn)
-- onSnapshot(cb)
-- onEvent(cb)
+- addSnapshotHandler(cb)
+- addEventHandler(cb)
 - getHealth()
 - getTelemetrySnapshot() (rx/tx counts, byte rates, per-peer RTT)
 
@@ -84,7 +85,8 @@ Status: active; core implemented with tests. See plan/log.md for details.
 - Per-entity authority vs single authority.
 - Reliable vs best-effort commands.
 - Reconnect aggressiveness thresholds.
-- Phase 3 relay retention deterministic selection algorithm.
+- Qualify implemented deterministic logn/sqrt relay retention under larger
+  heterogeneous networks and sustained traffic.
 
 ## Related Docs
 - plan/arch/nodekernel.md

@@ -1,324 +1,186 @@
-# PeerCompute API Documentation
+# PeerCompute API guide
 
-## Overview
+This guide covers the implemented integration surface as audited on 2026-11-08.
+The [source entry point](../src/peercompute/index.js) exports the complete set of
+modules; the [library guide](../README.md) has larger examples. The package is a
+private repository workspace, not a documented public npm release.
 
-This document provides a comprehensive overview of all modules, classes, and methods in the PeerCompute library.
+## Lifecycle and shared state
 
-## Core Modules
+`createNode(config)` constructs and **initializes** a `NodeKernel`. Call `start()`
+separately. With `new NodeKernel(config)`, call both `initialize()` and `start()`.
+Supply bootstrap addresses in the constructor configuration.
 
-### NodeKernel
+```js
+// Import path relative to an application at the repository root.
+import { createNode } from './peercompute/src/peercompute/index.js';
 
-**Location:** `src/peercompute/nodeKernel/NodeKernel.js`
-
-Main orchestrator for a PeerCompute node. Manages State, Network, and Compute managers as child threads.
-
-#### Constructor
-```javascript
-new NodeKernel(config)
-```
-
-**Parameters:**
-- `config.topology` (string): Network topology - 'hierarchy' | 'distributed' | 'emergent'
-- `config.storageMode` (string): Data storage mode - 'local' | 'propagate'
-- `config.enableWebGPU` (boolean): Enable WebGPU compute capabilities
-
-#### Methods
-
-- `async initialize()` - Initialize the node kernel and spawn child manager threads
-- `async start()` - Start the node and connect to the P2P network
-- `async stop()` - Stop the node and cleanup resources
-- `async submitTask(task)` - Submit a compute task to the network
-- `getStatus()` - Get current node status
-
----
-
-### StateManager
-
-**Location:** `src/peercompute/stateManager/StateManager.js`
-
-Manages shared data state across the node. Coordinates read/write access and provides CRDT-based synchronization.
-
-#### Methods
-
-- `async initialize(initialState)` - Initialize the state manager
-- `read(key)` - Read value from state
-- `async write(key, value)` - Write value to state (coordinated)
-- `async batchWrite(updates)` - Batch write multiple key-value pairs
-- `subscribe(key, callback)` - Subscribe to state changes
-- `async synchronize(peerStates)` - Synchronize state with network peers
-- `snapshot()` - Create a snapshot of current state
-
----
-
-### NetworkManager
-
-**Location:** `src/peercompute/networkManager/NetworkManager.js`
-
-Handles P2P networking using libp2p. Manages peer connections, topology, and message routing.
-
-#### Constructor
-```javascript
-new NetworkManager(config)
-```
-
-**Parameters:**
-- `config.topology` (string): 'hierarchy' | 'distributed' | 'emergent'
-
-#### Methods
-
-- `async initialize()` - Initialize the network manager and libp2p node
-- `async connect(bootstrapPeers)` - Connect to the P2P network
-- `async disconnect()` - Disconnect from the network
-- `async sendToPeer(peerId, message)` - Send message to specific peer
-- `async broadcast(message, options)` - Broadcast message to all connected peers
-- `async joinParent(parentPeerId)` - Join a parent node (hierarchy topology)
-- `async acceptChild(childPeerId)` - Accept a child node (hierarchy topology)
-- `async discoverNearbyPeers()` - Discover nearby peers with high bandwidth/compute
-- `async optimizeTopology()` - Optimize topology based on network conditions
-- `getConnectedPeers()` - Get list of connected peers
-- `getNetworkStats()` - Get network statistics
-- `getTelemetrySnapshot()` - Get per-peer telemetry snapshot (rx/tx counts, byte rates, RTT)
-
----
-
-### ComputeManager
-
-**Location:** `src/peercompute/computeManager/ComputeManager.js`
-
-Manages distributed compute tasks. Coordinates task distribution, execution, and result aggregation.
-
-#### Constructor
-```javascript
-new ComputeManager(config)
-```
-
-**Parameters:**
-- `config.enableWebGPU` (boolean): Enable WebGPU acceleration
-- `config.maxWorkers` (number): Maximum number of compute workers
-
-#### Methods
-
-- `async initialize()` - Initialize compute manager and spawn compute workers
-- `async submitTask(task)` - Submit a compute task
-  - `task.id` (string): Unique task ID
-  - `task.type` (string): Task type - 'webgpu' | 'cpu' | 'physics'
-  - `task.data` (Object): Task input data
-  - `task.compute` (Function): Compute function (for CPU tasks)
-  - `task.shader` (string): WGSL shader code (for WebGPU tasks)
-- `async distributeTask(task, targetNodes)` - Distribute task across multiple nodes
-- `async cancelTask(taskId)` - Cancel a running task
-- `getCapabilities()` - Get compute capabilities of this node
-- `getStats()` - Get compute statistics
-
----
-
-## Subsystem Modules
-
-### PhysicsEngine
-
-**Location:** `src/peercompute/physics/PhysicsEngine.js`
-
-Manages physics simulation with rigid body dynamics, collisions, and constraints.
-
-#### Constructor
-```javascript
-new PhysicsEngine(config)
-```
-
-**Parameters:**
-- `config.gravity` (Object): Gravity vector - {x, y, z}
-- `config.timeStep` (number): Time step in seconds
-- `config.substeps` (number): Physics substeps per frame
-
-#### Methods
-
-- `async initialize()` - Initialize the physics engine
-- `addBody(bodyDef)` - Add a rigid body to the simulation
-  - `bodyDef.id` (string): Unique body ID
-  - `bodyDef.position` (Object): Initial position {x, y, z}
-  - `bodyDef.velocity` (Object): Initial velocity {x, y, z}
-  - `bodyDef.mass` (number): Body mass
-  - `bodyDef.shape` (string): Collision shape type
-- `removeBody(bodyId)` - Remove a body from the simulation
-- `step(deltaTime)` - Step the physics simulation forward
-- `getBodyState(bodyId)` - Get body state
-- `getAllBodies()` - Get all body states
-- `start()` - Start continuous physics simulation
-- `stop()` - Stop physics simulation
-- `reset()` - Reset physics simulation
-
----
-
-### InputManager
-
-**Location:** `src/peercompute/input/InputManager.js`
-
-Manages input handling and synchronization across the network. Supports keyboard, mouse, gamepad, and touch input.
-
-#### Methods
-
-- `async initialize(config)` - Initialize the input manager
-  - `config.networkSync` (boolean): Enable network input synchronization
-- `on(eventType, callback)` - Register input event listener
-- `isKeyPressed(key)` - Get current key state
-- `getMousePosition()` - Get current mouse position
-- `isMouseButtonPressed(button)` - Get current mouse button state
-- `getGamepadState(gamepadIndex)` - Get gamepad state
-- `getTouchState(touchId)` - Get touch state
-- `serializeState()` - Serialize input state for network transmission
-- `applyNetworkState(peerId, inputState)` - Apply received network input state
-- `destroy()` - Cleanup input manager
-
----
-
-## Worker Modules
-
-### WebGPUComputeWorker
-
-**Location:** `src/peercompute/computeManager/compute/WebGPUComputeWorker.js`
-
-Worker thread that executes GPU-accelerated compute tasks using WebGPU.
-
-**Message Types:**
-- `initialize` - Initialize WebGPU device
-- `execute` - Execute a compute shader
-- `terminate` - Cleanup and close worker
-
-**Task Format:**
-```javascript
-{
-  shader: 'WGSL shader code',
-  data: { /* input buffers */ },
-  workgroupSize: [x, y, z]
-}
-```
-
----
-
-### CPUComputeWorker
-
-**Location:** `src/peercompute/computeManager/compute/CPUComputeWorker.js`
-
-Worker thread that executes CPU-based compute tasks.
-
-**Message Types:**
-- `initialize` - Initialize worker
-- `execute` - Execute a compute task
-- `terminate` - Cleanup and close worker
-
-**Task Types:**
-- `function` - Execute arbitrary compute function
-- `physics` - Execute physics simulation step
-- `data` - Execute data processing task
-
----
-
-## Utility Functions
-
-**Location:** `src/peercompute/utils/Utils.js`
-
-### Core Utilities
-
-- `generateId()` - Generate a unique ID
-- `deepClone(obj)` - Deep clone an object
-- `serialize(data)` - Serialize data for network transmission
-- `deserialize(buffer)` - Deserialize data from network
-- `hash(data)` - Calculate hash of data (SHA-256)
-- `nextTick()` - Defer execution to next tick
-
-### Performance Utilities
-
-- `measureTime(fn)` - Measure execution time of a function
-- `retry(fn, options)` - Retry a function with exponential backoff
-- `throttle(fn, delay)` - Throttle function execution
-- `debounce(fn, delay)` - Debounce function execution
-
-### Math Utilities
-
-- `clamp(value, min, max)` - Clamp value between min and max
-- `lerp(a, b, t)` - Linear interpolation
-
----
-
-## Main Entry Point
-
-**Location:** `src/peercompute/index.js`
-
-### Exports
-
-- `NodeKernel` - NodeKernel class
-- `StateManager` - StateManager class
-- `NetworkManager` - NetworkManager class
-- `ComputeManager` - ComputeManager class
-- `PhysicsEngine` - PhysicsEngine class
-- `InputManager` - InputManager class
-- `Utils` - Utility functions namespace
-- `VERSION` - Library version string
-- `DEFAULT_CONFIG` - Default configuration object
-
-### createNode Function
-
-```javascript
-async function createNode(config)
-```
-
-Convenience function to initialize a complete node with all managers.
-
-**Parameters:**
-- `config.topology` (string): Network topology
-- `config.storageMode` (string): Data storage mode
-- `config.enableWebGPU` (boolean): Enable WebGPU
-- `config.enablePhysics` (boolean): Enable physics engine
-- `config.enableInput` (boolean): Enable input manager
-- `config.bootstrapPeers` (Array<string>): Bootstrap peer addresses
-
-**Returns:** Promise<NodeKernel>
-
----
-
-## Usage Example
-
-```javascript
-import { createNode } from './peercompute/index.js';
-
-// Create and initialize a node
+const { bootstrapPeers } = await fetch('/relay-config.json').then(r => r.json());
 const node = await createNode({
-  topology: 'distributed',
-  enableWebGPU: true,
-  enablePhysics: true
+  bootstrapPeers,
+  gameId: 'example',
+  roomId: 'lobby',
+  enablePersistence: false
 });
-
-// Start the node
 await node.start();
 
-// Submit a compute task
-const result = await node.submitTask({
-  id: 'task-1',
-  type: 'webgpu',
-  shader: `
-    @compute @workgroup_size(64)
-    fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-      // Compute shader code
-    }
-  `,
-  data: { /* input data */ }
-});
+const state = node.getStateManager();
+const unsubscribe = state.subscribe('message', (value, key) => console.log(key, value));
+state.write('message', 'Hello peers');
 
-// Get status
-const status = node.getStatus();
+// When this application instance closes:
+unsubscribe();
+await node.stop();
 ```
 
----
+Managers coordinate on the main thread; compute tasks can run in managed workers.
+`stop()` awaits compute, network and state cleanup. Compute/network cleanup failures
+retain their owners for retry; state cleanup errors are reported, but NodeKernel
+currently clears its manager references after that final phase.
 
-## Implementation Status
+| Configuration | Current behavior |
+| --- | --- |
+| `gameId`, `roomId`, `topologyId` | Scope application discovery/state topics; not authentication. |
+| `bootstrapPeers` | Relay/bootstrap multiaddresses; see the [relay guide](RELAY_SERVER.md). |
+| `enablePersistence` | Yjs IndexedDB persistence, enabled by default; distinct from binary artifact retention. |
+| `enableWebGPU` | Compute capability/configuration flag, default false; does not make arbitrary tasks GPU programs. |
+| `enableGPUHub` | Main-thread GPU hub ownership, enabled by default; actual device use requires initialization/support. |
+| `clockPolicy` | Object such as `{ mode: 'kernel', tickHz: 30 }`; mode defaults to `independent`. Cadence is not distributed determinism. |
+| `enableRemoteComputeResponder` | Explicit opt-in to execute incoming remote tasks; default false. |
+| `enableRemoteTaskGraphResponder` | Defaults to the remote-compute setting; can be configured independently. |
 
-**Current Phase:** P2P Networking (libp2p) 🔧
+`getStatus()`, `getNetworkManager()`, `getStateManager()`, `getComputeManager()` and
+`getGPUHub()` expose the current owners. See
+[NodeKernel](../src/peercompute/nodeKernel/NodeKernel.js) for advanced policies.
 
-Core modules are wired and functional, with libp2p-based networking and Yjs state synchronization in place.
+## StateManager and DataState
 
-**Next Steps:**
-1. Harden libp2p relay/presence behavior for browser discovery
-2. Expand compute worker spawning and task execution
-3. Add WebGPU shader execution
-4. Complete physics engine implementation
-5. Add comprehensive test coverage
+| API | Purpose |
+| --- | --- |
+| `read(key)`, `write(key, value)`, `delete(key)`, `batchWrite(updates)` | Read/mutate shared Yjs state. Writes are synchronous local mutations. |
+| `subscribe(key, callback)` | Observe a key or `'*'`; returns an unsubscribe function. |
+| `writeScoped(namespace, key, value)`, `readScoped(namespace, key)` | Named shared maps. |
+| `observeNamespace(namespace, callback)` | Observe a named map, including map replacement. |
+| `snapshot()`, `getYDoc()` | Inspect current state/Y.Doc. |
+| `commitDelta(delta)`, `getWarmDeltas(namespace)` | Apply/expose CPU-visible task deltas. |
+| `getDataState()`, `setHotBuffer(key, buffer)`, `getHotBuffer(key)` | Layered local state and process-local GPU references. |
+| `createArtifactStore(options)`, `getArtifactStore(name)` | Optional verified binary storage outside Yjs. |
+| `ensureArtifact(cid, options)`, `publishArtifact(cid)`, `unpublishArtifact(cid, options)` | Artifact completeness and configured network publication. |
+| `createAgentRecordStore(options)`, `getAgentRecordStore(name)` | Private persistent agent identity/context outside shared Yjs. |
+
+Yjs synchronization uses `PeerComputeProvider`. `synchronize()` is a compatibility
+no-op, not a manual merge API. A namespace does not make data private: the provider
+replicates the document. Keep private records and large files in their dedicated
+stores. Cold persistence, retained file availability and loaded GPU residency are
+different states. See [StateManager](../src/peercompute/stateManager/StateManager.js)
+and [DataState](../src/peercompute/stateManager/DataState.js).
+
+## NetworkManager and NetworkScheduler
+
+Configure cadence with `configureScheduler(profile)`. Register snapshot producers
+with `registerStateProvider(fn, options)` and listeners with
+`addSnapshotHandler((peerId, message) => {})`. `queueEvent(payload, options)` and
+`addEventHandler(handler)` provide event delivery. Producers can be removed with
+`unregisterStateProvider(id)` or `unregisterCommandProvider(id)`; snapshot/event
+listeners currently have no corresponding removal API. See the
+[source](../src/peercompute/networkManager/NetworkManager.js).
+
+`getConnectedPeers()`, `getHealth()` and `getTelemetrySnapshot()` expose discovery,
+connection and traffic observations. Presence entries can outlive an immediately
+usable inference connection; traffic byte rates are not link-capacity measurements.
+
+The implementation supports WebSockets, WebRTC and circuit relays, Floodsub by
+default and configurable Gossipsub. Topology management uses supplied spatial
+metrics, neighbor budgets, referrals and recovery. It does not yet optimize a
+measured end-to-end compute-throughput objective.
+
+`broadcast(message)` and `sendToPeer(peerId, message)` use shared pubsub with scope
+and recipient fields. They are not confidential unicast APIs; resolved sends do
+not establish delivery. Reliable scheduler events retry with acknowledgements,
+but consumers must tolerate duplicates. Private model inference and agent
+conversations use their separate authenticated stream services.
+
+## Managed compute
+
+`node.submitTask(task)` delegates to local `ComputeManager`. A JavaScript task
+uses `fn` or an importable `module`/`exportName`, not a `shader` property:
+
+```js
+const answer = await node.submitTask({
+  id: 'sum-example',
+  data: { values: [1, 2, 3] },
+  fn: ({ values }) => values.reduce((sum, value) => sum + value, 0)
+});
+```
+
+Functions are serialized and cannot capture surrounding variables. Prefer modules
+for reusable work. `requireWorker: true` prevents inline fallback; module code and
+inputs must be worker-compatible. Tasks support `signal`, `onProgress`,
+`transferables` and affinity. Active inline work cannot promise worker-style
+cancellation; failed worker cleanup retains ownership until confirmed.
+
+| Runtime | Execution contract |
+| --- | --- |
+| JS | `fn` or `module` plus optional `exportName`; structured-cloneable inputs/results. |
+| WASM | `runtime: 'wasm'`, `wasm.source`, entry/args and optional memory input/output views/result adapter. |
+| WebGPU | A JS module initializes and dispatches WebGPU work inside the managed worker, or an application uses the main-thread GPU hub. |
+| Hybrid | `runtime: 'wasm-webgpu'`, WASM definition and a worker-local host module. |
+
+Results may contain `commitDelta` for StateManager. GPU buffers remain local;
+remote buffer references are metadata and require explicit local reconstruction.
+See [worker/runtime examples](../README.md#datastate--compute-examples),
+[ComputeManager](../src/peercompute/computeManager/ComputeManager.js) and
+[taskRuntime](../src/peercompute/computeManager/taskRuntime.js).
+
+`submitTaskGraph({ nodes })` supports dependency batches (`id`, `dependsOn`, `task`),
+result wiring, explicit cache policies and admission metadata. It does not
+automatically partition a graph across peers. GPU-resident stage plans require
+registered executors. Lease and fence metadata are ownership contracts, not
+independent evidence of GPU completion or numerical correctness.
+
+## Explicit remote execution
+
+NodeKernel exposes `submitRemoteComputeTask(peerId, payload, options)`,
+`submitRemoteTaskGraph(peerId, graph, options)`, `createNetworkPlacementExecutor(peerId, options)`
+and `createRedundantNetworkPlacementExecutor(peerIds, options)`. A responder must opt in; remote
+JS tasks require a module by default. Applications supply eligible peers,
+placement/admission policy and result validation. Ordinary `submitTask()` and
+`ComputeManager.distributeTask()` do not provide automatic network distribution;
+the latter is still a placeholder.
+
+Treat the general remote-task path as experimental trusted-peer machinery.
+Its addressed pubsub and consistency hashes do not establish authenticated code
+execution or correct results. Replica comparisons are configurable checks, not
+Byzantine consensus. See the [audit's remaining gates](../../plan/reports/2026-11-08-library-status-audit.md#next-gates).
+
+## Optional artifacts, models and agents
+
+`ArtifactStore` supports SHA-256-verified UnixFS/CIDs, bounded reads, retention,
+recovery, leases and garbage collection. Browser retention uses IndexedDB; a
+Node filesystem backend also exists. `IpfsArtifactTransport` uses Helia/Bitswap
+with explicitly authorized peers; public DHT discovery and permanent pinning
+services are not configured.
+
+`ComputeManager.createModelInferenceService({ artifactStore, runtime, ... })`
+creates a managed lifecycle with a shared resource broker. Runtime values are
+`transformers.js`, `llama.cpp`, `onnx-diffusion` and `transformers-speech`.
+Supported manifests, browser features and admission policy must pass before load.
+`ResidentModelRegistry`, `InferenceRouter` and `PeerInferenceService` support
+multiple loaded models and whole-request local/peer routing. They do not shard a
+single neural model across GPUs. RAM/VRAM budgets are estimates, not free-memory
+measurements. The [model demo guide](../../demos/inference/README.md) owns catalog,
+browser, storage, voice and UI instructions.
+
+`AgentRecordStore`, `AgentRouter` and `AgentRuntime` provide persistent private
+identity/context, bounded request routing and execution checkpoints. Learned
+routing, autonomous planning/training, host provisioning, cloning and migration
+remain [planned](../../plan/demos/inference/agent-layer-plan.md).
+
+## Historical scaffolds
+
+Exported `PhysicsEngine` and `InputManager`, and the older
+`compute/CPUComputeWorker.js` and `compute/WebGPUComputeWorker.js`, remain
+scaffolds. The active worker path is `computeWorker.js` → `workerTaskHost.js` →
+`taskRuntime.js`. The demos supply their own input and physics implementations.
+Consult the [current status report](../../plan/reports/2026-11-08-library-status-audit.md)
+before interpreting old plans, diagrams or readiness flags as shipped behavior.

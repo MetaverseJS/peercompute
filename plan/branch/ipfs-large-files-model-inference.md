@@ -1314,3 +1314,15 @@ usage and architecture. Inference/agent operational detail belongs in
 demos/inference/README.md; other demos own their respective guides. Preserve
 original root media, retain implementation limits and avoid long release history
 in the project introduction. This corrects the earlier application-first framing.
+
+
+## 2026-11-08 library-wide status reconciliation
+
+User requested full library, demo and plan/log reading before final README status.
+Completed authored-source coverage is1,047files/25.0MB. Root documentation remains
+library-first and conjecture-led; models/agents are an optional application of the
+network/state/compute/artifact framework. The [audit](../reports/2026-11-08-library-status-audit.md)
+records current managed runtimes, whole-request routing, retention/reseed scope,
+scripted body behavior and remaining physical/multi-host qualification. It does
+not reopen superseded one-model/storage-cap/bootstrap limitations or claim learned
+agents, model sharding, publicDHT or optimalCA topology. No runtime/release change.

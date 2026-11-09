@@ -1,6 +1,6 @@
 # WebGPU Compute Worker [wgpuworker] (Summary)
 
-Status: draft; GPU compute worker.
+Status: implemented through the managed module-worker runtime. Tasks initialize WebGPU in their host module; the older compute/WebGPUComputeWorker.js remains a scaffold.
 
 ## Purpose
 - Execute WebGPU compute pipelines for heavy parallel workloads.

@@ -21,8 +21,16 @@ research work; see the [Keystone plan](../plan/branch/keystone-demo.md).
 - Scoped libp2p discovery, WebRTC and relay transport for browser peers.
 - Shared Yjs state, network snapshots/events and layered local DataState.
 - Managed JS, WASM, WebGPU and hybrid workers with progress and cancellation.
+- Local dependency graphs, worker affinity, resource leases and explicit remote
+  task/graph execution with configurable result-admission and replica policies.
 - Verified IPFS/UnixFS artifacts with IndexedDB or filesystem retention.
 - Optional model execution, peer inference and private persistent agent records.
+
+Ordinary `submitTask()` executes locally. Remote execution requires an explicit
+placement executor or target peer and an enabled responder. GPU-resident stages
+also need an application executor; resource leases describe ownership and budgets,
+not measured free VRAM. See the [current API](docs/API.md) and
+[source/status audit](../plan/reports/2026-11-08-library-status-audit.md).
 
 This directory contains the reusable runtime and its core test harness. Vite
 applications live in [`demos/`](../demos/README.md); their controls and runtime
@@ -53,6 +61,11 @@ requirements belong in their respective guides.
 ### Network Topology
 ![PeerCompute Topology Examples](../plan/arch/p2p-network-topology-examples.png)
 
+These design diagrams also show future components: there is no implemented
+Local IO Manager or State Worker pool. Applications own input/rendering;
+StateManager currently operates on the main thread. Managed compute workers are
+implemented through `computeWorker.js` and `workerTaskHost.js`.
+
 ### Clocking Modes (Configurable)
 NodeKernel currently accepts two clock-policy modes:
 - **independent**: managers run independently.
@@ -66,6 +79,10 @@ execution across peers. Hybrid WASM+WebGPU tasks are a separate compute feature.
 - **Keepalive** and **reconnect** behavior when idle.
 - **Reliable events** with retries + ack (bounded retry budget).
 - **Profile-based rates** so different games or rooms can use different cadence.
+
+Applications must handle duplicate reliable events. Room/topic scoping is routing,
+not access control. General `sendToPeer()` uses addressed pubsub; private inference,
+artifact discovery and agent conversation use separate authenticated protocols.
 
 ## Quick Start
 
@@ -194,6 +211,12 @@ const positionsBuffer = gpuHub.createHotBuffer(
 ```
 
 ### Compute Workers (JS, WASM, isolated GPU, hybrid WASM+WebGPU)
+
+The module URLs and WASM binaries below are illustrative application-supplied
+assets; they are not shipped at `/compute/` in this checkout. The WebGPU helper
+shows the result contract only: your module must implement device/pipeline setup
+and dispatch. For runnable fixtures, see [the WASM runtime tests](tests/unit/computeManager.wasm.test.js).
+
 ```js
 // CPU task (runs in a worker when available)
 const cpuResult = await node.submitTask({
@@ -318,10 +341,12 @@ peercompute/src/peercompute/
 
 ## Roadmap
 
-The next library goals are measured resource-aware topology adaptation,
-validated remote task-graph/result admission and portable placement across
-JS/WASM/WebGPU workers. See [the project plan](../plan/plan.md) for implementation
-status and [the test strategy](../plan/tests.md) for acceptance evidence.
+The next library proof is measured topology/placement adaptation on a known
+workload under heterogeneous links and peer loss. Remote graph, replica and
+admission mechanisms already exist; their trust boundaries and independent
+result validation need qualification before open-network execution. See the
+[current audit](../plan/reports/2026-11-08-library-status-audit.md),
+[project plan](../plan/plan.md) and [test strategy](../plan/tests.md).
 
 ## License
 MIT

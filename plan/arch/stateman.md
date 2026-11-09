@@ -1,13 +1,13 @@
 # State Manager [stateman] (Summary)
 
-Status: active; coordinates DataState and State Workers.
+Status: active; owns Yjs/DataState and optional artifact/agent stores on the main thread. A general State Worker pool remains planned.
 
 ## Purpose
 - Maintain the authoritative local DataState.
 - Apply updates from network, IO, and compute in a consistent order.
 
 ## Responsibilities
-- Dispatch State Workers to read/write DataState in parallel.
+- Apply local Yjs transactions and manage explicit storage owners.
 - Apply CRDT/merge rules (Yjs-based) for concurrent edits.
 - Emit snapshots/deltas for NetworkManager and render paths.
 - Persist state to IndexedDB for reloads/offline recovery.
@@ -30,13 +30,13 @@ Status: active; coordinates DataState and State Workers.
 - Warm deltas are stored under a configurable namespace for netman/UI.
 
 ## Execution Context
-- Manager on main thread; heavy reads/writes offloaded to State Workers.
+- Manager on main thread; no general State Worker dispatch pool is instantiated.
 
 ## Integration Contract
-- applyUpdate(update, source)
-- getSnapshot(scope)
-- observe(scope, cb)
-- registerWorkerPool(pool)
+- read(key), write(key, value), snapshot()
+- subscribe(key, cb), observeNamespace(namespace, cb)
+- readScoped(namespace, key), writeScoped(namespace, key, value)
+- applyRemoteUpdate(updateArr), requestProviderSync()
 - commitDelta(delta)
 - getWarmDeltas(namespace)
 - getDataState()
@@ -48,7 +48,7 @@ Status: active; coordinates DataState and State Workers.
 - IndexedDB failures leading to non-persistent state.
 
 ## Testing
-- Unit tests for worker dispatch and merge order.
+- Tests for Yjs merge/namespace observers, persistence, artifact leases and cleanup.
 - Integration tests for network state sync.
 
 ## Open Questions

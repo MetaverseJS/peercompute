@@ -3,7 +3,7 @@
 Status: active; orchestrates managers and policies.
 
 ## Purpose
-- Coordinate StateManager, NetworkManager, ComputeManager, and Local IO.
+- Coordinate StateManager, NetworkManager and ComputeManager; applications own local I/O.
 - Own orchestration policy (what/when/who) and clock mode.
 
 ## Responsibilities
@@ -31,11 +31,14 @@ Status: active; orchestrates managers and policies.
 - Main thread coordinator; should avoid heavy compute.
 
 ## Integration Contract
-- start(config), stop()
-- setClockPolicy(policy)
-- setTopologyRole(role)
-- tickScheduler(now) -> NetworkManager
-- observeStatus(cb)
+- constructor(config), initialize(), start(), stop()
+- setClockPolicy(policy), tick(now)
+- getStatus(), getStateManager(), getNetworkManager(), getComputeManager(), getGPUHub()
+- submitTask(task), submitTaskGraph(graph)
+- submitRemoteComputeTask(peerId, payload, options), submitRemoteTaskGraph(peerId, graph, options)
+
+Remote responders are opt-in. The kernel does not automatically partition tasks
+or instantiate general input/physics/state-worker managers.
 
 ## Failure Modes
 - Clock drift or misconfigured rates causing jitter.

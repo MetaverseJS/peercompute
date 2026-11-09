@@ -243,3 +243,17 @@ atomic / quantum / MD
 - Promote Schrodinger material potential from broad reference property packets, reduced Morse-style force-preview telemetry, reduced reaction-barrier/product-source/product-topology telemetry, qmat law-graph fragments, scheduler-facing dispatch queues/manifests, result-admission/preflight gates, a concurrent property-batch worker, and the current target-atom/target-pair/product-source/topology qmat-to-MD source bridge toward calibrated Born-Oppenheimer/force-field energy gradients, charge-transfer/QEq or electronic-structure coupling, calibrated reaction-barrier surfaces, conservative product topology, and validation references for water phase behavior, Na-water chemistry, combustion, conductivity, optical response, and mechanical moduli.
 - Promote quantum orbital closure and the `quantum-orbital-grid` worker from WGSL screened-hydrogenic density/residual/evolution/radial/field/magnetic-response reductions toward real finite-grid Schrodinger wavefunction kernels, stable time evolution, calibrated radial/electronic/Stark/Zeeman-response reference tolerances, and calibrated chemistry/MD closure adapters.
 - Replace proxy closure confidence with named reference tolerances, unit metadata, Jacobian hooks, and out-of-domain policies.
+
+
+## 2026-11-08 whole-repository evidence reconciliation
+
+The [library audit](../../../plan/reports/2026-11-08-library-status-audit.md) reads
+this entire plan/log/source/test corpus. Fresh206/206Node tests pass, including
+build/import checks; this does not supersede June18interaction/quorum failures,
+4.29FPS performance limitations or later ordered SPH warmup failure. Law-graph
+consistency/report walks and synthesized target response reports are not an
+independent physical fixed-point solve or authoritative worker-buffer mutation.
+Reduced readiness claims require reference-bound numerical validation. A fresh
+core Eshkol handoff test blocks the currently staged16-byte result against its
+64-byte expectation; preserve the mismatch until the producer/contract is aligned.
+Runtime remains unchanged by the documentation audit.

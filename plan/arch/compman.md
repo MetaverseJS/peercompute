@@ -7,7 +7,8 @@ Status: active; resource-aware compute dispatcher with JS/WASM/WebGPU task runti
 
 ## Responsibilities
 - Maintain a job queue and scheduling policy.
-- Select JS vs WASM vs WebGPU execution based on workload portability and device limits.
+- Execute the requested JS/WASM/host-module runtime under resource policy;
+  automatic cross-runtime compilation or optimal peer placement is not implemented.
 - Track job progress and return results to NodeKernel/StateManager.
 - Support isolated GPU workers for out-of-band tasks that emit CPU deltas.
 - Support result/import helper modules for worker-safe WASM execution.
@@ -18,7 +19,7 @@ Status: active; resource-aware compute dispatcher with JS/WASM/WebGPU task runti
 - Compute job requests from NodeKernel.
 - Data buffers or references from DataState.
 - WASM module bytes/URLs and hybrid host modules.
-- Resource telemetry (GPU availability, CPU load).
+- Browser capability hints and supplied resource budgets; not measured free VRAM.
 
 ## Outputs
 - Job results and progress events.
@@ -44,4 +45,5 @@ Status: active; resource-aware compute dispatcher with JS/WASM/WebGPU task runti
 - Integration tests for CPU/GPU worker round-trips.
 
 ## Open Questions
-- How to preempt or migrate long-running jobs?
+- How to migrate/checkpoint long-running jobs across peers? Managed worker
+  cancellation exists; generic resource-lease preemption alone does not stop compute.
