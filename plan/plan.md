@@ -1898,3 +1898,13 @@ the user's implementation direction.
 - Verify two-resident context/ownership/cancellation and actual isolated browser peers. Shared components build toward the homunculus architecture; no learned movement or autonomous idle conversation is claimed. Internal preview only; GitHub Pages remains on hold.
 
 - Resident dialogue correction complete locally:148standardworld-agent,68social/input and71core/transport checks pass; CubeChat/Earth external builds pass. Two actual isolated peer browsers verify bounded resident exchange, fresh context, private-history isolation, room change and mobile/desktop layout. InternalCubeChat5176 is updated; publicPages remains unchanged. Original real-model repetition was not reproduced during the read-only live observation; model output quality remains distinct from these integration checks.
+
+
+### November 9 — CubeChat homunculus prioritization (proposal)
+
+Recommend a narrow “meet and follow” milestone: richer bounded world observations,
+model-chosen intentions, event-backed persistent memories, and a small learned
+approach/stop/follow controller behind a thin M0 sensor/action/trajectory interface.
+Awareness and memory are the cheapest visible increment. Existing motion remains
+a scripted baseline until trained weights control actual continuous actions.
+See demos/cubechat/plan.md; no runtime implementation or deployment in this review.

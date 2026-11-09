@@ -153,3 +153,51 @@ create a tron themed overworld consisting of a dark infinite grid of blue lines.
 - User authorizes a fresh docs/ build and origin push after all current changes
   pass. Pages source is feature/ipfs-artifacts-webgpu:/docs; preserve the current
   branch and verify the overview/IPFS link plus the complete demo route matrix.
+
+
+## November 9 — proposed next homunculus milestone: meet and follow
+
+Proposal only, not an implementation commitment or a completed training result.
+The smallest visible improvement is richer world awareness and relevant memory;
+the recommended next coherent playable slice is “come here, then remember that
+we met.” Reuse identities, managed local/peer inference, chat/voice, ownership and
+body presentation. A language model chooses a bounded intention; a small local
+learned motor executes approach/stop/follow independently of language latency.
+
+1. Give each resident bounded observations: nearby identified players/residents,
+   relative positions/directions, recent public speech, its current intention and
+   confirmed action outcomes. Scope observations to its senses rather than making
+   it omniscient. Start with scene geometry and rays; first-person vision is later.
+2. Add reusable observe/intend/act/outcome contracts. Initial intentions: look at,
+   approach, follow a named entity, stop and speak. The model selects among them
+   using current goals/context; these are capabilities, not scripted dialogue or
+   a fixed story. Record the executed outcome before claiming an action succeeded.
+3. Add episodic memory with who/where/when/action/outcome and retrieval of relevant
+   events. Preserve public/private channel boundaries and provenance; keep derived
+   summaries separate from evidence. Existing256-event journal limits require a
+   deliberate retention/compaction design, not per-frame appends or silent loss.
+   Human recognition across reconnects requires stable authenticated profile
+   identity; display names or an assumed permanent transport peer ID are inadequate.
+4. Implement the thin M0 fixed-step sensor/action/trajectory interface, then train
+   a compact M1 approach/stop/follow policy from recorded demonstrations and test
+   unseen starts/targets before promotion. Use continuous model-produced controls
+   through ComputeManager on the body owner. Existing scripted motion is a labeled
+   baseline/teacher only. Shared weights retain per-resident state. Language work
+   may route to peers; frame-to-frame control stays local.
+
+Current constraints: WorldResidentMotion is explicitly scripted; CubeAgentLayer
+uses kinematic placement, zeros velocity, and freezes movement while thinking.
+Replacing only motionFactory does not fulfill the PDF's physical neural-control
+contract. Decouple movement from conversation status, keep pause/stop authority,
+and measure the policy in the actual simulator. A WebGPU ONNX deployment path
+exists in the upstream runtime, but model operators, latency and actual backend
+execution still need qualification. Do not promise a pretrained CubeChat policy.
+
+Acceptance scene: two residents and two players; a player says “come here,” the
+resident approaches and stops, a follow request updates its target while it can
+continue chatting, and a reload restores an evidenced memory of the encounter.
+A private exchange stays private; no provider does not freeze or teleport a body.
+Evaluate memory retrieval and actual movement separately from prose fluency.
+Afterward: bounded self-initiated greetings, mutual introductions and remembered
+social goals. Fly connectome, full3D body generation, policy mobility and open-ended
+self-training remain later experiments. No GitHub Pages build/deploy or push.

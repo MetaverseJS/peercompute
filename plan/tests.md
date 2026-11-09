@@ -4303,3 +4303,14 @@ references (link sets overlap the115total). No runtime/app/build changes.
 - Actual browser acceptance: isolated room, two owned profiles/residents, actual SecretWorkshop encrypted RoomChat transport, deterministic inference capture, bounded exchange then silence, second topic, room isolation and desktop/mobile visual checks. This is not an actual model-quality benchmark. No production-room prompts or public deployment.
 
 - Completed: standard `npm run test:world-agents` includes the new responder/context cases and passes148/148; separate social/input68/68 and core/RoomChat71/71pass (overlapping suites, not summed). Actual two-browser SecretWorkshop room exchange passes two rounds, private owner/visitor freshness and isolation, dedup, room switch, desktop1440/mobile390 bounds and cleanup. External CubeChat/Earth builds pass. Reports: /home/cos/.cache/peercompute-resident-dialogue-20261108/. The controlled inference facade proves prompt/context flow, not real-model dialogue quality.
+
+
+### November 9 — proposed meet-and-follow acceptance (not yet implemented)
+
+Check sensor scope/age and identity, validated target/intent/outcome sequencing,
+private/public memory retrieval isolation and evidence-backed recall after restart.
+M0 requires seeded fixed-step episodes, continuous controls and trace recording;
+M1 requires actual trained-policy browser execution, held-out approach/stop/follow
+outcomes, numerical parity, per-resident state and control continuity during slow
+LLM calls. Scripted baselines and deterministic inference fixtures do not prove
+neural movement or learning. This planning prompt runs no application tests.

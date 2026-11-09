@@ -1350,3 +1350,13 @@ residents talk to each other. Inspect the live room, repair queued public
 context and resident-message routing through reusable world components, preserve
 authenticated ownership/private-history boundaries and bound follow-up turns.
 The user's explicit GitHub Pages deployment hold remains in force.
+
+
+### November 9 — next resident milestone proposed
+
+User asks which resident enhancements offer the most immediate value toward
+homunculus. Recommend world awareness, scoped episodic memory and a bounded
+intention/action interface, demonstrated by learned approach/stop/follow. Current
+kinematic/scripted motor is not a trained controller. Detailed proposed sequence
+and acceptance scene are in demos/cubechat/plan.md. Await direction on scope; this
+review changes planning records only and preserves the Pages deployment hold.
