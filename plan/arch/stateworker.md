@@ -1,6 +1,6 @@
 # State Worker [stateworker] (Summary)
 
-Status: active; parallel DataState worker.
+Status: proposed; no general parallel DataState worker pool is instantiated. Responsibilities and contracts below are design goals. Current StateManager runs on the main thread.
 
 ## Purpose
 - Perform DataState reads/writes without blocking the main thread.

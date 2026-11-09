@@ -1,6 +1,8 @@
 # Topology Examples (Summary)
 
-Status: draft; sourced from topology diagram.
+Status: design shapes from the topology diagram. Current runtime implements
+spatial neighbor selection, connection budgets/referrals/recovery. Dynamic
+resource-optimal hierarchy below is a research goal, not proven behavior.
 
 ## Purpose
 - Capture supported topology shapes and their use cases.
@@ -14,7 +16,7 @@ Status: draft; sourced from topology diagram.
 - Root node defines rules; parents host clusters; children/peers join subtrees.
 - Fits player-hosted games with shared rulesets.
 
-## Dynamic Hierarchical Depth
+## Dynamic Hierarchical Depth (planned)
 - Topology adapts to bandwidth/compute affinity.
 - Nodes self-organize into subtrees and mesh clusters.
 - Supports emergent metaverse-style sharding.

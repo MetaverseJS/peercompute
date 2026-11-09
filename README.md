@@ -7,8 +7,9 @@ compute throughput—like slime mold designing an optimal transit network.
 
 PeerCompute is the JavaScript library for exploring this conjecture: peer-to-peer
 networking, shared state and managed CPU/WASM/WebGPU execution for browser
-applications. Its current controller provides local-rule neighbor selection and
-connection management. Demonstrating the conjecture is a research goal of the
+applications. Its current controller provides spatial neighbor selection and
+connection recovery; compute placement uses explicit policies and executors.
+Demonstrating throughput-driven topology emergence is a research goal of the
 [Keystone experiment](plan/branch/keystone-demo.md).
 
 [Try the demos](https://metaversejs.github.io/peercompute/) ·
@@ -19,8 +20,8 @@ connection management. Demonstrating the conjecture is a research goal of the
 
 - Connects peers through libp2p discovery, relays and WebRTC, with game/room scoping.
 - Synchronizes shared state with Yjs and separates it from local buffers and persistent storage.
-- Runs JavaScript, WASM and WebGPU workloads through managed workers, with scheduling, cancellation and resource ownership.
-- Distributes content-addressed files and routes supported compute/model requests to peers.
+- Runs JavaScript, WASM and WebGPU workloads through managed workers, with task graphs, affinity, cancellation and resource accounting.
+- Supports explicit remote tasks/graphs and optional content-addressed file sharing and peer model inference.
 - Provides the foundation for multiplayer worlds, collaborative simulations, procedural generation and shared AI services.
 
 ## Quick start
@@ -70,11 +71,14 @@ adds snapshots/events, layered DataState, worker tasks and persistence examples.
 | **NodeKernel** | Application lifecycle, orchestration and policy. |
 | **NetworkManager + NetworkScheduler** | Discovery, topology, scoped transport, message cadence and delivery. |
 | **StateManager** | Shared Yjs state, local DataState and persistent artifacts. |
-| **ComputeManager** | Managed JS/WASM/WebGPU workers and task/resource lifecycle. |
-| **Application I/O + GPU Hub** | Application input/output and render-coupled GPU work. |
+| **ComputeManager** | Managed JS/WASM/WebGPU workers, task graphs and resident services. |
+| **Application code + GPU Hub** | App-owned input/rendering; optional shared GPU buffers and stage executors. |
 
 ![PeerCompute Node Block Diagram](./plan/arch/compute-node-block-diagram.png)
 ![PeerCompute Topology Examples](./plan/arch/p2p-network-topology-examples.png)
+
+The diagrams include the intended architecture. The [current status audit](plan/reports/2026-11-08-library-status-audit.md)
+distinguishes implemented components, experimental paths and remaining research.
 
 ## Demos
 
@@ -84,7 +88,7 @@ adds snapshots/events, layered DataState, worker tasks and persistence examples.
 | [CubeChat](demos/cubechat/README.md) | Multiplayer state, video/text chat and embodied agents. |
 | [Models and agents](demos/inference/README.md) | IPFS model storage and local/peer text, vision, image and voice inference. |
 | [PlanetGen](demos/planetgen/README.md) / [Universes](demos/universes/README.md) | Procedural worlds and compute-driven generation. |
-| [EarthGrid](demos/earth/README.md) / [RoadVector](demos/motorcycle/README.md) | Shared geodata, interactive worlds and vehicle simulation. |
+| [EarthGrid](demos/earth/README.md) / [RoadVector](demos/motorcycle/README.md) | Geodata rendering, interactive worlds and vehicle simulation. |
 | [Multiscale Ladder](demos/multiscale/README.md) / [Schrodinger](demos/schrodinger/README.md) | Experimental scientific workloads with explicit proxy-model boundaries. |
 
 The [full demo directory](demos/README.md) includes the other games, visualizers and

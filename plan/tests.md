@@ -4234,3 +4234,33 @@ match58f8c49a. Root integration snippet parses with Node24 and matches live APIs
 17/17existing demo-release cases pass. Library guide checks cover18JS/shell
 syntax snippets, JSON and22links; demo guide checks cover45links and15root-script
 references (link sets overlap the115total). No runtime/app/build changes.
+
+
+## 2026-11-08 complete source/status audit
+
+- Coverage:1,047 first-party authored files,25,002,942bytes,466,636lines at173270e1;
+  rootlog61,469lines and Multiscalelog23,930lines complete. Exact read ranges/hashes,
+  duplicate mappings and exclusions are in the external full-audit evidence folder.
+  All5,283tracked paths classified;4,236generated/vendor/data/reference/binary/runtime/
+  credential paths excluded. Truncated output was reread before acknowledgement.
+- Node24.18 fresh gates: core `node --test --test-concurrency=2 tests/unit/*.test.js`
+  from peercompute/:834pass/837,3fail,0skip; Multiscale `node --test tests/*.test.mjs`
+  from demos/multiscale/:206/206pass, including temporary build/import checks.
+- Failures retained: additionalModelCatalog expected2vs3packages and old rejection
+  wording; staged Eshkol serviceOrchestration acceptance. Independent invocation
+  produced16changedbytesvs64expected and mismatched tensors; admission blocks it.
+  Reconcile producer/contract using independent outputs rather than relaxing checks.
+- Other executed scopes: geo-core87/87, geodata60/60, Earth55/55, motorcycle120/120,
+  WXGlobe28/28, Schrodinger20/20, CubeRTC5/5, NetViz3/3, sharednested90/90,
+  selected13cross-demo Nodefiles83/83, WebGPUPhys bundle1/1+element script,
+  chaos JS13/13 and Python54/54. Do not sum overlapping suites or call these
+  physicalGPU/browser/device acceptance. Raw receipts retained outside Git.
+- Historical Pages/runtime receipts remain dated evidence. Multiscale ordered
+  interactions/quorum/SPH and scientific-buffer mutation need independent closure;
+  performance acceptance needs a named wall-clock threshold, not merely rendered
+  frames. Chaos source concerns require actual routed-packet impairment proof.
+- Documentation validation: check local links/anchors, actual API members, executable
+  integration/example snippets, original15media references/bytes, existing
+  demos/tests/demo-release.test.js and git diff whitespace. No new runtime tests
+  are needed for this documentation-only change. Actual results are in log.md.
+- [Full status, scientific limits and next gates](reports/2026-11-08-library-status-audit.md).

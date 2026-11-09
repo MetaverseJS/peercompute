@@ -8,8 +8,8 @@ Status: active; browser-based peer in the network.
 
 ## Composition
 - NodeKernel orchestrator.
-- Managers: StateManager, NetworkManager, ComputeManager, Local IO Manager.
-- DataState store + State Workers.
+- Managers: StateManager, NetworkManager, ComputeManager; application-owned I/O.
+- DataState store; general State Workers remain planned.
 - CPU, WASM, and WebGPU compute workers.
 - GPU hub on main thread for shared-GPU tasks.
 
@@ -33,11 +33,13 @@ Status: active; browser-based peer in the network.
 
 ## Execution Context
 - Main browser thread for orchestration + UI.
-- Web Workers for state and compute; optional Service Worker for networking.
+- Managed Web Workers for compute. Dedicated state/network workers remain planned;
+  demo service workers provide shell caching/isolation rather than background P2P.
 
 ## Security
 - Root nodes served over HTTPS/WSS.
-- Nodes exchange non-executable data (JSON or binary buffers).
+- Shared state is data. Opt-in remote compute can request application module
+  execution; addressed pubsub is not an authenticated execution boundary.
 
 ## Testing
 - Integration tests for join/leave, state sync, and scheduler behavior.
