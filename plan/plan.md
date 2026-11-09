@@ -1928,3 +1928,12 @@ Implementation in progress: bounded world senses and LLM-selected approach/follo
   learned obstacle planning/online training, bounded episode retention and no
   automatic future-memory synchronization. Only internal preview publication is
   authorized; GitHub Pages remains on hold.
+
+### November 9 — NetViz cross-demo survey (implementation not yet requested)
+
+Session discovery spans demos, but the graph currently targets one topology/room.
+Attach also retains the wrong game identifier for other demos; standalone model
+connections lack NodeKernel telemetry publication. A complete observed-network
+view needs shared telemetry plus an All demos aggregator with separate world/model
+connections. Live internal NetViz discovery verified; no implementation or Pages
+publication in this survey. Details and evidence are in plan/log.md.
