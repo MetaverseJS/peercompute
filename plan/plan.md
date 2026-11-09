@@ -14,6 +14,13 @@ The root node should exist on a domain secured with SSL enabling all executable 
 
 ## Project Goals:
 
+November8 README/audit publication complete: reviewed documentation commits are
+on origin/main as c640b991 and b844a376, with17release-documentation checks passing
+and exact reviewed-content verification. Generated Pages assets are unchanged;
+separate microphone runtime58f8c49a remains on the model-demo branch. Detailed
+publication receipts and the final evidence-only commit are recorded in log.md.
+
+
 November8 complete library/source audit: all1,047 authored files (25,002,942bytes,
 466,636lines), including full root/Multiscale logs and every plan, have been read
 with gap-free coverage. See [current status](reports/2026-11-08-library-status-audit.md).

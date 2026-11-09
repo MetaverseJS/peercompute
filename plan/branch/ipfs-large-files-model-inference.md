@@ -1326,3 +1326,11 @@ records current managed runtimes, whole-request routing, retention/reseed scope,
 scripted body behavior and remaining physical/multi-host qualification. It does
 not reopen superseded one-model/storage-cap/bootstrap limitations or claim learned
 agents, model sharding, publicDHT or optimalCA topology. No runtime/release change.
+
+
+### 2026-11-08 documentation publication
+
+User authorized pushing the reviewed library documentation to main. Commits
+173270e1/853c986c were selectively integrated as c640b991/b844a376 and pushed;
+the separate microphone runtime fix stays on this feature branch. Reviewed docs
+and original media are preserved; existing generated Pages assets are unchanged.
