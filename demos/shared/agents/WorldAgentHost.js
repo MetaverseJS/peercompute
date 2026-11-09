@@ -40,7 +40,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
   if (!adapter?.upsert || !adapter?.normalizePosition || !adapter?.dispose) throw new Error('A world agent body adapter is required');
   const lifetime = new AbortController(), bodies = new Map(), heads = new Map(), transcripts = new Map();
   let runtime, agents, network, worldManager, speech, audio, ui, selectedKey, disposed = false, closing, unsubscribe;
-  let refreshing, networkStarting, modelStarting, networkTimer, panel, panelOpening, panelClosing, panelShell, panelReturnFocus, embodimentLease;
+  let refreshing, networkStarting, modelStarting, networkTimer, navigationTimer, panel, panelOpening, panelClosing, panelShell, panelReturnFocus, embodimentLease;
   let operation, operationDone, voicePreparation, voicePreparationDone, recordingStart, voiceEnabled = false, recording = false;
   let appearance, appearancePresenter, worldChat, experience, motor, memory, social, socialOperation, socialDone;
   const socialStates = new Map();
@@ -72,8 +72,16 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     return position ? { ...body, position: adapter.normalizePosition(position) } : body;
   }
   const list = () => [...bodies.values()].map(liveBody);
+  function refreshNavigation() {
+    if (disposed || !ui?.setNavigationStatus || !adapter.getResidentMotorStatus || ui.isNavigationVisible?.() === false) return;
+    // Physical details belong to the owner's inspector, never the public body
+    // directory or model prompt. Other scenes need not implement this surface.
+    for (const body of bodies.values()) if (body.local) {
+      ui.setNavigationStatus(body.key, adapter.getResidentMotorStatus(body.key));
+    }
+  }
   const updateList = () => {
-    if (!disposed) { const entries = list(); ui.setAgents(entries); appearancePresenter?.sync(entries); worldChat?.sync(); social?.sync(); }
+    if (!disposed) { const entries = list(); ui.setAgents(entries); refreshNavigation(); appearancePresenter?.sync(entries); worldChat?.sync(); social?.sync(); }
   };
   function setBody(descriptor) {
     // A directory/activity refresh has no new speech. Only an explicit empty
@@ -184,6 +192,8 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
       requesterPeerId: requesterPeerId || worldNetwork()?.peerId, prompt, scene: JSON.parse(context),
       publicConversationId: await worldConversationId(worldId, 'public-room'), signal });
     const result = await agents.run(agentId, { prompt: turn?.prompt ?? prompt, conversationId, worldContext: turn?.worldContext ?? context,
+      ...(turn?.taskInstructions ? { taskInstructions: turn.taskInstructions } : {}),
+      ...(turn?.legacyHistorySuffix ? { legacyHistorySuffix: turn.legacyHistorySuffix } : {}),
       maxNewTokens: 512, task: 'text-generation', signal });
     const current = await agents.get(agentId);
     const output = turn ? await experience.finish(turn, result.result.text, { valid: () => !!bindingOf(current)
@@ -449,6 +459,8 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
           ...(incoming.agentId ? { agentId: incoming.agentId } : {}) }, eventId: incoming.id,
         prompt, statement: incoming.text, scene: JSON.parse(observations), signal: combined });
       const result = await agents.run(body.agentId, { task: 'text-generation', signal: combined,
+        ...(turn?.taskInstructions ? { taskInstructions: turn.taskInstructions } : {}),
+        ...(turn?.legacyHistorySuffix ? { legacyHistorySuffix: turn.legacyHistorySuffix } : {}),
         conversationId, prompt: turn?.prompt ?? prompt, worldContext: turn?.worldContext ?? observations, maxNewTokens: 512 });
       combined.throwIfAborted();
       const after = await agents.get(body.agentId);
@@ -778,6 +790,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
       if (embodimentLease) void refreshLocal().catch(fail);
       else updateList();
     }, 5000);
+    if (ui.setNavigationStatus && adapter.getResidentMotorStatus) navigationTimer = setInterval(refreshNavigation, 500);
   })();
   ready.catch(fail);
   return {
@@ -793,7 +806,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     get runtime() { return runtime; },
     async dispose() {
       if (closing) return closing;
-      disposed = true; lifetime.abort(new DOMException('World closed', 'AbortError')); clearInterval(networkTimer); unsubscribe?.();
+      disposed = true; lifetime.abort(new DOMException('World closed', 'AbortError')); clearInterval(networkTimer); clearInterval(navigationTimer); unsubscribe?.();
       closing = (async () => {
         await ready.catch(() => {}); await cancel(); await networkStarting; await modelStarting; await closePanel();
         await social?.dispose(); await worldChat?.dispose(); await appearancePresenter?.dispose(); await appearance?.dispose();

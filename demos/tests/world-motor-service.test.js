@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createResidentMotorService } from '../shared/agents/motor/ResidentMotorService.js';
 import { evaluateNetwork } from '../shared/agents/motor/policyReference.js';
+import { MOTOR_INPUTS } from '../shared/agents/motor/motorContracts.js';
 
 const observation = { relativePosition: [20, 0], velocity: [0, 0], targetVelocity: [0, 0], stopDistance: 10 };
 const batch = [{ id: 'ada', observation }];
@@ -22,9 +23,9 @@ function fixture(options = {}) {
       }
       if (task.data.command === 'infer') {
         await options.gate?.promise; task.signal.throwIfAborted(); dispatches++;
-        const inputs = task.data.inputs, values = new Float32Array(inputs.length / 7 * 2);
+        const inputs = task.data.inputs, values = new Float32Array(inputs.length / MOTOR_INPUTS * 2);
         // Explicit simulated worker for host lifecycle tests only, not GPU evidence.
-        for (let i = 0; i < inputs.length / 7; i++) values.set(evaluateNetwork(weights, inputs.subarray(i * 7, i * 7 + 7)), i * 2);
+        for (let i = 0; i < inputs.length / MOTOR_INPUTS; i++) values.set(evaluateNetwork(weights, inputs.subarray(i * MOTOR_INPUTS, (i + 1) * MOTOR_INPUTS)), i * 2);
         return { backend: 'webgpu', worker: true, policyId, dispatches, values };
       }
       return { disposed: true };

@@ -9,11 +9,11 @@ export function validateCheckpoint(checkpoint) {
       || checkpoint.weights.some(v => !Number.isFinite(v) || Math.abs(v) > 100)) throw new Error('Invalid resident motor checkpoint');
   return checkpoint;
 }
-export function evaluateNetwork(weights, input, activations) {
+export function evaluateNetwork(weights, input, activations, shape = POLICY_SHAPE) {
   let current = input, offset = 0;
   if (activations) activations.length = 0;
-  for (let layer = 1; layer < POLICY_SHAPE.length; layer++) {
-    const width = POLICY_SHAPE[layer], previous = POLICY_SHAPE[layer - 1], next = new Float32Array(width);
+  for (let layer = 1; layer < shape.length; layer++) {
+    const width = shape[layer], previous = shape[layer - 1], next = new Float32Array(width);
     for (let row = 0; row < width; row++) {
       let total = weights[offset + width * previous + row];
       for (let col = 0; col < previous; col++) total += weights[offset + row * previous + col] * current[col];
@@ -23,7 +23,7 @@ export function evaluateNetwork(weights, input, activations) {
   }
   return current;
 }
-export function referenceMotorAction(weights, observation) {
+export function referenceMotorAction(weights, observation, shape = POLICY_SHAPE) {
   const encoded = encodeMotorObservation(observation);
-  return decodeMotorAction(evaluateNetwork(weights, encoded.input), encoded.direction);
+  return decodeMotorAction(evaluateNetwork(weights, encoded.input, undefined, shape), encoded.direction);
 }

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import * as CANNON from 'cannon-es';
 import checkpoint from '../shared/agents/motor/residentMotorCheckpoint.js';
+import baseline from '../shared/agents/motor/residentMotorBaseline.js';
 import { MOTOR_DYNAMICS as D, encodeMotorObservation, validateMotorBatch } from '../shared/agents/motor/motorContracts.js';
 import { PARAMETER_COUNT, referenceMotorAction, validateCheckpoint } from '../shared/agents/motor/policyReference.js';
 import { stepMotorState, evaluatePolicy } from '../shared/agents/motor/trainingEnvironment.js';
@@ -14,8 +15,12 @@ test('checked-in policy is a finite reproducible learned checkpoint with held-ou
   assert.equal(checkpoint.training.kind, 'seeded-demonstration-behavioral-cloning');
   assert(checkpoint.training.updates > 1000); assert(checkpoint.training.finalMse < 0.02);
   assert.equal(checkpoint.training.evaluation.trained.approach.successRate, 1);
-  assert.equal(checkpoint.training.evaluation.zero.approach.successRate, 0);
-  assert.equal(checkpoint.training.evaluation.random.approach.successRate, 0);
+  assert(checkpoint.training.evaluation.navigation.successRate >= .9);
+  assert(checkpoint.training.evaluation.navigation.successRate > checkpoint.training.evaluation.baseline.successRate);
+  assert.equal(checkpoint.training.evaluation.zero.successRate, 0);
+  assert.equal(checkpoint.training.evaluation.random.successRate, 0);
+  assert.equal(baseline.shape[0], 7); assert.equal(baseline.weights.length, 1378);
+  assert.equal(baseline.policyId, `sha256:${createHash('sha256').update(JSON.stringify(baseline.weights)).digest('hex')}`);
 });
 test('loaded learned weights reach and follow in held-out closed-loop rollouts; zero actions do not', () => {
   const learned = evaluatePolicy(observation => referenceMotorAction(checkpoint.weights, observation), 12);

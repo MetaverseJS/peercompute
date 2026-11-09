@@ -198,7 +198,7 @@ test('appearance presentation is bounded and local-only; retries await the host 
 test('optional appearance prompt preserves failed-save draft and rejects injected over-limit text', async t => {
   const page = await fixture(t); await openResidents(page);
   const dialog = page.getByRole('dialog', { name: 'Residents', exact: true });
-  await dialog.locator('summary').click();
+  await dialog.locator('summary').filter({ hasText: 'Place a resident' }).click();
   await dialog.getByRole('textbox', { name: 'Resident name', exact: true }).fill('Saved look');
   const appearance = dialog.getByRole('textbox', { name: 'Physical appearance', exact: true });
   await appearance.evaluate(element => { element.value = 'x'.repeat(1001); });
@@ -350,7 +350,7 @@ test('Residents is one accessible roster with owner-only movement/recovery/remov
   await page.waitForFunction(() => calls.some(call => call.type === 'resume'));
   await dialog.getByRole('combobox', { name: 'Movement for Ada', exact: true }).selectOption('follow');
   await page.waitForFunction(() => calls.some(call => call.type === 'movement' && call.mode === 'follow'));
-  await dialog.locator('summary').click(); await dialog.getByRole('textbox', { name: 'Resident name', exact: true }).fill('New resident');
+  await dialog.locator('summary').filter({ hasText: 'Place a resident' }).click(); await dialog.getByRole('textbox', { name: 'Resident name', exact: true }).fill('New resident');
   await dialog.getByRole('textbox', { name: 'Resident goals', exact: true }).fill('Listen\nHelp visitors');
   await dialog.getByRole('textbox', { name: 'Physical appearance', exact: true }).fill('  A friendly blue robot face  ');
   assert.equal(await dialog.getByRole('textbox', { name: 'Physical appearance', exact: true }).getAttribute('maxlength'), '1000');
@@ -520,7 +520,7 @@ test('peer clone action requires advertised permission and failed profile saves 
 
 test('one history-sharing control defaults on for new residents and preserves legacy consent on unrelated edits', async t=>{
  const page=await fixture(t);await openResidents(page);
- const dialog=page.getByRole('dialog',{name:'Residents',exact:true});await dialog.locator('summary').click();
+ const dialog=page.getByRole('dialog',{name:'Residents',exact:true});await dialog.locator('summary').filter({hasText:'Place a resident'}).click();
  const history=dialog.getByRole('checkbox',{name:'Share resident history',exact:true});
  assert.equal(await history.isChecked(),true);assert.equal(await history.isEnabled(),true);
  assert.equal(await dialog.getByRole('checkbox',{name:/Allow peers to clone|Share public world memories/}).count(),0);
@@ -532,7 +532,7 @@ test('one history-sharing control defaults on for new residents and preserves le
 });
 
 test('creation has public history on and private conversations off, with explicit consent and dependency gates', async t=>{
- const page=await fixture(t);await openResidents(page);const dialog=page.getByRole('dialog',{name:'Residents',exact:true});await dialog.locator('summary').click();
+ const page=await fixture(t);await openResidents(page);const dialog=page.getByRole('dialog',{name:'Residents',exact:true});await dialog.locator('summary').filter({hasText:'Place a resident'}).click();
  const history=dialog.getByRole('checkbox',{name:'Share resident history',exact:true}),privateChoice=dialog.getByRole('checkbox',{name:'Include private conversations',exact:true});
  assert.equal(await history.isChecked(),true);assert.equal(await privateChoice.isChecked(),false);assert.equal(await privateChoice.isEnabled(),true);
  assert.equal(await dialog.getByText(/other players who clone this resident can read them/).count(),1);
@@ -559,7 +559,7 @@ test('owner can revoke private history without changing public history; unrelate
 test('resident initiation defaults off, is independent from world replies, and resets for the next creation', async t => {
   const page = await fixture(t); await openResidents(page);
   const dialog = page.getByRole('dialog', { name: 'Residents', exact: true });
-  await dialog.locator('summary').click();
+  await dialog.locator('summary').filter({ hasText: 'Place a resident' }).click();
   const initiate = dialog.getByRole('checkbox', { name: 'Initiate conversations', exact: true });
   const respond = dialog.getByRole('checkbox', { name: 'Respond to world chat', exact: true });
   assert.equal(await initiate.isChecked(), false); assert.equal(await respond.isChecked(), false);
@@ -609,4 +609,79 @@ test('social status stays inside local resident controls and renders bounded fri
   assert.equal(await local.locator('img').count(), 0);
   assert.match(await local.innerText(), /Watching for someone nearby/);
   assert.equal(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth), true);
+});
+
+test('local movement inspector shows measured navigation and retains expansion and focus across resident refreshes', async t => {
+  const page = await fixture(t);
+  assert.equal(await page.evaluate(() => ui.isNavigationVisible()), false);
+  await openResidents(page); assert.equal(await page.evaluate(() => ui.isNavigationVisible()), true);
+  await page.evaluate(() => {
+    ui.setNavigationStatus('local:ada', { key:'local:ada', type:'approach', targetId:'human:visitor', targetName:'Visitor',
+      status:'detouring', distance:24.5, stopDistance:10, progress:{distanceTravelled:8.2,unproductiveSeconds:1.5,targetClear:false},
+      backend:'webgpu',worker:true,policyId:'held-out-navigation-test',dispatches:42 });
+    ui.setNavigationStatus('peer:remote', { status:'moving',targetName:'PRIVATE_REMOTE_DETAIL' });
+    ui.setNavigationStatus('unknown', { status:'moving',targetName:'UNKNOWN_DETAIL' });
+  });
+  const roster=page.getByRole('dialog',{name:'Residents',exact:true});
+  const panel=roster.locator('[data-agent-key="local:ada"] [data-resident-navigation]');
+  assert.equal(await panel.evaluate(element=>element.open),false);
+  await panel.locator('summary').click();
+  assert.equal(await panel.locator('[data-navigation-field="target"]').innerText(),'Visitor');
+  assert.equal(await panel.locator('[data-navigation-field="status"]').innerText(),'Going around an obstacle');
+  assert.equal(await panel.locator('[data-navigation-field="distance"]').innerText(),'24.5 units · stop at 10');
+  assert.equal(await panel.locator('[data-navigation-field="progress"]').innerText(),'8.2 units travelled · 1.5s since progress');
+  assert.equal(await panel.locator('[data-navigation-field="direct-path"]').innerText(),'Obstructed');
+  assert.equal(await panel.locator('[data-navigation-field="controller"]').innerText(),'WebGPU · managed worker');
+  assert(!await roster.innerText().then(value=>value.includes('PRIVATE_REMOTE_DETAIL')||value.includes('UNKNOWN_DETAIL')||value.includes('%')));
+  assert.equal(await roster.locator('[data-agent-key="peer:remote"] [data-resident-navigation]').count(),0);
+  await panel.locator('summary').focus();
+  const unchanged=await page.evaluate(() => {
+    const old=document.querySelector('[data-agent-key="local:ada"] [data-resident-navigation]');
+    ui.setAgents(residents);return old===document.querySelector('[data-agent-key="local:ada"] [data-resident-navigation]');
+  });
+  assert.equal(unchanged,true);assert.equal(await panel.evaluate(element=>element.open),true);
+  assert.equal(await panel.locator('summary').evaluate(element=>element===document.activeElement),true);
+  await page.evaluate(()=>ui.setNavigationStatus('local:ada',{key:'wrong-body',status:'failed',blockedReason:'WRONG_BODY'}));
+  assert(!await panel.innerText().then(value=>value.includes('WRONG_BODY')));
+  await roster.getByRole('button',{name:'Edit Ada',exact:true}).click();
+  assert.equal(await page.evaluate(()=>ui.isNavigationVisible()),false);
+  await page.keyboard.press('Escape');assert.equal(await page.evaluate(()=>ui.isNavigationVisible()),true);
+  assert.equal(await page.evaluate(()=>calls.filter(call=>call.type==='movement').length),0,'Displaying navigation never issues a movement command');
+});
+
+test('blocked mobile inspector bounds text and marks missing worker evidence without inventing progress', async t => {
+  const page=await fixture(t,{mobile:true});await openResidents(page);
+  await page.evaluate(()=>ui.setNavigationStatus('local:ada',{key:'local:ada',type:'follow',status:'blocked',targetName:'<img src=x>'.repeat(100),
+    distance:Infinity,stopDistance:-1,progress:{distanceTravelled:NaN,unproductiveSeconds:-2,targetClear:false},
+    blockedReason:'<script>unsafe()</script>'.repeat(100),backend:'webgpu',worker:false,policyId:'test-policy'}));
+  const roster=page.getByRole('dialog',{name:'Residents',exact:true});
+  const panel=roster.locator('[data-agent-key="local:ada"] [data-resident-navigation]');await panel.locator('summary').click();
+  assert.equal(await panel.locator('[data-navigation-field="controller"]').innerText(),'Execution not verified');
+  assert.equal(await panel.locator('[data-navigation-field="distance"]').innerText(),'Unavailable');
+  assert.equal(await panel.locator('[data-navigation-field="progress"]').innerText(),'No measurements yet');
+  assert((await panel.locator('[data-navigation-field="details"]').innerText()).length<=240);
+  assert((await panel.locator('[data-navigation-field="target"]').innerText()).length<=160);
+  assert.equal(await panel.locator('img,script').count(),0);
+  assert.equal(await roster.evaluate(element=>element.scrollWidth<=element.clientWidth),true);
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+});
+
+test('navigation snapshots are removed when local ownership ends and cannot recreate a removed resident', async t => {
+  const page=await fixture(t);await openResidents(page);
+  await page.evaluate(()=>{ui.setNavigationStatus('local:ada',{status:'moving',targetName:'OWNER_ONLY_TARGET'});residents[0].local=false;ui.setAgents(residents);ui.setNavigationStatus('local:ada',{status:'moving',targetName:'OWNER_ONLY_TARGET'});});
+  assert.equal(await page.locator('[data-agent-key="local:ada"] [data-resident-navigation]').count(),0);
+  assert(!await page.locator('.cube-native-ui').innerText().then(value=>value.includes('OWNER_ONLY_TARGET')));
+  await page.evaluate(()=>ui.dispose());assert.equal(await page.evaluate(()=>ui.isNavigationVisible()),false);
+  assert.equal(await page.locator('[data-resident-navigation]').count(),0);
+});
+
+test('legacy roaming is explicitly scripted while the learned controller is idle', async t => {
+  const page=await fixture(t);await openResidents(page);
+  await page.evaluate(()=>ui.setNavigationStatus('local:ada',{key:'local:ada',type:'roam',status:'idle'}));
+  const panel=page.locator('[data-agent-key="local:ada"] [data-resident-navigation]');
+  assert.equal(await panel.locator('summary').innerText(),'Movement · Roam (scripted)');await panel.locator('summary').click();
+  assert.equal(await panel.locator('[data-navigation-field="action"]').innerText(),'Roam (scripted)');
+  assert.equal(await panel.locator('[data-navigation-field="status"]').innerText(),'Learned controller idle');
+  await page.evaluate(()=>ui.setNavigationStatus('local:ada',{key:'local:ada',type:'stationary',status:'idle'}));
+  assert.equal(await panel.locator('[data-navigation-field="action"]').innerText(),'Stay here');
 });

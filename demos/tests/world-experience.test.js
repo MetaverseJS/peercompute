@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createWorldExperience } from '../shared/agents/WorldExperience.js';
+import { compactWorldContext, createWorldExperience } from '../shared/agents/WorldExperience.js';
+import { WORLD_INTENT_INSTRUCTIONS, WORLD_INTENT_LEGACY_SUFFIX } from '../shared/agents/WorldIntent.js';
 
 function fixture() {
   let observer, clock = 1000;
@@ -91,5 +92,45 @@ test('unsolicited encounters never fabricate heard messages and distinguish deli
   assert.match(f.episodes.at(-1).outcome, /acknowledged by 1.*reading is unknown/);
   assert.equal(f.episodes.at(-1).audience, 'public');
   assert.equal(f.episodes.filter(e => e.kind === 'heard').length, 1);
+  await f.experience.dispose();
+});
+
+test('prompt projection preserves exact target identity and provenance without altering raw evidence', () => {
+  const senses = { observedAt: 1234, requesterId: 'human:authenticated-visitor',
+    self: { id: 'resident:owner:ada', agentId: 'ada', ownerPeerId: 'owner', name: 'Ada', position: [0.123456789, 3, 0], intentRevision: 9 },
+    participants: [{ id: 'human:authenticated-visitor', peerId: 'authenticated-visitor', kind: 'human', name: 'Pat',
+      position: [19.987654321, 3, 0], relativePosition: [19.864197532, 0, 0], velocity: [0.000000001, 0, 0], distance: 19.864197532 }], obstacles: [] };
+  const episodes = [{ kind: 'action-outcome', when: 1000, who: { peerId: 'authenticated-visitor', name: 'Pat' },
+    where: [1.23456789, 3, 0], outcome: 'approach: blocked',
+    text: 'Physical adapter reported blocked near Pat. Policy sha256:diagnostic-hash; backend webgpu. Target enclosed.',
+    source: { kind: 'verified-action', eventId: 'full-receipt-id' } },
+  { kind: 'heard', when: 900, text: 'I reached the target.', source: { kind: 'shared-memory', sourceAgentId: 'ancestor', peerId: 'other-host', eventId: 'clone-receipt' } }];
+  const before = structuredClone({ senses, episodes });
+  const context = compactWorldContext({ senses, memories: episodes });
+  assert.equal(context.senses.requesterId, senses.requesterId); assert.equal(context.senses.self.id, senses.self.id);
+  assert.equal(context.senses.participants[0].id, senses.participants[0].id);
+  assert.deepEqual(context.senses.participants[0].position, [19.988, 3, 0]);
+  assert.equal(context.senses.self.intentRevision, undefined);
+  assert.equal(context.memories[0].source.kind, 'verified-action'); assert.equal(context.memories[0].outcome, 'approach: blocked');
+  assert.match(context.memories[0].text, /Target enclosed/); assert.doesNotMatch(JSON.stringify(context), /diagnostic-hash|full-receipt-id/);
+  assert.deepEqual(context.memories[1].source, { kind: 'shared-memory', sourceAgentId: 'ancestor', peerId: 'other-host' });
+  assert.deepEqual({ senses, episodes }, before);
+});
+
+test('new turns retain raw prompts and validated senses while reusing verified outcome memory', async () => {
+  const f = fixture(), turn = await f.turn({ prompt: 'Come here' });
+  assert.equal(turn.prompt, 'Come here'); assert.equal(turn.taskInstructions, WORLD_INTENT_INSTRUCTIONS);
+  assert.equal(turn.legacyHistorySuffix, WORLD_INTENT_LEGACY_SUFFIX);
+  await f.experience.finish(turn, reply);
+  f.outcome({ ...f.actions[0], status: 'arrived', position: [10.123456789, 3, 0], policyId: 'trained-hash', backend: 'webgpu' });
+  await new Promise(resolve => setImmediate(resolve));
+  const next = await f.turn({ prompt: 'Follow me' }), context = JSON.parse(next.worldContext);
+  assert.equal(next.prompt, 'Follow me');
+  const outcome = context.memories.find(item => item.kind === 'action-outcome');
+  assert.equal(outcome.source.kind, 'verified-action'); assert.equal(outcome.outcome, 'approach: arrived');
+  assert.deepEqual(outcome.where, [10.123, 3, 0]);
+  const saved = f.episodes.find(item => item.kind === 'action-outcome');
+  assert.equal(saved.where[0], 10.123456789); assert.match(saved.text, /trained-hash/); assert(saved.source.eventId);
+  assert.equal(f.episodes.filter(item => item.kind === 'heard').some(item => item.text.includes('response format')), false);
   await f.experience.dispose();
 });

@@ -539,3 +539,30 @@ test('restored follow can wait for the owner session identity without leaving a 
  });
  assert.equal(result.same,true);assert.equal(result.count,1);assert.equal(result.target,'human:owner-peer');assert(result.position[2]>2);
 });
+
+test('motor ticks avoid public terrain queries, preserve visibility admission and invalidate geometry after body removal', async t => {
+  const page = await fixture(t);
+  const result = await page.evaluate(async () => {
+    layer.upsert(base); layer.setMotor(controlledMotor); layer.setIntent(base.key, { type: 'follow', targetId: 'human:owner-peer' });
+    let groundReads = 0, sensorReads = 0;
+    layer.groundHeight = () => { groundReads++; return 0; };
+    const sample = layer.navigationSensors.sample.bind(layer.navigationSensors);
+    layer.navigationSensors.sample = (...args) => { sensorReads++; return sample(...args); };
+    for (let i = 0; i < 60; i++) { physics.world.step(1 / 60); if (layer.motor.pending) await layer.motor.pending.done; }
+    const hotPath = { groundReads, sensorReads };
+    humanBody.position.x = 40;
+    layer.observe(base.key); const publicReads = groundReads;
+    physics.world.removeBody(humanBody); physics.world.step(1 / 60);
+    const afterRemoval = sensorReads;
+    participants.push({ id: 'human:hidden', peerId: 'hidden', name: 'Distant', position: [400, 3, 0] });
+    physics.bodies.set('hidden', new CANNON.Body({ position: new CANNON.Vec3(10, 3, 0) }));
+    let unseenRejected = false;
+    try { layer.setIntent(base.key, { type: 'follow', targetId: 'human:hidden' }); } catch { unseenRejected = true; }
+    layer.setMovement(base.key, 'roam'); groundReads = 0;
+    for (let i = 0; i < 60; i++) physics.world.step(1 / 60);
+    return { hotPath, publicReads, afterRemoval, unseenRejected, roamGroundReads: groundReads };
+  });
+  assert.deepEqual(result.hotPath, { groundReads: 0, sensorReads: 11 });
+  assert(result.publicReads > 0); assert.equal(result.afterRemoval, 12); assert.equal(result.unseenRejected, true);
+  assert.equal(result.roamGroundReads, 0);
+});

@@ -1,4 +1,4 @@
-import { parseWorldReply, validateWorldIntent, worldIntentPrompt } from './WorldIntent.js';
+import { parseWorldReply, validateWorldIntent, WORLD_INTENT_INSTRUCTIONS, WORLD_INTENT_LEGACY_SUFFIX } from './WorldIntent.js';
 
 const encoder = new TextEncoder();
 const size = value => encoder.encode(JSON.stringify(value)).length;
@@ -6,6 +6,47 @@ function excerpt(value, maximum) {
   let result = '';
   for (const ch of String(value ?? '')) { if (encoder.encode(result + ch).length > maximum) break; result += ch; }
   return result;
+}
+
+const selected = (value, keys) => Object.fromEntries(keys.filter(key => value?.[key] !== undefined).map(key => [key, value[key]]));
+function rounded(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) return Math.round(value * 1000) / 1000;
+  if (Array.isArray(value)) return value.map(rounded);
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, rounded(item)]));
+  return value;
+}
+
+/** A prompt projection, never the evidence used for physics or durable memory.
+ * Preserve exact observed target IDs and provenance; omit repeated transport
+ * identity fields and diagnostic hashes that consume small-model context. */
+export function compactWorldContext({ scene = {}, senses, memories = [] }) {
+  const context = { scene: rounded(scene), senses: {
+    ...selected(senses, ['observedAt', 'requesterId']),
+    self: rounded(selected(senses.self, ['id', 'name', 'position', 'velocity', 'status'])),
+    participants: senses.participants.map(item => rounded(selected(item,
+      ['id', 'kind', 'name', 'position', 'relativePosition', 'velocity', 'distance']))),
+    obstacles: rounded(senses.obstacles ?? []),
+  }, memories: memories.map(item => {
+    const who = item.who ?? {}, peerId = who.peerId;
+    const id = peerId ? (who.agentId ? `resident:${peerId}:${who.agentId}` : `human:${peerId}`) : who.agentId;
+    const source = selected(item.source, ['kind', 'sourceAgentId']);
+    if (source.kind === 'shared-memory' && item.source.peerId) source.peerId = item.source.peerId;
+    let text = item.text;
+    // The action outcome and reason remain; engine provenance stays in the full
+    // verified-action record. Other participants' text is never rewritten.
+    if (item.kind === 'action-outcome' && source.kind === 'verified-action') {
+      text = text?.replace(/ Policy [^;]+; backend [^.]+\./, '');
+    }
+    return { kind: item.kind, when: item.when, who: { ...(id ? { id } : {}), ...(who.name ? { name: who.name } : {}) },
+      where: rounded(item.where), outcome: item.outcome, text, source };
+  }) };
+  // Retrieval relevance order is preserved. Old episodes yield to live senses
+  // and the current room conversation, just as in the full adapter budget.
+  while (size(context) > 8192 && context.memories.length) context.memories.pop();
+  if (size(context) > 8192) context.scene = { note: 'Older scene context omitted to retain current senses',
+    ...(scene.messages ? { messages: rounded(scene.messages.slice(-2)) } : {}) };
+  if (size(context) > 8192) throw new Error('Resident context exceeds its conversation budget');
+  return context;
 }
 
 /** Reusable M0 bridge: bounded sensing → proposed intent → physical receipt → scoped memory.
@@ -60,20 +101,14 @@ export function createWorldExperience({ worldId, adapter, memory, getBody, onSta
       }
       catch (error) { signal.throwIfAborted(); report(`Resident memory: ${error.message}`); }
     }
-    const context = { scene, senses, memories: memories.map(item => ({ kind: item.kind, when: item.when,
-      who: item.who, where: item.where, outcome: item.outcome, text: item.text, source: item.source })) };
-    // Prioritize current senses and the triggering conversation over old episodes.
-    while (size(context) > 8192 && context.memories.length) context.memories.pop();
-    if (size(context) > 8192) {
-      context.scene = { note: 'Older scene context omitted to retain current senses',
-        ...(scene.messages ? { messages: scene.messages.slice(-2) } : {}) };
-    }
-    if (size(context) > 8192) throw new Error('Resident context exceeds its conversation budget');
+    const context = compactWorldContext({ scene, senses, memories });
     await save({ ...scope, kind: observation ? 'encounter' : 'heard', who: speaker, where: senses.self.position,
       outcome: observation ? 'A nearby participant was observed; no message was received.' : 'The participant said this; it is not independently verified.', text: excerpt(statement, 1600),
       source: { kind: observation ? 'local-observation' : 'authenticated-message', eventId: eventId || crypto.randomUUID(), peerId: speaker.peerId } }, signal);
     signal.throwIfAborted();
-    return { key, scope, speaker, senses, signal, prompt: worldIntentPrompt(prompt), worldContext: JSON.stringify(context) };
+    return { key, scope, speaker, senses, signal, prompt,
+      taskInstructions: WORLD_INTENT_INSTRUCTIONS, legacyHistorySuffix: WORLD_INTENT_LEGACY_SUFFIX,
+      worldContext: JSON.stringify(context) };
   }
   function prepareEncounter({ target, ...options }) {
     const peerId = target.peerId || target.ownerPeerId;

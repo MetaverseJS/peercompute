@@ -4409,3 +4409,43 @@ executes on managed worker-1 with26/26layers and native WebGPU buffers; valid qu
 decisions persist correctly, including after balancing prompt wording. No actual
 spontaneous greeting is claimed; network dialogue uses a disclosed language
 fixture. Evidence: /home/cos/.cache/peercompute-social-initiative-20261109/.
+
+### November 9 — learned obstacle navigation gates (in progress)
+
+- Same bounded local sensor encoding in live physics and training; finite inputs,
+  frame transforms, wall/doorway clearance and collision geometry tested.
+- Train and retain real weights, teacher provenance, optimization history and
+  failures. Compare prior obstacle-free, zero/random and declared teacher controls
+  on100 held-out Cannon layouts; report success, collisions, stuck time, latency
+  and follow error. Do not substitute the old collision-free simulator.
+- Test actual scene motor cancellation, owner pause, stale GPU results, target
+  loss, detours and arrival with an intervening wall. Keep private geometry local.
+- Verify real managed WebGPU numerical parity and physical wall/doorway reaching,
+  actual explicit model-selected actions, native inspector desktop/mobile visuals
+  and console/network health in isolated browser contexts. Temporary builds and
+  evidence outside docs; promote only internal preview after qualification.
+
+Frozen v4 results:96/100 fresh navigation layouts (wall92%,door100%,box92%,clear100%)
+and20/20 fresh60second follow layouts. Development95/100, old checkpoint51/100,
+zero/random0/100 are separately reported. Failed candidates and collision/stuck
+metrics remain in external receipts; evaluation layouts never enter training.
+Real managed WebGPU maximum numerical difference6.26e−6 across192 observations;
+five actual browser physics cases pass with delayed1–3substep GPU output delivery.
+Reachable browser cases have zero obstacle contacts; enclosed cases report
+blockage rather than success. Measured worker wall latency averages3.2–3.5ms in
+this test environment, with maximum13.5ms, separate from simulated travel time.
+
+Final focused policy/service14/14, runtime/body43/43, native UI28/28 and host33/33
+pass (overlap; do not sum). Post-review coincident-target guard and affected runtime
+checks pass. Context correction has37/37 core/intent/experience tests,33/33 host
+tests and29/29 social/prompt/world-contract regressions. Real actual-model retry
+passes on the same resident:703 then1169 input tokens, actual approach/follow
+intentions, wall detour, moving visitor, verified-action memory and native stop.
+All208 sampled production-body positions avoid wall penetration. Desktop/mobile
+visuals inspected; zero page/console/HTTP/download/cleanup errors. Run details, images,
+source hashes and failed attempts: /home/cos/.cache/peercompute-neural-navigation-20261109/.
+
+Exact promoted5176 preview also passes trusted TLS, entry/main asset byte equality,
+v4 API, real SecretWorkshop Noise connection and desktop/mobile inspector checks.
+Mobile overflow is checked after the canvas resize, with a bounded5second wait.
+All owned browsers and the temporary5196server closed; persistent previews remain.

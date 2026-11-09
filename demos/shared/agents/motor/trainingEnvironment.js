@@ -18,7 +18,7 @@ export function demonstrationAction(observation) {
 }
 export function demonstrationSample(observation) {
   const encoded = encodeMotorObservation(observation), input = encoded.input;
-  const speed = Math.min(D.maxSpeed, Math.max(0, Math.hypot(...observation.relativePosition) - observation.stopDistance) * 0.85);
+  const speed = clamp((Math.hypot(...observation.relativePosition) - observation.stopDistance) * .85, -3, D.maxSpeed);
   // Teach in the same egocentric actuator frame as the actor. World-axis clamps
   // happen after decoding for both teacher and learner; orientation is not hidden.
   return { input, output: Float32Array.from([0, 1].map(i => clamp((3.5 * ((i ? 0 : speed)

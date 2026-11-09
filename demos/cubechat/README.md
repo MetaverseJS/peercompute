@@ -36,12 +36,14 @@ or select it as the chat target to use the same composer for a direct
 conversation. Direct visitor histories remain separate from public room chat.
 Residents start stationary. Ask a capable language model to “come here,” follow
 someone, stop or look at another observed participant. The model proposes a typed
-intention; a trained 1,378-parameter neural controller produces continuous movement
+intention; a trained 6,914-parameter neural controller produces continuous movement
 through a local ComputeManager WebGPU worker. Movement continues while a resident
 thinks or speaks. Physics reports arrival, blocked movement and lost targets.
-This first policy learned planar approach/follow/braking from demonstrations; it
-does not yet learn online or plan around obstacles. The optional **Roam (scripted)**
-setting remains a separate baseline.
+The policy uses local collision clearance to approach, follow and detour around
+boxes, walls and doorways. In **Residents**, expand **Movement** to inspect its
+target, distance, progress, blockage and actual worker backend. **Stay here**
+stops it immediately. The optional **Roam (scripted)** setting remains a separate
+baseline. Movement does not require the language model to run every frame.
 
 Use **Edit** on a resident you own to change its name, personality, goals,
 appearance and preferences while retaining its identity and memories. **Clone to
@@ -120,9 +122,27 @@ Focused tests: `node --test --test-concurrency=1 demos/tests/room-chat.test.js
  demos/tests/world-conversation-context.test.js demos/tests/cubechat-input.test.js`.
 Learned-policy and lifecycle tests: `npm run test:resident-motor`.
 World intentions/memory integration: `npm run test:resident-experience`.
-Reproduce training: `npm run train:resident-motor` (see its help before overwriting
-the committed checkpoint). Real production worker/physics checks live in
+Navigation checks: `npm run test:resident-navigation`. Reproduce the qualified
+training recipe with `npm run train:resident-navigation -- --rounds 2 --epochs 45
+--episodes 240 --evidence-dir /tmp/peercompute-navigation-training`. It requires
+Python3/NumPy and writes candidates/evidence outside the repository; only an
+explicit `--output` promotes a passing candidate. Real worker/physics checks live in
 `demos/tests/world-motor-browser.mjs` and `demos/tests/cubechat-embodiment-browser.mjs`.
+`npm run test:resident-navigation:browser` exercises physical wall/doorway/follow
+cases with actual managed WebGPU output; its optional model phase uses an owned
+cached browser profile and the production application.
+
+Navigation is offline imitation learning with learner-state correction, using
+an explicitly recorded planning teacher during training. Live motion uses frozen
+neural weights, not that teacher. The reusable sensor contract has 32 clearance
+rays; CubeChat samples its actual local physics boxes at10Hz. Detailed collision
+geometry stays on the owner and is not published in resident profiles or prompts.
+The policy qualified on96/100 fresh reaching layouts and20/20 longer follow
+layouts, plus real browser physics and numerical GPU parity. It can still fail;
+15seconds without reaching new ground or120seconds on an unchanged target stops
+the attempt and reports blockage. Arbitrary mazes, climbing and online learning
+are not qualified. Decorative meshes without colliders are not sensed; rotated
+physics boxes use conservative axis-aligned bounds.
 
 Actual browser-peer delivery and visuals are separate preview acceptance gates;
 see `plan/log.md` for results and limitations.

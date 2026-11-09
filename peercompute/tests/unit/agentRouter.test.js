@@ -53,6 +53,29 @@ test('context packing removes whole old turns and never truncates current instru
   assert.throws(() => packAgentContext({ identity: { instructions: 'x'.repeat(65536) } }, normalizeAgentTask({ prompt: 'Latest' })));
 });
 
+test('transient task instructions appear once and exact scoped legacy decorators do not multiply', () => {
+  const instructions = 'Return one typed response.', suffix = '\n\n[Old response format]\n' + instructions;
+  const events = [
+    { type: 'request', conversationId: 'world:visitor', operationId: 'a', text: 'Come here' + suffix },
+    { type: 'result', conversationId: 'world:visitor', operationId: 'a', text: 'I will try.' },
+    { type: 'request', conversationId: 'world:visitor', operationId: 'b', text: 'Keep [Old response format] as literal text' },
+    { type: 'result', conversationId: 'world:visitor', operationId: 'b', text: 'Understood.' },
+    { type: 'request', conversationId: 'private', operationId: 'c', text: 'Private secret' + suffix },
+    { type: 'result', conversationId: 'private', operationId: 'c', text: 'Secret reply.' },
+  ];
+  const before = structuredClone(events);
+  const packed = packAgentContext({ identity: { name: 'Ada', instructions: 'Be patient.' }, goals: ['Explore'] },
+    normalizeAgentTask({ prompt: 'Follow me', conversationId: 'world:visitor', taskInstructions: instructions, legacyHistorySuffix: suffix }), events);
+  assert.equal(packed.messages.filter(message => message.content.includes(instructions)).length, 1);
+  assert.equal(packed.messages[0].role, 'system'); assert.match(packed.messages[0].content, /Ada.*Be patient.*Explore/s);
+  assert.deepEqual(packed.messages.slice(1).map(message => message.content),
+    ['Come here', 'I will try.', 'Keep [Old response format] as literal text', 'Understood.', 'Follow me']);
+  assert.deepEqual(events, before);
+  assert.throws(() => normalizeAgentTask({ prompt: 'x', taskInstructions: 'é'.repeat(2049) }), /instructions/);
+  assert.throws(() => normalizeAgentTask({ prompt: 'x', taskInstructions: instructions, legacyHistorySuffix: suffix }), /scope/);
+  assert.throws(() => normalizeAgentTask({ prompt: 'x', conversationId: 'world', legacyHistorySuffix: suffix }), /instructions/);
+});
+
 test('new images use fresh visual context and follow-ups retain only the latest successful image exchange', () => {
   const head = { identity: { name: 'Ada', instructions: 'Be brief.' }, goals: ['Observe'], context: { summary: 'Prefer concise captions.' } };
   const turn = (id, task, question, answer) => [

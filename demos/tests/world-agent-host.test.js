@@ -56,6 +56,10 @@ async function boot() {
         beforeOpen: () => calls.push('input-release'),
         adapter: { upsert: (body) => bodies.set(body.key, body), remove: (key) => bodies.delete(key), normalizePosition: (value) => [...value],
           getSpawnPosition: () => [1, 3, 5], getPosition: (key) => bodies.get(key)?.position,
+          ...(window.navigationFixture ? { getResidentMotorStatus: key => {
+            calls.push(['navigation-read', key]); return { key, status: 'moving', distance: 24, backend: 'webgpu',
+              progress: { targetClear: false }, blockedReason: 'local-only-geometry-detail' };
+          } } : {}),
           getContext: (body) => ({ position: [...body.position], ...window.fixtureScene }), focus: () => {},
           setAppearance: (key, image) => calls.push(['face', key, image]),
           ...(window.embodiedFixture ? {
@@ -69,6 +73,8 @@ async function boot() {
           open: () => { callbacks.onOpen?.(); view.open = true; }, dispose: () => { view.open = false; calls.push('ui-dispose'); },
           select: (body) => { view.selected = body; }, setAgents: (list) => { view.agents = list; }, setMessages: (items) => { view.messages = items; },
           setStatus: (value) => { view.status = value; }, setBusy: (value) => { view.busy = value; }, setVoiceStatus: (value) => { view.voice = value; },
+          setNavigationStatus: (key, value) => { view.navigation ??= {}; view.navigation[key] = value; calls.push(['navigation-ui', key]); },
+          isNavigationVisible: () => window.navigationVisible === true,
         }; },
         runtimeFactory: async (options) => {
           calls.push(['runtime', options.residentModelSlots]);
@@ -132,6 +138,27 @@ async function boot() {
     };
     await start();
 }
+
+test('navigation inspection is owner-local, visibility-gated and stops polling on disposal', async t => {
+  const page = await fixture(t);
+  const key = await page.evaluate(async () => {
+    await host.dispose(); window.navigationFixture = true; window.navigationVisible = false;
+    await start(); const head = await host.spawn({ name: 'Ada' });
+    networkOptions.onDirectory([{ agentId: 'bert', ownerPeerId: 'visitor', name: 'Bert', position: [25, 3, 5], color: '#8fffd4', status: 'idle' }]);
+    return `local:${head.agentId}`;
+  });
+  await page.waitForTimeout(600);
+  assert.equal(await page.evaluate(() => calls.filter(c => c[0] === 'navigation-read').length), 0);
+  await page.evaluate(() => { window.navigationVisible = true; });
+  await page.waitForFunction(key => view.navigation?.[key]?.status === 'moving', key);
+  const result = await page.evaluate(() => ({ calls, bodies: host.getStatus().bodies, published: networkOptions.listLocalAgents() }));
+  assert(result.calls.filter(c => c[0] === 'navigation-read').every(c => c[1] === key));
+  assert(!JSON.stringify(result.bodies).includes('local-only-geometry-detail'));
+  assert(!JSON.stringify(result.published).includes('local-only-geometry-detail'));
+  const count = await page.evaluate(async () => { await host.dispose(); return calls.filter(c => c[0] === 'navigation-read').length; });
+  await page.waitForTimeout(600);
+  assert.equal(await page.evaluate(() => calls.filter(c => c[0] === 'navigation-read').length), count);
+});
 
 test('scene lifecycle preserves identity/body/history across close and restart without an automatic model or microphone', async (t) => {
   const page = await fixture(t);
@@ -582,6 +609,11 @@ test('embodied replies use real durable scoped memory and display text instead o
   assert.equal(result.originalMessages[1].text, 'I will come closer.');
   assert.equal(result.restoredMessages[0].text, 'Please come here.'); assert.equal(result.restoredMessages[1].text, 'I will come closer.');
   const input = JSON.stringify(result.input.messages); assert.match(input, /verified-action/); assert.match(input, /approach: arrived/);
+  assert.deepEqual(result.input.messages.filter(message => message.role === 'user').map(message => message.content),
+    ['Please come here.', 'Do you remember meeting me?']);
+  assert.equal(typeof result.input.taskInstructions, 'string');
+  assert.equal(result.input.messages.filter(message => message.content.includes(result.input.taskInstructions)).length, 1);
+  assert(result.input.messages.find(message => message.role === 'system').content.includes(result.input.taskInstructions));
   assert.equal(result.memory.retainedEntries >= 3, true);
 });
 

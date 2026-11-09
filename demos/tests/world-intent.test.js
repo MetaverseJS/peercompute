@@ -33,3 +33,9 @@ test('a manual movement command fences an older language intention', () => {
     observed: initial, current: { ...initial, self: { intentRevision: 5 } }, now: 1200,
   }), /newer movement command/);
 });
+
+test('legacy prompt display only removes the exact known suffix, never a quoted marker', () => {
+  const literal = 'Explain this text: \n\n[Resident response format]\nDo not remove this.';
+  assert.equal(originalWorldPrompt(literal), literal);
+  assert.equal(originalWorldPrompt(worldIntentPrompt(literal)), literal);
+});

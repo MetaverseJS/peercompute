@@ -1972,3 +1972,29 @@ pass; actual managed Qwen0.8B returns valid quiet decisions. Its natural
 introduction quality remains unqualified; controlled responses establish the
 conversation mechanics. See CubeChat README/plan for limits and test evidence.
 Internal preview updated; no public Pages deployment or push.
+
+### November 9 — proposed next CubeChat/Humunculus slice
+
+Recommendation pending implementation authorization: learned obstacle navigation
+and recovery, completing the missing M1 geometry/control capability. Current
+neural reaching/following is obstacle-free. Add bounded geometry sensing, a
+trained managed local policy and visible progress/blockage; validate walls and
+doorways on unseen layouts with actual physics. Durable model-selected goals
+follow this foundation. Actual small-model spontaneous social speech remains
+unqualified and must not be confused with verified conversation transport.
+See demos/cubechat/plan.md for proposed acceptance. No build/deploy/push.
+
+The following "do it" authorizes implementation. Work tracked as ICC task
+cubechat-neural-navigation-20261109: shared policy/training, local collision
+sensors and motor integration, native progress inspection, actual-physics/GPU
+acceptance and internal preview. Public Pages/deploy/push remains on hold.
+
+Learned navigation slice implemented and qualified: compact local collision
+sensing, frozen trained WebGPU policy, detours/recovery and native Movement
+inspection. Fresh evaluations pass96/100 reaching layouts and20/20 follow cases;
+actual managed Qwen commands execute a wall detour and moving follow in one
+conversation, retain physical receipts and obey immediate owner stop. A shared
+context-packing correction prevents resident instructions accumulating in every
+historical prompt. Internal CubeChat5176 is updated; public Pages remains unchanged.
+Scope remains planar boxes/walls/doorways, with finite blockage detection and no
+online learning or general maze guarantee. Durable model-selected goals follow.

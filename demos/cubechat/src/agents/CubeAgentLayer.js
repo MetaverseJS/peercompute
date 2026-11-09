@@ -4,6 +4,7 @@ import { WorldResidentMotion } from '../../../shared/agents/WorldResidentMotion.
 import { SpeechBubbleLayer } from '../../../shared/world/SpeechBubbleLayer.js';
 import { MOTOR_DYNAMICS as MOTOR } from '../../../shared/agents/motor/motorContracts.js';
 import { CubeResidentMotor } from './CubeResidentMotor.js';
+import { createCubeNavigationSensors } from './CubeNavigationSensors.js';
 
 const HALF_SIZE = 3;
 const MAX_COORDINATE = 1_000_000;
@@ -88,9 +89,15 @@ export class CubeAgentLayer {
     if (typeof getParticipants !== 'function') throw new TypeError('World participants must be observable');
     Object.assign(this, { scene, physics, getPlayerPosition, getParticipants, onSelect, captionDurationMs, maximumAgents, motionFactory, remoteInterpolationSeconds });
     this.entries = new Map(); this.closed = false; this.selectedKey = null; this.intentRevision = 0;
-    this.motor = new CubeResidentMotor({ getEntries: () => this.entries, observe: key => this.observe(key) });
+    this.navigationSensors = createCubeNavigationSensors({ physics, getEntries: () => this.entries });
+    this.motor = new CubeResidentMotor({ getEntries: () => this.entries,
+      observe: key => this.observeParticipants(key, { physical: true }),
+      senseNavigation: (key, target) => this.navigationSensors.sample(key, target) });
     this.onPhysicsStep = () => this.beforePhysics();
     this.physics.world.addEventListener('preStep', this.onPhysicsStep);
+    this.onNavigationGeometryChanged = () => this.motor.invalidateNavigation();
+    this.physics.world.addEventListener('addBody', this.onNavigationGeometryChanged);
+    this.physics.world.addEventListener('removeBody', this.onNavigationGeometryChanged);
     this.captions = new SpeechBubbleLayer({ scene: scene.scene, camera: scene.camera,
       getAnchor: key => this.entries.get(key)?.mesh, durationMs: captionDurationMs, maximum: maximumAgents, offsetY: 6 });
     this.group = new THREE.Group(); this.group.name = 'CubeChat agents'; scene.scene.add(this.group);
@@ -157,9 +164,10 @@ export class CubeAgentLayer {
     return result;
   }
   getMotorStatus() { return this.motor.getStatus(); }
+  getResidentMotorStatus(key) { return this.motor.getResidentStatus(key); }
 
-  /** Plain observations only. Peer IDs are session identities, never inferred from display names. */
-  observe(key, { requesterPeerId } = {}) {
+  /** Shared participant admission; motor reads omit public obstacle/terrain work. */
+  observeParticipants(key, { requesterPeerId, physical = false } = {}) {
     const entry = this.entries.get(key); if (!entry) throw new Error('Resident body is unavailable');
     const position = entry.mesh.position.toArray(), participants = [], seen = new Set();
     const append = value => {
@@ -175,17 +183,46 @@ export class CubeAgentLayer {
     for (const person of this.getParticipants().slice(0, 128)) append({ ...person, kind: 'human' });
     for (const [otherKey, other] of this.entries) if (otherKey !== key && (!other.descriptor.local || other.descriptor.shared)) append({
       id: `resident:${other.descriptor.ownerPeerId}:${other.descriptor.agentId}`, kind: 'resident', name: other.descriptor.name,
-      ownerPeerId: other.descriptor.ownerPeerId, agentId: other.descriptor.agentId, position: other.mesh.position.toArray(), velocity: other.body.velocity.toArray() });
+      ownerPeerId: other.descriptor.ownerPeerId, agentId: other.descriptor.agentId,
+      position: other.mesh.position.toArray(), velocity: other.body.velocity.toArray() });
     participants.sort((a, b) => Number(b.peerId === requesterPeerId) - Number(a.peerId === requesterPeerId) || a.distance - b.distance || a.id.localeCompare(b.id));
+    const visible = participants.slice(0, 16);
+    if (!physical) return { position, participants: visible };
+    // Preserve public visibility/range admission before resolving the chosen
+    // participants to current physics coordinates for the local controller.
+    const physicalPosition = entry.body.position.toArray();
+    return { position: physicalPosition, participants: visible.map(person => {
+      const body = person.kind === 'human'
+        ? this.physics.getPlayerBody?.(person.peerId) ?? this.physics.bodies?.get(person.peerId)
+        : [...this.entries.values()].find(other => other.descriptor.agentId === person.agentId
+          && other.descriptor.ownerPeerId === person.ownerPeerId)?.body;
+      const pose = body?.position.toArray() ?? person.position;
+      const relativePosition = pose.map((value, index) => value - physicalPosition[index]);
+      return { ...person, position: pose, relativePosition, distance: Math.hypot(relativePosition[0], relativePosition[2]) };
+    }) };
+  }
+
+  nearbyObstacleBodies(key) {
+    const entry = this.entries.get(key); if (!entry) throw new Error('Resident body is unavailable');
+    const position = entry.mesh.position;
     const privateBodies = new Set([...this.entries.values()].filter(other => other.descriptor.local && !other.descriptor.shared).map(other => other.body));
-    const obstacles = this.physics.world.bodies.filter(body => body !== entry.body && !privateBodies.has(body) && body.shapes.some(shape => shape.type === CANNON.Shape.types.BOX))
-      .map(body => ({ position: [body.position.x, this.groundHeight(body.position.x, body.position.z) + HALF_SIZE, body.position.z], radius: Math.min(30, body.boundingRadius || 3) }))
-      .filter(body => Math.hypot(body.position[0] - position[0], body.position[2] - position[2]) < 80)
-      .sort((a, b) => Math.hypot(a.position[0] - position[0], a.position[2] - position[2]) - Math.hypot(b.position[0] - position[0], b.position[2] - position[2])).slice(0, 8);
+    const distance = body => Math.hypot(body.position.x - position.x, body.position.z - position.z);
+    return this.physics.world.bodies.filter(body => body !== entry.body && !privateBodies.has(body)
+      && body.shapes.some(shape => shape.type === CANNON.Shape.types.BOX) && distance(body) < 80)
+      .sort((a, b) => distance(a) - distance(b)).slice(0, 8);
+  }
+
+  /** Plain public observations. Private collision sensing stays in the local motor. */
+  observe(key, { requesterPeerId } = {}) {
+    const entry = this.entries.get(key); if (!entry) throw new Error('Resident body is unavailable');
+    const { position, participants } = this.observeParticipants(key, { requesterPeerId });
+    const obstacles = this.nearbyObstacleBodies(key).map(body => ({
+      position: [body.position.x, this.groundHeight(body.position.x, body.position.z) + HALF_SIZE, body.position.z],
+      radius: Math.min(30, body.boundingRadius || 3) }));
     return { observedAt: Date.now(), self: { id: `resident:${entry.descriptor.ownerPeerId}:${entry.descriptor.agentId}`,
       agentId: entry.descriptor.agentId, ownerPeerId: entry.descriptor.ownerPeerId, name: entry.descriptor.name,
       position, velocity: entry.body.velocity.toArray(), status: entry.descriptor.status, intentRevision: entry.intentRevision },
-    participants: participants.slice(0, 16), obstacles,
+    participants, obstacles,
     ...(requesterPeerId && participants.some(p => p.peerId === requesterPeerId) ? { requesterId: `human:${requesterPeerId}` } : {}) };
   }
 
@@ -215,7 +252,8 @@ export class CubeAgentLayer {
       // use only the managed neural policy and never silently fall back to it.
       if (!this.motor.intents.has(key) && entry.movement === 'roam') {
         const previous = entry.mesh.position.toArray(), next = entry.motion.step({ position: previous,
-          target: previous, dt: MOTOR.fixedDt, status: 'idle', obstacles: this.observe(key).obstacles.map(o => o.position) });
+          target: previous, dt: MOTOR.fixedDt, status: 'idle',
+          obstacles: this.nearbyObstacleBodies(key).map(body => [body.position.x, HALF_SIZE, body.position.z]) });
         for (const [axis, index] of [['x', 0], ['z', 2]]) {
           const desired = Math.max(-MOTOR.maxSpeed, Math.min(MOTOR.maxSpeed, (next[index] - previous[index]) / MOTOR.fixedDt));
           const acceleration = Math.max(-MOTOR.maxAcceleration, Math.min(MOTOR.maxAcceleration, (desired - entry.body.velocity[axis]) * 4));
@@ -324,7 +362,7 @@ export class CubeAgentLayer {
     if (previous && descriptor.local && (previous.status === 'paused') !== (descriptor.status === 'paused')) entry.intentRevision = ++this.intentRevision;
     if (!previous || !descriptor.local) this.place(entry, livePosition);
     else entry.descriptor.position = [...livePosition];
-    if (descriptor.local && descriptor.status === 'paused') this.motor.halt(entry);
+    if (descriptor.local && descriptor.status === 'paused') this.motor.suspend(descriptor.key);
     if (descriptor.local && descriptor.movement !== undefined && (previous?.movement !== descriptor.movement
         || (descriptor.movement === 'follow' && previous?.ownerPeerId !== descriptor.ownerPeerId))) {
       this.setMovement(descriptor.key, descriptor.movement, { restore: true });
@@ -419,6 +457,8 @@ export class CubeAgentLayer {
     if (this.closed) return;
     this.closed = true; this.clear(); this.captions.dispose(); this.group.removeFromParent();
     this.physics.world.removeEventListener('preStep', this.onPhysicsStep); this.motor.dispose();
+    this.physics.world.removeEventListener('addBody', this.onNavigationGeometryChanged);
+    this.physics.world.removeEventListener('removeBody', this.onNavigationGeometryChanged);
     this.canvas.removeEventListener('pointerdown', this.onPointerDown, true);
     this.canvas.removeEventListener('click', this.onClick, true);
     this.canvas.removeEventListener('keydown', this.onKeyDown, true);

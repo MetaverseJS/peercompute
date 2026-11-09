@@ -1,4 +1,5 @@
 import './cubeWorldUi.css';
+import { createResidentNavigationInspector } from '../../../shared/agents/ResidentNavigationInspector.js';
 
 let sequence = 0;
 const encoder = new TextEncoder();
@@ -101,6 +102,7 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
 
   let enabled = true, disposed = false, expanded = false, selected = null, hostKey = null;
   let agents = [], roomMessages = [], roomStatus = '', agentStatus = '', worldStatus = '', busy = false;
+  const navigationInspectors = new Map();
   let sending = false, mutating = false, selecting = false, cancelling = false, modelOpening = false, closing;
   let sendDone, cancelDone, roomSendController, recordPending = false, recordIntent = false, recordEpoch = 0, voiceEpoch = 0;
   let voiceState = { enabled: false, preparing: false, recording: false };
@@ -286,6 +288,8 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
     if (disposed) return;
     const focus = list.contains(document.activeElement) ? { key: document.activeElement.closest('[data-agent-key]')?.dataset.agentKey, label: document.activeElement.getAttribute('aria-label') } : null;
     agents = (Array.isArray(next) ? next : []).filter(item => item && typeof item.key === 'string' && item.key.length <= 300).slice(0, 256);
+    const localKeys = new Set(agents.filter(agent => agent.local).map(agent => agent.key));
+    for (const [key,inspector] of navigationInspectors) if (!localKeys.has(key)) { inspector.dispose(); navigationInspectors.delete(key); }
     list.replaceChildren(); empty.hidden = agents.length > 0;
     for (const agent of agents) {
       const row = node('article', undefined, 'cube-native-resident'); row.dataset.agentKey = agent.key;
@@ -293,6 +297,9 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
       const controls = node('div', undefined, 'cube-native-actions');
       const chat = button('Chat'); chat.setAttribute('aria-label', `Chat with ${text(agent.name, 240)}`); chat.onclick = () => void choose(agent.key); controls.append(chat);
       if (agent.local) {
+        let inspector = navigationInspectors.get(agent.key);
+        if (!inspector) { inspector = createResidentNavigationInspector({ name: agent.name }); navigationInspectors.set(agent.key,inspector); }
+        inspector.setName(agent.name); row.append(inspector.element);
         if (typeof agent.socialStatus === 'string' && agent.socialStatus) {
           const state = Object.hasOwn(socialLabels, agent.socialStatus) ? agent.socialStatus : 'observing';
           const note = node('p', `Social: ${socialLabels[state]}.`, 'cube-native-note');
@@ -361,7 +368,12 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
     const keys = new Set(['room', ...agents.map(agent => agent.key)]);
     for (const map of [drafts, histories, movementByKey]) for (const key of map.keys()) if (!keys.has(key)) map.delete(key);
     renderTargets();
-    if (focus) [...list.querySelectorAll('button,select,input')].find(element => element.closest('[data-agent-key]').dataset.agentKey === focus.key && element.getAttribute('aria-label') === focus.label)?.focus();
+    if (focus) [...list.querySelectorAll('button,select,input,summary')].find(element => element.closest('[data-agent-key]').dataset.agentKey === focus.key && element.getAttribute('aria-label') === focus.label)?.focus();
+  }
+  function setNavigationStatus(key,snapshot) {
+    if (disposed || !agents.some(agent => agent.key === key && agent.local)
+        || (snapshot?.key !== undefined && snapshot.key !== key)) return;
+    navigationInspectors.get(key)?.setStatus(snapshot);
   }
   function setMessages(next) {
     if (disposed || !hostKey) return;
@@ -486,6 +498,7 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
   }));
   renderTargets(); renderMessages(); update();
   return { element: root, dialog: residents.dialog, open, close, openResidents, openModels, select, setAgents, setMessages,
+    setNavigationStatus, isNavigationVisible: () => !disposed && enabled && residents.dialog.open && !editor.dialog.open && !voice.dialog.open,
     appendMessage(role, value) { setMessages([...(histories.get(hostKey) ?? []), { role, text: value }]); },
     appendRoomMessage,
     setRoomMessages(next) { roomMessages = []; for (const message of Array.isArray(next) ? next.slice(-64) : []) appendRoomMessage(message); if (!selected) renderMessages(); },
@@ -511,6 +524,7 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
       roomSendController?.abort(new DOMException('Room chat closed', 'AbortError'));
       hideDialog(residents.dialog, false); hideDialog(voice.dialog, false); hideDialog(editor.dialog, false); root.remove();
       drafts.clear(); histories.clear(); movementByKey.clear(); restores.clear(); captionPrimed.clear(); agents = []; roomMessages = [];
+      for (const inspector of navigationInspectors.values()) inspector.dispose(); navigationInspectors.clear();
     }
   };
 }

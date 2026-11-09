@@ -1396,3 +1396,16 @@ public memory and human priority. Actual Qwen0.8B qualification establishes vali
 silence, not natural introduction quality; retain that limit in user-facing
 results. Real peer delivery/reload/mobile acceptance passes. Internal CubeChat
 preview promoted; no public Pages change or push authorized.
+
+November9 subsequent approval: implement learned obstacle navigation/recovery
+for CubeChat residents, reusing managed workers and local control contracts.
+Keep training provenance and real collision-aware held-out acceptance, add a
+small native movement inspector, and update only the internal HTTPS preview.
+Persistent autonomous goals remain a later slice; public Pages and push stay held.
+
+Navigation increment qualified locally: trained6914parameter managed WebGPU
+motor, shared bounded sensing, native movement inspection and stop/recovery.
+Fresh96/100 reaching and20/20 following cases pass; actual Qwen come/follow
+commands and native stop pass with physical memory receipts. Transient agent
+task instructions and compact prompt projection fix repeated instruction growth
+without clearing history. Internal CubeChat5176 updated; no public build or push.

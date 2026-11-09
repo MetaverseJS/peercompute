@@ -33,7 +33,9 @@ window.verifyMotor = async () => {
   try {
     await manager.initialize();
     for(let trial=0; trial<12; trial++) {
-      const batch=Array.from({length:16},(_,i)=>({id:'body'+i,observation:randomObservation(random)}));
+      const batch=Array.from({length:16},(_,i)=>({id:'body'+i,observation:{...randomObservation(random),
+        clearance:Array.from({length:32},()=>random()),targetClear:random()>.5,
+        previousAcceleration:[(random()-.5)*24,(random()-.5)*24]}}));
       const result=await service.infer(batch);
       if(result.backend!=='webgpu'||result.worker!==true) throw Error('GPU worker execution was not established');
       result.results.forEach((entry,i)=>{

@@ -282,3 +282,79 @@ A balanced prompt revision still chooses silence. Thus generated conversational
 quality remains a model-specific qualification task, not a claimed learning result.
 The deterministic fixture proves transport/orchestration, not LLM creativity.
 Internal CubeChat5176 is updated; public Pages/deploy/push remain on hold.
+
+### November 9 — next-slice recommendation (not implementation authorization)
+
+Recommend learned obstacle navigation and recovery: a resident can obey “come
+here” or “follow me” around a wall and through a doorway. The present motor has
+seven target/velocity/stopping inputs, no geometry sensors, and halts after
+prolonged lack of progress. Finish this missing M1 capability before expanding
+durable autonomous goals. Social goals currently remain memory proposals, not
+background jobs; actual Qwen0.8B spontaneous greeting quality remains unqualified.
+
+Add bounded egocentric geometry/contact observations and train a compact policy
+against the actual body dynamics, with explicit recurrent state if required.
+Keep execution local through ComputeManager and independent of language latency.
+Version the observation/checkpoint format and reuse it outside CubeChat. Expose
+the active target, progress, blocked state and actual backend in a small resident
+inspector. Keep owner stop/pause authoritative and report unreachable targets.
+Initial scope is planar boxes, walls and doorways. Existing nearby obstacle
+center/radius summaries need physics-derived clearance sensing; the current
+training simulator has no collision contacts. Progress detection must permit
+necessary detours that temporarily increase target distance, and proximity
+through an intervening wall must not count as arrival.
+
+Acceptance should use actual explicit-command inference plus real physics, with
+100 held-out layouts and separately reported reach success, collisions, stuck
+time and inference latency; the design's proposed reaching target is at least
+90%. Compare against the current policy and declared reference controllers;
+preserve failed episodes and verify browser/backend parity and lifecycle cleanup.
+This is a recommendation only: no training, implementation or deployment starts
+from the roadmap question. Persistent model-selected goals are the follow-on.
+
+#### Implementation authorized November 9
+
+The subsequent "do it" authorizes this slice. Separate local physical geometry
+from public world observations; use the same bounded clearance contract in
+training and live control. Train genuine policy weights with an explicitly
+identified offline teacher, retaining the prior obstacle-free checkpoint as a
+baseline. Navigation actions execute through the existing managed WebGPU worker.
+Actual Cannon contacts, detours, false arrival across walls, stopping, stale
+results and model/worker loss are acceptance concerns. Internal preview only.
+
+#### Learned navigation implementation and qualification
+
+The shared v2 motor contract has40 inputs (32 target-relative clearance rays,
+target visibility and relative motion) and a40→64→64→2 network with6914 learned
+parameters. Local ComputeManager WebGPU workers produce planar acceleration;
+CubeChat's adapter samples actual physics boxes at10Hz. The owner-only Movement
+inspector reports measured distance, travel, path obstruction, worker proof and
+blockage. Private collision bounds do not enter public directories or LLM context.
+
+Offline training uses NumPy behavioral cloning and learner-state corrections
+from a declared visibility-graph teacher in the actual Cannon body/contact model.
+The teacher is excluded from browser runtime. Frozen v4 checkpoint98e9eb16…bf1aa5
+passes96/100 fresh root-held-out layouts and20/20 fresh60second follow layouts.
+Earlier v1/v2/v3 candidates failed qualification and remain in external evidence.
+Separate real browser WebGPU cases pass wall-end and doorway detours,75second
+follow, false-arrival prevention and enclosed-target blockage. Numerical parity,
+pause, stale output, target loss and cleanup pass. Owner desktop/mobile visuals
+are inspected. A post-training guard fixes coincident targets inside solids;
+weights and the archived training sources remain unchanged.
+
+The first actual Qwen “come closer” request selected the exact observed participant
+and completed its detour. Its next request exposed repeated per-turn instruction
+and verbose context growth. Transient task instructions, exact legacy-decorator
+projection and compact prompt-only observations now preserve the complete saved
+history and validation evidence. The same-resident production command sequence
+now passes: actual Qwen selects approach/follow on the exact participant, the
+managed motor detours55.98units then follows12.39units, persists verified physical
+receipts, and native Stay here stops velocity immediately. Both calls use the
+cached model with no download; desktop/mobile visuals and console are clean.
+Only the internal5176 preview is promoted. Generic tokenizer-aware
+GGUF history trimming remains separate; small contexts still have finite limits.
+
+Limits: qualified on planar individual boxes/walls/doorways, not arbitrary mazes,
+climbing or online learning. Visual-only geometry has no physics obstacle;
+rotated boxes use conservative bounds. Stop after15seconds without new ground or
+120seconds on an unchanged target. Durable autonomous goals remain the follow-on.

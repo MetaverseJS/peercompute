@@ -1,7 +1,7 @@
 // Self-contained trusted task asset: Vite's new URL emits this module unchanged.
 // No relative imports, network-selected code, FP16 or silent CPU fallback.
 let session;
-const IN = 7, H = 32, OUT = 2, MAX_BATCH = 16, PARAMETERS = 1378;
+const IN = 40, H = 64, OUT = 2, MAX_BATCH = 16, PARAMETERS = 6914;
 const error = message => Object.assign(new Error(message), { code: 'ERR_RESIDENT_MOTOR_GPU' });
 const shader = `
 @group(0) @binding(0) var<storage, read> weights: array<f32>;
@@ -9,20 +9,20 @@ const shader = `
 @group(0) @binding(2) var<storage, read_write> outputs: array<f32>;
 @compute @workgroup_size(1) fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   let sample = id.x;
-  var first: array<f32, 32>; var second: array<f32, 32>;
-  for (var row = 0u; row < 32u; row++) {
-    var value = weights[224u + row];
-    for (var col = 0u; col < 7u; col++) { value += weights[row * 7u + col] * inputs[sample * 7u + col]; }
+  var first: array<f32, 64>; var second: array<f32, 64>;
+  for (var row = 0u; row < 64u; row++) {
+    var value = weights[2560u + row];
+    for (var col = 0u; col < 40u; col++) { value += weights[row * 40u + col] * inputs[sample * 40u + col]; }
     first[row] = tanh(value);
   }
-  for (var row = 0u; row < 32u; row++) {
-    var value = weights[1280u + row];
-    for (var col = 0u; col < 32u; col++) { value += weights[256u + row * 32u + col] * first[col]; }
+  for (var row = 0u; row < 64u; row++) {
+    var value = weights[6720u + row];
+    for (var col = 0u; col < 64u; col++) { value += weights[2624u + row * 64u + col] * first[col]; }
     second[row] = tanh(value);
   }
   for (var row = 0u; row < 2u; row++) {
-    var value = weights[1376u + row];
-    for (var col = 0u; col < 32u; col++) { value += weights[1312u + row * 32u + col] * second[col]; }
+    var value = weights[6912u + row];
+    for (var col = 0u; col < 64u; col++) { value += weights[6784u + row * 64u + col] * second[col]; }
     outputs[sample * 2u + row] = tanh(value);
   }
 }`;

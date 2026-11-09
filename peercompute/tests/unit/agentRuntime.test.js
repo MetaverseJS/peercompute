@@ -47,6 +47,22 @@ test('private direct task checkpoints intent before dispatch and survives reopen
   assert.equal((await restored.events(f.id)).filter((e) => e.type === 'result').length, 2); await restored.dispose();
 });
 
+test('task response instructions remain transient across persisted multi-turn conversations', async (t) => {
+  const f = await fixture(t), taskInstructions = 'Return one bounded movement intention.';
+  await f.runtime.resume(f.id);
+  for (const prompt of ['Come closer', 'Follow me', 'Stop']) {
+    await f.runtime.run(f.id, { prompt, taskInstructions, conversationId: 'world:owner' });
+  }
+  const requests = (await f.runtime.events(f.id)).filter(event => event.type === 'request');
+  assert.deepEqual(requests.map(event => event.text), ['Come closer', 'Follow me', 'Stop']);
+  assert.equal(requests.some(event => JSON.stringify(event).includes(taskInstructions)), false);
+  const dispatched = f.calls.filter(call => call.type === 'generate').at(-1).input;
+  assert.equal(dispatched.messages.filter(message => message.content.includes(taskInstructions)).length, 1);
+  assert.equal(dispatched.messages[0].role, 'system');
+  assert.deepEqual(dispatched.messages.filter(message => message.role === 'user').map(message => message.content),
+    ['Come closer', 'Follow me', 'Stop']);
+});
+
 test('local-only rejects injected peer selection and never requests network discovery mode', async (t) => {
   const peer = { ...candidate, local: false, key: 'peer:other', manifestCid: 'other' };
   const f = await fixture(t, { runtime: { router: () => ({ candidate: peer }) },
