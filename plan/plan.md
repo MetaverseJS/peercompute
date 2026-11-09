@@ -14,6 +14,14 @@ The root node should exist on a domain secured with SSL enabling all executable 
 
 ## Project Goals:
 
+November8 documentation correction: root README leads with the core conjecture of
+cellular-automata compute-topology emergence and serves as a concise library introduction, usage example
+and architecture guide. Keep all original diagrams/screenshots; move demo details
+to demo-owned READMEs, with operational depth in the library guides. Distinguish
+the implemented local-rule topology controller from resource-driven optimality
+research. This supersedes the earlier application-first README framing. Completed: root112lines, all15media
+unchanged,115local links and17release checks pass; demo/library guides own detail.
+
 November8 Android microphone follow-up: reproduce touch-first audio startup and
 repeated-hold lockout; make pending resume/worklet startup cancellable and unlock
 audio on release without starting a late recording. Implemented:54focused cases

@@ -4218,3 +4218,19 @@ negative control fails the actual-panel test as expected; owned cleanup is bound
 All three consumer builds pass. Staging and exact internal previews pass across
 desktop/phone/narrow layouts and authenticated SecretWorkshop connections. These
 checks use software rendering and synthetic audio, with no model downloads.
+
+
+## Library-first documentation — November 8
+
+For the README split, compare root image references and asset hashes to the
+pre-edit commit, validate local links/anchors and referenced npm scripts, inspect
+the integration example against actual exports/lifecycle methods, and run the
+existing demo-release suite after moving its documentation assertions to their
+new owners. No runtime build or hardware test is required for prose-only changes.
+Record current-versus-research wording and documentation size in plan/log.md.
+
+Results:115local Markdown links/anchors pass; all15root media references and bytes
+match58f8c49a. Root integration snippet parses with Node24 and matches live APIs.
+17/17existing demo-release cases pass. Library guide checks cover18JS/shell
+syntax snippets, JSON and22links; demo guide checks cover45links and15root-script
+references (link sets overlap the115total). No runtime/app/build changes.

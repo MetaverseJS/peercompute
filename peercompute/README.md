@@ -1,46 +1,32 @@
 # PeerCompute core library
 
-PeerCompute is a browser-based P2P networking and compute library built on
-libp2p. It provides shared state, worker execution, model hosting and artifact
-distribution for multiplayer games, persistent agents and collaborative
-simulations. This directory contains the runtime and its core development/test
-harness; the Vite applications live in the repository's `demos/` directory.
+PeerCompute provides browser peers with shared state, networking and managed
+JS/WASM/WebGPU execution for games, simulations and shared compute services.
 
-[Application overview and setup](../README.md) ·
-[Live demos](https://metaversejs.github.io/peercompute/) ·
-[Models and agents](https://metaversejs.github.io/peercompute/inference/)
+The **core conjecture** is that, given globally distributed devices with varying
+mutual bandwidth and compute resources, the optimal compute topology will emerge
+automatically through cellular automata whose individual nodes try to maximize
+compute throughput—like slime mold designing an optimal transit network.
 
-## Current capabilities — November 8, 2026
+The current topology controller selects neighbors using supplied spatial
+metrics, connection limits, referrals and isolation recovery. Demonstrating the
+conjecture through resource-driven placement and topology experiments remains
+research work; see the [Keystone plan](../plan/branch/keystone-demo.md).
 
-- **libp2p relay, pubsub discovery and WebRTC** for scoped browser P2P sessions,
-  including authenticated application streams for artifacts and inference.
-- **NodeKernel** orchestrator with State, Network, and Compute managers.
-- **NetworkScheduler** for decoupled network cadence (snapshots/events/commands).
-- **Room + game scoping** so different sessions do not collide.
-- **LAN-friendly relay config** via `relay-config.json`.
-- **Persistent artifacts** with verified UnixFS/IPFS blocks, manifests, explicit
-  sharing/pins and IndexedDB or Node filesystem backends.
-- **Managed model workers** for supported ONNX text/vision, GGUF text, diffusion
-  and speech tasks, with progress, cancellation, residency and resource accounting.
-- **Local/peer model routing** with capability checks, availability discovery,
-  bounded host queues and a local-first Mixed policy in the model application.
-- **Private persistent agents** with StateManager-owned identity/context/history
-  and reusable routing, speech and world-inhabitant components in the demos.
+[Project overview](../README.md) · [Demo guides](../demos/README.md) ·
+[Relay and deployment guide](docs/RELAY_SERVER.md)
 
-The [model console](../plan/demos/inference/multimodal-console.md), CubeChat and EarthGrid build on
-these services. Model files and private conversations are not replicated through
-Yjs. File retention does not keep a closed browser online; serving files and
-executing peer inference require an active reachable host. Each inference request
-runs on a selected host, not a tensor-parallel model spread across the network.
+## Capabilities
 
-## Research direction
+- Scoped libp2p discovery, WebRTC and relay transport for browser peers.
+- Shared Yjs state, network snapshots/events and layered local DataState.
+- Managed JS, WASM, WebGPU and hybrid workers with progress and cancellation.
+- Verified IPFS/UnixFS artifacts with IndexedDB or filesystem retention.
+- Optional model execution, peer inference and private persistent agent records.
 
-Resource-aware topology and workload placement remain design goals. The proposed
-Keystone demo explores local rules for reorganizing compute networks according
-to bandwidth and compute capacity; optimal organization is not an established
-runtime guarantee. The [Humunculus design](../plan/demos/humunculus/humunculus.pdf)
-builds on the existing agent layer, while learned routing, neural movement,
-self-directed training, cloning and migration remain planned.
+This directory contains the reusable runtime and its core test harness. Vite
+applications live in [`demos/`](../demos/README.md); their controls and runtime
+requirements belong in their respective guides.
 
 ## Architecture Overview
 
@@ -54,7 +40,6 @@ self-directed training, cloning and migration remain planned.
 - **GPU Hub (main thread)**: shared WebGPU context for render-coupled compute tasks.
 - **ComputeManager**: JS/WASM/WebGPU execution with worker offload, hybrid
   `wasm-webgpu` tasks, `commitDelta`, model residency and acknowledged cleanup.
-- **ioManager**: controls local input/output (like threejs and your keyboard).
 - **DataState (layered)**: hot GPU buffers, warm CPU deltas, cold IndexedDB snapshots.
 
 ### Orchestration vs Transport
@@ -69,10 +54,12 @@ self-directed training, cloning and migration remain planned.
 ![PeerCompute Topology Examples](../plan/arch/p2p-network-topology-examples.png)
 
 ### Clocking Modes (Configurable)
-PeerCompute supports multiple timing models:
-- **independent**: managers run event-driven; best throughput, least deterministic.
-- **kernel**: NodeKernel drives ticks; best determinism, higher latency.
-- **hybrid**: managers run independently but sync at kernel-defined points.
+NodeKernel currently accepts two clock-policy modes:
+- **independent**: managers run independently.
+- **kernel**: NodeKernel drives coordinated ticks.
+
+Clock policy controls cadence; it does not by itself establish deterministic
+execution across peers. Hybrid WASM+WebGPU tasks are a separate compute feature.
 
 ## Network Scheduler Features
 - Separate **snapshot**, **event**, and **command** streams.
@@ -82,31 +69,24 @@ PeerCompute supports multiple timing models:
 
 ## Quick Start
 
-Install the workspace dependencies from the **repository root** with Node.js
-**24 LTS**. To use the current application, run:
+Use Node.js **24 LTS** and install from the repository root:
 
 ```bash
 nvm use 24
 npm install
-npm run dev:inference
-```
-
-Open `https://localhost:5189/`. The root [Quick Start](../README.md#quick-start)
-covers all Vite demos, certificates and the configured SecretWorkshop backend.
-
-For the core library's webpack harness and local relay, run from the repository
-root after installing:
-
-```bash
 cd peercompute
 bash ./start-dev.sh
 ```
 
-The core server listens on port **5173**. Open `/test-p2p.html` for connectivity
-or `/games/sw2.html` and `/games/cb.html` for the legacy examples. The launcher
-prefers HTTPS when it finds a certificate/key; use the protocol it prints.
-For explicit trusted HTTPS, provide `SSL_CERT` and `SSL_KEY` together, keeping
-the private key outside the repository.
+This starts the core library's webpack harness and local relay. The core server
+uses port **5173**; open `/test-p2p.html` for connectivity or `/games/sw2.html` and
+`/games/cb.html` for the legacy examples. Use the protocol printed by the launcher.
+For trusted HTTPS, provide `SSL_CERT` and `SSL_KEY` together, keeping the private
+key outside the repository.
+
+For the Vite demo stack, use the root [Quick Start](../README.md#quick-start).
+Backend configuration, TURN and systemd instructions are in the
+[relay guide](docs/RELAY_SERVER.md).
 
 ### LAN / Mobile
 Start relay with a public host so other devices can dial it:
@@ -121,14 +101,17 @@ secure context; use a certificate valid for the hostname opened on that device.
 
 ## Integration: Minimal Game Setup
 
-The bundled core harness exposes `window.NodeKernel`. In an ES module
-application, import `NodeKernel` from `src/peercompute/index.js` instead. This
-minimal example starts the shared-state/network runtime; artifact storage and
-model services are opt-in application configuration.
+Import `NodeKernel` into your ES module application; the path below is relative
+to this package directory. The bundled legacy harness also exposes
+`window.NodeKernel`. Serve the generated `relay-config.json` alongside the app;
+see the [relay guide](docs/RELAY_SERVER.md#browser-configuration). This example
+starts shared state and networking; artifact and model services are opt-in.
 
 ```js
+import { NodeKernel } from './src/peercompute/index.js';
+
 const cfg = await fetch('/relay-config.json').then(r => r.ok ? r.json() : null).catch(() => null);
-const node = new window.NodeKernel({
+const node = new NodeKernel({
   bootstrapPeers: cfg?.bootstrapPeers || [],
   enablePersistence: false,
   gameId: 'my-game',
@@ -175,7 +158,7 @@ network.queueEvent({ type: 'attack', victimId, ts: Date.now() }, { reliable: tru
 
 ### Layered DataState + commitDelta
 ```js
-const node = new window.NodeKernel({
+const node = new NodeKernel({
   enableGPUHub: true,
   enableWarmDeltaProvider: true,
   enableWebGPU: true,
@@ -333,18 +316,12 @@ peercompute/src/peercompute/
 └── utils/Utils.js
 ```
 
-## Roadmap Highlights
-- Broader model/device qualification, large persistent peer transfers and
-  resource contention between rendering and inference.
-- Validated remote task-graph/result admission and portable placement across
-  JS, WASM and WebGPU workers, beyond existing metadata and preflight contracts.
-- Adaptive topology/workload organization and the planned Keystone demo.
-- Opt-in agent model provisioning, migration and cloning, followed by the staged
-  learned-control and training work in the Humunculus design.
+## Roadmap
 
-See [the project plan](../plan/plan.md) for the current work order; implemented
-protocol surfaces are not a claim that every distributed/scientific acceptance
-gate has passed.
+The next library goals are measured resource-aware topology adaptation,
+validated remote task-graph/result admission and portable placement across
+JS/WASM/WebGPU workers. See [the project plan](../plan/plan.md) for implementation
+status and [the test strategy](../plan/tests.md) for acceptance evidence.
 
 ## License
 MIT

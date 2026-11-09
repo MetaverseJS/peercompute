@@ -415,3 +415,11 @@ question, with no exact error supplied for the reported Mac Studio.
 Completed locally:54focused cases, three external builds and staging/internal
 layout plus SecretWorkshop checks pass. Internal5189/5176/5187 previews updated;
 Pages/docs and main remain unchanged. Physical-device confirmation remains open.
+
+
+## Documentation ownership — November 8
+
+The dedicated demo guide is demos/inference/README.md. Keep its startup, library,
+chat/routing/voice controls, storage/browser constraints and links to model/agent
+plans there. The project root README introduces the PeerCompute library and only
+highlights this demo alongside the others.

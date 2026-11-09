@@ -437,17 +437,21 @@ test('universes generation tokens declared before use', () => {
   assert.ok(tokenIndex < fnIndex, 'universes token declared after generateUniverse');
 });
 
-test('root README includes relay config instructions', () => {
+test('root README links to library, demo and operational documentation', () => {
   const readme = read('README.md');
-  assert.ok(readme.includes('config/relay.json'), 'README missing relay config section');
   assert.ok(readme.includes('npm run dev'), 'README missing npm run dev instruction');
-  assert.ok(readme.includes('Fano Reactor'), 'README missing Fano Reactor mention');
-  assert.ok(readme.includes('Schrodinger Materials Console'), 'README missing Schrodinger demo mention');
-  assert.ok(readme.includes('Multiscale Ladder'), 'README missing Multiscale Ladder mention');
-  assert.ok(readme.includes('EarthGrid'), 'README missing EarthGrid demo/backend documentation');
-  assert.ok(readme.includes('RoadVector'), 'README missing RoadVector documentation');
-  assert.ok(readme.includes('services/geodata'), 'README missing generic geodata service documentation');
-  assert.ok(readme.includes('WebXR toolkit'), 'README missing reusable WebXR toolkit documentation');
-  assert.ok(exists('demos/motorcycle/README.md'), 'RoadVector operational README missing');
-  assert.ok(readme.includes('scripts/pcserver.sh'), 'README missing pcserver backend instructions');
+  for (const guide of ['peercompute/README.md', 'peercompute/docs/API.md',
+    'peercompute/docs/RELAY_SERVER.md', 'demos/README.md', 'demos/inference/README.md',
+    'demos/motorcycle/README.md']) {
+    assert.ok(readme.includes(`](${guide})`), `README missing guide link: ${guide}`);
+    assert.ok(exists(guide), `Linked guide missing: ${guide}`);
+  }
+  // Operational detail belongs with its owner, not in the library introduction.
+  assert.ok(read('peercompute/docs/RELAY_SERVER.md').includes('config/relay.json'));
+  assert.ok(read('peercompute/docs/RELAY_SERVER.md').includes('scripts/pcserver.sh'));
+  assert.ok(read('demos/motorcycle/README.md').includes('services/geodata'));
+  for (const demo of ['fano-reactor', 'schrodinger', 'multiscale', 'earth']) {
+    assert.ok(read('demos/README.md').includes(`${demo}/README.md`), `Demo guide not discoverable: ${demo}`);
+  }
+  assert.ok(exists('demos/shared/xr/README.md'), 'WebXR toolkit guide missing');
 });

@@ -1305,3 +1305,12 @@ voice redesign, new model qualification or Pages/main publication in this slice.
 Completed locally:54focused cases, three external builds and staging/internal
 layout plus SecretWorkshop checks pass. Internal5189/5176/5187 previews updated;
 Pages/docs and main remain unchanged. Physical-device confirmation remains open.
+
+
+### November 8 — keep project documentation library-first
+
+The root README describes PeerCompute, its cellular-automata topology insight,
+usage and architecture. Inference/agent operational detail belongs in
+demos/inference/README.md; other demos own their respective guides. Preserve
+original root media, retain implementation limits and avoid long release history
+in the project introduction. This corrects the earlier application-first framing.

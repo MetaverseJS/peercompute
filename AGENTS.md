@@ -50,3 +50,11 @@ Do not invoke the `terminal-browser` skill, tool, or CLI command at all. This
 prohibition also applies when it could run headlessly. If browser validation is
 necessary, use separate non-interactive headless automation that never opens,
 splits, or otherwise changes the user's terminal layout.
+
+Keep the root README concise and focused on the PeerCompute library, led by the
+core conjecture: globally distributed nodes with varying mutual bandwidth and
+compute resources form an optimal compute topology through cellular automata
+whose individual nodes try to maximize compute throughput, like slime mold
+designing an optimal transit network. Present it as a conjecture. Preserve original diagrams and
+screenshots. Put demo setup, controls and detailed implementation notes in each
+demo's own README instead of expanding the root README with demo history.
