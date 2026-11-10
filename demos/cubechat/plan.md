@@ -380,3 +380,40 @@ deliberate pauses pass with two actual peers. The shipped native backend samples
 one token even for max_tokens:0, so measurement now explicitly budgets one token
 and discards its text. Model quality remains distinct from context fit. Internal
 preview publication follows; public Pages remains on hold.
+
+### November 9 — persistent owner-assigned objectives
+
+Implement the next roadmap slice: an Objective section in Residents lets an
+owner request a bounded goal such as “visit Nova, then come back to me.” A language
+model selects one supported intention at a time from current observations and
+matched physical outcomes. The trained local motor executes it. There is no fixed
+visit/return script or new continuous language-model loop.
+
+WorldGoalStore is private StateManager-owned IndexedDB with atomic revision
+checks, acknowledged decision/action checkpoints and bounded receipts. Restoring
+a page preserves progress but requires owner Resume; interrupted steps never
+replay. Only the owner can start/pause/resume/cancel. Clones keep their separately
+authorized history/profile and never inherit active jobs. Human chat preempts
+planning; newer physical commands supersede a goal. Fixed limits are8decisions,
+3consecutive errors and10minutes; unavailable models wait with30second backoff.
+Initial finite actions are approach/look-at/stop. Direct-chat follow is unchanged.
+
+Acceptance: two actual ordered model-selected arrivals using managed neural
+movement, persisted progress/reload recovery, target loss/blockage, stale or
+forged/duplicate receipts, storage failure before effects, human preemption and
+owner-only controls. Preserve focused state-machine fixtures separately from
+actual model/physics proof. Inspect mobile drafts/focus during live status refresh.
+No public Pages build/deploy or push.
+
+
+Persistent-objective implementation is experimental. Private CAS checkpoints,
+finite model-selected actions, physical receipts and owner controls are in place.
+Prompt-local participant/receipt references resolve back to exact durable IDs;
+this removes repeated network-identity token overhead without choosing a plan.
+Missing encrypted inference links now use existing bounded manager relay recovery.
+Live Qwen2B selected real approaches, but repeated the first destination in the
+ordered visit/return task. Eight actual requests fit the context and the step cap
+stopped the loop. Multi-step quality remains an open acceptance gate; do not mark
+this broader objective complete or encode the test itinerary as a fixed behavior.
+Next: evaluate reliable model-produced plans on varied multi-step tasks, keeping
+this failed fixture and distinguishing model/export/runtime quality from delivery.

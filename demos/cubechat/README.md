@@ -59,6 +59,28 @@ failed messages are never replayed automatically. Other players cannot resume
 your resident. Deliberate pauses, uncertain outcomes and unsaved changes retain
 their recovery protections.
 
+Expand the experimental **Objective** section on a resident you own in **Residents** to start a task such
+as “Visit Nova, then come back to me.” A language model chooses one approach,
+look-at or stop step at a time from current observations and saved physical
+results. The existing neural motor carries it out. The panel shows the current
+step, last physical result and the model's separate completion assessment.
+
+**Pause**, **Resume** and **Cancel** control the objective independently of chat.
+Human conversation takes priority over planning; a new movement command pauses
+the superseded objective. Progress is saved privately before work starts. Reload
+restores it paused, and Resume plans from fresh observations without replaying
+an interrupted action. Active objectives are excluded from public resident data
+and clones. In network-assisted mode, the selected inference peer receives the
+objective and observations for planning; local-only keeps inference on this
+device. Each objective has eight planning decisions, three consecutive failed
+attempts and a ten-minute lifetime; Resume does not renew its step/time allowance.
+Waiting for an available model does not spend a decision. Small models may choose
+incorrect steps or pause; completion is their assessment, not a guarantee that
+an arbitrary natural-language task was satisfied. Live Qwen3.5 2B peer tests
+executed real approaches but repeated the first destination in a visit/return
+task. Multi-step planning quality remains unqualified for that tested model/export/runtime
+combination. The request data and tokenization were verified separately.
+
 Use **Edit** on a resident you own to change its name, personality, goals,
 appearance and preferences while retaining its identity and memories. **Clone to
 this node** creates your own independently active resident from an owner's shared
@@ -124,7 +146,8 @@ Reusable components live in `demos/shared`: authenticated `RoomChatService`,
 `SpeechBubbleLayer`, `WorldEmbodimentLease`, `WorldResidentMotion`, and the existing
 `WorldAgentHost`, plus `WorldAppearance`, `WorldAppearancePresenter` and
 `WorldChatResponder`, `WorldConversationContext`, `WorldExperience`, `WorldIntent`,
-`ResidentMotorService` and core `WorldMemoryStore`/`ResidentProfile`. The Cube scene supplies rendering, placement and input; agents
+`ResidentMotorService`, `WorldGoalController`, `WorldGoalDecision`,
+`ResidentGoalControls` and core `WorldMemoryStore`/`WorldGoalStore`/`ResidentProfile`. The Cube scene supplies rendering, placement and input; agents
 retain private IndexedDB identity/history and managed model routing. These seams
 support the homunculus architecture without coupling its future policies to DOM
 controls or CubeChat-specific physics.
@@ -136,6 +159,13 @@ Focused tests: `node --test --test-concurrency=1 demos/tests/room-chat.test.js
  demos/tests/world-conversation-context.test.js demos/tests/cubechat-input.test.js`.
 Learned-policy and lifecycle tests: `npm run test:resident-motor`.
 World intentions/memory integration: `npm run test:resident-experience`.
+Persistent objectives: `npm run test:resident-objectives`; the separate
+`test:resident-objectives:browser` script requires an explicitly owned browser
+profile, HTTPS production build and a compatible peer-hosted model CID. It uses
+real encrypted peer inference and local neural movement with physics receipts.
+Its default round-trip case requires both ordered arrivals and completion;
+`RESIDENT_GOAL_CASE=lifecycle` separately checks owner controls and reload.
+A lifecycle pass does not establish multi-step planning quality.
 Navigation checks: `npm run test:resident-navigation`. Reproduce the qualified
 training recipe with `npm run train:resident-navigation -- --rounds 2 --epochs 45
 --episodes 240 --evidence-dir /tmp/peercompute-navigation-training`. It requires

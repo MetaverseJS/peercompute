@@ -79,6 +79,58 @@ function stallInference(connection) {
   return { pending, restore() { connection.newStream = original; } };
 }
 
+test('a missing authenticated link discovers and generates over a fresh configured Noise relay', { timeout: 15000 }, async (t) => {
+  const { requestor, host, original } = await fixture(t);
+  await original.close();
+  await until(() => !requestor.node.getConnections(host.node.peerId).length);
+  let normalDials = 0;
+  requestor.manager._maybeDialPeer = async () => { normalDials++; };
+  const directory = await requestor.service.refresh();
+  assert.deepEqual(directory.errors, []);
+  assert.equal(directory.hosts[0].hosts[0].peerId, host.node.peerId.toString());
+  assert.equal(normalDials, 0, 'normal WebRTC dialing must not consume the short directory deadline first');
+  const fresh = requestor.node.getConnections(host.node.peerId).find(value => value.remoteAddr.toString().includes('/p2p-circuit'));
+  assert(fresh); assert.equal(fresh.encryption, '/noise');
+  assert.equal(host.generations, 0, 'discovery sends no generation');
+  const result = await requestor.service.generate(cid, { prompt: 'Describe the world.' });
+  assert.equal(result.text, 'blue'); assert.equal(result.peerId, host.node.peerId.toString());
+  assert.equal(result.connectionEncryption, '/noise'); assert.match(result.connectionAddress, /p2p-circuit/);
+  assert.equal(host.generations, 1, 'exactly one application request follows connection recovery');
+});
+
+test('cancelling missing-link acquisition cannot publish a late directory or send a prompt', { timeout: 15000 }, async (t) => {
+  const { requestor, host, original } = await fixture(t);
+  await original.close();
+  await until(() => !requestor.node.getConnections(host.node.peerId).length);
+  const nativeDial = requestor.node.dial.bind(requestor.node), entered = deferred(), gate = deferred();
+  requestor.node.dial = async (...args) => { entered.resolve(); await gate.promise; return nativeDial(...args); };
+  const caller = new AbortController();
+  const refresh = requestor.service.refresh({ signal: caller.signal });
+  const rejected = assert.rejects(refresh, { name: 'AbortError' });
+  await entered.promise; caller.abort(); await rejected;
+  gate.resolve(); await until(() => requestor.service.recoveries.size === 0);
+  assert.equal(requestor.service.records.has(host.node.peerId.toString()), false);
+  assert.equal(host.generations, 0); assert.equal(host.calls.length, 0);
+});
+
+test('missing-link recovery retains application scope and physical capacity admission', { timeout: 15000 }, async (t) => {
+  const { requestor, host, original } = await fixture(t);
+  await original.close();
+  await until(() => !requestor.node.getConnections(host.node.peerId).length);
+  const peer = requestor.manager.peers.get(host.node.peerId.toString());
+  const nativeDial = requestor.node.dial.bind(requestor.node); let forcedDials = 0;
+  requestor.node.dial = async (...args) => { if (args[1]?.force) forcedDials++; return nativeDial(...args); };
+  requestor.manager._maybeDialPeer = async () => {};
+  peer.roomId = 'different-room';
+  assert.equal((await requestor.service.refresh()).hosts.length, 0);
+  assert.equal(forcedDials, 0, 'out-of-scope peers cannot enter relay repair');
+  peer.roomId = requestor.manager.config.roomId;
+  requestor.manager._getTransportMaxConnections = () => 0;
+  assert.equal((await requestor.service.refresh()).hosts.length, 0);
+  assert.equal(forcedDials, 0, 'repair cannot exceed physical connection headroom');
+  assert.equal(host.generations, 0);
+});
+
 test('real private Noise peers recover a stalled open link automatically and retain the fresh relay through vision generation', { timeout: 15000 }, async (t) => {
   const { requestor, host, original } = await fixture(t);
   // An unrelated active application stream must survive inference recovery.

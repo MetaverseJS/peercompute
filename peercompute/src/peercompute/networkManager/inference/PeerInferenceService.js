@@ -168,9 +168,20 @@ export class PeerInferenceService {
     const best = () => this._connections(peerId)[0];
     let connection = best();
     if (!connection && this.manager.peers?.has(peerId)) {
+      // A missing link needs the same bounded relay repair as a stalled link.
+      // Try it before normal WebRTC dialing can consume the directory deadline
+      // and its dial throttle. The manager still enforces scope, capacity,
+      // backoff and cancellation; no application header has been sent yet.
+      if (this.manager.recoverPeerInferenceConnection) {
+        try { await withAbort(this._recoverConnection(peerId), signal); }
+        catch { signal.throwIfAborted(); this.controller.signal.throwIfAborted(); }
+        connection = best();
+      }
       // Respect the manager's normal logical capacity, relay and dial backoff.
-      await withAbort(this.manager._maybeDialPeer(peerId, 'peer-inference'), signal);
-      connection = best();
+      if (!connection) {
+        await withAbort(this.manager._maybeDialPeer(peerId, 'peer-inference'), signal);
+        connection = best();
+      }
     }
     if (!connection) throw failure('No authenticated encrypted connection to inference peer', 'ERR_INFERENCE_UNREACHABLE');
     return connection;

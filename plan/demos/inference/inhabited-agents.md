@@ -279,3 +279,42 @@ inference settles; they do not abort the managed agent and leave it paused.
 Provider preflight rechecks ownership; directory races retain a bounded message
 for15seconds and admit it only after owner verification. CubeChat's internal
 preview is updated, while GitHub Pages remains on hold.
+
+
+## November 9 — private persistent world objectives
+
+The next CubeChat increment composes existing agents, model routing and learned
+movement through a private `WorldGoalStore` owned by StateManager.
+`WorldGoalController` checkpoints a bounded planning request before inference,
+then a validated action before dispatch. `WorldExperience` correlates physical
+outcomes to the exact action; the next decision reads fresh observations and
+saved receipts. `WorldGoalDecision` uses managed local-first inference and the
+resident's local-only/network-assisted policy. `ResidentGoalControls` presents
+owner Start/Pause/Resume/Cancel and distinguishes physical results from model
+completion assessments. The host injects body ownership, scheduling, observation
+and action adapters rather than embedding Cube geometry in the controller.
+
+The initial action vocabulary is approach, look-at and stop. Human chat preempts
+planning; manual movement takes over the body. Limits persist across Resume:
+eight decisions and ten minutes, with a pause after three consecutive failures.
+Reload adopts only owned bodies and pauses interrupted work without replay.
+Durable objective records stay local; a selected network-assisted inference host
+receives the planning prompt, while local-only policy prevents peer inference.
+Shared profiles and memory permissions do not authorize transferring an active
+job or its execution authority. This is a
+bounded model-directed task loop, not open-ended self-training or a semantic
+proof that an arbitrary objective has been achieved. Actual-model qualification
+is separate from simulated controller tests.
+
+
+Persistent-objective implementation is experimental. Private CAS checkpoints,
+finite model-selected actions, physical receipts and owner controls are in place.
+Prompt-local participant/receipt references resolve back to exact durable IDs;
+this removes repeated network-identity token overhead without choosing a plan.
+Missing encrypted inference links now use existing bounded manager relay recovery.
+Live Qwen2B selected real approaches, but repeated the first destination in the
+ordered visit/return task. Eight actual requests fit the context and the step cap
+stopped the loop. Multi-step quality remains an open acceptance gate; do not mark
+this broader objective complete or encode the test itinerary as a fixed behavior.
+Next: evaluate reliable model-produced plans on varied multi-step tasks, keeping
+this failed fixture and distinguishing model/export/runtime quality from delivery.

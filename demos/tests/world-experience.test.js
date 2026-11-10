@@ -17,7 +17,7 @@ function fixture() {
     queries.push(scope); return episodes.filter(e => e.audience === scope.audience && e.conversationId === scope.conversationId);
   } };
   const experience = createWorldExperience({ worldId: 'cube:test', adapter, memory, getBody: () => body, now: () => clock });
-  return { experience, actions, episodes, queries, body, setParticipants: p => { participants = p; }, setClock: n => { clock = n; },
+  return { experience, adapter, actions, episodes, queries, body, setParticipants: p => { participants = p; }, setClock: n => { clock = n; },
     outcome: e => observer?.(e), turn: input => experience.prepare({ key: body.key, agentId: body.agentId,
       conversationId: 'private-visitor', audience: 'private', requesterPeerId: 'visitor', prompt: 'Come here', ...input }) };
 }
@@ -167,4 +167,74 @@ test('crowded prompt context keeps the current requester and explicit omissions 
   assert(context.omitted.participants > 0 && context.omitted.sceneDetail > 0);
   assert(context.scene.messages.every(message => message.excerpted));
   assert.deepEqual({ scene, senses }, before);
+});
+
+test('checkpointed objective actions share validation and publish only matched physical receipts', async () => {
+  const f = fixture(), receipts = [], turn = await f.turn();
+  const unsubscribe = f.experience.subscribeVerifiedOutcomes(receipt => receipts.push(receipt));
+  const intent = { type: 'approach', targetId: 'human:visitor' };
+  await f.experience.applyIntent(turn, intent, { requestId: 'goal-action-1' });
+  const action = f.actions.at(-1);
+  f.outcome({ ...action, requestId: 'forged', status: 'arrived', position: [10, 3, 0] });
+  f.outcome({ ...action, status: 'arrived', position: [NaN, 3, 0] });
+  await new Promise(resolve => setImmediate(resolve)); assert.equal(receipts.length, 0);
+  f.outcome({ ...action, status: 'arrived', position: [10, 3, 0] });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(receipts.length, 1); assert.equal(receipts[0].requestId, 'goal-action-1');
+  assert.equal(receipts[0].agentId, 'ada');
+  assert.equal(await f.experience.cancelIntent(turn.key, 'goal-action-1'), true);
+  assert.equal(f.actions.at(-1).type, 'stop');
+  assert.equal(await f.experience.cancelIntent(turn.key, 'goal-action-1'), false);
+  unsubscribe(); await f.experience.dispose();
+});
+
+test('old goal cleanup cannot stop a newer chat or adapter-owned movement command', async () => {
+  const f = fixture(), turn = await f.turn(), intent = { type: 'approach', targetId: 'human:visitor' };
+  await f.experience.applyIntent(turn, intent, { requestId: 'goal-action-1' });
+  await f.experience.applyIntent(turn, { type: 'look-at', targetId: 'human:visitor' }, { requestId: 'manual-action' });
+  const count = f.actions.length;
+  assert.equal(await f.experience.cancelIntent(turn.key, 'goal-action-1'), false); assert.equal(f.actions.length, count);
+  // A scene-owned Stay here/roam command cancels the tracked intention outside
+  // this bridge. That receipt relinquishes cleanup authority over newer motion.
+  f.outcome({ ...f.actions.at(-1), status: 'cancelled', position: [0, 3, 0] });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(await f.experience.cancelIntent(turn.key, 'manual-action'), false);
+  await f.experience.dispose();
+});
+
+test('failed physical stop preserves ownership for recovery until acknowledged or superseded', async () => {
+  const f = fixture(), turn = await f.turn();
+  await f.experience.applyIntent(turn, { type: 'approach', targetId: 'human:visitor' }, { requestId: 'pending-goal' });
+  const original = f.adapter.setIntent; let attempts = 0;
+  f.adapter.setIntent = (key, intent) => {
+    if (intent.type === 'stop' && ++attempts === 1) throw Error('Stop not acknowledged');
+    return original(key, intent);
+  };
+  await assert.rejects(f.experience.cancelIntent(turn.key, 'pending-goal'), /not acknowledged/);
+  assert.equal(await f.experience.cancelIntent(turn.key, 'pending-goal'), true);
+  assert.equal(attempts, 2); assert.equal(await f.experience.cancelIntent(turn.key, 'pending-goal'), false);
+  await f.experience.dispose();
+});
+
+test('a terminal receipt awaiting persistence cannot let old cleanup stop newer scene motion', async () => {
+  const f = fixture(), turn = await f.turn(); let release, entered;
+  const started = new Promise(resolve => { entered = resolve; });
+  f.experience.subscribeVerifiedOutcomes(async () => { entered(); await new Promise(resolve => { release = resolve; }); });
+  await f.experience.applyIntent(turn, { type: 'approach', targetId: 'human:visitor' }, { requestId: 'old-goal' });
+  const old = { ...f.actions.at(-1), position: [10,3,0] };
+  f.outcome({ ...old, status: 'arrived' }); await started;
+  // Scene Movement controls replace the motor outside the intention bridge.
+  f.outcome({ ...old, status: 'cancelled' });
+  f.adapter.setIntent(turn.key, { type: 'follow', targetId: 'human:visitor' });
+  assert.equal(await f.experience.cancelIntent(turn.key, 'old-goal'), false);
+  assert.equal(f.actions.at(-1).type, 'follow');
+  release(); await f.experience.dispose();
+});
+
+test('missing request identity never authorizes stopping a body', async () => {
+  const f = fixture();
+  assert.equal(await f.experience.cancelIntent(f.body.key), false);
+  assert.equal(await f.experience.cancelIntent(f.body.key, ''), false);
+  assert.equal(await f.experience.cancelIntent(f.body.key, 'bad id'), false);
+  assert.equal(f.actions.length, 0); await f.experience.dispose();
 });

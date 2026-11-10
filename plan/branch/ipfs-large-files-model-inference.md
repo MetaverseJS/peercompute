@@ -1422,3 +1422,18 @@ three consecutive failed requests, then pause. A successful response or explicit
 owner Resume resets the streak. Users cannot resume someone else's paused peer;
 the native chat Resume control is owner-only. This replaces the earlier proposed
 remote-resume action. Never replay a failed request automatically.
+
+
+November9 continuation: after the context/recovery fix, implement the next
+bounded Humunculus slice, persistent owner-assigned objectives. Add reusable
+private StateManager persistence, model routing/decision contracts, an outcome-
+driven controller and native owner controls. Actual neural movement and physical
+receipts must support the model's separately labeled completion assessment.
+Restore paused without replay; no visitor control or active-job clone transfer.
+Use only internal previews and local commits; public Pages/push remain held.
+
+- Existing peer-hosted Qwen2B used for real objective planning; no further local
+  download. Private request-scoped references reduce context growth. Physical
+  approaches work, while ordered visit/return quality remains unqualified for the
+  tested setup. Keep experimental controls separate from this open model-quality
+  gate. Internal preview only; public Pages and push remain on hold.

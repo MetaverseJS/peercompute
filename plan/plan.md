@@ -2024,3 +2024,30 @@ owner-only Resume and three-error behavior. The explicit private measurement
 probe consumes at most one token per attempt; original histories remain stored.
 Near-full repetitive prompts can still cause small-model instruction-following
 failures. Internal preview and local checkpoint finish this slice before goals.
+
+
+### November 9 — persistent owner objectives implementation
+
+The next authorized Humunculus slice adds private owner-assigned objectives,
+separate from profile goal strings. StateManager owns an acknowledged IndexedDB
+CAS store; a shared controller routes one model-selected approach/look-at/stop
+step at a time and records matching physical outcomes. Existing learned local
+movement executes the steps. Owner controls appear in CubeChat Residents.
+Eight decisions, three consecutive failures and ten minutes bound each task.
+Human conversation takes priority; manual movement supersedes an objective;
+restore requires owner Resume and never replays pending work. Active objectives
+are neither published nor cloned. Unit/integration checks and external builds
+pass; actual-model, physical and internal-preview acceptance is in progress.
+
+
+Persistent-objective implementation is experimental. Private CAS checkpoints,
+finite model-selected actions, physical receipts and owner controls are in place.
+Prompt-local participant/receipt references resolve back to exact durable IDs;
+this removes repeated network-identity token overhead without choosing a plan.
+Missing encrypted inference links now use existing bounded manager relay recovery.
+Live Qwen2B selected real approaches, but repeated the first destination in the
+ordered visit/return task. Eight actual requests fit the context and the step cap
+stopped the loop. Multi-step quality remains an open acceptance gate; do not mark
+this broader objective complete or encode the test itinerary as a fixed behavior.
+Next: evaluate reliable model-produced plans on varied multi-step tasks, keeping
+this failed fixture and distinguishing model/export/runtime quality from delivery.

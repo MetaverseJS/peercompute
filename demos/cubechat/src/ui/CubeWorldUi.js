@@ -1,5 +1,6 @@
 import './cubeWorldUi.css';
 import { createResidentNavigationInspector } from '../../../shared/agents/ResidentNavigationInspector.js';
+import { createResidentGoalControls } from '../../../shared/agents/ResidentGoalControls.js';
 
 let sequence = 0;
 const encoder = new TextEncoder();
@@ -28,7 +29,8 @@ const initiativeNote = 'May start a short conversation when someone is nearby an
 /** World-native presentation. Runtime, transport, storage and scene ownership stay with the host. */
 export function createCubeWorldUi({ container = document.body, worldLabel = 'CubeChat', roomLabel = 'global',
   onSpawn, onSelect, onSend, onModels, onVoice, onRecord, onCancel, onClose, onRemove, onResume, onOpen,
-  onRoomSend, onPlayerCaption, onMovement, onAppearance, onWorldChat, onSettings, onEdit, onClone } = {}) {
+  onRoomSend, onPlayerCaption, onMovement, onAppearance, onWorldChat, onSettings, onEdit, onClone,
+  onAssignGoal, onPauseGoal, onResumeGoal, onCancelGoal } = {}) {
   const root = node('section', undefined, 'cube-native-ui');
   const dock = node('section', undefined, 'cube-native-chat'); dock.setAttribute('aria-label', 'World chat');
   const launcher = button('Chat'); launcher.className = 'cube-native-chat-launcher'; launcher.setAttribute('aria-expanded', 'false');
@@ -102,7 +104,7 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
 
   let enabled = true, disposed = false, expanded = false, selected = null, hostKey = null;
   let agents = [], roomMessages = [], roomStatus = '', agentStatus = '', worldStatus = '', busy = false;
-  const navigationInspectors = new Map();
+  const navigationInspectors = new Map(), goalControls = new Map(), residentRows = new Map();
   let sending = false, mutating = false, selecting = false, cancelling = false, modelOpening = false, closing;
   let sendDone, cancelDone, roomSendController, recordPending = false, recordIntent = false, recordEpoch = 0, voiceEpoch = 0;
   let voiceState = { enabled: false, preparing: false, recording: false };
@@ -165,7 +167,11 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
           : selected.recoveryRequired ? ' Previous outcome unknown. Acknowledge and resume below; the old request will not replay.'
             : ' Paused. Resume below to accept new messages.' : '');
     status.textContent = selected ? agentStatus : roomStatus || worldStatus;
-    for (const control of list.querySelectorAll('button,select,input')) control.disabled = locked || transition || active() || control.dataset.unavailable === 'true';
+    for (const control of list.querySelectorAll('button,select,input')) {
+      if (!control.closest('[data-resident-goal]')) control.disabled = locked || transition || active() || control.dataset.unavailable === 'true';
+    }
+    // Objective interruption must remain available while inference or movement runs.
+    for (const controls of goalControls.values()) controls.setEnabled(!locked && !transition);
     target.value = currentKey();
   }
   function renderTargets() {
@@ -290,27 +296,49 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
     }
   }
   resume.onclick = () => { if (selected?.local && paused()) void mutation(onResume, selected.key); };
+  // Keep live objective editors attached during roster updates. Removing the
+  // whole list loses focus, selection and in-progress mobile/IME input.
+  function reconcileChildren(parent, children) {
+    const desired = new Set(children);
+    for (const child of [...parent.children]) if (!desired.has(child)) child.remove();
+    children.forEach((child, index) => { if (parent.children[index] !== child) parent.insertBefore(child, parent.children[index] ?? null); });
+  }
   function setAgents(next) {
     if (disposed) return;
-    const focus = list.contains(document.activeElement) ? { key: document.activeElement.closest('[data-agent-key]')?.dataset.agentKey, label: document.activeElement.getAttribute('aria-label') } : null;
+    const focused = document.activeElement, scrollTop = residents.dialog.scrollTop;
+    const focus = list.contains(focused) ? { element: focused, key: focused.closest('[data-agent-key]')?.dataset.agentKey,
+      label: focused.getAttribute('aria-label'), start: focused.selectionStart, end: focused.selectionEnd, direction: focused.selectionDirection } : null;
     agents = (Array.isArray(next) ? next : []).filter(item => item && typeof item.key === 'string' && item.key.length <= 300).slice(0, 256);
     const localKeys = new Set(agents.filter(agent => agent.local).map(agent => agent.key));
     for (const [key,inspector] of navigationInspectors) if (!localKeys.has(key)) { inspector.dispose(); navigationInspectors.delete(key); }
-    list.replaceChildren(); empty.hidden = agents.length > 0;
+    for (const [key, controls] of goalControls) if (!localKeys.has(key)) { controls.dispose(); goalControls.delete(key); }
+    const keysInList = new Set(agents.map(agent => agent.key));
+    for (const [key, row] of residentRows) if (!keysInList.has(key)) { row.remove(); residentRows.delete(key); }
+    const rows = []; empty.hidden = agents.length > 0;
     for (const agent of agents) {
-      const row = node('article', undefined, 'cube-native-resident'); row.dataset.agentKey = agent.key;
-      row.append(node('strong', text(agent.name, 240)), node('p', `${agent.local ? 'Local' : 'Peer'} · ${text(agent.status ?? 'idle', 32)}`, 'cube-native-note'));
+      let row = residentRows.get(agent.key);
+      if (!row) { row = node('article', undefined, 'cube-native-resident'); row.dataset.agentKey = agent.key; residentRows.set(agent.key, row); }
+      const children = [], appendRow = (...nodes) => children.push(...nodes);
+      appendRow(node('strong', text(agent.name, 240)), node('p', `${agent.local ? 'Local' : 'Peer'} · ${text(agent.status ?? 'idle', 32)}`, 'cube-native-note'));
       const controls = node('div', undefined, 'cube-native-actions');
       const chat = button('Chat'); chat.setAttribute('aria-label', `Chat with ${text(agent.name, 240)}`); chat.onclick = () => void choose(agent.key); controls.append(chat);
       if (agent.local) {
+        if (typeof onAssignGoal === 'function') {
+          let controls = goalControls.get(agent.key);
+          if (!controls) {
+            controls = createResidentGoalControls({ key: agent.key, name: agent.name, onAssignGoal, onPauseGoal, onResumeGoal, onCancelGoal });
+            goalControls.set(agent.key, controls);
+          }
+          controls.setName(agent.name); appendRow(controls.element);
+        }
         let inspector = navigationInspectors.get(agent.key);
         if (!inspector) { inspector = createResidentNavigationInspector({ name: agent.name }); navigationInspectors.set(agent.key,inspector); }
-        inspector.setName(agent.name); row.append(inspector.element);
+        inspector.setName(agent.name); appendRow(inspector.element);
         if (typeof agent.socialStatus === 'string' && agent.socialStatus) {
           const state = Object.hasOwn(socialLabels, agent.socialStatus) ? agent.socialStatus : 'observing';
           const note = node('p', `Social: ${socialLabels[state]}.`, 'cube-native-note');
           note.dataset.socialStatus = state;
-          row.append(note);
+          appendRow(note);
         }
         if (typeof onEdit === 'function') {
           const edit = button('Edit'); edit.setAttribute('aria-label', `Edit ${text(agent.name, 240)}`);
@@ -327,7 +355,7 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
               catch (error) { respond.input.checked = Boolean(agent.respondToWorldChat); throw error; }
             });
           };
-          row.append(respond.wrapper);
+          appendRow(respond.wrapper);
         }
         if (agent.appearanceStatus || agent.appearanceError) {
           const appearanceStatus = text(agent.appearanceStatus, 64);
@@ -336,7 +364,7 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
               : appearanceStatus === 'waiting' ? 'Appearance saved. An image model is needed to generate it.'
                 : appearanceStatus ? `Appearance: ${appearanceStatus}.` : '';
           const note = node('p', [appearanceMessage, text(agent.appearanceError, 512)].filter(Boolean).join(' '), 'cube-native-appearance-status');
-          note.setAttribute('role', 'status'); row.append(note);
+          note.setAttribute('role', 'status'); appendRow(note);
         }
         if (typeof onAppearance === 'function' && typeof agent.appearancePrompt === 'string' && agent.appearancePrompt.trim()) {
           const retry = Boolean(agent.appearanceError) || ['error', 'failed', 'waiting'].includes(agent.appearanceStatus);
@@ -357,7 +385,7 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
         if (agent.status === 'paused' || agent.recoveryRequired) {
           const resume = button(agent.recoveryRequired ? 'Acknowledge and resume' : 'Resume');
           resume.onclick = () => void mutation(onResume, agent.key); controls.append(resume);
-          if (agent.recoveryRequired) row.append(node('p', 'The previous request has an unknown outcome. Resume acknowledges it without replay.', 'cube-native-note'));
+          if (agent.recoveryRequired) appendRow(node('p', 'The previous request has an unknown outcome. Resume acknowledges it without replay.', 'cube-native-note'));
         }
         const remove = button('Remove body'); remove.setAttribute('aria-label', `Remove body ${text(agent.name, 240)}`);
         remove.title = 'Keep the saved identity and history; remove its world body.'; remove.onclick = () => void mutation(onRemove, agent.key); controls.append(remove);
@@ -367,14 +395,26 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
         clone.title = 'Copies personality, appearance and the history this resident’s creator has chosen to share.';
         clone.onclick = () => void mutation(onClone, { key: agent.key }); controls.append(clone);
       }
-      row.append(controls); list.append(row);
+      appendRow(controls); reconcileChildren(row, children); rows.push(row);
     }
+    reconcileChildren(list, rows);
     if (selected) { const fresh = agents.find(agent => agent.key === selected.key); if (fresh) selected = { ...fresh }; else select(null); }
     if (editingKey && !agents.some(agent => agent.key === editingKey && agent.local)) { hideDialog(editor.dialog, false); editingKey = null; }
     const keys = new Set(['room', ...agents.map(agent => agent.key)]);
     for (const map of [drafts, histories, movementByKey]) for (const key of map.keys()) if (!keys.has(key)) map.delete(key);
     renderTargets();
-    if (focus) [...list.querySelectorAll('button,select,input,summary')].find(element => element.closest('[data-agent-key]').dataset.agentKey === focus.key && element.getAttribute('aria-label') === focus.label)?.focus();
+    if (focus && document.activeElement !== focus.element) {
+      const target = focus.element.isConnected ? focus.element : [...list.querySelectorAll('button,select,input,textarea,summary')]
+        .find(element => element.closest('[data-agent-key]').dataset.agentKey === focus.key && element.getAttribute('aria-label') === focus.label);
+      target?.focus({ preventScroll: true });
+      if (target === focus.element && typeof target.setSelectionRange === 'function' && Number.isInteger(focus.start)) target.setSelectionRange(focus.start, focus.end, focus.direction);
+    }
+    residents.dialog.scrollTop = scrollTop;
+  }
+  function setGoalStatus(key, snapshot) {
+    if (disposed || !agents.some(agent => agent.key === key && agent.local)
+      || (snapshot?.key !== undefined && snapshot.key !== key)) return;
+    goalControls.get(key)?.setStatus(snapshot);
   }
   function setNavigationStatus(key,snapshot) {
     if (disposed || !agents.some(agent => agent.key === key && agent.local)
@@ -504,7 +544,7 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
   }));
   renderTargets(); renderMessages(); update();
   return { element: root, dialog: residents.dialog, open, close, openResidents, openModels, select, setAgents, setMessages,
-    setNavigationStatus, isNavigationVisible: () => !disposed && enabled && residents.dialog.open && !editor.dialog.open && !voice.dialog.open,
+    setGoalStatus, setNavigationStatus, isNavigationVisible: () => !disposed && enabled && residents.dialog.open && !editor.dialog.open && !voice.dialog.open,
     appendMessage(role, value) { setMessages([...(histories.get(hostKey) ?? []), { role, text: value }]); },
     appendRoomMessage,
     setRoomMessages(next) { roomMessages = []; for (const message of Array.isArray(next) ? next.slice(-64) : []) appendRoomMessage(message); if (!selected) renderMessages(); },
@@ -531,6 +571,7 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
       hideDialog(residents.dialog, false); hideDialog(voice.dialog, false); hideDialog(editor.dialog, false); root.remove();
       drafts.clear(); histories.clear(); movementByKey.clear(); restores.clear(); captionPrimed.clear(); agents = []; roomMessages = [];
       for (const inspector of navigationInspectors.values()) inspector.dispose(); navigationInspectors.clear();
+      for (const controls of goalControls.values()) controls.dispose(); goalControls.clear(); residentRows.clear();
     }
   };
 }

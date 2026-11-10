@@ -4484,3 +4484,56 @@ connection pass;5189mobile application connection/390px fit pass. Both owned
 browser sessions have zero errors/downloads/cleanup failures. All promoted entry
 bytes match external builds under trusted TLS. CubeChat13.03s, Earth18.33s and
 inference11.08s builds pass. Public Pages remains unchanged.
+
+### Persistent resident objectives — required checks
+
+- Atomic private objective persistence, host identity and revision checks; strict
+  bounds and no active-job inheritance. Save failure before model/action has no
+  side effect; uncertain pending checkpoints restore paused.
+- Controller validates model choices against fresh observations, correlates
+  actual receipts, persists step budgets and avoids replay after interruption.
+  Human chat priority, cancellation/cleanup, lost targets, finite retries/deadline
+  and model availability backoff are independent gates.
+- Native owner controls retain drafts/focus/caret on periodic status and roster
+  refresh, including mobile, failures and late callbacks; visitors lack controls.
+- Actual peer-model multi-step visit/return uses encrypted inference and real
+  local neural worker/physics receipts, retains progress and separates model
+  assessment from physical facts. Do not infer remote GPU execution from protocol
+  delivery; independently validate local motor execution.
+  External build, exact internal HTTPS/network/console and owned-process cleanup.
+
+
+Persistent-objective results:105/105consolidated checks passed before the two
+additional regressions; final focused projection11/11 and controller22/22 pass.
+Native UI33/33 and component7/7 passed separately (overlapping suites). Real
+relay recovery8/8 plus adjacent73/73 pass. External final Cube13.69s, Earth28.09s
+and inference16.94s builds pass; only Cube5176 was promoted. Trusted exact entry
+and script bytes, actual SecretWorkshop Noise connection, desktop/mobile390px
+controls, console and owned-browser cleanup pass on final preview.
+
+Keep failed model evidence visible: actual peer Qwen2B roundtrip fails because it
+repeats the first target until the8step cap. All8inputs fit737–980tokens plus512
+reserved, and offline tokenizer replay exactly matches those counts and receipts.
+This is not a passed multi-step planner. Browser11 provider absence prevented
+resume qualification; browser12 independently demonstrated fresh resumed action
+and paused reload, then its diagnostic helper failed on lazy network startup.
+Browser13 saw no peers during initial discovery and sent no model requests.
+A supplementary saved-checkpoint Cancel test completes that lifecycle separately;
+its result must not relabel any original failed report or the roundtrip gate.
+
+Supplemental browser15 passes exact retained-checkpoint restoration, native owner
+Cancel and unchanged cancelled state across reload, with no inference or model
+download. It accounts for the earlier explicit shutdown's paused event and cleared
+pending metadata; no new model/action checkpoint or receipt was introduced. Keep
+browser14's stricter pre-cleanup equality failure as harness evidence. Together
+with browser12 this verifies the owner lifecycle, not multi-step model quality.
+Final host objective integration3/3 passes after the newer-Pause revision fence.
+
+
+Post-run audit correction: browser15 emitted `Pubsub has not started` during
+final cleanup, after the helper's earlier page-error assertion. The functional
+persisted Cancel/no-inference checks remain valid, but overall teardown console
+cleanliness FAILS; preserve raw report and post-run-audit.json. The final5176
+preview smoke independently passed with zero errors through cleanup. The helper
+now checks final error arrays; no retry is relabeled a success. Investigate this
+startup/shutdown race separately; no source attribution is established yet.

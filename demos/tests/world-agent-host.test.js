@@ -37,12 +37,14 @@ async function boot() {
     const { AgentRuntime } = await import('/peercompute/src/peercompute/agents/AgentRuntime.js');
     const { AgentRecordStore } = await import('/peercompute/src/peercompute/agents/AgentRecordStore.js');
     const { WorldMemoryStore } = await import('/peercompute/src/peercompute/agents/WorldMemoryStore.js');
+    const { WorldGoalStore } = await import('/peercompute/src/peercompute/agents/WorldGoalStore.js');
+    const { WORLD_GOAL_INSTRUCTIONS } = await import('/demos/shared/agents/WorldGoalDecision.js');
     Object.assign(window, { calls: [], view: {}, speechChunks, worldConversationId });
     const candidate = { key: 'local', local: true, available: true, manifestCid: 'fixture', sessionId: 'fixture', runtime: 'transformers.js',
       task: 'text-generation', modalities: ['text'], outputModalities: ['text'] };
     window.start = async () => {
       const bodies = new Map(); window.bodyMap = bodies;
-      host = installWorldAgents({ worldId: 'cubechat:test', worldLabel: 'CubeChat', socialOptions: window.socialOptions ?? {},
+      host = installWorldAgents({ worldId: 'cubechat:test', worldLabel: 'CubeChat', socialOptions: window.socialOptions ?? {}, goalOptions: { tickMs: 100 },
         publishWorldMessage: async (input, options) => {
           options.signal.throwIfAborted(); calls.push(['public-message', input]);
           host.receiveWorldMessage({ ...input, peerId: window.fixturePeerId ?? 'owner', id: crypto.randomUUID() });
@@ -74,6 +76,7 @@ async function boot() {
           select: (body) => { view.selected = body; }, setAgents: (list) => { view.agents = list; }, setMessages: (items) => { view.messages = items; },
           setStatus: (value) => { view.status = value; }, setBusy: (value) => { view.busy = value; }, setVoiceStatus: (value) => { view.voice = value; },
           setNavigationStatus: (key, value) => { view.navigation ??= {}; view.navigation[key] = value; calls.push(['navigation-ui', key]); },
+          setGoalStatus: (key, value) => { view.objectives ??= {}; view.objectives[key] = value; },
           isNavigationVisible: () => window.navigationVisible === true,
         }; },
         runtimeFactory: async (options) => {
@@ -87,6 +90,14 @@ async function boot() {
           },
             generate: async (_candidate, input, { signal }) => {
               calls.push(['generate', input]);
+              if (input.taskInstructions === WORLD_GOAL_INSTRUCTIONS) {
+                calls.push(['objective-generation']);
+                if (window.waitObjective) {
+                  await new Promise(resolve => signal.addEventListener('abort', resolve, { once: true }));
+                  calls.push(['objective-aborted']); signal.throwIfAborted();
+                }
+                return { text: JSON.stringify(window.objectiveAnswers?.shift() ?? { decision: 'pause', reason: 'Fixture has no next decision.' }) };
+              }
               if (window.waitSocial && input.prompt.includes('brief public encounter')) {
                 await new Promise(resolve => signal.addEventListener('abort', resolve, { once: true }));
                 calls.push(['social-aborted']); signal.throwIfAborted();
@@ -107,14 +118,17 @@ async function boot() {
                 ...(input.task === 'text-to-image' ? { image: { width: 2, height: 2, channels: 4, data: new Uint8Array(16).fill(123) } } : {}) };
             }, cancel: async () => {} } });
           window.agents = agents;
-          const memories = new Map();
+          const memories = new Map(), objectives = new Map();
           const stateManager = { getWorldMemoryStore: name => memories.get(name),
-            createWorldMemoryStore: ({ name }) => { const memory = new WorldMemoryStore({ name }); memories.set(name, memory); window.episodeStore = memory; return memory; } };
+            createWorldMemoryStore: ({ name }) => { const memory = new WorldMemoryStore({ name }); memories.set(name, memory); window.episodeStore = memory; return memory; },
+            getWorldGoalStore: name => objectives.get(name),
+            createWorldGoalStore: options => { const value = new WorldGoalStore(options); objectives.set(options.name, value); window.objectiveStore = value; return value; } };
           return { stateManager, networkReady: true, networkManager: { peerId: window.fixturePeerId ?? 'owner' }, getAgentController: async () => agents,
             listInferenceTargets: () => window.imageAvailable ? [imageCandidate] : [],
             service: { getStatus: () => ({ status: 'ready', manifestCid: 'fixture', sessionId: 'fixture' }) },
             store: { getManifest: async () => ({ model: imageCandidate }) }, refreshPeers: async () => {},
-            dispose: async () => { await agents.dispose(); await store.destroy(); for (const memory of memories.values()) await memory.close(); calls.push('runtime-dispose'); } };
+            dispose: async () => { await agents.dispose(); await store.destroy(); for (const memory of memories.values()) await memory.close();
+              for (const value of objectives.values()) await value.close(); calls.push('runtime-dispose'); } };
         },
         serviceFactory: (options) => { window.networkOptions = options; return {
           start: async () => calls.push('network-start'), close: async () => calls.push('network-close'),
@@ -161,6 +175,23 @@ test('native chat Resume is owner-only and never dispatches a previous request',
   assert.equal(result.hasRemoteResumeCallback, false);
   assert.match(result.resumedStatus, /No previous request was replayed/);
   assert.equal(result.status, 'Paused. Only its owner can resume this resident.');
+});
+
+test('opening chat reads current readiness even while the roster retains a pre-resume snapshot', async t => {
+  const page = await fixture(t);
+  const result = await page.evaluate(async () => {
+    const head = await host.spawn({ name: 'Ada' }), key = `local:${head.agentId}`;
+    await agents.pause(head.agentId);
+    const stale = await agents.list(), list = agents.list.bind(agents);
+    agents.list = async () => structuredClone(stale);
+    await agents.resume(head.agentId);
+    await host.openConversation(key);
+    const result = { status: view.status, head: await agents.get(head.agentId) };
+    agents.list = list;
+    return result;
+  });
+  assert.equal(result.head.status, 'waiting');
+  assert.equal(result.status, 'Talk to Ada.');
 });
 
 test('navigation inspection is owner-local, visibility-gated and stops polling on disposal', async t => {
@@ -855,4 +886,88 @@ test('social follow-ups cancel promptly when their observed participant leaves',
   const result = await page.evaluate(async id => ({ head: await agents.get(id), events: await agents.events(id), calls }), id);
   assert.equal(result.head.status, 'waiting'); assert(!result.events.some(e => e.type === 'request'));
   assert(!result.calls.some(c => c[0] === 'public-message' || c[0] === 'intent'));
+});
+
+test('objectives checkpoint two ordered physical steps without publishing private goals', async t => {
+  const page = await fixture(t);
+  const key = await page.evaluate(async () => {
+    await host.dispose(); window.embodiedFixture = true;
+    window.fixtureParticipants = [
+      { id: 'human:owner', peerId: 'owner', kind: 'human', name: 'Owner', position: [0,3,5], distance: 1 },
+      { id: 'resident:visitor:nova', ownerPeerId: 'visitor', agentId: 'nova', kind: 'resident', name: 'Nova', position: [25,3,5], distance: 24 },
+    ];
+    window.objectiveAnswers = [
+      { decision: 'act', intent: { type: 'approach', targetId: 'p2', stopDistance: 10 }, reason: 'Visit Nova first.' },
+      { decision: 'act', intent: { type: 'approach', targetId: 'p1', stopDistance: 10 }, reason: 'Return to the owner after arrival.' },
+    ];
+    await start(); const head = await host.spawn({ name: 'Ada', shared: true });
+    const key = 'local:' + head.agentId;
+    await host.assignGoal({ key, objective: 'Private objective marker: visit Nova, then come back to me.' }); return key;
+  });
+  await page.waitForFunction(() => window.lastIntent?.targetId === 'resident:visitor:nova');
+  const first = await page.evaluate(async key => {
+    const saved = await host.getObjective(key), action = { ...lastIntent };
+    if (saved.pendingAction?.requestId !== action.requestId) throw Error('Action preceded its durable checkpoint');
+    physicalOutcome({ ...action, status: 'arrived', position: [15,3,5] }); return action;
+  }, key);
+  await page.waitForFunction(() => window.lastIntent?.targetId === 'human:owner');
+  await page.evaluate(({ first }) => {
+    const action = { ...lastIntent };
+    objectiveAnswers.push({ decision: 'done', assessment: 'Both requested arrivals are recorded.', receiptIds: ['r1', 'r2'] });
+    physicalOutcome({ ...action, status: 'arrived', position: [8,3,5] });
+  }, { first });
+  await page.waitForFunction(key => view.objectives?.[key]?.status === 'completed', key);
+  const result = await page.evaluate(async key => ({ saved: await host.getObjective(key),
+    directory: await networkOptions.listLocalAgents(), events: await agents.events(key.slice(6)), calls }), key);
+  assert.equal(result.saved.receipts.length, 2);
+  assert.deepEqual(result.saved.receipts.map(r => r.targetId), ['resident:visitor:nova', 'human:owner']);
+  assert.equal(result.saved.pendingAction, null); assert.equal(result.saved.steps, 3);
+  assert.doesNotMatch(JSON.stringify(result.directory), /Private objective marker|Both requested arrivals/);
+  assert(!result.events.some(e => e.type === 'request'), 'Planner uses its own checkpoint, not a fabricated human journal turn');
+  assert(!result.calls.some(c => c[0] === 'public-message'));
+});
+
+test('objective progress restores paused, never replays, and visitors cannot control it', async t => {
+  const page = await fixture(t);
+  const saved = await page.evaluate(async () => {
+    await host.dispose(); window.embodiedFixture = true;
+    window.objectiveAnswers = [{ decision: 'act', intent: { type: 'approach', targetId: 'p1' }, reason: 'Approach owner.' }];
+    await start(); const head = await host.spawn({ name: 'Ada', shared: true }); const key = 'local:' + head.agentId;
+    await host.assignGoal({ key, objective: 'Come to the owner and wait.' }); return { key, id: head.agentId };
+  });
+  await page.waitForFunction(() => !!window.lastIntent?.requestId);
+  const result = await page.evaluate(async ({ key, id }) => {
+    const before = await host.getObjective(key); await host.dispose(); calls.length = 0; await start(); await host.ready;
+    const restored = await host.getObjective(key);
+    networkOptions.onDirectory([{ agentId: 'foreign', ownerPeerId: 'visitor', name: 'Foreign', position: [20,3,5], color: '#8fffd4', status: 'paused' }]);
+    const remote = 'visitor:foreign', denied = [];
+    for (const method of ['assignGoal','pauseGoal','resumeGoal','cancelGoal']) {
+      try { await host[method]({ key: remote, objective: 'Unauthorized', goalId: before.goalId, expectedRevision: before.revision }); }
+      catch (e) { denied.push(e.message); }
+    }
+    return { before, restored, denied, calls, head: await agents.get(id) };
+  }, saved);
+  assert.equal(result.restored.goalId, result.before.goalId); assert.equal(result.restored.status, 'paused');
+  assert.equal(result.denied.length, 4); assert(result.denied.every(message => /owner/i.test(message)));
+  assert(!result.calls.some(c => c[0] === 'objective-generation' || c[0] === 'intent'), 'Restoring never replays pending effects');
+  assert.notEqual(result.head.status, 'paused', 'Objective state is separate from resident chat readiness');
+});
+
+test('a human conversation preempts objective planning without pausing the resident', async t => {
+  const page = await fixture(t);
+  const key = await page.evaluate(async () => {
+    await host.dispose(); window.embodiedFixture = true; window.waitObjective = true; await start();
+    const head = await host.spawn({ name: 'Ada' }); const key = 'local:' + head.agentId;
+    await host.assignGoal({ key, objective: 'Consider moving toward the owner.' }); return key;
+  });
+  await page.waitForFunction(() => calls.some(c => c[0] === 'objective-generation'));
+  const result = await page.evaluate(async key => {
+    await host.send({ key, text: 'Hello, answer this human first.' });
+    return { goal: await host.getObjective(key), head: await agents.get(key.slice(6)), calls };
+  }, key);
+  assert.equal(result.goal.pendingDecision, null); assert.equal(result.head.status, 'completed');
+  const interrupted = result.calls.findIndex(c => c[0] === 'objective-aborted');
+  const human = result.calls.findIndex(c => c[0] === 'generate' && c[1].prompt === 'Hello, answer this human first.');
+  assert(interrupted >= 0 && human > interrupted, 'The old planner settles before human inference starts');
+  assert(!result.calls.some(c => c[0] === 'intent'));
 });

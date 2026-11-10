@@ -87,6 +87,10 @@ async function fixture(t, { mobile = false, enabled = true } = {}) {
         const agent = { key: 'local:new', agentId: 'new', local: true, name: input.name, status: 'idle', appearancePrompt: input.appearancePrompt, respondToWorldChat: input.respondToWorldChat, initiateConversations: input.initiateConversations, appearanceStatus: input.appearancePrompt ? 'waiting' : undefined };
         residents.push(agent); ui.setAgents(residents); ui.open(); ui.select(agent); ui.setMessages([]);
       },
+      onAssignGoal: async input => { calls.push({ type: 'goal-assign', ...input }); if (window.failGoal) throw Error('Goal save failed'); if (window.holdGoal) await hold('goal'); },
+      onPauseGoal: async input => { calls.push({ type: 'goal-pause', ...input }); },
+      onResumeGoal: async input => { calls.push({ type: 'goal-resume', ...input }); },
+      onCancelGoal: async input => { calls.push({ type: 'goal-cancel', ...input }); },
       onMovement: async input => { calls.push({ type: 'movement', ...input }); },
       onEdit: async input => {
         calls.push({ type: 'edit', input });
@@ -729,4 +733,82 @@ test('legacy roaming is explicitly scripted while the learned controller is idle
   assert.equal(await panel.locator('[data-navigation-field="status"]').innerText(),'Learned controller idle');
   await page.evaluate(()=>ui.setNavigationStatus('local:ada',{key:'local:ada',type:'stationary',status:'idle'}));
   assert.equal(await panel.locator('[data-navigation-field="action"]').innerText(),'Stay here');
+});
+
+
+test('objective editor retains its node, draft, caret and expansion during status and roster refreshes', async t => {
+  const page = await fixture(t); await openResidents(page);
+  const roster = page.getByRole('dialog', { name: 'Residents', exact: true });
+  const panel = roster.locator('[data-agent-key="local:ada"] [data-resident-goal]'); await panel.locator('summary').click();
+  const input = panel.getByRole('textbox', { name: 'Objective for Ada', exact: true }); await input.fill('Inspect the bridge, then return.');
+  await input.evaluate(element => { element.focus(); element.setSelectionRange(8, 18); window.originalObjectiveInput = element; });
+  const before = await roster.evaluate(element => element.scrollTop);
+  await page.evaluate(async () => {
+    for (let i = 0; i < 6; i++) {
+      ui.setGoalStatus('local:ada', null);
+      ui.setNavigationStatus('local:ada', { status: 'moving', distance: 40 - i });
+      residents = residents.map(agent => ({ ...agent, socialStatus: i % 2 ? 'observing' : 'resting' }));
+      ui.setAgents(residents);
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+  });
+  assert.deepEqual(await input.evaluate(element => ({ same: element === window.originalObjectiveInput, focused: element === document.activeElement,
+    start: element.selectionStart, end: element.selectionEnd, value: element.value })),
+  { same: true, focused: true, start: 8, end: 18, value: 'Inspect the bridge, then return.' });
+  assert.equal(await panel.evaluate(element => element.open), true);
+  assert.equal(await roster.evaluate(element => element.scrollTop), before);
+  assert.equal(await page.evaluate(() => calls.filter(call => call.type.startsWith('goal-')).length), 0);
+});
+
+test('owner objective controls stay available during active chat while peer snapshots cannot expose them', async t => {
+  const page = await fixture(t); await openResidents(page);
+  const snapshot = { goalId: 'owned-goal', revision: 9, objective: 'Inspect the visitor', status: 'acting', currentStep: 'Approaching', lastReceipt: null };
+  await page.evaluate(snapshot => {
+    ui.setGoalStatus('local:ada', snapshot); ui.setGoalStatus('peer:remote', { ...snapshot, objective: 'PRIVATE_REMOTE_GOAL' });
+    ui.setGoalStatus('unknown', snapshot); ui.setBusy(true);
+  }, snapshot);
+  const roster = page.getByRole('dialog', { name: 'Residents', exact: true });
+  const panel = roster.locator('[data-agent-key="local:ada"] [data-resident-goal]'); await panel.locator('summary').click();
+  const pause = panel.getByRole('button', { name: 'Pause objective for Ada', exact: true });
+  assert.equal(await pause.isEnabled(), true); await pause.click();
+  await panel.getByRole('button', { name: 'Cancel objective for Ada', exact: true }).click();
+  assert.deepEqual(await page.evaluate(() => calls.filter(call => call.type.startsWith('goal-'))), [
+    { type: 'goal-pause', key: 'local:ada', goalId: 'owned-goal', expectedRevision: 9 },
+    { type: 'goal-cancel', key: 'local:ada', goalId: 'owned-goal', expectedRevision: 9 }
+  ]);
+  assert.equal(await roster.locator('[data-agent-key="peer:remote"] [data-resident-goal]').count(), 0);
+  assert(!await roster.innerText().then(value => value.includes('PRIVATE_REMOTE_GOAL')));
+  await page.evaluate(() => ui.setGoalStatus('local:ada', { key: 'wrong', goalId: 'wrong', revision: 99, status: 'paused', objective: 'WRONG_GOAL' }));
+  assert(!await panel.innerText().then(value => value.includes('WRONG_GOAL')));
+});
+
+test('objective drafts are isolated by resident and cleared from UI when local ownership ends', async t => {
+  const page = await fixture(t); await openResidents(page);
+  await page.locator('[data-agent-key="local:ada"] [data-resident-goal] summary').click();
+  await page.getByRole('textbox', { name: 'Objective for Ada', exact: true }).fill('Ada draft');
+  await page.locator('[data-agent-key="local:paused"] [data-resident-goal] summary').click();
+  await page.getByRole('textbox', { name: 'Objective for Paused resident', exact: true }).fill('Second draft');
+  await page.evaluate(() => { ui.setAgents([...residents].reverse()); ui.setGoalStatus('local:ada', null); });
+  assert.equal(await page.getByRole('textbox', { name: 'Objective for Ada', exact: true }).inputValue(), 'Ada draft');
+  assert.equal(await page.getByRole('textbox', { name: 'Objective for Paused resident', exact: true }).inputValue(), 'Second draft');
+  await page.evaluate(() => { residents[0].local = false; ui.setAgents(residents); ui.setGoalStatus('local:ada', { goalId: 'old', revision: 1, objective: 'PRIVATE', status: 'paused' }); });
+  assert.equal(await page.locator('[data-agent-key="local:ada"] [data-resident-goal]').count(), 0);
+  assert(!await page.locator('.cube-native-ui').innerText().then(value => value.includes('PRIVATE')));
+  await page.evaluate(() => ui.dispose()); assert.equal(await page.locator('[data-resident-goal]').count(), 0);
+});
+
+test('mobile objective panel wraps progress and keeps controls inside Residents rather than the world dock', async t => {
+  const page = await fixture(t, { mobile: true }); await openResidents(page);
+  await page.evaluate(() => ui.setGoalStatus('local:ada', { goalId: 'restored', revision: 7, objective: 'Visit the nearby person and stop.',
+    status: 'paused', currentStep: 'Resume from the last saved physical result.', reason: 'Reloaded. Resume to continue without repeating the last action.',
+    lastReceipt: { type: 'approach', status: 'arrived', requestId: 'receipt', at: Date.now() } }));
+  const roster = page.getByRole('dialog', { name: 'Residents', exact: true });
+  const panel = roster.locator('[data-agent-key="local:ada"] [data-resident-goal]'); await panel.locator('summary').click();
+  assert.match(await panel.innerText(), /Approach · Reached stopping distance/);
+  await panel.getByRole('button', { name: 'Resume objective for Ada', exact: true }).click();
+  assert.deepEqual(await page.evaluate(() => calls.find(call => call.type === 'goal-resume')),
+    { type: 'goal-resume', key: 'local:ada', goalId: 'restored', expectedRevision: 7 });
+  assert.equal(await page.locator('.cube-native-chat [data-resident-goal]').count(), 0);
+  assert.equal(await roster.evaluate(element => element.scrollWidth <= element.clientWidth), true);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
 });

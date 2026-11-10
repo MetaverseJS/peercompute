@@ -81,7 +81,7 @@ export function compactWorldContext({ scene = {}, senses, memories = [] }) {
  * Scene adapters own authority/physics; this component owns neither models nor the database. */
 export function createWorldExperience({ worldId, adapter, memory, getBody, onStatus = () => {}, now = Date.now } = {}) {
   if (!adapter?.observe || !adapter?.setIntent || !adapter?.subscribeOutcomes) throw new Error('An embodied world adapter is required');
-  const lifetime = new AbortController(), intentions = new Map(), writes = new Set();
+  const lifetime = new AbortController(), intentions = new Map(), activeByKey = new Map(), writes = new Set(), outcomeListeners = new Set();
   let closed = false;
   const report = message => { try { onStatus(message); } catch { /* Presentation is observational. */ } };
   const signalFor = signal => AbortSignal.any([lifetime.signal, ...(signal ? [signal] : [])]);
@@ -162,6 +162,36 @@ export function createWorldExperience({ worldId, adapter, memory, getBody, onSta
         : delivery?.status === 'local-only' ? 'Posted to local world chat; no remote recipients.' : 'Public chat attempted; remote receipt is unconfirmed.',
       text: excerpt(text, 1600), source: { kind: 'local-observation', eventId: eventId || crypto.randomUUID() } }, signal);
   }
+  /** Caller checkpoints requestId before invoking this effect. Both chat and
+   * objectives use the same fresh target/authority validation and receipt path. */
+  async function applyIntent(turn, value, { requestId = crypto.randomUUID(), valid = () => true } = {}) {
+    turn.signal.throwIfAborted();
+    if (closed || !valid() || !getBody(turn.key)?.local) throw new Error('Resident intention is no longer current');
+    if (typeof requestId !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/.test(requestId)
+        || intentions.has(requestId)) throw new Error('Invalid or duplicate intention request');
+    const current = observe(turn.key, turn.speaker?.peerId);
+    const intent = validateWorldIntent(value, { observed: turn.senses, current, now: now() });
+    if (!intent) throw new Error('A physical intention is required');
+    intentions.set(requestId, { ...turn, intent, at: now() });
+    activeByKey.set(turn.key, { requestId, ...intent });
+    while (intentions.size > 64) intentions.delete(intentions.keys().next().value);
+    try { await adapter.setIntent(turn.key, { ...intent, requestId }); }
+    catch (error) {
+      intentions.delete(requestId);
+      if (activeByKey.get(turn.key)?.requestId === requestId) activeByKey.delete(turn.key);
+      throw error;
+    }
+    return { applied: true, intent, requestId };
+  }
+  async function cancelIntent(key, requestId) {
+    if (typeof requestId !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/.test(requestId)) return false;
+    if (closed || !getBody(key)?.local || activeByKey.get(key)?.requestId !== requestId) return false;
+    // Compare synchronously before setting stop. A newer manual command owns
+    // its body immediately and can never be stopped by an older goal cleanup.
+    await adapter.setIntent(key, { type: 'stop' });
+    if (activeByKey.get(key)?.requestId === requestId) activeByKey.delete(key);
+    return true;
+  }
   async function finish(turn, result, { valid = () => true } = {}) {
     const reply = parseWorldReply(result);
     turn.signal.throwIfAborted();
@@ -175,31 +205,40 @@ export function createWorldExperience({ worldId, adapter, memory, getBody, onSta
     if (closed || !valid() || !getBody(turn.key)?.local) return { text: reply.text, applied: false };
     if (!reply.intent) return { text: reply.text, applied: false };
     try {
-      const current = observe(turn.key, turn.speaker.peerId);
-      const intent = validateWorldIntent(reply.intent, { observed: turn.senses, current, now: now() });
-      const requestId = crypto.randomUUID();
-      intentions.set(requestId, { ...turn, intent, at: now() });
-      // At most one live intention per body; scene emits cancellation receipts.
-      while (intentions.size > 64) intentions.delete(intentions.keys().next().value);
-      try { await adapter.setIntent(turn.key, { ...intent, requestId }); }
-      catch (error) { intentions.delete(requestId); throw error; }
-      return { text: reply.text, applied: true, intent };
+      return { text: reply.text, ...await applyIntent(turn, reply.intent, { valid }) };
     } catch (error) {
       turn.signal.throwIfAborted(); report(`Resident action: ${error.message}`);
       return { text: `${reply.text}\n[Action not started: ${error.message}]`, applied: false };
     }
   }
   async function outcome(event) {
+    if (!Array.isArray(event?.position) || event.position.length !== 3
+        || event.position.some(value => !Number.isFinite(value) || Math.abs(value) > 1e8)) return;
+    const active = activeByKey.get(event.key);
+    // A completed receipt may be awaiting durable goal storage while a newer
+    // scene command takes over. Its cancellation still revokes old cleanup.
+    if (event.status === 'cancelled' && active?.requestId === event.requestId
+        && active.type === event.type && active.targetId === event.targetId) activeByKey.delete(event.key);
     const turn = intentions.get(event?.requestId);
     if (!turn || turn.key !== event.key || event.type !== turn.intent.type || event.targetId !== turn.intent.targetId) return;
     if (!['arrived', 'stopped', 'target-lost', 'blocked', 'cancelled', 'failed'].includes(event.status)) return;
     const continues = turn.intent.type === 'follow' && ['arrived', 'target-lost'].includes(event.status);
     if (!continues) intentions.delete(event.requestId);
+    if (!['arrived', 'stopped'].includes(event.status) && activeByKey.get(turn.key)?.requestId === event.requestId) {
+      activeByKey.delete(turn.key);
+    }
     // Following can produce several physical transitions over its lifetime.
     // Retain the command's audience, but never turn sensor ticks into a journal.
     if (continues && turn.lastOutcomeAt !== undefined && now() - turn.lastOutcomeAt < 10000) return;
     turn.lastOutcomeAt = now(); turn.outcomeSequence = (turn.outcomeSequence ?? 0) + 1;
     const body = getBody(turn.key); if (!body?.local || body.agentId !== turn.scope.agentId) return;
+    const receipt = { key: turn.key, agentId: body.agentId, requestId: event.requestId, type: event.type,
+      status: event.status, at: now(), position: [...event.position],
+      ...(event.targetId ? { targetId: event.targetId } : {}),
+      ...(event.reason ? { reason: excerpt(event.reason, 240) } : {}) };
+    // Objective checkpoints are independent of best-effort episodic retention.
+    // Terminal tracking was removed above before callbacks can stop the motor.
+    await Promise.allSettled([...outcomeListeners].map(listener => Promise.resolve().then(() => listener(structuredClone(receipt)))));
     report(`${body.name}: ${event.type} ${event.status}${event.reason ? ` — ${excerpt(event.reason, 240)}` : ''}.`);
     const target = turn.senses.participants.find(item => item.id === turn.intent.targetId);
     await save({ ...turn.scope, kind: 'action-outcome', who: target
@@ -213,7 +252,9 @@ export function createWorldExperience({ worldId, adapter, memory, getBody, onSta
     const pending = outcome(event).catch(error => report(`Resident outcome: ${error.message}`));
     writes.add(pending); void pending.finally(() => writes.delete(pending));
   });
-  return { prepare, prepareEncounter, rememberSocialDecision, rememberDelivery, finish, observe,
+  return { prepare, prepareEncounter, rememberSocialDecision, rememberDelivery, finish, observe, applyIntent, cancelIntent,
+    subscribeVerifiedOutcomes(listener) { outcomeListeners.add(listener); return () => outcomeListeners.delete(listener); },
     getStatus: () => ({ pendingIntentions: intentions.size, memory: !!memory }),
-    async dispose() { closed = true; unsubscribe(); lifetime.abort(); intentions.clear(); await Promise.allSettled([...writes]); } };
+    async dispose() { closed = true; unsubscribe(); lifetime.abort(); intentions.clear(); activeByKey.clear();
+      outcomeListeners.clear(); await Promise.allSettled([...writes]); } };
 }
