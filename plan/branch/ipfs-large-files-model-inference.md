@@ -1443,3 +1443,27 @@ Use only internal previews and local commits; public Pages/push remain held.
   history through actual peer calls. Fix the reproduced mutable-admission race;
   distinguish prompt feedback, model behavior and transport failure using retained
   exact inputs/results. No Pages build/deploy or push.
+
+- November9 Conan/cube screenshots reproduce ordinary-chat repetition on peer
+  models despite correct current requests. Preserve exact persona and stored
+  history while testing. Failed prompt/memory variants are retained as failures.
+  A confirmed Transformers.js4.3.2 Qwen3.5 text-position offset defect now has a
+  version/behavior-guarded managed-worker correction and70passing focused tests.
+  Real identical-model before/after history qualification is required before
+  attributing the user's symptom to that defect. No Pages deployment or push;
+  old loaded hosting workers must eventually reload to receive runtime changes.
+
+Actual CPU/GPU comparisons now show the numerical Qwen correction does not
+resolve dialogue repetition. A separate same-Nemotron peer test also reproduces
+old replies/irrelevant stop across new prompts. Standard template/extraction and
+request correlation checks pass for these fixtures. Neither a replacement action
+contract nor sampled decoding qualifies as a remedy. Continue shared context
+projection investigation with complete prior speech retained; keep previews and
+saved memories unchanged until native semantic acceptance.
+
+- November9 Global images: normalize peer-decoded pixels at public publication;
+  strict canonical input/wire validation remains.17focused cases plus isolated
+  two-browser exact-pixel transfer/history pass. Internal5189updated and all four
+  preview services restored after crash. Public Pages/build/push remains held.
+  Preserve the separate unresolved resident repetition investigation; no failed
+  context or sampling experiment is promoted as a fix.

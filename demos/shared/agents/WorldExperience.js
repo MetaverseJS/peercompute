@@ -13,6 +13,17 @@ function excerpt(value, maximum) {
 }
 
 const selected = (value, keys) => Object.fromEntries(keys.filter(key => value?.[key] !== undefined).map(key => [key, value[key]]));
+function compactSceneLabels(scene) {
+  const labels = {};
+  // Public room context uses kind/world; CubeChat's private scene uses
+  // demo/theme. Retain both vocabularies without admitting unbounded metadata.
+  for (const key of ['kind', 'world', 'demo', 'theme']) {
+    if (typeof scene?.[key] !== 'string') continue;
+    labels[key] = excerpt(scene[key], 240);
+    if (labels[key] !== scene[key]) labels.excerpted = true;
+  }
+  return labels;
+}
 function rounded(value) {
   if (typeof value === 'number' && Number.isFinite(value)) return Math.round(value * 1000) / 1000;
   if (Array.isArray(value)) return value.map(rounded);
@@ -57,7 +68,7 @@ export function compactWorldContext({ scene = {}, senses, memories = [] }) {
   }
   const oversized = () => size(context) > WORLD_PROMPT_CONTEXT_BYTES;
   if (oversized()) {
-    context.scene = { ...selected(scene, ['kind', 'world']), note: 'Compact scene; current message is in the user turn',
+    context.scene = { ...compactSceneLabels(scene), note: 'Compact scene; current message is in the user turn',
       ...(scene.messages ? { messages: scene.messages.slice(-2).map(message => {
         const text = excerpt(message.text, 256);
         return { ...selected(message, ['id', 'peerId', 'agentId', 'name']), text,

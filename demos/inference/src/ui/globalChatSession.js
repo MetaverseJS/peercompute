@@ -59,7 +59,12 @@ export function createGlobalChatSession({ getNetworkManager, onEvent, onStatus,
         name: boundedText(input.name || 'Guest', 80), text: boundedText(input.text, 64 * 1024),
         ...(input.modelName ? { modelName: boundedText(input.modelName, 256) } : {}),
         ...(input.phase === 'audio' ? { part: input.part, audio: input.audio } : {}),
-        ...(input.image ? { image: input.image } : {}) }).input;
+        // Peer inference returns verified transport metadata (including sha256)
+        // alongside pixels. Publish the image's public payload only; the Global
+        // service validates it and computes its own wire digest. The canonical
+        // event contract stays strict, and no result metadata/context leaks out.
+        ...(input.image ? { image: { width: input.image.width, height: input.image.height,
+          channels: input.image.channels, data: input.image.data } } : {}) }).input;
     } catch { missed++; status(); return; }
     emit({ ...event, peerId: localId, id: crypto.randomUUID(), local: true });
     const size = new TextEncoder().encode(event.text).byteLength + (event.image?.data.byteLength || 0)

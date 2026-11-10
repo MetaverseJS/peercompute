@@ -417,3 +417,38 @@ stopped the loop. Multi-step quality remains an open acceptance gate; do not mar
 this broader objective complete or encode the test itinerary as a fixed behavior.
 Next: evaluate reliable model-produced plans on varied multi-step tasks, keeping
 this failed fixture and distinguishing model/export/runtime quality from delivery.
+
+### November 9 — repeated private replies
+
+The Conan/cube screenshots reproduce repeated replies to distinct current
+questions. Native owner/visitor traces preserve the exact new prompt through
+journal, routing, raw inference and display. Actual Qwen2B template/token counts
+are correct; isolating history versus episodic memories shows history-sensitive
+generation. Prompt-contract and memory-only variants failed semantic acceptance
+and are not shipped. Preserve custom identity, goals and all stored histories.
+
+Correct the confirmed Transformers.js4.3.2 Qwen text-only position-offset defect
+at managed model load; source/tensor/load tests pass70/70. Keep the compatibility
+adapter instance-local, version/behavior guarded, and vision/other models intact.
+Separately retain bounded CubeChat scene name/theme during context compaction
+(39focused/adjacent tests). Exact-weight before/after GPU and native conversation
+acceptance remains required before claiming the repeated-reply symptom fixed.
+Only internal previews may be updated; Pages/push remain held. Existing hosting
+workers will need a page/model reload to receive a runtime correction.
+
+Actual CPU/GPU comparisons now show the numerical Qwen correction does not
+resolve dialogue repetition. A separate same-Nemotron peer test also reproduces
+old replies/irrelevant stop across new prompts. Standard template/extraction and
+request correlation checks pass for these fixtures. Neither a replacement action
+contract nor sampled decoding qualifies as a remedy. Continue shared context
+projection investigation with complete prior speech retained; keep previews and
+saved memories unchanged until native semantic acceptance.
+
+After the tool crash, numerical diagnostics resume cleanly: full-prompt and
+cached-prefix Qwen logits agree closely on both the failing long input and an
+arithmetic control, with all48caches preserved. This does not establish a cache
+arithmetic defect. No tested contract/history/sampling variation qualifies as a
+resident fix. Keep the user conversation intact and clarify whether Personal
+model chat also exhibits repetition before widening the next diagnostic. Cube
+preview5176 is restored with its previous build; only inference5189 received the
+separately verified Global image publication fix.

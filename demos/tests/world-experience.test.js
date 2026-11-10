@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { compactWorldContext, createWorldExperience, WORLD_PROMPT_CONTEXT_BYTES } from '../shared/agents/WorldExperience.js';
 import { WORLD_INTENT_INSTRUCTIONS, WORLD_INTENT_LEGACY_SUFFIX } from '../shared/agents/WorldIntent.js';
+import { CubeAgentLayer } from '../cubechat/src/agents/CubeAgentLayer.js';
 
 function fixture() {
   let observer, clock = 1000;
@@ -165,8 +166,63 @@ test('crowded prompt context keeps the current requester and explicit omissions 
   assert.equal(context.senses.requesterId, senses.requesterId);
   assert(context.senses.participants.some(person => person.id === senses.requesterId));
   assert(context.omitted.participants > 0 && context.omitted.sceneDetail > 0);
+  assert.equal(context.scene.kind, 'public-room-chat'); assert.equal(context.scene.world, 'CubeChat');
   assert(context.scene.messages.every(message => message.excerpted));
   assert.deepEqual({ scene, senses }, before);
+});
+
+test('compaction keeps the actual CubeChat scene name and theme while retaining the exact current requester', () => {
+  const body = { key: 'local:conan', name: 'Conan', position: [0, 3, 0], status: 'idle' };
+  // Exercise the adapter's actual field names without creating a renderer or a body.
+  const scene = CubeAgentLayer.prototype.getContext.call({ entries: new Map([[body.key, { descriptor: body }]]),
+    scene: { worldThemeId: 'tron', players: new Map([['owner', {}]]) } }, body);
+  const participants = Array.from({ length: 24 }, (_, index) => ({ id: `human:${index}-${'p'.repeat(60)}`,
+    kind: 'human', name: `Player ${index}`, position: [index, 3, index], relativePosition: [index, 0, index],
+    velocity: [0, 0, 0], distance: index }));
+  const senses = { self: { id: 'resident:owner:conan', name: 'Conan', position: [0, 3, 0] },
+    requesterId: participants.at(-1).id, participants, obstacles: [] };
+  const before = structuredClone({ scene, senses });
+  const context = compactWorldContext({ scene, senses });
+  assert.equal(scene.demo, 'CubeChat'); assert.equal(scene.theme, 'tron');
+  assert.equal(context.scene.demo, scene.demo); assert.equal(context.scene.theme, scene.theme);
+  assert.equal(context.scene.agent, undefined); assert(context.omitted.sceneDetail > 0);
+  assert(context.omitted.participants > 0);
+  assert.equal(context.senses.self.id, senses.self.id); assert.equal(context.senses.requesterId, senses.requesterId);
+  assert(context.senses.participants.some(person => person.id === senses.requesterId));
+  assert(new TextEncoder().encode(JSON.stringify(context)).length <= WORLD_PROMPT_CONTEXT_BYTES);
+  assert.deepEqual({ scene, senses }, before);
+});
+
+test('compacted scene labels have bounded Unicode excerpts and never displace fixed requester identity', () => {
+  const scene = { kind: '界'.repeat(1000), world: '🌍'.repeat(1000), demo: 'CubeChat', theme: '🌌'.repeat(1000) };
+  const senses = { self: { id: `resident:${'o'.repeat(128)}:${'a'.repeat(128)}`, position: [0, 3, 0] },
+    requesterId: `human:${'p'.repeat(128)}`, participants: [{ id: `human:${'p'.repeat(128)}`,
+      kind: 'human', name: 'Current requester', position: [10, 3, 0] }], obstacles: [] };
+  const original = structuredClone({ scene, senses });
+  const context = compactWorldContext({ scene, senses });
+  assert.equal(context.scene.demo, 'CubeChat'); assert.equal(context.scene.excerpted, true);
+  for (const key of ['kind', 'world', 'demo', 'theme']) {
+    assert(new TextEncoder().encode(context.scene[key]).length <= 240);
+    assert.equal(context.scene[key].isWellFormed(), true);
+    assert(scene[key].startsWith(context.scene[key]));
+  }
+  assert.equal(context.senses.requesterId, senses.requesterId);
+  assert.equal(context.senses.participants[0].id, senses.requesterId);
+  assert(new TextEncoder().encode(JSON.stringify(context)).length <= WORLD_PROMPT_CONTEXT_BYTES);
+  assert.deepEqual({ scene, senses }, original);
+
+  // Exact sensing identities take precedence when even the bounded scene labels
+  // cannot coexist with the fixed self/requester fields in the prompt budget.
+  const crowded = structuredClone(senses);
+  crowded.self.name = '界'.repeat(300); crowded.participants[0].name = '人'.repeat(300);
+  const fixed = compactWorldContext({ scene, senses: crowded });
+  assert.match(fixed.scene.note, /Scene omitted/);
+  assert.equal(fixed.senses.self.id, crowded.self.id);
+  assert.equal(fixed.senses.requesterId, crowded.requesterId);
+  assert.equal(fixed.senses.participants[0].id, crowded.requesterId);
+  assert(new TextEncoder().encode(JSON.stringify(fixed)).length <= WORLD_PROMPT_CONTEXT_BYTES);
+  crowded.self.name = '界'.repeat(WORLD_PROMPT_CONTEXT_BYTES);
+  assert.throws(() => compactWorldContext({ scene, senses: crowded }), /current participant observations exceed/);
 });
 
 test('checkpointed objective actions share validation and publish only matched physical receipts', async () => {

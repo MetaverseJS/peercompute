@@ -1,5 +1,6 @@
 import { createArtifactFetch } from './ArtifactReadBridge.js';
 import { validateOnnxModelConfig } from './modelCapabilities.js';
+import { installQwenTextRopeCompatibility } from './qwenTextRope.js';
 import { MODEL_POLICY, MODEL_RUNTIME_VERSION, abortError, throwIfAborted,
   modelResourcePolicy, validateModelManifest, validateRuntimeAssets, validateSessionId } from './modelManifest.js';
 
@@ -252,6 +253,7 @@ function summary(entry) {
     collectGpuEvidence: entry.collectGpuEvidence === true,
     runtimeFeatures: entry.runtimeFeatures ?? [],
     generatedRequests: entry.generatedRequests,
+    qwenTextRopeCompatibility: entry.qwenTextRopeCompatibility === true,
   };
 }
 
@@ -350,6 +352,7 @@ export function createModelTaskRuntime({
         options.session_options.executionProviders = [{ name: 'webgpu', device: entry.ownedDevice }];
         // Own returned handles before checking GPU errors, for failed-load cleanup.
         entry.components = await loadModel({ library, modelPath: sessionId, options, manifest, adapterFeatures: [...adapter.features] });
+        entry.qwenTextRopeCompatibility = installQwenTextRopeCompatibility(entry.components.model, library);
         for (const feature of features) if (!entry.runtimeDevice.features.has(feature)) {
           throw new Error(`ORT device is missing required GPU feature: ${feature}`);
         }

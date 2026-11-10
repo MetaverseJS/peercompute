@@ -2069,3 +2069,38 @@ history. Original objective prompts still repeat a completed target, including
 when the old rationale is omitted. Keep multi-step receipt-use quality open;
 do not claim a stale-cache fix or discard conversation history. A separate
 preacceptance encrypted-stream timeout was observed and retained.
+
+The subsequent Conan screenshot supplies a concrete ordinary-chat failure.
+Full native owner/visitor reproduction now confirms correct prompt delivery but
+generated repeated replies; normal routing changes model between turns. Native
+WorldExperience duplicates old self-replies in system context and assistant
+history. Compare isolated context-role/memory/conversation-instruction variants
+before changing that policy. Independently preserve bounded CubeChat scene
+name/theme during compaction. Keep user residents and their memories intact.
+
+Controlled experiments reproduce history-sensitive repetition on Qwen2B even
+for arithmetic. Memory removal and conversational contract changes do not
+qualify as fixes. Actual pinned template rendering and token counts are correct.
+A concrete Transformers.js4.3.2 text-only Qwen RoPE offset defect is now corrected
+at managed-model load: continuation follows the prompt instead of jumping to
+three times its length. The adapter is version/behavior guarded and instance
+local;70focused tests pass, including real dependency tensor preparation and
+unchanged vision positions. Qualify identical actual weights/history before and
+after, then native conversation and internal previews. Preserve older failed
+experiments and the separate unresolved Nano/GGUF quality observations.
+
+Actual same-weight CPU and NVIDIA comparisons show the RoPE correction does not
+resolve repeated dialogue. Keep this task open. Nemotron repetition is also
+reported: audit shared message assembly, conversation scoping and response
+correlation across families. A controlled corrected-runtime ablation implicates
+the action contract; deleting memory/history is not the remedy. Keep numerical
+runtime correctness separate from native conversation acceptance.
+
+November9 Global chat image repair is qualified and live on internal5189:
+peer-generated pixels include a verified transport digest, which the public input
+allowlist previously rejected. Project public pixel fields at publication while
+keeping strict wire validation. Focused17tests and isolated two-browser exact-pixel
+transfer/history checks pass; the actual preview connects to SecretWorkshop and
+fits mobile/desktop. Four crashed internal previews are restored as owned user
+services. Public Pages and push remain held. Repetition is separately unresolved;
+full versus cached-prefix numerical comparisons do not demonstrate cache corruption.

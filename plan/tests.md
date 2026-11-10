@@ -4577,3 +4577,76 @@ Run `node --test peercompute/tests/unit/modelConsoleRuntime.test.js`.
   short-lived Cesium worker response body. A separate trusted HTTPS check matches
   that worker's979bytes/SHA256 to the build; it does not rewrite the failed
   observation. Both owned browsers closed; no residents/prompts were created.
+
+### November 9 — Conan native dialogue reproduction
+
+Use the actual persona supplied by the user, two owned browsers in an isolated
+room, and both the owner and visitor's native cube-chat composer. Capture the
+current textarea, scoped journal operation, packed messages, request/model/peer
+IDs, raw reply, parsed reply and displayed text. Harness integrity and semantic
+answer quality are separate gates. Do not resume the user's paused resident,
+clear history, replace model replies or silently change providers.
+
+- Native owner/visitor input and display trace PASS; response quality FAIL.
+  Both visitor questions receive `I will look-at the owner.`. Normal routing
+  switches Nano4B to Qwen0.8B; the first question already produces an unrelated
+  movement answer with no prior conversation. Four completed requests, no
+  truncation, no downloads and clean owned-browser teardown.
+- Four same-Qwen0.8B controlled replays retain exact identity, goals, prior
+  messages and settings. The original repeats exactly. Removing only composed
+  reply memory or relocating observations causes repetitive512-token output;
+  changing only the opening instructions still repeats. All three candidate
+  changes FAIL semantic acceptance and remain outside production source.
+- Scene compaction must retain the actual CubeChat adapter's `demo` and `theme`
+  alongside public `kind`/`world`, bound Unicode labels, preserve exact requester
+  identity and remain within3072bytes. The fixed identity remains authoritative
+  if labels cannot fit. Focused/adjacent pure suites PASS39/39.
+- Evidence: `/home/cos/.cache/peercompute-request-continuity-20261109/conan/`.
+  Additional contract experiments must include unrelated questions and explicit
+  movement commands; changing sampling or clearing memory cannot stand in for
+  correct current-request use. Remote runtime build provenance remains unknown.
+
+- Actual pinned Qwen2B/Nano templates preserve ordered roles and the current
+  question; every checked local token count matches its remote receipt. Four2B
+  arithmetic ablations isolate prior conversational history: retaining history
+  repeats the old answer whether memories are present or absent; omitting history
+  answers12 in either memory condition. This is diagnostic, not permission to
+  discard history. Full conversation and episodic persistence remain unchanged.
+- Confirmed Transformers.js4.3.2 Qwen text-only RoPE defect: actual installed
+  tensor preparation continues at3L instead ofL. The scoped compatibility helper
+  must fix this for unpadded and padded batches, long prompts and repeated calls;
+  retain exact input tensors, image-grid preparation and untouched model instances;
+  leave already-corrected or other-version libraries alone; fail unknown behavior
+  without leaking tensors; install before a managed session becomes ready.
+  `node --test peercompute/tests/unit/qwenTextRope.test.js peercompute/tests/unit/modelInference.test.js peercompute/tests/unit/modelGpuErrors.test.js`
+  PASS70/70. This is mathematical/load-boundary proof, not model-output proof.
+- External builds PASS: CubeChat12.78s, inference11.88s, Earth26.70s. Only external
+  cache output directories used. Actual identical-weight before/after GPU and
+  native-chat qualification is pending; internal/public previews remain unchanged.
+
+- Actual GPU pairing completed: same verified1.77GB retainedQwen2B CID/profile,
+  identical inputs/options and positive managed NVIDIA dispatches. Baseline scene
+  and7+5 both repeat the old assistant sentence. Corrected scene still repeats;
+  corrected7+5 and9×4 answer `I will stop.`; Follow lacks an action; Stop passes.
+  Semantic gate FAIL, conditional native follow-up SKIPPED. All infrastructure,
+  source-off retention and cleanup checks pass. CPU reference exactly reproduces
+  both old/fixed pairs; no GPU-only cause established. Evidence in
+  `conan/rope-hardware-2` and `conan/cpu-reference-2`; neither passed infrastructure
+  field means the repeated-reply goal is complete. Keep previews unchanged.
+
+- Cross-family follow-up: same-Nano four-call baseline/candidate comparison FAILS
+  answer relevance, with fresh exact requests, no truncation and clean teardown.
+  Six predefined seeded CPU Qwen generations also FAIL robust relevance; output
+  diversity does not count as success. Neither change enters production.
+- Standard chat comparison matches ordered prompts/tokens/masks for eight inputs
+  and output extraction for five generated sequences. Exact pinned Nano ONNX
+  graph has all 50 cache names matched; actual JS sentinel cache continuation
+  preserves values/identity and advances mask/token inputs. These are structural
+  checks, not a numerical model-quality proof. Same-Nano remote build unknown.
+
+### November9 — Global peer-image publication regression
+
+- `node --test demos/tests/global-chat-session.test.js demos/tests/global-inference-chat.test.js`:17/17PASS. Decode a real image-result frame (retaining sha256), publish its owned public pixel snapshot, verify local echo/outbox, ensure no transport/private fields leak, and preserve strict invalid-input rejection. Original peer-image regression FAIL retained before fix.
+- `GLOBAL_CHAT_IMAGE_EVIDENCE=/home/cos/.cache/peercompute-global-chat-images-20261109/browser-2 node --test demos/tests/inference-global-media-browser.test.js`:1/1PASS. Two independent owned browsers, unique local scope/Noise relay, actual PeerInferenceService fixed-pixel response, Global binary transfer/render and late original-author history. Check exact intrinsic pixels for attachments/local/remote images; no actual diffusion inference or public messages. All temporary resources closed.
+- Production inference build14.95sPASS and exact internal5189 TLS/entry/main/CSS/SecretWorkshop/mobile smoke PASS. Root visually checked phone feed and isolated received images; no console/page/download/cleanup errors. Interrupted build/browser attempts retained.
+- Resident numerical diagnostic: completed failing1098-token pair and separate807-token control agree between full prefill and ordinary cached continuation to max3.36e-5/2.48e-5, matching argmax/ranks and48cache hashes. This is a bounded numerical check, not full generated-answer or multi-step acceptance. Original interrupted control report remains unchanged. Repeated dialogue is unresolved.
