@@ -573,3 +573,34 @@ Intermittent room-stream opening/provider availability also failed some runs.
 Keep those cases visible; do not treat fixtures as actual model-quality proof.
 The internal preview is available for testing; no Pages deploy or push. The
 broader ask/await-reply/return social-errand slice remains future work.
+
+### November 10 — proposed next slice: chat-driven spatial tasks
+
+User reports asking a cube to go far away and return without movement. Source
+inspection confirms two capability gaps: conversational physical selection permits
+one participant-targeted action; persistent multi-step objectives are started by
+separate owner controls and also lack point targets or remembered return anchors.
+The exact user's model/transport outcome has not been reproduced. Do not call this
+proof of a motor or inference failure.
+
+Prioritize connecting owner chat to durable objectives and adding reusable spatial
+targets before the broader social-errand proposal. Preserve raw conversation and
+separate model action proposals. Admit an authorized task with a task ID, remember
+the starting position/requester, ground a bounded destination in current world
+geometry, and execute model-selected milestones with the existing neural motor.
+Distinguish returning to the saved place from returning to a moving requester.
+Unknown or infeasible destinations should produce a clarification or an explicit
+unsupported/blocked result, never a conversational promise masquerading as a task.
+
+Expose accepted/current-step/blocked/completed status in the same chat. Credit
+progress from actual motor receipts; persist plan and spatial anchors for explicit
+owner Resume after reload. Preserve owner pause/stop, cancellation and compute
+budgets. Keep contracts and task orchestration shared, with geometry and collision
+checks owned by CubeChat's adapter. Models choose destinations and plan order;
+do not implement a hardcoded out-and-back chat phrase or scripted route.
+
+Acceptance: an ordinary chat request produces measurable outbound travel then
+returns within a defined tolerance, with exact receipts and no false completion.
+Vary start locations, language and distances; cover obstacles, owner movement,
+Stop, model unavailability and pause/reload/resume without replay. This is a
+recommendation, not implementation or deployment authorization.

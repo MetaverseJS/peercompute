@@ -4828,3 +4828,13 @@ are proposed criteria, not tests executed or features implemented in this turn.
   labels. Cube/Earth builds pass outside docs. Exact promoted5176 desktop/mobile,
   loaded-script bytes and authenticated SecretWorkshop smoke is recorded externally.
   All earlier native failures remain; there is no blanket all-model quality claim.
+
+### Proposed spatial-chat task acceptance — November10
+
+Future acceptance should enter the out-and-back request through ordinary owner
+chat, observe both physical legs and receipt-backed completion, and distinguish a
+saved return position from a moving requester. Vary wording, starts and distances;
+exercise obstacles, unknown targets, unavailable inference, owner Stop and
+pause/reload/resume without replay. Assert no hidden direct intent injection or
+hardcoded itinerary. These are proposed tests; this recommendation ran no models,
+physics, behavioral tests or builds, and did not reproduce the user's exact turn.

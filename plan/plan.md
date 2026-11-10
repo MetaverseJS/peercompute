@@ -2224,3 +2224,12 @@ Internal CubeChat only. Full native acceptance remains open for reliable request
 personality-field edits; small-model omissions and intermittent room transport
 failures are recorded, not converted into passing results. No prompt tweak from
 the failed mapping experiment was adopted. Owners can inspect/edit saved fields.
+
+November10 next-slice recommendation revised after the reported chat request
+“go far away and then come back” did not move a cube: prioritize chat-driven
+persistent spatial tasks with grounded destinations and remembered return anchors.
+Current chat chooses one participant-targeted action; the separate objective UI
+already has multi-step persistence but no spatial-point contract. Reuse neural
+movement and receipt-backed milestones, provide honest in-chat task status, and
+qualify actual outbound/return movement before goal-directed social errands.
+Recommendation only; see demos/cubechat/plan.md. No runtime change authorized here.
