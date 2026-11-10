@@ -1437,3 +1437,9 @@ Use only internal previews and local commits; public Pages/push remain held.
   approaches work, while ordered visit/return quality remains unqualified for the
   tested setup. Keep experimental controls separate from this open model-quality
   gate. Internal preview only; public Pages and push remain on hold.
+
+- November9 clarification: repeated/echoed replies are definitely observed with
+  peer-hosted inference; local behavior is unknown. Audit request ownership and
+  history through actual peer calls. Fix the reproduced mutable-admission race;
+  distinguish prompt feedback, model behavior and transport failure using retained
+  exact inputs/results. No Pages build/deploy or push.

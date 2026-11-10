@@ -6,6 +6,7 @@ import { validateHubPackage, matchesHubPackage, verifyStoredHubPackage } from '.
 import { createModelPreferences, DEFAULT_MODEL_ID } from './modelPreferences.js';
 import { MODEL_POLICY } from '../../../peercompute/src/peercompute/inference/modelManifest.js';
 import { routeInferenceTask } from '../../../peercompute/src/peercompute/inference/InferenceRouter.js';
+import { snapshotGenerationInput } from '../../../peercompute/src/peercompute/inference/GenerationInput.js';
 
 function compareModelSizes(left, right) {
   const size = (value) => Number.isSafeInteger(value) && value >= 0 ? value : Infinity;
@@ -708,6 +709,7 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
     },
     async generate(target = 'mixed', options = {}) {
       assertOpen();
+      options = snapshotGenerationInput(options);
       const requestId = options.requestId ?? crypto.randomUUID();
       if (requests.has(requestId)) throw new Error('Duplicate inference request ID');
       const abort = new AbortController();
@@ -755,9 +757,10 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
         const { candidate, route } = routeInferenceTask({ task, mode: automatic ?? (candidates[0]?.local ? 'local' : 'peers'), candidates });
         if (options.image && !candidate.modalities.includes('image')) throw new Error('This model accepts text only');
         request.remote = !candidate.local; request.service = candidate.local ? serviceFor(candidate.manifestCid) : null;
+        const notifyProgress = options.onProgress;
         const onProgress = (event) => {
           if (event.peerId) route.peerId = event.peerId;
-          options.onProgress?.(['routing', 'accepted'].includes(event.type) ? { ...event, ...route, type: event.type, route: { ...route } } : event);
+          notifyProgress?.(['routing', 'accepted'].includes(event.type) ? { ...event, ...route, type: event.type, route: { ...route } } : event);
         };
         onProgress({ type: 'routing', requestId });
         signal.throwIfAborted();

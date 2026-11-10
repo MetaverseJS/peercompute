@@ -4537,3 +4537,43 @@ cleanliness FAILS; preserve raw report and post-run-audit.json. The final5176
 preview smoke independently passed with zero errors through cleanup. The helper
 now checks final error arrays; no retry is relabeled a success. Investigate this
 startup/shutdown race separately; no source attribution is established yet.
+### November 9 — generation admission and peer continuity
+
+The shared console must own a bounded copy of request text/pixels/PCM before
+peer discovery, queueing or progress observers. Two calls reusing one mutable
+options object must retain their own IDs, messages, settings and callbacks;
+callbacks must not receive private request options as their `this` receiver.
+Preserve inferred tasks, prompt-only speech/image generation and live aborts.
+Run `node --test peercompute/tests/unit/modelConsoleRuntime.test.js`.
+
+- Final controller suite:98/98 PASS. Adjacent model/speech/GGUF/diffusion/agent
+  adapter run:171/171 PASS before the final unbound-callback tightening; final
+  controller run covers that last change. An external baseline copy without
+  admission snapshotting fails all10 mutation regression cases as expected.
+- Protocol/audio/router suite:48/48 PASS, including real encrypted Noise peers.
+- Live peer probe:7correct short replies including actual Personal history;
+  request8 fails before acceptance with ERR_INFERENCE_STREAM_UNAVAILABLE.
+  Overall run FAIL, preserving that transport failure; no model-download or
+  page/console/cleanup errors.
+- Second live probe:6completed requests, same Qwen2B peer and encrypted route.
+  Native AgentRuntime Follow→Stop with real persisted history PASS at788/869
+  input tokens. Objective receipt-use FAIL:2original prompts and2variants
+  omitting only previousStep still approach the already-visited target. No
+  truncation; no fabricated body movement. Omitting rationale is not a fix.
+- Evidence: `/home/cos/.cache/peercompute-request-continuity-20261109/`.
+  Remote app/worker build provenance is unavailable in the current protocol;
+  these observations do not inspect decoder tensors or qualify all histories.
+
+- Final internal5189 regression PASS: real peer retains the original SNAPSHOT
+  prompt after a routing callback mutates the caller's text to MUTATED; callback
+  receiver is undefined. Exact entry/assets, SecretWorkshop connection and
+  desktop/mobile390px bounds pass, with zero errors through owned-browser cleanup.
+  Root visually inspected the mobile network/model list. Final external builds:
+  inference14.22s, Cube13.30s, Earth19.66s; no public Pages artifacts or push.
+
+- Final Cube preview smoke PASS: exact entry/79script bodies, SecretWorkshop
+  Noise, desktop/mobile UI, zero errors through cleanup. Earth rendering/network/
+  mobile UI and cleanup PASS; raw browser report remains FAIL for a missing
+  short-lived Cesium worker response body. A separate trusted HTTPS check matches
+  that worker's979bytes/SHA256 to the build; it does not rewrite the failed
+  observation. Both owned browsers closed; no residents/prompts were created.

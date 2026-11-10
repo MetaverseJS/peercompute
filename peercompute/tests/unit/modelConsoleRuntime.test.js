@@ -7,6 +7,7 @@ import { evaluateModelCompatibility } from '../../../demos/inference/src/modelDe
 import { createModelPreferences, DEFAULT_MODEL_ID } from '../../../demos/inference/src/modelPreferences.js';
 import { SPEECH_MODEL_CATALOG } from '../../src/peercompute/inference/speech/speechCatalog.js';
 import { PEER_INFERENCE_LIMITS } from '../../src/peercompute/networkManager/inference/protocol.js';
+import { MODEL_POLICY } from '../../src/peercompute/inference/modelManifest.js';
 
 const cid = 'bafkreihbwk7mfabwdamnmxyntvhqc6oc6xyzhz42tjkkx4uh4syxcwp5ou';
 const model = { runtime: 'transformers.js', repository: 'test/model', revision: 'a'.repeat(40), task: 'image-text-to-text', modalities: ['text', 'image'] };
@@ -308,6 +309,161 @@ test('cancellation from a routing callback prevents the selected peer request fr
     onProgress() { controller.abort(new DOMException('Caller cancelled', 'AbortError')); } }), { name: 'AbortError' });
   assert(!f.calls.includes('remote')); assert(!f.calls.includes('refresh'));
   await f.runtime.dispose();
+});
+
+test('requests admitted during shared peer discovery retain their own messages, pixels, settings and callbacks', async () => {
+  let release, started;
+  const blocked = new Promise((resolve) => { release = resolve; });
+  const entered = new Promise((resolve) => { started = resolve; });
+  const dispatched = [], progress = [], tokens = [];
+  const f = fixture({ hooks: {
+    async refresh(_options, peer) {
+      started(); await blocked;
+      peer.hosts = [{ ...descriptor, hosts: [{ peerId: 'selected', local: false, busy: false }] }];
+    },
+    remoteGenerate(input) {
+      dispatched.push(input);
+      input.onToken(input.messages.at(-1).content);
+      return { text: input.messages.at(-1).content, requestId: input.requestId };
+    },
+  } });
+  await f.controller.initialize();
+  const options = { requestId: 'request-A', sessionId: 'session-A',
+    messages: [{ role: 'system', content: 'Use the newest question.' }, { role: 'user', content: 'Question A' }],
+    image: { width: 1, height: 1, channels: 4, data: new Uint8Array([11, 22, 33, 255]) },
+    maxNewTokens: 128, task: 'image-text-to-text',
+    onProgress: (event) => progress.push(`A:${event.requestId}`), onToken: (text) => tokens.push(`A:${text}`) };
+  let first, second;
+  try {
+    first = f.runtime.generate(`peer:${cid}`, options);
+    await entered;
+    options.requestId = 'request-B'; options.sessionId = 'session-B';
+    options.messages[1].content = 'Question B'; options.image.data[0] = 44; options.maxNewTokens = 256;
+    options.onProgress = (event) => progress.push(`B:${event.requestId}`);
+    options.onToken = (text) => tokens.push(`B:${text}`);
+    second = f.runtime.generate(`peer:${cid}`, options);
+    options.messages.push({ role: 'user', content: 'Never submitted' });
+    options.messages[0].content = 'Never submitted system'; options.image.data.fill(0); options.maxNewTokens = 512;
+    options.image.width = 99; options.task = 'text-generation';
+    release();
+    const replies = await Promise.all([first, second]);
+    assert.deepEqual(replies.map(({ requestId, text }) => ({ requestId, text })), [
+      { requestId: 'request-A', text: 'Question A' }, { requestId: 'request-B', text: 'Question B' },
+    ]);
+    assert.equal(f.calls.filter((call) => call === 'refresh').length, 1);
+    for (const [index, input] of dispatched.entries()) {
+      assert.equal(input.sessionId, `session-${index ? 'B' : 'A'}`);
+      assert.equal(input.task, 'image-text-to-text'); assert.equal(input.maxNewTokens, index ? 256 : 128);
+      assert.deepEqual(input.messages, [{ role: 'system', content: 'Use the newest question.' },
+        { role: 'user', content: index ? 'Question B' : 'Question A' }]);
+      assert.deepEqual(input.image, { width: 1, height: 1, channels: 4,
+        data: new Uint8Array([index ? 44 : 11, 22, 33, 255]) });
+      assert.notEqual(input.messages, options.messages); assert.notEqual(input.image.data.buffer, options.image.data.buffer);
+    }
+    assert.deepEqual(progress.sort(), ['A:request-A', 'B:request-B']);
+    assert.deepEqual(tokens.sort(), ['A:Question A', 'B:Question B']);
+  } finally { release(); await Promise.allSettled([first, second]); await f.runtime.dispose(); }
+});
+
+test('ready local and peer requests snapshot before calling routing observers while retaining live cancellation', async (t) => {
+  for (const local of [true, false]) await t.test(local ? 'local' : 'peer', async () => {
+    let dispatched;
+    const observations = [], observersThis = [], tokens = [], controller = new AbortController();
+    const generate = (input) => {
+      dispatched = input;
+      input.onProgress({ type: 'accepted', requestId: input.requestId }); input.onToken('Original token');
+      return { text: input.messages[0].content };
+    };
+    const f = fixture({ hooks: { localGenerate: generate, remoteGenerate: generate } });
+    await f.controller.initialize();
+    if (local) await f.runtime.acquireModel('hf:test');
+    else f.peer.hosts = [{ ...descriptor, hosts: [{ peerId: 'selected', local: false, busy: false }] }];
+    const options = { messages: [{ role: 'user', content: 'Original question' }], prompt: 'Original fallback',
+      image: { width: 1, height: 1, channels: 4, data: new Uint8ClampedArray([1, 2, 3, 255]) },
+      maxNewTokens: 100, signal: controller.signal, onToken: (text) => tokens.push(text),
+      onProgress(event) {
+        observersThis.push(this);
+        observations.push(event.type);
+        if (event.type !== 'routing') return;
+        // The private snapshot must not leak through a method-call receiver.
+        if (this?.messages) this.messages[0].content = 'Changed via callback receiver';
+        options.messages[0].content = 'Changed in routing callback'; options.prompt = 'Changed fallback';
+        options.image.data.fill(0); options.maxNewTokens = 800;
+        options.signal = AbortSignal.abort('Different signal');
+        options.onProgress = () => assert.fail('Replaced progress callback');
+        options.onToken = () => assert.fail('Replaced token callback');
+      } };
+    try {
+      assert.equal((await f.runtime.generate(local ? 'local' : `peer:${cid}`, options)).text, 'Original question');
+      assert.equal(dispatched.prompt, 'Original fallback'); assert.equal(dispatched.maxNewTokens, 100);
+      assert.deepEqual(dispatched.image.data, new Uint8Array([1, 2, 3, 255]));
+      assert.deepEqual(observations, ['routing', 'accepted']); assert.deepEqual(tokens, ['Original token']);
+      assert.deepEqual(observersThis, [undefined, undefined]);
+      assert.equal(dispatched.signal.aborted, false);
+      controller.abort('Original signal still controls the request');
+      assert.equal(dispatched.signal.aborted, true);
+      assert.equal(dispatched.signal.reason, controller.signal.reason);
+      assert(!f.calls.includes('refresh'));
+    } finally { await f.runtime.dispose(); }
+  });
+});
+
+test('discovery admission preserves ASR PCM and prompt-only TTS, diffusion and GGUF task forms', async (t) => {
+  const cases = [
+    { name: 'ASR', model: SPEECH_MODEL_CATALOG['moonshine-tiny-fp32'].model,
+      input: () => ({ task: null, audio: { sampleRate: 16000, samples: new Float32Array(1600).fill(0.25) } }),
+      mutate(input) { input.audio.samples.fill(-0.5); input.audio.sampleRate = 8000; },
+      check(input) { assert.equal(input.audio.sampleRate, 16000); assert(input.audio.samples.every((value) => value === 0.25));
+        assert.equal(input.prompt, undefined); assert.equal(input.messages, undefined); } },
+    { name: 'TTS', model: SPEECH_MODEL_CATALOG['supertonic-fp32'].model,
+      input: () => ({ prompt: 'The original spoken sentence.' }),
+      mutate(input) { input.prompt = 'Different sentence'; input.messages = [{ role: 'user', content: 'Do not add messages to TTS' }]; },
+      check(input) { assert.equal(input.prompt, 'The original spoken sentence.'); assert.equal(input.messages, undefined); } },
+    { name: 'diffusion', model: { ...model, runtime: 'onnx-diffusion', task: 'text-to-image', modalities: ['text'], outputModalities: ['image'] },
+      input: () => ({ prompt: 'A lighthouse', seed: 42, steps: 1, width: 512, height: 512 }),
+      mutate(input) { input.prompt = 'A forest'; input.seed = 99; input.steps = 4; input.width = 256; input.height = 256; },
+      check(input) { assert.equal(input.prompt, 'A lighthouse'); assert.equal(input.messages, undefined);
+        assert.deepEqual([input.seed, input.steps, input.width, input.height], [42, 1, 512, 512]); } },
+    { name: 'GGUF', model: { ...model, runtime: 'llama.cpp', task: 'text-generation', modalities: ['text'] },
+      input: () => ({ prompt: 'Newest question', maxNewTokens: 120 }),
+      mutate(input) { input.prompt = 'Old question'; input.maxNewTokens = 700; },
+      check(input) { assert.equal(input.prompt, 'Newest question'); assert.equal(input.maxNewTokens, 120); } },
+  ];
+  for (const scenario of cases) await t.test(scenario.name, async () => {
+    let release, started, dispatched;
+    const blocked = new Promise((resolve) => { release = resolve; });
+    const entered = new Promise((resolve) => { started = resolve; });
+    const f = fixture({ hooks: { async refresh(_options, peer) {
+      started(); await blocked;
+      peer.hosts = [{ ...descriptor, ...scenario.model, hosts: [{ peerId: 'selected', local: false, busy: false }] }];
+    }, remoteGenerate(input) { dispatched = input; return { text: 'Fixture result' }; } } });
+    await f.controller.initialize();
+    const options = scenario.input(); let request;
+    try {
+      // No explicit task: selecting this model must still infer its task after discovery.
+      request = f.runtime.generate(`peer:${cid}`, options);
+      await entered; scenario.mutate(options); release(); await request;
+      assert.equal(dispatched.task, scenario.model.task); scenario.check(dispatched);
+      if (options.audio) assert.notEqual(dispatched.audio.samples.buffer, options.audio.samples.buffer);
+    } finally { release(); await Promise.allSettled([request]); await f.runtime.dispose(); }
+  });
+});
+
+test('oversized text, invalid pixels and invalid PCM are rejected before peer discovery or generation', async () => {
+  const f = fixture(); await f.controller.initialize();
+  const cases = [
+    { prompt: 'x'.repeat(MODEL_POLICY.maxPromptBytes + 1) },
+    { messages: [{ role: 'user', content: 'x'.repeat(MODEL_POLICY.maxPromptBytes + 1) }] },
+    { messages: Array.from({ length: MODEL_POLICY.maxMessages + 1 }, () => ({ role: 'user', content: 'x' })) },
+    { prompt: 'Describe this', image: { width: 1025, height: 1024, channels: 4, data: new Uint8Array(4) } },
+    { audio: { sampleRate: 16000, samples: new Float32Array(16000 * 20 + 1) } },
+    { audio: { sampleRate: 16000, samples: new Float32Array(1600).fill(NaN) } },
+  ];
+  try {
+    for (const options of cases) await assert.rejects(f.runtime.generate(`peer:${cid}`, options),
+      /byte budget|Invalid inference messages|bounded RGBA|Speech input|Invalid PCM/);
+    assert(!f.calls.includes('refresh')); assert(!f.calls.includes('remote')); assert(!f.calls.includes('local'));
+  } finally { await f.runtime.dispose(); }
 });
 
 test('pooled cancellation and deletion address the original service after another model is selected', async () => {
@@ -849,7 +1005,8 @@ test('remote model choices aggregate busy status after excluding the local host'
   f.peer.hosts[0].hosts[2].busy = false;
   target = f.runtime.listInferenceTargets()[1]; assert.equal(target.busy, false);
   const image = { width: 1, height: 1, channels: 4, data: new Uint8Array([255, 0, 0, 255]) };
-  assert.equal((await f.runtime.generate(target.key, { prompt: 'color?', image })).image, image);
+  const received = (await f.runtime.generate(target.key, { prompt: 'color?', image })).image;
+  assert.deepEqual(received, image); assert.notEqual(received.data.buffer, image.data.buffer);
   assert(!f.calls.includes('load')); assert(!f.calls.includes('local'));
   await f.runtime.dispose();
 });

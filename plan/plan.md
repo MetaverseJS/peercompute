@@ -2051,3 +2051,21 @@ stopped the loop. Multi-step quality remains an open acceptance gate; do not mar
 this broader objective complete or encode the test itinerary as a fixed behavior.
 Next: evaluate reliable model-produced plans on varied multi-step tasks, keeping
 this failed fixture and distinguishing model/export/runtime quality from delivery.
+
+### November 9 — peer request continuity
+
+User reports repeated/echoed responses specifically on peer inference. Trace
+current input, request identity, history and actual generation separately.
+Fix the reproduced facade mutation race by snapshotting bounded request data
+before discovery/callbacks. Qualify distinct consecutive requests and real UI
+history against the existing Qwen2B peer; retain failed outputs and remote-build
+uncertainty. Do not relabel this API fix as the user-report root cause without
+evidence. Public Pages/deploy/push remains on hold.
+
+Admission ownership is fixed and covered for local/peer text, pixels and PCM,
+including mutations from progress callbacks. Live diagnostics on the existing
+Qwen2B peer show correct short prompts and native Follow→Stop with real saved
+history. Original objective prompts still repeat a completed target, including
+when the old rationale is omitted. Keep multi-step receipt-use quality open;
+do not claim a stale-cache fix or discard conversation history. A separate
+preacceptance encrypted-stream timeout was observed and retained.

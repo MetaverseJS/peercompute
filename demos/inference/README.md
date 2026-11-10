@@ -187,6 +187,12 @@ tensor-parallel execution across peers. Agent migration, cloning, autonomous
 training and learned embodiment remain in the [agent-layer plan](../../plan/demos/inference/agent-layer-plan.md)
 and [Humunculus design](../../plan/demos/humunculus/humunculus.pdf).
 
+The shared runtime snapshots bounded message, image and audio inputs when
+`generate()` is called, before asynchronous discovery or progress callbacks.
+Reusing a caller's input object cannot rewrite a waiting request. Cancellation
+signals remain live. This protects request ownership; it does not guarantee a
+model follows instructions or reasons correctly about earlier action outcomes.
+
 ## Validation and further detail
 
 Run these from the repository root:
