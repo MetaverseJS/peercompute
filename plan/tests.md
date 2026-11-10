@@ -4775,3 +4775,18 @@ Native model explanations may still copy schema placeholders; physical receipts
 and requested arrival order, not prose fluency, establish these results. Phone
 modals fit the viewport and scroll internally; their first screenshots do not
 show progress lists below the fold. Public assets remain unchanged.
+
+### November10 — standalone inference viewport containment
+
+- Reuse inference-panel.test.js standalone/embedded sizing, menu, chat options and
+  attachment checks:6/6PASS. No new implementation-mirroring CSS test.
+- External actual-build browser checks cover Personal/Global at390x844,360x640,
+  412x915,844x390,390x440,return390x844 and1280x900:14/14PASS. Assert root
+  width/height equals viewport, window scroll remains0, composer fits, and long
+  transcript/dialog content can scroll internally; focus/resize/close preserved.
+- Native mobile address-bar and soft-keyboard behavior is not emulated. Before
+  capture also fit in emulation, so do not call this a reproduced native defect.
+  WebKit unavailable (missing expected binary, then libmanette on installed one);
+  no Safari/device qualification. Chromium console/page/download errors empty;
+  real SecretWorkshop Noise connected. Evidence: peercompute-mobile-overflow-20261110
+  in the external cache; six unit-browser checks and production build pass.

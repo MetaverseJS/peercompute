@@ -2189,3 +2189,9 @@ commit exception for the reviewed253replaced-line milestone diff. Preserve the
 failed default guard receipt and the unchanged global policy; only this commit
 uses the external253line allowance. Runtime behavior and the qualified internal
 preview are unchanged; this approval does not request another Pages deployment.
+
+November10 inference mobile viewport containment: standalone html/body/main no
+longer permit outer page scrolling; chat and dialogs retain their own scrolling.
+Six focused checks and14 built-page Chromium layouts pass. Native phone browser
+chrome/keyboard overflow was not reproduced; WebKit launch is unavailable due
+to a missing system library. Internal5189 only; no Pages update or push.

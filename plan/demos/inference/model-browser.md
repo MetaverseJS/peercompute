@@ -237,3 +237,12 @@ The panel borrows and preserves the scene runtime. Failed cleanup permits close
 retry without leaving half-disposed mutable controls; a retained model worker
 must be explicitly unloaded/recovered before final disposal. Standalone chat
 and Earth retain their existing default window ownership.
+
+### November10 — standalone viewport ownership
+
+The standalone HTML shell constrains document scrolling to keep mobile bottom
+space outside the chat from becoming a second scroll area. Transcript, model
+library and other dialogs retain internal scrolling; shared embedded world
+panels are unchanged. Verify root height and composer bounds across viewport
+resizes, focus and modal close as well as the existing internal scroll checks.
+Native phone keyboard/address-bar behavior still requires device confirmation.

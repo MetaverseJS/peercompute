@@ -1525,3 +1525,8 @@ updated; no Pages build/deploy or push. Historical failed candidates remain abov
   remain recorded. The winning framing separates current subtask from retained
   original goal; generic model explanations remain a limitation. Promote only
   internal CubeChat after exact UI/backend checks; no second Pages deployment.
+
+November10 mobile report: constrain standalone inference document scrolling,
+keeping transcript/dialog and embedded-world scrolling intact. Local CSS-shell
+change plus internal5189 preview only; Pages publication is not part of this fix.
+Native device overscroll remains distinct from passing emulated viewport checks.
