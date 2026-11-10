@@ -1,3 +1,6 @@
+import { normalizeWorldGoalPlan, activeWorldGoalMilestone, worldGoalMilestonesComplete }
+  from '../../../peercompute/src/peercompute/agents/WorldGoalPlan.js';
+
 const encoder = new TextEncoder();
 const labels = Object.freeze({ ready: 'Ready', planning: 'Choosing the next step', acting: 'Acting',
   'waiting-for-model': 'Waiting for a model', paused: 'Paused', completed: 'Complete · model assessment', cancelled: 'Cancelled' });
@@ -9,6 +12,24 @@ const objectiveText = value => typeof value === 'string' ? value.replaceAll('\0'
 const short = (value, maximum = 512) => typeof value === 'string' ? value.replace(/[\u0000-\u001f]/g, ' ').slice(0, maximum) : '';
 const node = (tag, content) => { const element = document.createElement(tag); if (content !== undefined) element.textContent = content; return element; };
 const button = label => { const element = node('button', label); element.type = 'button'; return element; };
+
+function planPresentation(snapshot) {
+  if (!snapshot?.plan) return { rows: [], message: 'No milestone plan saved yet.' };
+  try {
+    const plan = normalizeWorldGoalPlan(snapshot.plan), goal = { ...snapshot, plan };
+    const active = activeWorldGoalMilestone(goal), complete = worldGoalMilestonesComplete(goal);
+    const finished = complete ? plan.milestones.length : active.index;
+    return { message: `${finished} of ${plan.milestones.length} milestones verified`,
+      rows: plan.milestones.map((milestone, index) => {
+        const done = index < finished;
+        const receiptId = done ? snapshot.completedMilestones[index].requestId : null;
+        const receipt = done ? snapshot.receipts.find(item => item.requestId === receiptId) : null;
+        return { label: milestone.label, status: done ? 'completed' : index === finished ? 'current' : 'pending',
+          detail: done ? outcomes[receipt.status] : terminal.has(snapshot.status) ? 'Unfinished'
+            : index === finished ? (snapshot.status === 'acting' ? 'In progress' : 'Next') : 'Pending' };
+      }) };
+  } catch { return { rows: [], message: 'Milestone evidence is unavailable. Refresh the objective before resuming.' }; }
+}
 
 /** Owner-local presentation only. The host owns authority, persistence, scheduling
  * and physical verification; snapshots never rewrite a draft or launch work. */
@@ -32,7 +53,12 @@ export function createResidentGoalControls({ key, name = 'Resident', onAssignGoa
   const controls = node('div'); controls.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;margin:8px 0';
   const pause = button('Pause'), resume = button('Resume'), cancel = button('Cancel'); controls.append(pause, resume, cancel);
   const message = node('p'); message.setAttribute('role', 'status'); message.style.cssText = 'overflow-wrap:anywhere;color:inherit';
-  element.append(summary, objective, form, values, controls, message);
+  const milestones = node('section'); milestones.setAttribute('aria-label', 'Objective milestones');
+  const progress = node('p'); progress.dataset.goalField = 'progress';
+  const itinerary = node('ol'); itinerary.dataset.goalMilestones = '';
+  itinerary.style.cssText = 'padding-left:1.6em;overflow-wrap:anywhere;margin:8px 0';
+  milestones.append(progress, itinerary);
+  element.append(summary, objective, form, values, milestones, controls, message);
   let current = null, enabled = true, disposed = false, pending = null, dirty = false, error = '';
   const put = (id, value) => {
     const field = fields.get(id); if (field.value.textContent !== value) field.value.textContent = value;
@@ -62,6 +88,13 @@ export function createResidentGoalControls({ key, name = 'Resident', onAssignGoa
     put('receipt', receipt && Object.hasOwn(actions, receipt.type) && Object.hasOwn(outcomes, receipt.status)
       ? `${actions[receipt.type]} · ${outcomes[receipt.status]}${short(receipt.reason, 240) ? ` · ${short(receipt.reason, 240)}` : ''}` : 'No physical result yet');
     put('assessment', short(current?.modelAssessment, 512)); put('reason', short(current?.reason, 512));
+    milestones.hidden = !current;
+    progress.textContent = current?.planView.message ?? '';
+    itinerary.replaceChildren(...(current?.planView.rows ?? []).map(row => {
+      const item = node('li'); item.dataset.milestoneStatus = row.status; item.style.marginBottom = '6px';
+      const title = node('span', row.label), detail = node('small', row.detail);
+      detail.style.cssText = 'display:block;opacity:.8'; item.append(title, detail); return item;
+    }));
     message.textContent = error || (invalid ? 'Shorten this objective before starting.' : ''); message.hidden = !message.textContent;
   }
   function setName(value) {
@@ -77,7 +110,7 @@ export function createResidentGoalControls({ key, name = 'Resident', onAssignGoa
     const changed = current?.goalId !== snapshot?.goalId || current?.revision !== snapshot?.revision;
     current = snapshot ? { goalId: snapshot.goalId, revision: snapshot.revision, status: snapshot.status,
       objective: objectiveText(snapshot.objective), currentStep: short(snapshot.currentStep, 240), reason: short(snapshot.reason),
-      modelAssessment: short(snapshot.modelAssessment), lastReceipt: snapshot.lastReceipt ? { type: snapshot.lastReceipt.type,
+      modelAssessment: short(snapshot.modelAssessment), planView: planPresentation(snapshot), lastReceipt: snapshot.lastReceipt ? { type: snapshot.lastReceipt.type,
         status: snapshot.lastReceipt.status, reason: short(snapshot.lastReceipt.reason, 240) } : null } : null;
     if (!dirty && current) input.value = current.objective;
     if (changed) error = '';

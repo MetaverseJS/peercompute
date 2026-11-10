@@ -380,7 +380,15 @@ export class NetworkScheduler {
     if (now - this.lastReconnectAt < this.profile.reconnectBackoffMs) return;
 
     this.lastReconnectAt = now;
-    this.adapter.reconnect();
+    const failed = error => {
+      try { Promise.resolve(this.adapter.onReconnectError?.(error)).catch(() => {}); }
+      catch { /* A diagnostic observer cannot create an unhandled rejection. */ }
+    };
+    try {
+      Promise.resolve(this.adapter.reconnect()).catch(failed);
+    } catch (error) {
+      failed(error);
+    }
   }
 
   _ackReliableEvents(message, peerId) {

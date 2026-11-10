@@ -2169,3 +2169,23 @@ physics limitations are retained in log.md. Next implementation is the approved
 model-authored resident milestone plan with receipt-derived progress; existing
 actual-model objective/shutdown gates remain open. New work stays separate from
 this published build until qualified.
+
+Milestone candidate implementation now persists an immutable bounded model plan
+and credits only exact receipt-matched completed steps. Owner UI shows the plan
+and verified progress; restored work stays paused and preserves the completed
+prefix.146focused checks and92network lifecycle/regression checks pass, as do
+Cube/Earth external builds. Actual peer-hosted Nano now completes two-/three-step
+routes and retains one completed milestone through owner Pause/reload/Resume.
+Phase-specific current-subtask requests retain the raw original goal as data;
+guards prevent repeating completed steps. Owner authority, fixed budgets and
+clean shutdown pass. Earlier failed model trials and a corrected overly strict
+reload-harness assertion remain documented. Generic model explanations and
+other model/export quality remain limitations; no learned routing or training
+claim. Internal CubeChat promotion follows exact visual/backend checks; the
+published full-demo build remains unchanged.
+
+November10 commit follow-up: the user explicitly approved a one-time local
+commit exception for the reviewed253replaced-line milestone diff. Preserve the
+failed default guard receipt and the unchanged global policy; only this commit
+uses the external253line allowance. Runtime behavior and the qualified internal
+preview are unchanged; this approval does not request another Pages deployment.

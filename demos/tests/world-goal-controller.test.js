@@ -6,20 +6,29 @@ import { createWorldGoalController } from '../shared/agents/WorldGoalController.
 
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
 const act = targetId => ({ decision: 'act', intent: { type: 'approach', targetId }, reason: `Visit ${targetId}` });
-async function fixture({ decide, dispatch, stop, canRun = () => true, indexedDB = new IDBFactory(), name = crypto.randomUUID() } = {}) {
-  let clock = 1000, sensed = 0;
+const plan = () => ({ decision: 'plan', milestones: [
+  { label: 'Visit Nova', type: 'approach', targetId: 'human:nova' },
+  { label: 'Return to owner', type: 'approach', targetRole: 'requester' }] });
+async function fixture({ decide, dispatch, stop, observe, planFirst = true, canRun = () => true, indexedDB = new IDBFactory(), name = crypto.randomUUID() } = {}) {
+  let clock = 1000, sensed = 0, seedingPlan = false;
   const store = new WorldGoalStore({ name, hostId: 'owner-host', indexedDBImpl: indexedDB, now: () => clock }); await store.open();
   const calls = [], changes = [], pending = [], timers = new Map(); let timerId = 0;
   const options = { store, worldId: 'world', owns: () => true, now: () => clock,
     setTimer(fn, ms) { const id = ++timerId; timers.set(id, { fn, ms }); return id; }, clearTimer(id) { timers.delete(id); },
     canRun, onChange: goal => changes.push(goal),
-    observe: (_scope, { goal }) => ({ observedAt: clock, self: { id: 'resident:owner:agent', intentRevision: 0,
+    observe: (scope, input) => {
+      const { goal } = input;
+      const current = { observedAt: clock, self: { id: 'resident:owner:agent', intentRevision: 0,
       name: 'Resident', position: [0, 0, 0], velocity: [0, 0, 0] }, requesterId: goal.requesterId,
     participants: ['human:nova', 'human:owner'].map(id => ({ id, kind: 'human', name: id,
       peerId: id.slice(6), position: [10, 0, 0], relativePosition: [10, 0, 0], velocity: [0, 0, 0], distance: 10 })),
-    obstacles: [], readSequence: ++sensed }),
+      obstacles: [], readSequence: ++sensed };
+      return observe?.(scope, input, current) ?? current;
+    },
     async decide(scope, input) { calls.push({ kind: 'decide', scope, input: structuredClone({ ...input, signal: undefined }) });
-      return decide ? decide(scope, input) : act('human:nova'); },
+      if (seedingPlan) return plan();
+      return decide ? decide(scope, input) : !input.goal.plan ? plan()
+        : act(input.goal.completedMilestones.length ? input.goal.requesterId : 'human:nova'); },
     async dispatch(scope, input, options) {
       const saved = await store.get(scope);
       assert.equal(saved.status, 'acting'); assert.equal(saved.pendingAction.requestId, input.requestId);
@@ -29,7 +38,13 @@ async function fixture({ decide, dispatch, stop, canRun = () => true, indexedDB 
     async stop(scope, input) { calls.push({ kind: 'stop', scope, input }); return stop?.(scope, input); },
   };
   const controller = createWorldGoalController(options); await controller.ready;
-  const assign = () => controller.assign({ agentId: 'agent', objective: 'Visit Nova, then return to me.', requesterId: 'human:owner' });
+  // Most lifecycle cases begin after a real acknowledged fixture-model plan.
+  // Plan-stage cases opt out and inspect that first decision explicitly.
+  const assign = async () => {
+    const assigned = await controller.assign({ agentId: 'agent', objective: 'Visit Nova, then return to me.', requesterId: 'human:owner' });
+    if (planFirst) { seedingPlan = true; try { await step(); } finally { seedingPlan = false; } }
+    return assigned;
+  };
   const idle = async () => {
     for (let attempt = 0; attempt < 100; attempt += 1) {
       if (!controller.getStatus().active) return;
@@ -62,7 +77,8 @@ test('two physical steps and a model assessment use fresh senses, durable checkp
     assert.equal(await f.receipt(), true);
     assert.equal((await f.step()).status, 'acting'); assert.equal(f.pending[1].intent.targetId, 'human:owner');
     await f.receipt(); const result = await f.step();
-    assert.equal(result.status, 'completed'); assert.equal(result.steps, 3); assert.equal(result.receipts.length, 2);
+    assert.equal(result.status, 'completed'); assert.equal(result.steps, 4); assert.equal(result.receipts.length, 2);
+    assert.deepEqual(result.completedMilestones.map(item => item.requestId), result.receipts.map(item => item.requestId));
     assert.equal(result.modelAssessment, 'I assess both visits as finished.');
     assert.equal(f.calls.filter(call => call.kind === 'stop').length, 2);
     assert.ok(f.calls.filter(call => call.kind === 'decide').map(call => call.input.observed.readSequence).every((value, index, values) => index === 0 || value > values[index - 1]));
@@ -130,13 +146,13 @@ test('ordinary chat preserves a running motor but interrupts only a pending plan
   try {
     await g.assign(); await g.controller.tick(); await began;
     await g.controller.interrupt({ agentId: 'agent' });
-    const result = await g.controller.get('agent'); assert.equal(result.status, 'ready'); assert.equal(result.failures, 0); assert.equal(result.steps, 1);
+    const result = await g.controller.get('agent'); assert.equal(result.status, 'ready'); assert.equal(result.failures, 0); assert.equal(result.steps, 2);
     waiting.resolve(act('human:nova')); await g.step(); assert.equal(g.pending.length, 0);
   } finally { waiting.resolve(act('human:nova')); await g.close(); }
 });
 
 test('absent providers wait without spending steps or automatically loading models', async () => {
-  const f = await fixture({ decide: () => ({ status: 'waiting-for-model' }) });
+  const f = await fixture({ planFirst: false, decide: () => ({ status: 'waiting-for-model' }) });
   try {
     await f.assign(); const result = await f.step(); assert.equal(result.status, 'waiting-for-model'); assert.equal(result.steps, 0);
     await f.step(); assert.equal(f.calls.filter(call => call.kind === 'decide').length, 1);
@@ -237,11 +253,11 @@ test('unknown planner outcomes preserve the pending attempt and explicit Resume 
   const f = await fixture({ decide: () => { if (unknown) throw Object.assign(new Error('Remote outcome unknown'), { committed: true }); return act('human:nova'); } });
   try {
     await f.assign(); const paused = await f.step();
-    assert.equal(paused.status, 'paused'); assert.ok(paused.pendingDecision); assert.equal(paused.steps, 0);
+    assert.equal(paused.status, 'paused'); assert.ok(paused.pendingDecision); assert.equal(paused.steps, 1);
     unknown = false;
     const resumed = await f.controller.resume({ agentId: 'agent', goalId: paused.goalId, expectedRevision: paused.revision });
-    assert.equal(resumed.steps, 1); assert.equal(resumed.pendingDecision, null);
-    assert.equal((await f.step()).steps, 2); assert.equal(f.pending.length, 1);
+    assert.equal(resumed.steps, 2); assert.equal(resumed.pendingDecision, null);
+    assert.equal((await f.step()).steps, 3); assert.equal(f.pending.length, 1);
   } finally { await f.close(); }
 });
 
@@ -258,6 +274,7 @@ test('persistent storage failures quarantine planning; owner recovery acknowledg
     assert.deepEqual(f.controller.getStatus().unresolved, ['agent']);
     f.store.commit = original;
     await f.controller.resume({ agentId: 'agent', goalId: paused.goalId, expectedRevision: paused.revision });
+    assert.equal((await f.step()).plan.milestones.length, 2);
     assert.equal((await f.step()).status, 'acting'); assert.equal(f.pending.length, 1);
   } finally { f.store.commit = original; await f.close(); }
 });
@@ -378,4 +395,140 @@ test('failed physical cleanup remains owned for Cancel and disposal retry', asyn
     reject = false; await f.controller.dispose();
     assert.equal((await f.store.get({ worldId: 'world', agentId: 'agent' })).status, 'paused');
   } finally { reject = false; await f.close(); }
+});
+
+test('initial model plan is acknowledged and charged once without dispatching an itinerary', async () => {
+  const f = await fixture({ planFirst: false });
+  try {
+    await f.assign(); const planned = await f.step();
+    assert.equal(planned.status, 'ready'); assert.equal(planned.steps, 1);
+    assert.deepEqual(planned.plan, { version: 1, milestones: plan().milestones });
+    assert.deepEqual(planned.completedMilestones, []); assert.equal(planned.pendingAction, null);
+    assert.equal(f.pending.length, 0); assert.equal(f.calls.filter(call => call.kind === 'decide').length, 1);
+    const issued = await f.step();
+    assert.equal(issued.pendingAction.milestoneIndex, 0); assert.equal(issued.steps, 2);
+    assert.equal(f.pending.length, 1); assert.equal(f.calls.filter(call => call.kind === 'decide').length, 2);
+  } finally { await f.close(); }
+});
+
+test('wrong active target or type and premature completion cannot create an action checkpoint or effect', async () => {
+  let answer = act('human:owner');
+  const f = await fixture({ decide: () => answer });
+  try {
+    await f.assign(); const wrongTarget = await f.step();
+    assert.equal(wrongTarget.failures, 1); assert.equal(wrongTarget.pendingAction, null); assert.equal(f.pending.length, 0);
+    answer = { decision: 'act', intent: { type: 'look-at', targetId: 'human:nova' } };
+    f.advance(30000); assert.equal((await f.step()).failures, 2); assert.equal(f.pending.length, 0);
+    answer = act('human:nova'); f.advance(30000); await f.step(); await f.receipt();
+    const partial = await f.controller.get('agent');
+    assert.equal(partial.completedMilestones.length, 1);
+    answer = { decision: 'done', assessment: 'Only the first visit is recorded.', receiptIds: partial.receipts.map(item => item.requestId) };
+    const rejected = await f.step();
+    assert.equal(rejected.status, 'ready'); assert.equal(rejected.failures, 1); assert.equal(rejected.modelAssessment, '');
+    assert.equal(f.pending.length, 1); assert.equal(rejected.completedMilestones.length, 1);
+  } finally { await f.close(); }
+});
+
+test('blocked and lost effects keep the same milestone for model wait or retry without false progress', async () => {
+  let wait = false;
+  const f = await fixture({ decide: () => wait ? { decision: 'wait', reason: 'Wait for a clear path to Nova.' } : act('human:nova') });
+  try {
+    await f.assign(); await f.step(); const first = f.pending[0].requestId;
+    await f.receipt('blocked');
+    assert.deepEqual((await f.controller.get('agent')).completedMilestones, []);
+    wait = true; const waiting = await f.step();
+    assert.equal(waiting.currentStep, 'Wait for a clear path to Nova.'); assert.equal(f.pending.length, 1);
+    wait = false; f.advance(30000); const retry = await f.step();
+    assert.equal(retry.pendingAction.milestoneIndex, 0); assert.notEqual(retry.pendingAction.requestId, first);
+    await f.receipt('target-lost'); assert.deepEqual((await f.controller.get('agent')).completedMilestones, []);
+    await f.step(); const successful = (await f.controller.get('agent')).pendingAction.requestId;
+    await f.receipt(); const progressed = await f.controller.get('agent');
+    assert.deepEqual(progressed.completedMilestones, [{ index: 0, requestId: successful }]);
+    assert.deepEqual(progressed.receipts.map(item => item.status), ['blocked', 'target-lost', 'arrived']);
+  } finally { await f.close(); }
+});
+
+test('fresh observation loss or a newer physical revision rejects a selected action before dispatch', async () => {
+  for (const changed of ['target', 'revision']) {
+    const f = await fixture({ observe(_scope, _input, current) {
+      if (current.readSequence === 3) {
+        if (changed === 'target') current.participants = current.participants.filter(item => item.id !== 'human:nova');
+        else current.self.intentRevision++;
+      }
+      return current;
+    } });
+    try {
+      await f.assign(); const result = await f.step();
+      assert.equal(result.failures, 1); assert.equal(result.pendingAction, null); assert.equal(f.pending.length, 0);
+      assert.deepEqual(result.completedMilestones, []);
+    } finally { await f.close(); }
+  }
+});
+
+test('three-step look, approach and stop milestones require separate exact receipt evidence and final model assessment', async () => {
+  const chosen = [{ label: 'Face owner', type: 'look-at', targetRole: 'requester' },
+    { label: 'Visit Nova', type: 'approach', targetId: 'human:nova' }, { label: 'Stop', type: 'stop' }];
+  const f = await fixture({ planFirst: false, decide(_scope, { goal }) {
+    if (!goal.plan) return { decision: 'plan', milestones: chosen };
+    const next = chosen[goal.completedMilestones.length];
+    if (!next) return { decision: 'done', assessment: 'Facing, visit and stop all have exact evidence.',
+      receiptIds: goal.completedMilestones.map(item => item.requestId) };
+    return { decision: 'act', intent: { type: next.type,
+      ...(next.type !== 'stop' ? { targetId: next.targetRole ? goal.requesterId : next.targetId } : {}) } };
+  } });
+  try {
+    await f.assign(); await f.step();
+    for (const [index, status] of ['arrived', 'arrived', 'stopped'].entries()) {
+      const issued = await f.step(); assert.equal(issued.pendingAction.milestoneIndex, index);
+      assert.equal(await f.receipt(status, { type: index === 2 ? 'approach' : 'stop' }), false);
+      await f.receipt(status);
+      const settled = await f.controller.get('agent'); assert.equal(settled.status, 'ready');
+      assert.equal(settled.completedMilestones.length, index + 1);
+    }
+    const result = await f.step(); assert.equal(result.status, 'completed'); assert.equal(result.steps, 5);
+    assert.equal(new Set(result.completedMilestones.map(item => item.requestId)).size, 3);
+  } finally { await f.close(); }
+});
+
+test('restore and explicit requester refresh continue an unfinished milestone without replaying completed or pending effects', async () => {
+  const f = await fixture(); let second;
+  try {
+    await f.assign(); await f.step(); await f.receipt(); await f.step();
+    const before = await f.controller.get('agent'), original = before.pendingAction.requestId;
+    const decisions = [], dispatches = [];
+    second = createWorldGoalController({ ...f.options,
+      observe(scope, input) { const current = f.options.observe(scope, input);
+        current.participants.push({ ...current.participants[1], id: 'human:reconnected' }); return current; },
+      decide(_scope, { goal }) { decisions.push(structuredClone(goal)); return act(goal.requesterId); },
+      dispatch(_scope, action) { dispatches.push(action); return { applied: true }; } });
+    await second.ready; await second.tick(); const restored = await second.get('agent');
+    assert.equal(restored.status, 'paused'); assert.equal(restored.pendingAction.requestId, original);
+    assert.deepEqual(restored.plan, before.plan); assert.deepEqual(restored.completedMilestones, before.completedMilestones);
+    assert.equal(dispatches.length, 0); assert.equal(decisions.length, 0);
+    await second.resume({ agentId: 'agent', goalId: restored.goalId, expectedRevision: restored.revision, requesterId: 'human:reconnected' });
+    await second.tick();
+    for (let i = 0; i < 100 && second.getStatus().active; i++) await new Promise(resolve => setImmediate(resolve));
+    const resumed = await second.get('agent');
+    assert.equal(resumed.status, 'acting'); assert.equal(resumed.pendingAction.milestoneIndex, 1);
+    assert.notEqual(resumed.pendingAction.requestId, original); assert.equal(dispatches.length, 1);
+    assert.equal(dispatches[0].intent.targetId, 'human:reconnected');
+    assert.deepEqual(resumed.completedMilestones, before.completedMilestones); assert.deepEqual(resumed.plan, before.plan);
+    assert.equal(decisions.length, 1); assert.equal(decisions[0].plan.milestones[1].targetRole, 'requester');
+  } finally { await second?.dispose(); await f.close(); }
+});
+
+test('plan construction plus six actions and final assessment exactly exhaust the unchanged eight-decision budget', async () => {
+  const chosen = Array.from({ length: 6 }, (_, index) => ({ label: `Look ${index + 1}`, type: 'look-at', targetRole: 'requester' }));
+  const f = await fixture({ planFirst: false, decide(_scope, { goal }) {
+    if (!goal.plan) return { decision: 'plan', milestones: chosen };
+    return goal.completedMilestones.length < 6 ? { decision: 'act', intent: { type: 'look-at', targetId: goal.requesterId } }
+      : { decision: 'done', assessment: 'All six requested looks have distinct receipts.',
+        receiptIds: goal.completedMilestones.map(item => item.requestId) };
+  } });
+  try {
+    await f.assign(); await f.step();
+    for (let i = 0; i < 6; i++) { await f.step(); await f.receipt(); }
+    const result = await f.step(); assert.equal(result.status, 'completed'); assert.equal(result.steps, 8);
+    assert.equal(result.completedMilestones.length, 6); assert.equal(f.pending.length, 6);
+  } finally { await f.close(); }
 });

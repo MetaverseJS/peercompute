@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { IDBFactory, IDBObjectStore } from 'fake-indexeddb';
 import { WorldGoalStore, WORLD_GOAL_LIMITS } from '../../src/peercompute/agents/WorldGoalStore.js';
+import { activeWorldGoalMilestone, worldGoalMilestonesComplete } from '../../src/peercompute/agents/WorldGoalPlan.js';
 import { StateManager } from '../../src/peercompute/stateManager/StateManager.js';
 
 const scope = { worldId: 'cubechat:room', agentId: 'ada' };
@@ -11,13 +12,29 @@ const change = (store, record, patch, event, options) => store.commit(scopeOf(re
   goalId: record.goalId, expectedRevision: record.revision, patch, ...(event ? { event } : {}) }, options);
 const start = (store, record) => change(store, record, { status: 'ready', startedAt: 100000, deadlineAt: 700000 });
 const decision = (store, record, id = 'decision-1') => change(store, record, { status: 'planning', pendingDecision: { id, startedAt: 100000 } });
+const planOf = (...milestones) => ({ version: 1, milestones });
+const visit = { label: 'Visit Nova', type: 'approach', targetId: 'nova' };
+const planned = async (store, record, plan = planOf(visit)) => change(store, await decision(store, record, 'plan-decision'), {
+  status: 'ready', pendingDecision: null, plan, steps: record.steps + 1 });
 const action = (store, record, id = 'action-1') => change(store, record, { status: 'acting', pendingDecision: null,
-  steps: record.steps + 1, pendingAction: { requestId: id, intent: { type: 'approach', targetId: 'nova', stopDistance: 10 }, issuedAt: 100000, observationAt: 99999 } });
-const outcome = (id = 'action-1', extra = {}) => ({ requestId: id, type: 'approach', targetId: 'nova', status: 'arrived', at: 100000, position: [10, 3, 4], ...extra });
+  steps: record.steps + 1, pendingAction: { requestId: id, intent: { ...activeWorldGoalMilestone(record).intent,
+    ...(activeWorldGoalMilestone(record).intent.type !== 'stop' ? { stopDistance: 10 } : {}) },
+    milestoneIndex: activeWorldGoalMilestone(record).index, issuedAt: 100000, observationAt: 99999 } });
+const outcome = (id = 'action-1', extra = {}) => ({ requestId: id, type: 'approach', status: 'arrived', at: 100000, targetId: 'nova', position: [10, 3, 4], ...extra });
 async function fixture(t, options = {}) {
   const indexedDBImpl = options.indexedDBImpl ?? new IDBFactory();
   const store = new WorldGoalStore({ hostId: 'host-a', indexedDBImpl, now: () => 100000, ...options });
   await store.open(); t.after(() => store.close()); return { store, indexedDBImpl };
+}
+async function seedLegacy(store, record) {
+  const legacy = structuredClone(record); delete legacy.plan; delete legacy.completedMilestones;
+  if (legacy.pendingAction) delete legacy.pendingAction.milestoneIndex;
+  await new Promise((resolve, reject) => {
+    const transaction = store.database.transaction('goals', 'readwrite');
+    transaction.oncomplete = resolve; transaction.onabort = () => reject(transaction.error);
+    transaction.objectStore('goals').put({ key: JSON.stringify([legacy.worldId, legacy.agentId]), record: legacy });
+  });
+  return legacy;
 }
 
 test('private paused goals survive reopen without replay, stay scoped, and return detached records', async t => {
@@ -25,6 +42,7 @@ test('private paused goals survive reopen without replay, stay scoped, and retur
   const first = await store.assign(assignment);
   assert.equal(first.status, 'paused'); assert.equal(first.startedAt, null); assert.equal(first.pendingAction, null);
   assert.deepEqual(first.limits, WORLD_GOAL_LIMITS); assert.deepEqual(first.receipts, []);
+  assert.equal(first.plan, null); assert.deepEqual(first.completedMilestones, []);
   first.objective = 'Changed only in caller'; assert.equal((await store.get(scope)).objective, assignment.objective);
   const other = await store.assign({ ...assignment, worldId: 'earth:elsewhere' });
   await store.assign({ ...assignment, agentId: 'nova' });
@@ -38,7 +56,8 @@ test('database owner binding blocks foreign handles and owner identity cannot be
   const foreign = new WorldGoalStore({ hostId: 'host-b', indexedDBImpl }); t.after(() => foreign.close());
   await assert.rejects(foreign.open(), /another host/); await assert.rejects(foreign.get(scope), /not open/);
   assert.throws(() => { store.hostId = 'host-b'; }, TypeError);
-  for (const patch of [{ ownerHostId: 'host-b' }, { objective: 'Changed' }, { goalId: 'elsewhere' }, { limits: { maxSteps: 99 } }, { receipts: [] }]) {
+  for (const patch of [{ ownerHostId: 'host-b' }, { objective: 'Changed' }, { goalId: 'elsewhere' }, { limits: { maxSteps: 99 } },
+    { receipts: [] }, { completedMilestones: [] }]) {
     assert.throws(() => change(store, first, patch), /patch fields/);
   }
   assert.deepEqual(await store.get(scope), first);
@@ -87,6 +106,7 @@ test('checkpoint input identity and payload are captured before yielding to Inde
 test('receipts require an acknowledged matching action and remain evidence distinct from model assessment', async t => {
   const { store } = await fixture(t); let record = await start(store, await store.assign(assignment));
   await assert.rejects(change(store, record, { lastReceipt: outcome() }), /acknowledged action/);
+  record = await planned(store, record);
   record = await decision(store, record); record = await action(store, record);
   for (const invalid of [outcome('other'), outcome('action-1', { targetId: 'other' }), outcome('action-1', { type: 'look-at' }),
     outcome('action-1', { at: 99999 }), outcome('action-1', { position: [NaN, 0, 0] }), outcome('action-1', { extra: 'untrusted' })]) {
@@ -148,14 +168,17 @@ test('strict bounds reject hostile objects, invalid Unicode, oversized prompts, 
   assert.deepEqual(await store.get(scope), record);
 });
 
-test('trace is bounded while all eight verified action receipts remain available', async t => {
+test('trace is bounded while receipts and ordered progress survive the eight-decision budget', async t => {
   const { store } = await fixture(t); let record = await start(store, await store.assign(assignment));
-  for (let i = 0; i < 8; i++) {
+  record = await planned(store, record, planOf(...Array.from({ length: 6 }, (_, i) => ({ ...visit, label: `Visit Nova ${i + 1}` }))));
+  for (let i = 0; i < 7; i++) {
     record = await decision(store, record, `decision-${i}`); record = await action(store, record, `action-${i}`);
-    record = await change(store, record, { status: 'ready', pendingAction: null, lastReceipt: outcome(`action-${i}`) }, { type: 'arrived', requestId: `action-${i}` });
+    record = await change(store, record, { status: 'ready', pendingAction: null,
+      lastReceipt: outcome(`action-${i}`, { status: i === 0 ? 'blocked' : 'arrived' }) }, { type: 'arrived', requestId: `action-${i}` });
   }
   for (let i = 0; i < 20; i++) record = await change(store, record, { reason: `inspection-${i}` }, { type: 'inspection', text: `event-${i}` });
-  assert.equal(record.steps, 8); assert.equal(record.receipts.length, 8); assert.equal(record.trace.length, 16);
+  assert.equal(record.steps, 8); assert.equal(record.receipts.length, 7); assert.equal(record.completedMilestones.length, 6);
+  assert.equal(record.trace.length, 16);
   assert.equal(record.trace[0].text, 'event-4'); assert.equal(record.receipts[0].requestId, 'action-0');
   await assert.rejects(change(store, record, { steps: 9 }));
 });
@@ -211,4 +234,179 @@ test('StateManager owns goal handles without publishing objectives or cloning jo
   assert.throws(() => manager.createWorldGoalStore({ hostId: 'host-a' }), /destroyed/);
   const reopened = new WorldGoalStore({ name: 'owned', hostId: 'host-a', indexedDBImpl }); await reopened.open();
   assert.deepEqual(await reopened.get(scope), record); await reopened.close();
+});
+
+test('a plan requires an acknowledged decision, settles without dispatch, and is immutable', async t => {
+  const { store } = await fixture(t); let record = await start(store, await store.assign(assignment));
+  await assert.rejects(change(store, record, { plan: planOf(visit) }), /acknowledged planning/);
+  record = await decision(store, record);
+  await assert.rejects(change(store, record, { plan: planOf(visit) }), /acknowledged planning/);
+  await assert.rejects(change(store, record, { plan: planOf(visit), status: 'acting', pendingDecision: null,
+    pendingAction: { requestId: 'unplanned', intent: { type: 'approach', targetId: 'nova' }, milestoneIndex: 0,
+      issuedAt: 100000, observationAt: 100000 } }), /without an action/);
+  const paused = await change(store, record, { status: 'paused' });
+  await assert.rejects(change(store, paused, { plan: planOf(visit), pendingDecision: null }), /acknowledged planning/);
+  record = await change(store, paused, { status: 'ready', pendingDecision: null, steps: 1 });
+  record = await planned(store, record);
+  assert.equal(record.steps, 2); assert.equal(record.pendingDecision, null); assert.equal(record.pendingAction, null);
+  assert.deepEqual(record.completedMilestones, []);
+  await assert.rejects(change(store, record, { plan: planOf(visit) }), /cannot be replaced/);
+  await assert.rejects(change(store, record, { plan: planOf({ ...visit, targetId: 'another' }) }), /cannot be replaced/);
+  assert.throws(() => change(store, record, { completedMilestones: [{ index: 0, requestId: 'forged' }] }), /patch fields/);
+  assert.deepEqual(await store.get(scope), record);
+});
+
+test('plan payload is captured before IndexedDB and hostile nested fields cannot disappear through cloning', async t => {
+  const { store } = await fixture(t); let record = await decision(store, await start(store, await store.assign(assignment)));
+  const plan = planOf({ ...visit }), pending = change(store, record, { status: 'ready', pendingDecision: null, plan, steps: 1 });
+  plan.milestones[0].targetId = 'mutated'; plan.milestones.push({ label: 'Injected', type: 'stop' });
+  record = await pending; assert.deepEqual(record.plan, planOf(visit));
+  assert.throws(() => change(store, record, { plan: planOf({ ...visit, [Symbol('hidden')]: true }) }), /milestone fields/);
+  assert.deepEqual(await store.get(scope), record);
+});
+
+test('new actions cannot bypass the plan, skip milestones, change types, or target another participant', async t => {
+  const { store } = await fixture(t); let record = await start(store, await store.assign(assignment));
+  const pending = { requestId: 'proposed', intent: { type: 'approach', targetId: 'nova' }, milestoneIndex: 0,
+    issuedAt: 100000, observationAt: 100000 };
+  await assert.rejects(change(store, record, { status: 'acting', pendingAction: pending }), /active planned milestone/);
+  record = await planned(store, record, planOf(visit, { label: 'Face owner', type: 'look-at', targetRole: 'requester' }));
+  for (const invalid of [{ ...pending, milestoneIndex: 1 }, { ...pending, milestoneIndex: undefined },
+    { ...pending, intent: { type: 'look-at', targetId: 'nova' } }, { ...pending, intent: { type: 'approach', targetId: 'owner-peer' } },
+    { ...pending, intent: { type: 'stop' } }]) {
+    await assert.rejects(change(store, record, { status: 'acting', pendingAction: invalid }));
+    assert.deepEqual(await store.get(scope), record);
+  }
+  record = await action(store, await decision(store, record));
+  await assert.rejects(change(store, record, { status: 'ready', pendingAction: null, lastReceipt: outcome('action-1', { type: 'look-at' }) }), /acknowledged action/);
+  assert.deepEqual((await store.get(scope)).completedMilestones, []);
+});
+
+test('repeated destinations require separate successful requests and every milestone precedes final assessment', async t => {
+  const { store } = await fixture(t); let record = await start(store, await store.assign(assignment));
+  record = await planned(store, record, planOf(visit, { ...visit, label: 'Visit Nova again' }, { label: 'Look at Nova', type: 'look-at', targetId: 'nova' }));
+  record = await action(store, await decision(store, record), 'first');
+  record = await change(store, record, { status: 'ready', pendingAction: null, lastReceipt: outcome('first') });
+  assert.deepEqual(record.completedMilestones, [{ index: 0, requestId: 'first' }]);
+  await assert.rejects(change(store, record, { status: 'completed', modelAssessment: 'I visited Nova once.' }), /every planned milestone/);
+  await assert.rejects(action(store, record, 'first'), /already settled/);
+  await assert.rejects(change(store, record, { lastReceipt: outcome('invented') }), /acknowledged action/);
+  record = await action(store, await decision(store, record), 'blocked');
+  record = await change(store, record, { status: 'ready', pendingAction: null, lastReceipt: outcome('blocked', { status: 'blocked' }) });
+  assert.equal(record.completedMilestones.length, 1);
+  record = await action(store, await decision(store, record), 'second');
+  record = await change(store, record, { status: 'ready', pendingAction: null, lastReceipt: outcome('second') });
+  record = await action(store, await decision(store, record), 'look');
+  await assert.rejects(change(store, record, { status: 'ready', pendingAction: null, lastReceipt: outcome('look') }), /acknowledged action/);
+  record = await change(store, record, { status: 'ready', pendingAction: null, lastReceipt: outcome('look', { type: 'look-at' }) });
+  assert.deepEqual(record.completedMilestones, [{ index: 0, requestId: 'first' }, { index: 1, requestId: 'second' }, { index: 2, requestId: 'look' }]);
+  assert.equal(worldGoalMilestonesComplete(record), true);
+  record = await change(store, await decision(store, record, 'assessment'), { status: 'completed', pendingDecision: null,
+    steps: record.steps + 1, modelAssessment: 'Both visits and the final look have distinct physical receipts.' });
+  assert.equal(record.status, 'completed'); assert.equal(record.steps, 6);
+});
+
+test('requester milestones resolve after owner Resume while prior completion retains its exact earlier target', async t => {
+  const { store } = await fixture(t); let record = await start(store, await store.assign(assignment));
+  const returnToOwner = { label: 'Visit requester', type: 'approach', targetRole: 'requester' };
+  record = await planned(store, record, planOf(returnToOwner, visit, { ...returnToOwner, label: 'Return to requester' }));
+  record = await action(store, await decision(store, record), 'old-requester');
+  record = await change(store, record, { status: 'ready', pendingAction: null, lastReceipt: outcome('old-requester', { targetId: 'owner-peer' }) });
+  record = await change(store, record, { status: 'paused' });
+  record = await change(store, record, { status: 'ready', requesterId: 'new-owner-peer' });
+  record = await action(store, await decision(store, record), 'nova');
+  record = await change(store, record, { status: 'ready', pendingAction: null, lastReceipt: outcome('nova') });
+  assert.equal(activeWorldGoalMilestone(record).intent.targetId, 'new-owner-peer');
+  await assert.rejects(change(store, record, { status: 'acting', pendingAction: { requestId: 'stale-owner', milestoneIndex: 2,
+    intent: { type: 'approach', targetId: 'owner-peer' }, issuedAt: 100000, observationAt: 100000 } }), /active planned milestone/);
+  record = await action(store, await decision(store, record), 'new-requester');
+  await assert.rejects(change(store, record, { status: 'ready', pendingAction: null, lastReceipt: outcome('new-requester', { targetId: 'owner-peer' }) }), /acknowledged action/);
+  record = await change(store, record, { status: 'ready', pendingAction: null, lastReceipt: outcome('new-requester', { targetId: 'new-owner-peer' }) });
+  assert.equal(worldGoalMilestonesComplete(record), true); assert.equal(record.receipts[0].targetId, 'owner-peer');
+  assert.deepEqual(record.plan, planOf(returnToOwner, visit, { ...returnToOwner, label: 'Return to requester' }));
+});
+
+test('legacy history and pending checkpoints hydrate unchanged and never receive retrospective milestone credit', async t => {
+  const { store, indexedDBImpl } = await fixture(t); let record = await start(store, await store.assign(assignment));
+  const legacy = await seedLegacy(store, { ...record, status: 'acting', steps: 2, receipts: [outcome('legacy-first')],
+    lastReceipt: outcome('legacy-first'), pendingAction: { requestId: 'legacy-pending',
+      intent: { type: 'approach', targetId: 'nova', stopDistance: 10 }, issuedAt: 100000, observationAt: 99999 },
+    trace: [{ type: 'old-history', text: 'Keep the original evidence.', at: 100000 }] });
+  await store.close(); const { store: reopened } = await fixture(t, { indexedDBImpl });
+  record = await reopened.get(scope);
+  assert.deepEqual(record, { ...legacy, plan: null, completedMilestones: [] });
+  assert.deepEqual((await reopened.list())[0], record);
+  await assert.rejects(change(reopened, record, { status: 'ready', pendingAction: null, lastReceipt: outcome('legacy-pending') }), /settle paused/);
+  record = await change(reopened, record, { status: 'paused', pendingAction: null, lastReceipt: outcome('legacy-pending') });
+  assert.equal(record.receipts.length, 2); assert.deepEqual(record.completedMilestones, []);
+  record = await change(reopened, record, { status: 'ready' }); record = await planned(reopened, record);
+  assert.deepEqual(record.completedMilestones, []); assert.equal(activeWorldGoalMilestone(record).index, 0);
+  await assert.rejects(change(reopened, record, { status: 'completed', modelAssessment: 'The old receipts prove the new plan.' }), /every planned milestone/);
+  record = await action(reopened, await decision(reopened, record), 'new-action');
+  record = await change(reopened, record, { status: 'ready', pendingAction: null, lastReceipt: outcome('new-action') });
+  assert.deepEqual(record.completedMilestones, [{ index: 0, requestId: 'new-action' }]);
+  assert.deepEqual(record.trace, legacy.trace); assert.deepEqual(record.receipts.slice(0, 2), [outcome('legacy-first'), outcome('legacy-pending')]);
+});
+
+test('all eight legacy receipts and interrupted planning remain intact without expanding budgets', async t => {
+  const { store } = await fixture(t); const initial = await start(store, await store.assign(assignment));
+  const receipts = Array.from({ length: 8 }, (_, i) => outcome(`legacy-${i}`));
+  const legacy = await seedLegacy(store, { ...initial, steps: 8, receipts, lastReceipt: receipts.at(-1), status: 'paused',
+    pendingDecision: { id: 'legacy-decision', startedAt: 100000 } });
+  let record = await store.get(scope); assert.deepEqual(record, { ...legacy, plan: null, completedMilestones: [] });
+  for (const patch of [{ steps: 9 }, { steps: 7 }, { failures: 4 }, { deadlineAt: 700001 }]) await assert.rejects(change(store, record, patch));
+  record = await change(store, record, { reason: 'Still needs owner recovery.' });
+  assert.equal(record.receipts.length, 8); assert.deepEqual(record.pendingDecision, legacy.pendingDecision);
+  assert.deepEqual(record.limits, WORLD_GOAL_LIMITS); assert.deepEqual(record.completedMilestones, []);
+});
+
+test('planned progress survives reload and pending recovery without replay, deadline reset or revision', async t => {
+  const { store, indexedDBImpl } = await fixture(t); let record = await start(store, await store.assign(assignment));
+  record = await planned(store, record, planOf(visit, { label: 'Return', type: 'approach', targetRole: 'requester' }));
+  record = await action(store, await decision(store, record), 'visit');
+  record = await change(store, record, { status: 'ready', pendingAction: null, lastReceipt: outcome('visit') });
+  record = await action(store, await decision(store, record), 'interrupted-return');
+  await store.close(); const { store: reopened } = await fixture(t, { indexedDBImpl });
+  assert.deepEqual(await reopened.get(scope), record);
+  record = await change(reopened, record, { status: 'paused' });
+  assert.equal(record.pendingAction.requestId, 'interrupted-return'); assert.equal(record.pendingAction.milestoneIndex, 1);
+  record = await change(reopened, record, { status: 'ready', pendingAction: null, requesterId: 'owner-after-reload' });
+  assert.equal(record.steps, 3); assert.equal(record.deadlineAt, 700000);
+  assert.deepEqual(record.completedMilestones, [{ index: 0, requestId: 'visit' }]);
+  assert.equal(activeWorldGoalMilestone(record).intent.targetId, 'owner-after-reload');
+  await assert.rejects(change(reopened, record, { lastReceipt: outcome('interrupted-return', { targetId: 'owner-peer' }) }), /acknowledged action/);
+  await assert.rejects(change(reopened, record, { deadlineAt: 700001 }), /deadline/);
+  await assert.rejects(change(reopened, record, { plan: planOf(visit) }), /cannot be replaced/);
+});
+
+test('receipt persistence abort rolls milestone credit back atomically, and concurrent settlement appends once', async t => {
+  const { store, indexedDBImpl } = await fixture(t); const { store: other } = await fixture(t, { indexedDBImpl });
+  let record = await planned(store, await start(store, await store.assign(assignment)));
+  record = await action(store, await decision(store, record));
+  const patch = { status: 'ready', pendingAction: null, lastReceipt: outcome() };
+  const put = IDBObjectStore.prototype.put;
+  IDBObjectStore.prototype.put = function (...args) {
+    if (this.name === 'goals') throw new DOMException('Owned injected failure', 'QuotaExceededError');
+    return put.apply(this, args);
+  };
+  try { await assert.rejects(change(store, record, patch), { name: 'QuotaExceededError' }); }
+  finally { IDBObjectStore.prototype.put = put; }
+  assert.deepEqual(await store.get(scope), record);
+  const attempts = await Promise.allSettled([store, other].map(handle => change(handle, record, patch)));
+  assert.equal(attempts.filter(result => result.status === 'fulfilled').length, 1);
+  assert.equal(attempts.find(result => result.status === 'rejected').reason.code, 'ERR_WORLD_GOAL_CONFLICT');
+  record = await store.get(scope); assert.deepEqual(record.completedMilestones, [{ index: 0, requestId: 'action-1' }]);
+  assert.equal(record.receipts.length, 1);
+});
+
+test('stop milestone requires its own acknowledged stopped receipt', async t => {
+  const { store } = await fixture(t); let record = await planned(store, await start(store, await store.assign(assignment)),
+    planOf({ label: 'Stop moving', type: 'stop' }));
+  record = await action(store, await decision(store, record), 'stop');
+  await assert.rejects(change(store, record, { status: 'ready', pendingAction: null,
+    lastReceipt: { requestId: 'stop', type: 'stop', status: 'arrived', at: 100000 } }), /outcome/);
+  record = await change(store, record, { status: 'ready', pendingAction: null,
+    lastReceipt: { requestId: 'stop', type: 'stop', status: 'stopped', at: 100000 } });
+  assert.deepEqual(record.completedMilestones, [{ index: 0, requestId: 'stop' }]);
+  assert.equal(worldGoalMilestonesComplete(record), true);
 });

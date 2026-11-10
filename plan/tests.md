@@ -4723,3 +4723,55 @@ hardware compute and reduced-count software visuals are separate evidence.
 Public captures retain existing mobile panel overlaps and the unqualified MPM
 momentum diagnostic. All owned test resources closed. Evidence directory:
 /home/cos/.cache/peercompute-pages-release-20261110/.
+
+### November10 persistent model-authored milestones
+
+- Core contract/store: immutable1–6milestone plans, contiguous receipt-derived
+  progress, exact action/type/target matches, distinct request IDs, atomic failure
+  rollback, legacy migration without invented progress, and paused restore.
+- Specialist/controller: plan/current-milestone/assessment separation, current
+  participant references, requester-role rebinding after owner Resume, complete
+  receipt citation, immutable budgets and no execution before acknowledged state.
+- UI: safe labels, ordered current/completed/pending states, escaped content,
+  stale-revision rejection, owner controls and mobile fit.
+- Network lifecycle: delayed reconnect cannot resubscribe after disconnect or
+  replace a new node; scheduler catches rejected async tasks while retaining
+  active-session diagnostics.92focused network checks pass; old shutdown failure
+  remains preserved separately from the source regression.
+- Consolidated `npm run test:resident-objectives`:141/141 PASS after capability
+  clarification. This is infrastructure/fixture evidence, not model competence.
+- Native `demos/tests/resident-goal-browser.mjs` cases: round-trip, three-step,
+  progress-reload. Require frozen source/served-asset hashes, owned private rooms,
+  actual unchanged production routing to the advertised model, encrypted peer
+  inference, complete input/output token budget, model-authored accepted plan,
+  each accepted action tied through a pending decision and acknowledged trace to
+  an actual motor receipt, sustained WebGPU motion, exact requested arrival order,
+  no replay, owner-only controls, phone screenshots and clean shutdown. Capture
+  adjacent trace pairs in acknowledged snapshots because the product retains
+  only16trace rows; rejected proposals cannot count as accepted model evidence.
+  Owner Pause cancellation is allowed only for the exact uncommitted call pending
+  at the actual native click; other errors still fail. No fixtures may substitute
+  a model decision, issue a test intention or manufacture a receipt.
+- First native candidate failed3invalid plans before movement; preserved under
+  `/home/cos/.cache/peercompute-milestones-20261110/native-roundtrip-1/`.
+  A single captured-context capability contrast passed its narrow parsing scope;
+  physical qualification is still pending. No new public deployment is implied.
+
+Final milestone acceptance: `npm run test:resident-objectives`146/146 PASS;
+network lifecycle/regression92/92 PASS; CubeChat/Earth external builds PASS.
+Native Nano reports `native-roundtrip-5`, `native-three-step-1` and
+`native-progress-reload-1` all PASS under frozen provenance5. Two-/three-step
+ordered arrivals, distinct repeated-target receipts, final model assessment,
+owner/visitor authority, Pause/Resume/Cancel, paused restore and completion of
+only unfinished work are verified through actual peer inference and WebGPU
+motor/physics. Model discovery briefly disappeared after reload; it recovered
+without consuming a decision. All owned browsers closed with zero page/console/
+asset/download/cleanup/late-browser errors. Product source/build is candidate4;
+provenance5 only corrects the harness to accept an exact acknowledged orderly
+shutdown pause before restore. Every intervening revision must be accounted for,
+with unchanged plan/progress/receipts/identity/budgets and no replay. Earlier
+failed candidates and narrow one-call contrasts remain separate evidence.
+Native model explanations may still copy schema placeholders; physical receipts
+and requested arrival order, not prose fluency, establish these results. Phone
+modals fit the viewport and scroll internally; their first screenshots do not
+show progress lists below the fold. Public assets remain unchanged.

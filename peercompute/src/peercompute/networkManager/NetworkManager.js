@@ -700,6 +700,8 @@ export class NetworkManager {
     this._applicationPrivateKey = null;
     this.peerId = null;
     this.isConnected = false;
+    this.connectionGeneration = 0;
+    this.schedulerReconnect = null;
     this.joinedAt = null;
     this.presenceInterval = null;
     this.publishErrorAt = new Map();
@@ -1079,6 +1081,7 @@ export class NetworkManager {
     if (!this.libp2p) {
       throw new Error('NetworkManager not initialized');
     }
+    this.connectionGeneration++;
 
     try {
       await this.libp2p.start();
@@ -1165,9 +1168,13 @@ export class NetworkManager {
   }
 
   async redialBootstrapPeers() {
-    if (!this.libp2p) return;
+    const node = this.libp2p, generation = this.connectionGeneration;
+    if (!node) return;
+    const current = () => node === this.libp2p && generation === this.connectionGeneration;
     await this._dialBootstrapPeers();
+    if (!current()) return;
     await this._reserveBootstrapRelayAddrs();
+    if (!current()) return;
     await this._logLocalAnnounceAddrs('redial-bootstrap');
   }
 
@@ -1184,13 +1191,17 @@ export class NetworkManager {
   }
 
   async disconnect() {
+    // Invalidate suspended reconnects before any cleanup yields. Their dials
+    // may settle later; shutdown must neither wait for nor revive those tasks.
+    this.connectionGeneration++;
+    this.schedulerReconnect = null;
+    this.isConnected = false;
+    this._stopScheduler();
+    this._clearPresenceTimer();
     await this.networkTelemetryService.stop();
     await this._stopPeerInferenceService();
     await this.peerConnectionRecovery?.stop();
     await this._stopArtifactTransport();
-    this.isConnected = false;
-    this._stopScheduler();
-    this._clearPresenceTimer();
     if (this.isolationReconnectTimer) {
       clearTimeout(this.isolationReconnectTimer);
       this.isolationReconnectTimer = null;
@@ -3838,10 +3849,32 @@ export class NetworkManager {
     await this._publish(topic, message);
   }
 
-  async _schedulerReconnect() {
-    await this.redialBootstrapPeers();
-    this._resubscribeTopics();
-    this._startPresence();
+  _schedulerReconnect() {
+    const node = this.libp2p, generation = this.connectionGeneration;
+    const current = () => this.isConnected && node === this.libp2p && generation === this.connectionGeneration;
+    const pubsubReady = () => !!node?.services?.pubsub && node.services.pubsub.isStarted?.() !== false;
+    if (!current() || !pubsubReady()) return Promise.resolve();
+    if (this.schedulerReconnect?.node === node && this.schedulerReconnect.generation === generation) {
+      return this.schedulerReconnect.task;
+    }
+    const run = { node, generation, task: null };
+    this.schedulerReconnect = run;
+    run.task = (async () => {
+      try {
+        await this.redialBootstrapPeers();
+        if (!current() || !pubsubReady()) return;
+        this._resubscribeTopics();
+        if (current() && pubsubReady()) this._startPresence();
+      } catch (error) {
+        if (!current()) return;
+        this._emitConnectionFailure({ source: 'scheduler', stage: 'reconnect', error });
+        debugWarn('[NetworkManager] Scheduler reconnect failed', error?.message || error);
+        throw error;
+      } finally {
+        if (this.schedulerReconnect === run) this.schedulerReconnect = null;
+      }
+    })();
+    return run.task;
   }
 
   _resubscribeTopics() {

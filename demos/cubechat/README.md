@@ -65,26 +65,34 @@ your resident. Deliberate pauses, uncertain outcomes and unsaved changes retain
 their recovery protections.
 
 Expand the experimental **Objective** section on a resident you own in **Residents** to start a task such
-as “Visit Nova, then come back to me.” A language model chooses one approach,
-look-at or stop step at a time from current observations and saved physical
-results. The existing neural motor carries it out. The panel shows the current
-step, last physical result and the model's separate completion assessment.
+as “Visit Nova, then come back to me.” A language model first writes an ordered
+plan of up to six approach, look-at or stop milestones. It then chooses an action
+for the current milestone using fresh observations. The existing neural motor
+carries it out; only a matching successful physical receipt advances progress.
+The panel shows the saved plan, verified milestones, current step, last physical
+result and the model's separate completion assessment.
 
 **Pause**, **Resume** and **Cancel** control the objective independently of chat.
 Human conversation takes priority over planning; a new movement command pauses
 the superseded objective. Progress is saved privately before work starts. Reload
-restores it paused, and Resume plans from fresh observations without replaying
-an interrupted action. Active objectives are excluded from public resident data
+restores it paused. Resume keeps completed milestones, observes the world again
+and requests a fresh action for unfinished work. It never replays an interrupted
+request. A saved “return to me” milestone resolves to the current owner after
+reload. Active objectives are excluded from public resident data
 and clones. In network-assisted mode, the selected inference peer receives the
 objective and observations for planning; local-only keeps inference on this
 device. Each objective has eight planning decisions, three consecutive failed
 attempts and a ten-minute lifetime; Resume does not renew its step/time allowance.
 Waiting for an available model does not spend a decision. Small models may choose
 incorrect steps or pause; completion is their assessment, not a guarantee that
-an arbitrary natural-language task was satisfied. Live Qwen3.5 2B peer tests
-executed real approaches but repeated the first destination in a visit/return
-task. Multi-step planning quality remains unqualified for that tested model/export/runtime
-combination. The request data and tokenization were verified separately.
+an arbitrary natural-language task was satisfied. Actual peer-hosted Nemotron 3
+Nano 4B tests completed two- and three-step routes in order, including repeated
+destinations and pause/reload/resume after the first arrival. Planning, action
+and assessment requests have separate instructions; later requests address the
+current subtask while retaining the original goal as context. Model explanations
+can still be generic or copy schema placeholders; physical receipts establish
+the verified progress. Earlier Qwen3.5 2B tests repeated a destination, and that
+model/export/runtime combination remains unqualified for multi-step objectives.
 
 Use **Edit** on a resident you own to change its name, personality, goals,
 appearance and preferences while retaining its identity and memories. **Clone to

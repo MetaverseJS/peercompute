@@ -1512,3 +1512,16 @@ updated; no Pages build/deploy or push. Historical failed candidates remain abov
   progress, owner-only controls and paused reload recovery. Source changes for
   the new slice must follow publication; actual-model ordered completion remains
   a separate gate from infrastructure fixtures and the fixed dialogue repetition.
+
+- November10 full demo release5f3b556a published and public23-route verification
+  passed before new edits. New local milestone candidate adds immutable
+  model-authored plans, exact receipt-derived progress, reusable owner UI and
+  no-replay restore. Native qualification remains open despite141fixture tests;
+  keep actual model failures and late-network cleanup evidence. The published
+  build stays fixed while this Homunculus slice is tested internally.
+- November10 milestone slice qualified locally:146objective and92network checks,
+  two consumer builds, actual Nano two-/three-step plans and saved-progress reload
+  complete with exact physical receipts and no replay. Failed prompt candidates
+  remain recorded. The winning framing separates current subtask from retained
+  original goal; generic model explanations remain a limitation. Promote only
+  internal CubeChat after exact UI/backend checks; no second Pages deployment.

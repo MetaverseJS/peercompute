@@ -1,5 +1,7 @@
 import { agentIdentifier } from './AgentContracts.js';
 import { normalizeWorldPosition } from './WorldAgentContracts.js';
+import { normalizeWorldGoalPlan, worldGoalMilestoneMatchesAction, worldGoalMilestonesComplete,
+  WORLD_GOAL_PLAN_LIMITS } from './WorldGoalPlan.js';
 
 export const WORLD_GOAL_LIMITS = Object.freeze({ maxSteps: 8, maxFailures: 3, maxDurationMs: 600_000 });
 export const WORLD_GOAL_STATUSES = Object.freeze(['paused', 'ready', 'planning', 'acting', 'waiting-for-model', 'completed', 'cancelled']);
@@ -7,7 +9,7 @@ const TERMINAL = new Set(['completed', 'cancelled']);
 const ACTIONS = new Set(['approach', 'look-at', 'stop']);
 const RECEIPT_STATUSES = new Set(['arrived', 'stopped', 'target-lost', 'blocked', 'cancelled', 'failed']);
 const MUTABLE = ['requesterId', 'status', 'reason', 'steps', 'failures', 'startedAt', 'deadlineAt', 'nextDecisionAt',
-  'pendingDecision', 'pendingAction', 'lastReceipt', 'currentStep', 'modelAssessment'];
+  'pendingDecision', 'pendingAction', 'lastReceipt', 'currentStep', 'modelAssessment', 'plan'];
 const encoder = new TextEncoder(), decoder = new TextDecoder();
 const copy = value => value === undefined ? undefined : structuredClone(value);
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -55,9 +57,11 @@ function pendingDecision(value) {
 }
 function pendingAction(value) {
   if (value === null) return null;
-  fields(value, ['requestId', 'intent', 'issuedAt', 'observationAt'], 'pending action');
+  fields(value, ['requestId', 'intent', 'issuedAt', 'observationAt', 'milestoneIndex'], 'pending action');
   return { requestId: agentIdentifier(value.requestId, 'action ID'), intent: intent(value.intent),
-    issuedAt: timestamp(value.issuedAt, 'action time'), observationAt: timestamp(value.observationAt, 'observation time') };
+    issuedAt: timestamp(value.issuedAt, 'action time'), observationAt: timestamp(value.observationAt, 'observation time'),
+    ...(Object.hasOwn(value, 'milestoneIndex')
+      ? { milestoneIndex: integer(value.milestoneIndex, WORLD_GOAL_PLAN_LIMITS.maxMilestones - 1, 'milestone index') } : {}) };
 }
 function receipt(value) {
   fields(value, ['requestId', 'type', 'targetId', 'status', 'at', 'position', 'reason'], 'receipt');
@@ -106,6 +110,12 @@ function changedRecord(previous, patch, now) {
   }
   next.pendingDecision = pendingDecision(next.pendingDecision);
   next.pendingAction = pendingAction(next.pendingAction);
+  if (Object.hasOwn(patch, 'plan')) {
+    if (previous.plan !== null) throw new Error('Goal milestone plan cannot be replaced');
+    if (previous.status !== 'planning' || !previous.pendingDecision || next.pendingDecision
+        || previous.pendingAction || next.pendingAction) throw new Error('Goal plan requires settlement of acknowledged planning without an action');
+    next.plan = normalizeWorldGoalPlan(patch.plan);
+  }
   for (const field of ['pendingDecision', 'pendingAction']) {
     if (previous[field] && next[field] && !same(previous[field], next[field])) throw new Error(`Goal ${field} cannot be replaced before settlement`);
   }
@@ -128,13 +138,24 @@ function changedRecord(previous, patch, now) {
     if (previous.receipts.length >= WORLD_GOAL_LIMITS.maxSteps) throw new Error('Goal receipt budget exhausted');
     if (next.pendingAction) throw new Error('Goal receipt must settle the pending action');
     next.receipts = [...previous.receipts, outcome];
+    if (action.milestoneIndex === undefined) {
+      if (next.status !== 'paused') throw new Error('Legacy goal actions must settle paused without milestone credit');
+    } else {
+      if (!worldGoalMilestoneMatchesAction(previous, action)) throw new Error('Goal receipt does not match its active milestone');
+      if (['arrived', 'stopped'].includes(outcome.status)) {
+        next.completedMilestones = [...previous.completedMilestones, { index: action.milestoneIndex, requestId: outcome.requestId }];
+      }
+    }
   }
   if (next.pendingAction && !previous.pendingAction && previous.receipts.some(item => item.requestId === next.pendingAction.requestId)) {
     throw new Error('Goal action request was already settled');
   }
+  if (next.pendingAction && !previous.pendingAction && !worldGoalMilestoneMatchesAction(next, next.pendingAction)) {
+    throw new Error('Goal action must match the active planned milestone');
+  }
   if (next.status === 'completed' && (!next.modelAssessment.trim()
-      || !next.receipts.some(item => ['arrived', 'stopped'].includes(item.status)))) {
-    throw new Error('Goal completion requires an explicit model assessment and physical evidence');
+      || !worldGoalMilestonesComplete(next))) {
+    throw new Error('Goal completion requires an explicit model assessment and successful evidence for every planned milestone');
   }
   return next;
 }
@@ -202,10 +223,12 @@ export class WorldGoalStore {
   }
   _owner(record) {
     if (record && record.ownerHostId !== this.hostId) throw new Error('This installation does not own the goal');
-    return record;
+    // Version-one databases predate ordered plans. Hydrate without rewriting
+    // their receipts or pending checkpoints, and never infer milestone credit.
+    return record && { ...record, plan: record.plan ?? null, completedMilestones: record.completedMilestones ?? [] };
   }
   _expected(record, goalId, revision) {
-    this._owner(record);
+    record = this._owner(record);
     if (!record || record.goalId !== goalId || record.revision !== revision) {
       throw Object.assign(new Error('Goal revision conflict'), { code: 'ERR_WORLD_GOAL_CONFLICT' });
     }
@@ -234,7 +257,8 @@ export class WorldGoalStore {
       const record = { schema: 'peercompute.world-goal.v1', ...scope, goalId: crypto.randomUUID(), ownerHostId: this.hostId,
         revision: (previous?.revision ?? 0) + 1, objective, requesterId, status: 'paused', reason: '', steps: 0, failures: 0,
         startedAt: null, deadlineAt: null, nextDecisionAt: null, pendingDecision: null, pendingAction: null,
-        lastReceipt: null, receipts: [], currentStep: '', modelAssessment: '', limits: { ...WORLD_GOAL_LIMITS }, trace: [], createdAt: now, updatedAt: now };
+        lastReceipt: null, receipts: [], plan: null, completedMilestones: [], currentStep: '', modelAssessment: '',
+        limits: { ...WORLD_GOAL_LIMITS }, trace: [], createdAt: now, updatedAt: now };
       await request(store.put(this._row(record))); return record;
     }, signal);
   }
@@ -253,7 +277,8 @@ export class WorldGoalStore {
     agentIdentifier(input.goalId, 'goal ID'); integer(input.expectedRevision, Number.MAX_SAFE_INTEGER, 'expected revision');
     fields(input.patch, MUTABLE, 'patch');
     const { goalId, expectedRevision } = input;
-    const patch = copy(input.patch), now = this._time(), event = eventRecord(input.event, now);
+    const patch = copy({ ...input.patch, ...(Object.hasOwn(input.patch, 'plan')
+      ? { plan: normalizeWorldGoalPlan(input.patch.plan) } : {}) }), now = this._time(), event = eventRecord(input.event, now);
     return this._transaction('readwrite', async store => {
       const previous = this._expected((await request(store.get(key)))?.record, goalId, expectedRevision);
       if (TERMINAL.has(previous.status)) throw new Error('Terminal goals cannot be resumed or changed');

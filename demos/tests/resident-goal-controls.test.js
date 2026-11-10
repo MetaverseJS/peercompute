@@ -130,3 +130,52 @@ test('saved multiline objectives rehydrate without changing their text and never
   await page.evaluate(() => controls.setStatus(null));
   assert.equal(await objective(page).inputValue(), saved);
 });
+
+// These snapshots stand in for acknowledged owner-local store reads. Rendering
+// does not execute a plan or decide which physical evidence is authoritative.
+test('milestones show distinct physical progress through paused restore and preserve owner revision controls', async t => {
+  const page = await fixture(t, true);
+  await page.evaluate(() => {
+    window.planned = { ...snapshot, status: 'paused', requesterId: 'human:owner-new', revision: 9,
+      plan: { version: 1, milestones: [
+        { label: 'Visit Nova', type: 'approach', targetId: 'resident:nova' },
+        { label: 'Return to the owner', type: 'approach', targetRole: 'requester' },
+        { label: 'Visit Nova again', type: 'approach', targetId: 'resident:nova' },
+      ] },
+      receipts: [{ requestId: 'arrival-1', type: 'approach', targetId: 'resident:nova', status: 'arrived', at: 1 }],
+      completedMilestones: [{ index: 0, requestId: 'arrival-1' }] };
+    controls.setStatus(planned);
+  });
+  assert.equal(await page.locator('[data-goal-field="progress"]').innerText(), '1 of 3 milestones verified');
+  assert.deepEqual(await page.locator('[data-goal-milestones] li').evaluateAll(rows => rows.map(row => row.dataset.milestoneStatus)), ['completed', 'current', 'pending']);
+  assert.deepEqual(await page.evaluate(() => calls), [], 'Rendering restored progress does not resume work');
+  await action(page, 'Resume').click();
+  assert.equal(await page.evaluate(() => calls.at(-1).input.expectedRevision), 9);
+  await page.evaluate(() => controls.setStatus({ ...planned, revision: 10,
+    receipts: [...planned.receipts, { requestId: 'arrival-2', type: 'approach', targetId: 'human:owner-old', status: 'arrived', at: 2 }],
+    completedMilestones: [...planned.completedMilestones, { index: 1, requestId: 'arrival-2' }] }));
+  assert.equal(await page.locator('[data-goal-field="progress"]').innerText(), '2 of 3 milestones verified');
+  await page.evaluate(() => controls.setStatus(planned));
+  assert.equal(await page.locator('[data-goal-field="progress"]').innerText(), '2 of 3 milestones verified', 'Stale snapshot cannot roll back displayed progress');
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+});
+
+test('milestone presentation escapes model labels and never turns forged or mismatched evidence into completion', async t => {
+  const page = await fixture(t, true);
+  await page.evaluate(() => {
+    window.planned = { ...snapshot, requesterId: 'human:owner', status: 'paused',
+      plan: { version: 1, milestones: [{ label: '<img src=x onerror=alert(1)>', type: 'approach', targetId: 'resident:nova' }] },
+      receipts: [], completedMilestones: [] };
+    controls.setStatus(planned);
+  });
+  assert.equal(await page.locator('[data-goal-milestones] li span').innerText(), '<img src=x onerror=alert(1)>');
+  assert.equal(await page.locator('img').count(), 0);
+  await page.evaluate(() => controls.setStatus({ ...planned, revision: 4,
+    receipts: [{ requestId: 'wrong-action', type: 'look-at', targetId: 'resident:nova', status: 'arrived', at: 1 }],
+    completedMilestones: [{ index: 0, requestId: 'wrong-action' }] }));
+  assert.equal(await page.locator('[data-goal-milestones] li').count(), 0);
+  assert.match(await page.locator('[data-goal-field="progress"]').innerText(), /evidence is unavailable/);
+  assert.deepEqual(await page.evaluate(() => calls), []);
+  await page.evaluate(() => controls.setStatus(null));
+  assert.equal(await page.getByRole('region', { name: 'Objective milestones' }).isVisible(), false);
+});

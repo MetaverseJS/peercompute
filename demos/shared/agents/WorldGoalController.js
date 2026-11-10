@@ -1,5 +1,6 @@
 import { validateWorldIntent } from './WorldIntent.js';
 import { parseWorldGoalDecision } from './WorldGoalDecision.js';
+import { activeWorldGoalMilestone, worldGoalMilestoneMatchesAction } from '../../../peercompute/src/peercompute/agents/WorldGoalPlan.js';
 
 const clone = value => value == null ? value : structuredClone(value);
 const terminal = goal => !goal || ['completed', 'cancelled'].includes(goal.status);
@@ -138,7 +139,7 @@ export function createWorldGoalController({ store, worldId, observe, decide, dis
         ...(goal.startedAt === null ? { startedAt: at, deadlineAt: at + goal.limits.maxDurationMs } : {}),
         ...(input.requesterId !== undefined ? { requesterId: input.requesterId } : {}),
         pendingDecision: null, pendingAction: null, nextDecisionAt: at },
-      { type: 'owner-resumed', text: 'Plan afresh; never replay pending requests.' });
+      { type: 'owner-resumed', text: 'Observe afresh and continue saved milestones; never replay pending requests.' });
       unresolved.delete(input.agentId); notify(updated); arm(); return updated;
     });
   }
@@ -254,15 +255,25 @@ export function createWorldGoalController({ store, worldId, observe, decide, dis
         const current = await read(run.agentId);
         if (current?.status !== 'planning' || current.pendingDecision?.id !== run.id || controls.has(run.agentId) || closed) return;
         run.controller.signal.throwIfAborted();
+        // Revalidate against the acknowledged current checkpoint before either
+        // saving a plan or authorizing a physical effect.
+        parseWorldGoalDecision(JSON.stringify(decision), { goal: current, observed: currentObserved, now: time() });
         const steps = current.steps + 1, common = { steps, failures: 0, pendingDecision: null };
-        if (decision.decision === 'act') {
+        if (decision.decision === 'plan') {
+          await commit(current, { ...common, status: 'ready', reason: '',
+            plan: { version: 1, milestones: decision.milestones },
+            currentStep: 'Model plan saved; awaiting its first action.', nextDecisionAt: time() },
+          { type: 'plan-created', text: `Model selected ${decision.milestones.length} ordered milestones.`, requestId: run.id });
+        } else if (decision.decision === 'act') {
+          const milestone = activeWorldGoalMilestone(current);
           const requestId = crypto.randomUUID();
           issued = await commit(current, { ...common, failures: current.failures, status: 'acting', reason: '',
             currentStep: decision.reason || decision.intent.type,
-            pendingAction: { requestId, intent: decision.intent, issuedAt: time(), observationAt: observed.observedAt } },
+            pendingAction: { requestId, milestoneIndex: milestone.index, intent: decision.intent,
+              issuedAt: time(), observationAt: observed.observedAt } },
           { type: 'action-prepared', text: decision.reason || decision.intent.type, requestId });
         } else if (decision.decision === 'done') {
-          await commit(current, { ...common, status: 'completed', reason: 'Finished according to the model; physical receipts are shown separately.',
+          await commit(current, { ...common, status: 'completed', reason: 'All saved milestones have physical receipts; the model assessed the objective as finished.',
             modelAssessment: decision.assessment, currentStep: 'Model assessed the objective as finished.', nextDecisionAt: null },
           { type: 'model-assessment', text: decision.assessment });
         } else {
@@ -308,6 +319,7 @@ export function createWorldGoalController({ store, worldId, observe, decide, dis
       const goal = await read(agentId), pending = goal?.pendingAction;
       if (goal?.status !== 'acting' || !pending || settling.has(agentId) || event?.requestId !== pending.requestId
           || event.type !== pending.intent.type || event.targetId !== pending.intent.targetId
+          || (goal.plan && !worldGoalMilestoneMatchesAction(goal, pending))
           || !['arrived', 'stopped', 'target-lost', 'blocked', 'cancelled', 'failed'].includes(event.status)) return;
       const receipt = { requestId: event.requestId, type: event.type, ...(event.targetId ? { targetId: event.targetId } : {}),
         status: event.status, at: time(), ...(event.position ? { position: clone(event.position) } : {}),

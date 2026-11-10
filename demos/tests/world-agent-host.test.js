@@ -38,7 +38,7 @@ async function boot() {
     const { AgentRecordStore } = await import('/peercompute/src/peercompute/agents/AgentRecordStore.js');
     const { WorldMemoryStore } = await import('/peercompute/src/peercompute/agents/WorldMemoryStore.js');
     const { WorldGoalStore } = await import('/peercompute/src/peercompute/agents/WorldGoalStore.js');
-    const { WORLD_GOAL_INSTRUCTIONS } = await import('/demos/shared/agents/WorldGoalDecision.js');
+    const { WORLD_GOAL_INSTRUCTIONS, WORLD_GOAL_OBSERVATIONS_MARKER } = await import('/demos/shared/agents/WorldGoalDecision.js');
     const { WORLD_PHYSICAL_INTENT_INSTRUCTIONS, WORLD_PHYSICAL_OBSERVATIONS_MARKER } = await import('/demos/shared/agents/WorldIntentDecision.js');
     Object.assign(window, { calls: [], view: {}, speechChunks, worldConversationId });
     const candidate = { key: 'local', local: true, available: true, manifestCid: 'fixture', sessionId: 'fixture', runtime: 'transformers.js',
@@ -95,7 +95,8 @@ async function boot() {
                 return { text: JSON.stringify(window.fixtureIntentDecision ?? { intent: null }), finishReason: 'stop' };
               }
               calls.push(['generate', input]);
-              if (input.taskInstructions === WORLD_GOAL_INSTRUCTIONS) {
+              if (input.messages?.[0]?.content.startsWith(WORLD_GOAL_INSTRUCTIONS)
+                  && input.messages[0].content.includes(WORLD_GOAL_OBSERVATIONS_MARKER)) {
                 calls.push(['objective-generation']);
                 if (window.waitObjective) {
                   await new Promise(resolve => signal.addEventListener('abort', resolve, { once: true }));
@@ -904,8 +905,10 @@ test('objectives checkpoint two ordered physical steps without publishing privat
       { id: 'resident:visitor:nova', ownerPeerId: 'visitor', agentId: 'nova', kind: 'resident', name: 'Nova', position: [25,3,5], distance: 24 },
     ];
     window.objectiveAnswers = [
+      { decision: 'plan', milestones: [{ label: 'Visit Nova', type: 'approach', targetId: 'p2' },
+        { label: 'Return to owner', type: 'approach', targetId: 'speaker' }] },
       { decision: 'act', intent: { type: 'approach', targetId: 'p2', stopDistance: 10 }, reason: 'Visit Nova first.' },
-      { decision: 'act', intent: { type: 'approach', targetId: 'p1', stopDistance: 10 }, reason: 'Return to the owner after arrival.' },
+      { decision: 'act', intent: { type: 'approach', targetId: 'speaker', stopDistance: 10 }, reason: 'Return to the owner after arrival.' },
     ];
     await start(); const head = await host.spawn({ name: 'Ada', shared: true });
     const key = 'local:' + head.agentId;
@@ -928,7 +931,8 @@ test('objectives checkpoint two ordered physical steps without publishing privat
     directory: await networkOptions.listLocalAgents(), events: await agents.events(key.slice(6)), calls }), key);
   assert.equal(result.saved.receipts.length, 2);
   assert.deepEqual(result.saved.receipts.map(r => r.targetId), ['resident:visitor:nova', 'human:owner']);
-  assert.equal(result.saved.pendingAction, null); assert.equal(result.saved.steps, 3);
+  assert.equal(result.saved.pendingAction, null); assert.equal(result.saved.steps, 4);
+  assert.deepEqual(result.saved.completedMilestones.map(item => item.index), [0, 1]);
   assert.doesNotMatch(JSON.stringify(result.directory), /Private objective marker|Both requested arrivals/);
   assert(!result.events.some(e => e.type === 'request'), 'Planner uses its own checkpoint, not a fabricated human journal turn');
   assert(!result.calls.some(c => c[0] === 'public-message'));
@@ -938,7 +942,9 @@ test('objective progress restores paused, never replays, and visitors cannot con
   const page = await fixture(t);
   const saved = await page.evaluate(async () => {
     await host.dispose(); window.embodiedFixture = true;
-    window.objectiveAnswers = [{ decision: 'act', intent: { type: 'approach', targetId: 'p1' }, reason: 'Approach owner.' }];
+    window.objectiveAnswers = [
+      { decision: 'plan', milestones: [{ label: 'Approach owner', type: 'approach', targetId: 'speaker' }] },
+      { decision: 'act', intent: { type: 'approach', targetId: 'speaker' }, reason: 'Approach owner.' }];
     await start(); const head = await host.spawn({ name: 'Ada', shared: true }); const key = 'local:' + head.agentId;
     await host.assignGoal({ key, objective: 'Come to the owner and wait.' }); return { key, id: head.agentId };
   });

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createRequire } from 'node:module';
@@ -15,37 +16,68 @@ import { homedir } from 'node:os';
 // default round-trip retains the complete ordered-navigation gate.
 // RESIDENT_GOAL_GPU_MODE=nvidia-vulkan for Linux NVIDIA;
 // RESIDENT_GOAL_RELAY_PEER_ID=<backend-peer-id> to require a particular relay.
+// RESIDENT_GOAL_PROVENANCE must identify frozen sourceFiles/buildFiles SHA256 maps.
+// Cases three-step and progress-reload qualify varied order and saved progress.
 assert.equal(process.env.RESIDENT_GOAL_GO, '1', 'Explicitly opt in after serving the frozen build');
 const repository = process.env.PEERCOMPUTE_REPO ?? process.cwd();
 const require = createRequire(path.join(repository, 'package.json'));
 const { chromium } = require('playwright');
 const origin = process.env.RESIDENT_GOAL_ORIGIN, profile = process.env.RESIDENT_GOAL_PROFILE;
 const modelCid = process.env.RESIDENT_GOAL_MODEL_CID;
+const provenancePath = process.env.RESIDENT_GOAL_PROVENANCE;
+assert(provenancePath && path.isAbsolute(provenancePath), 'Explicit frozen source/build provenance required');
+const provenance = JSON.parse(await readFile(provenancePath, 'utf8'));
 const testCase = process.env.RESIDENT_GOAL_CASE ?? 'round-trip';
-assert(['round-trip', 'lifecycle'].includes(testCase), 'Unknown objective acceptance case');
+assert(['round-trip', 'lifecycle', 'three-step', 'progress-reload'].includes(testCase), 'Unknown objective acceptance case');
 assert(modelCid, 'Explicit discovered peer model CID required');
 assert(origin && new URL(origin).protocol === 'https:', 'Explicit secure production preview required');
 assert(profile && path.isAbsolute(profile) && /^owned(?:-|$).*profile$/.test(path.basename(profile)), 'Explicitly owned profile required');
 const { routeAgentTask } = await import(pathToFileURL(path.join(repository, 'peercompute/src/peercompute/agents/AgentRouter.js')));
 const { MODEL_POLICY } = await import(pathToFileURL(path.join(repository, 'peercompute/src/peercompute/inference/modelManifest.js')));
 const output = process.env.RESIDENT_GOAL_EVIDENCE ?? path.join(homedir(), '.cache', 'peercompute-goal-browser', String(Date.now()));
-const room = `codex-objectives-${Date.now()}`, url = origin + '/?e2e=1&room=' + encodeURIComponent(room);
+const room = `codex-objectives-${Date.now()}`, url = origin + '/?e2e=1&room=' + encodeURIComponent(room)
+  + '&privacy=private&password=' + crypto.randomUUID();
+const actorName = testCase === 'three-step' ? 'Mira' : 'Ada';
+const targetName = testCase === 'three-step' ? 'Zora' : 'Nova';
+const scenario = { actorName, targetName,
+  targetPosition: testCase === 'three-step' ? [0, 3, 40] : [-35, 3, 0],
+  ownerPosition: testCase === 'three-step' ? [-35, 3, -10] : [35, 3, 0],
+  objective: testCase === 'lifecycle' ? 'Visit Nova.' : testCase === 'three-step'
+    ? 'Visit me, then visit Zora, then come back to me.' : 'Visit Nova, then come back to me.' };
 const relay = process.env.RESIDENT_GOAL_RELAY_PEER_ID;
 const gpuMode = process.env.RESIDENT_GOAL_GPU_MODE ?? 'default';
 assert(['default', 'nvidia-vulkan'].includes(gpuMode), 'Unknown GPU launch mode');
 const encrypted = connection => /noise/i.test(connection.encryption) || (connection.encryption === 'native' && /\/webrtc/.test(connection.address));
 const executablePath = process.env.CHROME_PATH ?? '/opt/google/chrome/chrome';
 const report = { startedAt: new Date().toISOString(), scope: 'An actual peer-hosted model chooses objective steps over authenticated inference; production learned motor and Cannon physics establish receipts. No synthesized model decisions, scripted action sequence, HF downloads, user profile or public room. Owner controls and reload are independent acceptance cases.',
-  testCase, roundTripRequired: testCase === 'round-trip',
-  caseScope: testCase === 'lifecycle' ? 'Owner controls and reload only; a one-action objective must come from actual peer inference. This case does not assert multi-step planning or round-trip completion.' : 'Actual ordered Nova/owner arrivals and explicit completion assessment, followed by owner controls and reload.',
+  testCase, scenario, roundTripRequired: testCase !== 'lifecycle',
+  caseScope: testCase === 'lifecycle' ? 'Owner controls and reload only; a one-action objective must come from actual peer inference. This case does not assert multi-step planning or round-trip completion.'
+    : testCase === 'three-step' ? 'Actual reversed-order three-step owner/Zora/owner plan with distinct repeated-target receipts, changed names/positions, and visitor authority denial.'
+      : testCase === 'progress-reload' ? 'First milestone physically completes; owner Pause/reload retains it; owner Resume completes only the remaining milestone using the current owner identity.'
+        : 'Actual ordered Nova/owner arrivals and explicit completion assessment, followed by owner controls and reload.',
+  provenancePath, provenance,
   room, url, profile, modelCid, expectedRelay: relay, gpuMode, onnxContextLimit: MODEL_POLICY.maxContextTokens,
   tls: 'Normal certificate verification',
   pages: [], checks: [], screenshots: [], cleanupErrors: [] };
-const owned = [];
+const owned = [], pageLogs = new WeakMap();
 const save = () => writeFile(path.join(output, 'report.json'), JSON.stringify(report, null, 2) + '\n');
 const redact = value => String(value).replace(/(?:https?|wss?):\/\/[^\s"'<>]+/g, match => {
   try { const u = new URL(match); return u.origin + u.pathname; } catch { return '[URL]'; }
 }).slice(0, 2500);
+async function verifyProvenance(remote = false) {
+  const hash = value => createHash('sha256').update(value).digest('hex');
+  assert(provenance.sourceFiles && provenance.buildFiles?.['index.html'], 'Provenance must bind source and HTML');
+  for (const [relative, expected] of Object.entries(provenance.sourceFiles)) {
+    assert(!path.isAbsolute(relative) && !relative.split('/').includes('..'));
+    assert.equal(hash(await readFile(path.join(repository, relative))), expected, `Frozen source changed: ${relative}`);
+  }
+  if (remote) for (const [relative, expected] of Object.entries(provenance.buildFiles)) {
+    assert(!path.isAbsolute(relative) && !relative.split('/').includes('..'));
+    const response = await fetch(new URL(relative, origin + '/'), { signal: AbortSignal.timeout(30000), cache: 'no-store' });
+    assert(response.ok, `Built asset is unavailable: ${relative}`);
+    assert.equal(hash(Buffer.from(await response.arrayBuffer())), expected, `Served build changed: ${relative}`);
+  }
+}
 async function bounded(promise, ms, label) {
   let timer;
   try { return await Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(Error(label)), ms); })]); }
@@ -57,11 +89,12 @@ async function shot(page, name) {
 async function readyPage(page) {
   await page.waitForFunction(() => window.__cubechat?.roomChat?.started && __cubechat.worldAgents && __cubechat.worldUi, null, { timeout: 90000 });
   await bounded(page.evaluate(() => __cubechat.worldAgents.ready), 45000, 'Resident host readiness');
+  assert.equal(await page.evaluate(() => __cubechat.currentRoom?.visibility), 'private', 'Owned acceptance uses a private room');
   if (await page.locator('#loading').isVisible()) await page.locator('#loading').click();
   for (let i = 0; i < 5 && await page.locator('dialog[open]').count(); i++) await page.keyboard.press('Escape');
 }
 async function attach(context, name) {
-  const logs = { name, pageErrors: [], consoleErrors: [], warnings: [], failedRequests: [], httpErrors: [], blockedDownloads: [] };
+  const logs = { name, lifecycle: 'starting', pageErrors: [], consoleErrors: [], warnings: [], failedRequests: [], httpErrors: [], blockedDownloads: [] };
   report.pages.push(logs);
   await context.addInitScript(() => {
     if (navigator.mediaDevices) Object.defineProperty(navigator.mediaDevices, 'getUserMedia', { configurable: true,
@@ -74,10 +107,10 @@ async function attach(context, name) {
     }
     return route.continue();
   });
-  const page = await context.newPage(); page.setDefaultTimeout(20000);
+  const page = await context.newPage(); pageLogs.set(page, logs); page.setDefaultTimeout(20000);
   const cdp = await context.newCDPSession(page);
   await cdp.send('Network.setBypassServiceWorker', { bypass: true }); await cdp.send('Network.setCacheDisabled', { cacheDisabled: true });
-  page.on('pageerror', error => logs.pageErrors.push(redact(error.message)));
+  page.on('pageerror', error => logs.pageErrors.push({ message: redact(error.message), stack: redact(error.stack), lifecycle: logs.lifecycle }));
   page.on('console', event => {
     if (event.type() === 'error') logs.consoleErrors.push(redact(event.text()));
     if (event.type() === 'warning') logs.warnings.push(redact(event.text()));
@@ -85,7 +118,7 @@ async function attach(context, name) {
   page.on('requestfailed', request => logs.failedRequests.push({ url: redact(request.url()), error: request.failure()?.errorText }));
   page.on('response', response => { if (response.status() >= 400) logs.httpErrors.push({ status: response.status(), url: redact(response.url()) }); });
   assert.equal((await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 })).status(), 200);
-  await readyPage(page); return page;
+  await readyPage(page); logs.lifecycle = 'active'; return page;
 }
 const network = page => page.evaluate(() => {
   const app = __cubechat, manager = app.network.node.getNetworkManager(), node = manager.getLibp2pNode();
@@ -142,7 +175,7 @@ async function waitGoal(page, key, predicate, { timeout = 20000, stableMs = 0 } 
   }
   throw Error('Objective wait timed out: ' + JSON.stringify(last));
 }
-async function inspect(page, name = 'Ada', requireObjective = true) {
+async function inspect(page, name = actorName, requireObjective = true) {
   for (let i = 0; i < 5 && await page.locator('dialog[open]').count(); i++) await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await page.getByRole('button', { name: 'Residents', exact: true }).click();
@@ -172,10 +205,14 @@ async function installObserver(page) {
     };
     runtime.generate = async (key, input) => {
       if (key !== `peer:${modelCid}`) throw Error('Acceptance requires the discovered peer model; no local or substituted provider');
-      const call = { key, prompt: input.prompt, messages: input.messages, worldContext: input.worldContext,
+      const call = { key, requestId: input.requestId, prompt: input.prompt, messages: input.messages, worldContext: input.worldContext,
         maxNewTokens: input.maxNewTokens, startedAt: Date.now(), progress: [] };
       state.calls.push(call);
       try {
+        const pending = (await Promise.all(state.keys.map(key => app.worldAgents.getObjective(key))))
+          .filter(goal => goal?.status === 'planning' && goal.pendingDecision);
+        if (pending.length !== 1) throw Error('Acceptance requires one acknowledged objective decision for each model call');
+        call.goalAtRequest = structuredClone(pending[0]);
         const result = await generate(key, { ...input, onProgress: event => { call.progress.push(structuredClone(event)); input.onProgress?.(event); } });
         call.result = result; return result;
       } catch (error) { call.error = { message: error.message, code: error.code, committed: error.committed }; throw error; }
@@ -205,9 +242,16 @@ async function capture(page, key) {
   }, key);
 }
 function assertPeerCalls(recordedCalls) {
-  assert(recordedCalls.length > 0, 'At least one actual peer inference call is required');
+  assert(recordedCalls.some(call => !call.error), 'At least one successful actual peer inference call is required');
   for (const call of recordedCalls) {
-    assert(!call.error, call.error?.message); assert.equal(call.key, `peer:${modelCid}`); assert(call.result?.text?.trim());
+    assert.equal(call.key, `peer:${modelCid}`);
+    if (call.error) {
+      assert(call.expectedOwnerInterruption === true, call.error.message);
+      assert(call.ownerPauseAt >= call.startedAt && call.ownerPauseAt <= call.finishedAt, 'Only a call pending at the explicit owner Pause may be interrupted');
+      assert(!call.error.committed, 'Unknown committed outcomes are not qualified cancellations');
+      continue;
+    }
+    assert(call.result?.text?.trim());
     assert.equal(call.result.manifestCid, modelCid);
     assert.equal(call.result.route?.local, false);
     assert.equal(call.result.route?.peerId, call.result.peerId);
@@ -215,13 +259,88 @@ function assertPeerCalls(recordedCalls) {
     assert(/noise/i.test(call.result.connectionEncryption) || (call.result.connectionEncryption === 'native'
       && /\/webrtc/.test(call.result.connectionAddress)), 'Actual encrypted connection evidence required');
     assert(Number.isInteger(call.result.inputTokens) && call.result.inputTokens > 0);
+    assert.equal(call.result.contextTruncated, false, 'Qualification retains the complete objective decision input');
     assert(Number.isInteger(call.maxNewTokens) && call.result.inputTokens + call.maxNewTokens <= MODEL_POLICY.maxContextTokens);
     // Hardware counters are reported by the remote host, not independently measured here.
   }
 }
+const decodeDecision = call => JSON.parse(call.result.text.trim().replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/i, '$1'));
+function assertRestoredCheckpoint(before, restored) {
+  assert.equal(restored.status, 'paused');
+  for (const field of ['goalId', 'agentId', 'worldId', 'ownerHostId', 'requesterId', 'objective', 'startedAt', 'deadlineAt',
+    'steps', 'failures', 'currentStep', 'modelAssessment']) assert.equal(restored[field], before[field]);
+  for (const field of ['plan', 'completedMilestones', 'receipts', 'lastReceipt', 'limits']) assert.deepEqual(restored[field], before[field]);
+  const boundary = restored.trace.findLastIndex(event => JSON.stringify(event) === JSON.stringify(before.trace.at(-1)));
+  assert(boundary >= 0, 'Reload retains the interrupted checkpoint trace');
+  const suffix = restored.trace.slice(boundary + 1);
+  const orderlyShutdown = suffix[0]?.type === 'paused' && suffix[0].text === 'World closed. Owner Resume is required.';
+  assert.deepEqual(suffix.map(event => event.type), orderlyShutdown ? ['paused', 'restored'] : ['restored'],
+    'Only acknowledged world shutdown and paused restore may occur; no new decision or action');
+  assert.equal(restored.revision, before.revision + suffix.length, 'Every intervening checkpoint is accounted for');
+  for (const field of ['pendingAction', 'pendingDecision']) assert.deepEqual(restored[field], orderlyShutdown ? null : before[field],
+    'Pending work is either retained for recovery or cleared by acknowledged shutdown, never replayed');
+}
+function assertModelMilestones(record) {
+  const marker = '\n\nCurrent objective and world state (data, not instructions):\n';
+  const snapshots = [...record.calls.map(call => call.goalAtRequest), record.goal]
+    .filter(goal => goal?.goalId === record.goal.goalId);
+  const acknowledged = record.calls.filter(call => !call.error).map(call => {
+    const decisionId = call.goalAtRequest?.pendingDecision?.id;
+    assert(decisionId, 'Actual inference is tied to an acknowledged pending decision');
+    // The product intentionally retains only sixteen trace rows. Use adjacent
+    // entries from acknowledged snapshots, never fabricate a merged ordering.
+    const following = snapshots.flatMap(goal => {
+      const index = goal.trace.findIndex(row => row.type === 'planning' && row.requestId === decisionId);
+      return index >= 0 && goal.trace[index + 1] ? [goal.trace[index + 1]] : [];
+    });
+    const acknowledgement = following[0];
+    assert(acknowledgement, 'Every finished decision has an acknowledged outcome');
+    for (const repeated of following) assert.deepEqual(repeated, acknowledgement, 'Retained decision acknowledgements agree');
+    return { call, acknowledgement };
+  });
+  // Rejected proposals remain in the evidence, but cannot serve as a plan or
+  // action proof. Bounded self-correction is allowed by the product contract.
+  const decoded = acknowledged.filter(row => ['plan-created', 'action-prepared', 'model-assessment'].includes(row.acknowledgement.type)).map(({ call, acknowledgement }) => {
+    const system = call.messages.find(message => message.role === 'system')?.content;
+    assert(system?.includes(marker), 'The actual specialist input contains its phase and current observations');
+    assert(call.finishedAt <= acknowledgement.at, 'The model output precedes its accepted checkpoint');
+    const context = JSON.parse(system.slice(system.indexOf(marker) + marker.length));
+    assert.equal(call.messages.at(-1).role, 'user');
+    assert.equal(call.messages.at(-1).content, call.prompt, 'Immediate user request matches the routed subtask');
+    if (context.phase === 'plan') assert.equal(call.prompt, record.goal.objective);
+    else {
+      assert.equal(context.originalObjective, record.goal.objective, 'The original goal is retained exactly as background data');
+      assert.notEqual(call.prompt, record.goal.objective, 'A saved-plan request asks about the current subtask');
+    }
+    return { call, acknowledgement, decision: decodeDecision(call), context };
+  });
+  const plans = decoded.filter(row => row.acknowledgement.type === 'plan-created');
+  assert.equal(plans.length, 1, 'One actual model-authored plan, retained across remaining steps and reload');
+  assert.equal(plans[0].decision.decision, 'plan');
+  assert.equal(plans[0].context.phase, 'plan');
+  assert.deepEqual(plans[0].decision.milestones.map(({ label, type }) => ({ label, type })),
+    record.goal.plan.milestones.map(({ label, type }) => ({ label, type })), 'The acknowledged plan preserves the model-selected labels and actions');
+  for (const completed of record.goal.completedMilestones) {
+    const receipt = record.goal.receipts.find(row => row.requestId === completed.requestId);
+    const milestone = record.goal.plan.milestones[completed.index];
+    assert(decoded.some(({ call, acknowledgement, decision, context }) => acknowledgement.type === 'action-prepared'
+      && acknowledgement.requestId === completed.requestId && decision.decision === 'act'
+      && context.phase === 'milestone' && context.activeMilestone?.index === completed.index
+      && context.activeMilestone.type === milestone.type && decision.intent?.type === milestone.type
+      && decision.intent.targetId === context.activeMilestone.targetId
+      && call.finishedAt <= receipt.at), `Milestone ${completed.index} has an actual model-selected action before its physical receipt`);
+  }
+  const final = decoded.at(-1);
+  assert.equal(final.acknowledgement.type, 'model-assessment');
+  assert.equal(final.context.phase, 'assess'); assert.equal(final.decision.decision, 'done');
+  assert.equal(final.decision.assessment.trim(), record.goal.modelAssessment);
+  assert.deepEqual([...final.decision.receiptIds].sort(), final.context.completedMilestones.map(row => row.requestId).sort());
+  assert.equal(new Set(record.calls.map(call => call.requestId)).size, record.calls.length, 'Each actual model request is distinct');
+}
 await mkdir(output, { recursive: true });
 let owner, visitor, key;
 try {
+  await verifyProvenance(true);
   const args = ['--enable-gpu', '--enable-unsafe-webgpu'];
   if (gpuMode === 'nvidia-vulkan') {
     const gpu = await promisify(execFile)('nvidia-smi', ['--query-gpu=name,memory.free,memory.total', '--format=csv,noheader,nounits']);
@@ -260,18 +379,18 @@ try {
   assert.equal(report.model.candidate.local, false);
   await save(); console.log('Production router selected peer model:', report.model.candidate.name);
   await installObserver(owner);
-  report.setup = await owner.evaluate(async () => {
+  report.setup = await owner.evaluate(async scenario => {
     const app = __cubechat, common = { localOnly: false, shared: true, initiateConversations: false, respondToWorldChat: false, movement: 'stationary' };
-    const nova = await app.worldAgents.spawn({ ...common, name: 'Nova', goals: ['Remain available for the owner.'] });
-    const ada = await app.worldAgents.spawn({ ...common, name: 'Ada', goals: ['Use current observations and verified physical outcomes to carry out the owner objective.'] });
+    const nova = await app.worldAgents.spawn({ ...common, name: scenario.targetName, goals: ['Remain available for the owner.'] });
+    const ada = await app.worldAgents.spawn({ ...common, name: scenario.actorName, goals: ['Use current observations and verified physical outcomes to carry out the owner objective.'] });
     const bodies = app.worldAgents.getStatus().bodies, adaBody = bodies.find(body => body.agentId === ada.agentId), novaBody = bodies.find(body => body.agentId === nova.agentId);
-    app.agentLayer.place(app.agentLayer.entries.get(adaBody.key), [0, 3, 0]); app.agentLayer.place(app.agentLayer.entries.get(novaBody.key), [-35, 3, 0]);
-    const human = app.physics.getPlayerBody(app.network.localPlayer.id); human.position.set(35, 3, 0); human.velocity.set(0, 0, 0);
+    app.agentLayer.place(app.agentLayer.entries.get(adaBody.key), [0, 3, 0]); app.agentLayer.place(app.agentLayer.entries.get(novaBody.key), scenario.targetPosition);
+    const human = app.physics.getPlayerBody(app.network.localPlayer.id); human.position.set(...scenario.ownerPosition); human.velocity.set(0, 0, 0);
     human.previousPosition.copy(human.position); human.interpolatedPosition.copy(human.position);
-    app.network.localPlayer.position = { x: 35, y: 3, z: 0 }; __goalAcceptance.keys.push(adaBody.key);
+    app.network.localPlayer.position = { x: scenario.ownerPosition[0], y: scenario.ownerPosition[1], z: scenario.ownerPosition[2] }; __goalAcceptance.keys.push(adaBody.key);
     const peerId = app.network.node.getNetworkManager().getLibp2pNode().peerId.toString();
     return { ada, nova, adaBody, novaBody, peerId };
-  });
+  }, scenario);
   key = report.setup.adaBody.key;
   globalThis.__ownedGoalBrowser = { owner, cancel: async () => {
     const current = await goal(owner, key);
@@ -280,41 +399,104 @@ try {
   } };
   await owner.waitForTimeout(500);
   report.setup.observed = await owner.evaluate(key => __cubechat.agentLayer.observe(key, { requesterPeerId: __cubechat.network.node.getNetworkManager().peerId }), key);
-  const novaId = `resident:${report.setup.novaBody.ownerPeerId}:${report.setup.nova.agentId}`, ownerId = `human:${report.setup.peerId}`;
+  const novaId = `resident:${report.setup.novaBody.ownerPeerId}:${report.setup.nova.agentId}`;
+  let ownerId = `human:${report.setup.peerId}`, finalOwnerPosition = [...scenario.ownerPosition];
   assert(report.setup.observed.participants.some(item => item.id === novaId), 'Nova is actually observed');
   assert(report.setup.observed.participants.some(item => item.id === ownerId), 'The owner is actually observed');
   let modal = await inspect(owner);
-  await modal.getByRole('textbox', { name: 'Objective for Ada', exact: true }).fill(testCase === 'lifecycle' ? 'Visit Nova.' : 'Visit Nova, then come back to me.');
+  await modal.getByRole('textbox', { name: `Objective for ${actorName}`, exact: true }).fill(scenario.objective);
   await shot(owner, 'objective-ready-desktop');
-  await modal.getByRole('button', { name: 'Start objective for Ada', exact: true }).click();
+  await modal.getByRole('button', { name: `Start objective for ${actorName}`, exact: true }).click();
   await waitGoal(owner, key, record => !!record?.startedAt);
   report.startedGoal = await goal(owner, key); await save(); console.log('Native objective started; waiting for real physical outcomes.');
   await owner.keyboard.press('Escape');
-  if (testCase === 'round-trip') {
+  if (testCase === 'progress-reload') {
+    // Pause through the real owner UI after one verified milestone, retaining
+    // any in-flight second action as historical evidence rather than replay.
+    await waitGoal(owner, key, record => record?.completedMilestones?.length === 1
+      && !['completed', 'cancelled'].includes(record.status), { timeout: 480000 });
+    modal = await inspect(owner);
+    // Record the exact pending attempts at the user-control boundary. Preserve
+    // their errors; a later unrelated failure must not be relabeled cancelled.
+    const pauseButton = modal.getByRole('button', { name: `Pause objective for ${actorName}`, exact: true });
+    await pauseButton.evaluate(button => button.addEventListener('click', () => {
+      __goalAcceptance.pauseBoundary = { at: Date.now(),
+        requestIds: __goalAcceptance.calls.filter(call => !call.finishedAt).map(call => call.requestId) };
+    }, { capture: true, once: true }));
+    await pauseButton.click();
+    report.progressPauseBoundary = await owner.evaluate(() => __goalAcceptance.pauseBoundary);
+    await waitGoal(owner, key, record => record?.status === 'paused' && !record.pendingAction && !record.pendingDecision);
+    report.progressBeforeReload = await capture(owner, key);
+    for (const call of report.progressBeforeReload.calls) if (call.error
+      && report.progressPauseBoundary.requestIds.includes(call.requestId)
+      && /abort|cancel|interrupt|pause/i.test(`${call.error.code ?? ''} ${call.error.message}`)) {
+      call.expectedOwnerInterruption = true; call.ownerPauseAt = report.progressPauseBoundary.at;
+    }
+    assert.equal(report.progressBeforeReload.goal.completedMilestones.length, 1);
+    assert.deepEqual(report.progressBeforeReload.velocity, [0, 0, 0]);
+    await shot(owner, 'progress-saved-before-reload'); await save();
+    await owner.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
+    await readyPage(owner); await installObserver(owner);
+    key = await owner.evaluate(id => __cubechat.worldAgents.getStatus().bodies.find(body => body.agentId === id && body.local)?.key, report.setup.ada.agentId);
+    assert(key, 'The same owned resident restores');
+    await owner.waitForTimeout(2500); report.progressRestored = await capture(owner, key);
+    const before = report.progressBeforeReload.goal, restored = report.progressRestored.goal;
+    assertRestoredCheckpoint(before, restored);
+    assert.equal(report.progressRestored.calls.length, 0); assert.equal(report.progressRestored.outcomes.length, 0);
+    assert.deepEqual(report.progressRestored.velocity, [0, 0, 0]);
+    // Fixture placement establishes a new observed owner destination. It never
+    // issues an intention or rewrites a plan, receipt, checkpoint or model reply.
+    report.ownerAfterReload = await owner.evaluate(key => {
+      const app = __cubechat, position = app.agentLayer.getPosition(key), human = app.physics.getPlayerBody(app.network.localPlayer.id);
+      const ownerPosition = [position[0] + 45, 3, position[2] + 15];
+      human.position.set(...ownerPosition); human.velocity.set(0, 0, 0);
+      human.previousPosition.copy(human.position); human.interpolatedPosition.copy(human.position);
+      app.network.localPlayer.position = { x: ownerPosition[0], y: 3, z: ownerPosition[2] };
+      __goalAcceptance.keys.push(key);
+      return { position: ownerPosition, requesterId: `human:${app.network.node.getNetworkManager().peerId}` };
+    }, key);
+    ownerId = report.ownerAfterReload.requesterId; finalOwnerPosition = report.ownerAfterReload.position;
+    modal = await inspect(owner); await shot(owner, 'progress-restored-paused');
+    await modal.getByRole('button', { name: `Resume objective for ${actorName}`, exact: true }).click();
+    await owner.keyboard.press('Escape');
+    report.checks.push('One exact completed milestone survives acknowledged Pause and reload; no plan/action replay occurs before owner Resume');
+  }
+  if (testCase !== 'lifecycle') {
   // Receipt persistence intentionally pauses while the matching motor is being
   // stopped. That acknowledgement is not a terminal failure.
   await waitGoal(owner, key, record => ['completed', 'cancelled'].includes(record?.status)
     || (record?.status === 'paused' && !/settling its motor/i.test(record.reason)), { timeout: 480000, stableMs: 3000 });
   report.roundTrip = await capture(owner, key); await save();
+  if (testCase === 'progress-reload') {
+    for (const field of ['calls', 'outcomes', 'samples']) report.roundTrip[field] = [...report.progressBeforeReload[field], ...report.roundTrip[field]];
+    assert.equal(report.roundTrip.goal.requesterId, ownerId, 'Resume binds the current observed owner identity');
+    assert.deepEqual(report.roundTrip.goal.plan, report.progressBeforeReload.goal.plan, 'The model plan is not rewritten to disguise replay');
+    for (const field of ['receipts', 'completedMilestones']) assert.deepEqual(
+      report.roundTrip.goal[field].slice(0, report.progressBeforeReload.goal[field].length), report.progressBeforeReload.goal[field],
+      `Resume preserves the exact historical ${field}, including request IDs`);
+  }
   assert.equal(report.roundTrip.goal.status, 'completed', JSON.stringify(report.roundTrip.goal));
   const arrivals = report.roundTrip.goal.receipts.filter(receipt => receipt.type === 'approach' && receipt.status === 'arrived');
-  assert(arrivals.length >= 2, 'Two actual approach arrivals are required');
-  assert.equal(arrivals[0].targetId, novaId, 'First physical arrival is Nova');
-  assert.equal(arrivals[1].targetId, ownerId, 'Second physical arrival is the owner');
+  const expectedTargets = testCase === 'three-step' ? [ownerId, novaId, ownerId] : [novaId, ownerId];
+  assert.deepEqual(arrivals.map(receipt => receipt.targetId), expectedTargets, 'Every real arrival follows the requested order, without replay');
+  assert.equal(report.roundTrip.goal.plan.milestones.length, expectedTargets.length, 'Model-authored plan covers this concrete objective');
+  assert.deepEqual(report.roundTrip.goal.completedMilestones, arrivals.map((receipt, index) => ({ index, requestId: receipt.requestId })));
+  assert.equal(new Set(arrivals.map(receipt => receipt.requestId)).size, expectedTargets.length, 'Each milestone has distinct physical evidence');
   assert(report.roundTrip.goal.modelAssessment.trim(), 'Completion is an explicit model assessment');
   assert(report.roundTrip.goal.steps <= 8); assert(report.roundTrip.goal.receipts.length <= 8);
   assert(report.roundTrip.goal.deadlineAt - report.roundTrip.goal.startedAt <= 600000);
-  for (const receipt of arrivals.slice(0, 2)) {
+  for (const receipt of arrivals) {
     assert(report.roundTrip.outcomes.some(event => event.requestId === receipt.requestId && event.status === 'arrived'), 'Durable receipt matches a real motor event');
     assert(report.roundTrip.episodes.some(episode => episode.source.kind === 'verified-action' && episode.source.eventId.includes(receipt.requestId)), 'Physical episode retains action provenance');
   }
   const moving = report.roundTrip.samples.filter(sample => sample.status?.backend === 'webgpu' && sample.status?.worker === true);
   assert(moving.length > 10, 'Actual managed GPU motor supplied sustained navigation');
   assert(moving.some(sample => Math.hypot(sample.velocity[0], sample.velocity[2]) > .1));
-  assert(Math.hypot(report.roundTrip.position[0] - 35, report.roundTrip.position[2]) <= 13, 'Resident physically returned near the owner');
+  assert(Math.hypot(report.roundTrip.position[0] - finalOwnerPosition[0], report.roundTrip.position[2] - finalOwnerPosition[2]) <= 13, 'Resident physically returned near the owner');
   assertPeerCalls(report.roundTrip.calls);
+  assertModelMilestones(report.roundTrip);
 
-  report.checks.push('The real peer model independently selects Nova then owner approaches; actual managed GPU motion produces ordered durable receipts and explicit completion assessment');
+  report.checks.push('The actual peer model authors an ordered plan and selects each step; managed GPU movement produces distinct receipts in the requested order and explicit completion assessment');
   await save(); console.log('Actual round trip complete; checking native UI and peer ownership.');
   } else {
     await waitGoal(owner, key, record => record?.status === 'acting', { timeout: 180000 });
@@ -325,7 +507,7 @@ try {
       && sample.status.worker === true && Math.hypot(sample.velocity[0], sample.velocity[2]) > .1), null, { timeout: 3000 });
     const callsBeforePause = (await calls(owner)).length;
     modal = await inspect(owner);
-    await modal.getByRole('button', { name: 'Pause objective for Ada', exact: true }).click();
+    await modal.getByRole('button', { name: `Pause objective for ${actorName}`, exact: true }).click();
     await waitGoal(owner, key, record => record?.status === 'paused');
     report.pausedImmediately = await capture(owner, key);
     await owner.waitForTimeout(1400); report.paused = await capture(owner, key);
@@ -364,27 +546,28 @@ try {
     return { attempts, body: host.getStatus().bodies.find(body => body.key === key) };
   }, { key: remoteKey, goalId: ownershipCheckpoint.goalId, expectedRevision: ownershipCheckpoint.revision });
   for (const result of Object.values(report.remote.attempts)) assert.match(result.error ?? '', /owner/i);
-  assert(!JSON.stringify(report.remote.body).includes('Visit Nova'), 'Public resident descriptor excludes private objective');
-  const visitorModal = await inspect(visitor, 'Ada', false); assert.equal(await visitorModal.getByLabel('Objective details for Ada', { exact: true }).count(), 0);
+  assert(!JSON.stringify(report.remote.body).includes(ownershipCheckpoint.objective), 'Public resident descriptor excludes this exact private objective');
+  const visitorModal = await inspect(visitor, actorName, false); assert.equal(await visitorModal.getByLabel(`Objective details for ${actorName}`, { exact: true }).count(), 0);
   await shot(visitor, 'visitor-owner-only-objectives');
   report.checks.push('Actual second peer sees the resident but cannot read, assign, pause, resume or cancel its owner-local objective');
+  if (['round-trip', 'lifecycle'].includes(testCase)) {
   if (testCase === 'round-trip') {
   // A separate explicit objective exercises native Pause/Resume and reload.
   modal = await inspect(owner);
   await modal.getByRole('textbox', { name: 'Objective for Ada', exact: true }).fill('Visit Nova again, then come back to me.');
-  await modal.getByRole('button', { name: 'Start objective for Ada', exact: true }).click();
+  await modal.getByRole('button', { name: `Start objective for ${actorName}`, exact: true }).click();
   await owner.keyboard.press('Escape');
   await waitGoal(owner, key, record => record?.status === 'acting', { timeout: 180000 });
   report.beforePause = await goal(owner, key); const callsBeforePause = (await calls(owner)).length;
   modal = await inspect(owner);
-  await modal.getByRole('button', { name: 'Pause objective for Ada', exact: true }).click();
+  await modal.getByRole('button', { name: `Pause objective for ${actorName}`, exact: true }).click();
   await waitGoal(owner, key, record => record?.status === 'paused');
   await owner.waitForTimeout(1400); report.paused = await capture(owner, key);
   assert.deepEqual(report.paused.velocity, [0, 0, 0]); assert.equal(report.paused.calls.length, callsBeforePause);
   await shot(owner, 'objective-paused-desktop');
   }
   modal = await inspect(owner);
-  await modal.getByRole('button', { name: 'Resume objective for Ada', exact: true }).click();
+  await modal.getByRole('button', { name: `Resume objective for ${actorName}`, exact: true }).click();
   await owner.keyboard.press('Escape');
   await waitGoal(owner, key, record => record?.status === 'acting', { timeout: 180000 });
   report.beforeReload = await capture(owner, key); assert.equal(report.beforeReload.goal.goalId, report.beforePause.goalId);
@@ -400,26 +583,18 @@ try {
   const restoredKey = await owner.evaluate(id => __cubechat.worldAgents.getStatus().bodies.find(body => body.agentId === id && body.local)?.key, report.setup.ada.agentId);
   assert(restoredKey, 'Resident identity survives reload'); key = restoredKey;
   await owner.waitForTimeout(2500); report.restored = await capture(owner, key);
-  assert.equal(report.restored.goal.status, 'paused'); assert.equal(report.restored.goal.goalId, report.beforeReload.goal.goalId);
-  assert.equal(report.restored.goal.startedAt, report.beforeReload.goal.startedAt); assert.equal(report.restored.goal.deadlineAt, report.beforeReload.goal.deadlineAt);
   // The observer starts after host readiness. Establish the earlier interval
   // from acknowledged durable checkpoints as well as the later live counters.
-  assert.equal(report.restored.goal.steps, report.beforeReload.goal.steps);
-  assert.deepEqual(report.restored.goal.receipts, report.beforeReload.goal.receipts);
-  assert.deepEqual(report.restored.goal.pendingDecision, report.beforeReload.goal.pendingDecision);
-  assert.deepEqual(report.restored.goal.pendingAction, report.beforeReload.goal.pendingAction);
-  const previousTrace = report.beforeReload.goal.trace.at(-1);
-  const boundary = report.restored.goal.trace.findLastIndex(event => JSON.stringify(event) === JSON.stringify(previousTrace));
-  assert(boundary >= 0, 'Reload retains the interrupted checkpoint trace');
-  assert(report.restored.goal.trace.slice(boundary + 1).every(event => event.type === 'restored'), 'No new decision/action during bootstrap');
+  assertRestoredCheckpoint(report.beforeReload.goal, report.restored.goal);
   assert.equal(report.restored.calls.length, 0, 'No model requests after reload readiness');
   assert.equal(report.restored.outcomes.length, 0, 'No physical outcomes after reload readiness');
   assert.deepEqual(report.restored.velocity, [0, 0, 0]);
   modal = await inspect(owner); await shot(owner, 'objective-reload-paused-desktop');
-  await modal.getByRole('button', { name: 'Cancel objective for Ada', exact: true }).click();
+  await modal.getByRole('button', { name: `Cancel objective for ${actorName}`, exact: true }).click();
   await waitGoal(owner, key, record => record?.status === 'cancelled');
   report.cancelled = await goal(owner, key); assert.equal(report.cancelled.goalId, report.beforeReload.goal.goalId);
   report.checks.push('Native owner Pause stops motion; Resume keeps original bounds and uses a fresh action; reload requires owner acknowledgement with no replay; Cancel persists');
+  }
   for (const logs of report.pages) {
     assert.deepEqual(logs.pageErrors, []); assert.deepEqual(logs.consoleErrors, []); assert.deepEqual(logs.blockedDownloads, []);
     assert.deepEqual(logs.httpErrors.filter(error => error.url.startsWith(origin)), []);
@@ -440,13 +615,17 @@ finally {
   if (owner && !owner.isClosed()) try { report.finalDiscovery = await discoverySnapshot(owner); } catch (error) { report.cleanupErrors.push('Discovery evidence: ' + error.message); }
   if (owner && !owner.isClosed() && key) try { report.finalState = await capture(owner, key); } catch (error) { report.cleanupErrors.push('Evidence: ' + error.message); }
   for (const resource of owned.reverse()) {
+    const logs = pageLogs.get(resource.page); if (logs) logs.lifecycle = 'destroying';
     if (resource.page && !resource.page.isClosed()) await bounded(resource.page.evaluate(async () => {
       const state = window.__goalAcceptance; if (state) { clearInterval(state.timer); state.unsubscribe?.(); }
       await window.__cubechat?.destroy?.();
     }), 30000, 'World cleanup timed out').catch(error => report.cleanupErrors.push(error.message));
+    if (logs) logs.lifecycle = 'closing';
     await resource.context.close().catch(error => report.cleanupErrors.push(error.message));
     await resource.browser?.close().catch(error => report.cleanupErrors.push(error.message));
+    if (logs) logs.lifecycle = 'closed';
   }
+  try { await verifyProvenance(); } catch (error) { report.cleanupErrors.push(error.message); }
   if (report.cleanupErrors.length) { report.passed = false; process.exitCode = 1; }
   // Page errors can arrive during shutdown, after the functional assertions.
   // Preserve those errors and fail the final report instead of printing a pass.

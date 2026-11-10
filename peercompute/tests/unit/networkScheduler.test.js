@@ -77,6 +77,37 @@ test('scheduler triggers reconnect on stall with backoff', () => {
   assert.equal(reconnects, 2);
 });
 
+test('scheduler observes asynchronous reconnect failures and preserves later retries', async () => {
+  const failure = new Error('Reconnect failed'), errors = [];
+  let attempts = 0;
+  const scheduler = new NetworkScheduler(createAdapter({
+    reconnect() { attempts++; return Promise.reject(failure); },
+    onReconnectError(error) { errors.push(error); }
+  }), { reconnectStallMs: 100, reconnectBackoffMs: 200 });
+  scheduler.tick(150);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(errors, [failure]);
+  scheduler.tick(250);
+  assert.equal(attempts, 1);
+  scheduler.tick(400);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(attempts, 2);
+  assert.deepEqual(errors, [failure, failure]);
+});
+
+test('scheduler contains synchronous reconnect and error-observer exceptions', async () => {
+  const failure = new Error('Synchronous reconnect failure'), errors = [];
+  const scheduler = new NetworkScheduler(createAdapter({
+    reconnect() { throw failure; },
+    onReconnectError(error) { errors.push(error); throw new Error('Observer failure'); }
+  }), { reconnectStallMs: 100 });
+  assert.doesNotThrow(() => scheduler.tick(150));
+  assert.deepEqual(errors, [failure]);
+  scheduler.adapter.onReconnectError = () => Promise.reject(new Error('Async observer failure'));
+  scheduler.tick(6000);
+  await new Promise(resolve => setImmediate(resolve));
+});
+
 test('scheduler retries reliable events until ack', () => {
   const sent = [];
   const scheduler = new NetworkScheduler(

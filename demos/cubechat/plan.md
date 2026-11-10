@@ -418,6 +418,36 @@ this broader objective complete or encode the test itinerary as a fixed behavior
 Next: evaluate reliable model-produced plans on varied multi-step tasks, keeping
 this failed fixture and distinguishing model/export/runtime quality from delivery.
 
+November10 continuation: the full demo release was published first as requested.
+The new candidate uses a reusable WorldGoalPlan contract and immutable model-authored
+milestones, with progress credited atomically only by the exact acknowledged
+action's successful receipt. Requester-role targets resolve afresh after owner
+Resume; completed receipts retain their original identity. The controller asks
+the model separately for a plan, an action for the current milestone and a final
+assessment. Existing budgets, private state, owner authority and no-replay
+restore stay intact. The owner panel shows ordered milestones and receipt-backed
+progress. This advances Homunculus composed skills; it does not add learned routing
+or self-directed weight training.
+
+Current candidate tests pass146/146. First actual Nano trial rejected three
+invalid targeted-stop plans without movement; a captured-input capability
+clarification yielded a valid-looking two-step plan. Subsequent trials showed
+that repeating the full original goal as the immediate instruction distracted
+the small model from its current milestone. Phase-specific schemas plus an
+explicit current-subtask request fixed the tested cases while retaining the raw
+original goal as data and all validation/budget rules.
+
+Actual Nano qualification now passes two ordered arrivals, a changed-name and
+changed-order three-step task, and pause/reload/resume after one completed
+milestone. Every credited step binds a model decision, acknowledged action,
+real motor event and private durable receipt. Owner controls, visitor denial,
+unchanged budgets and clean shutdown pass. The first harness mistakenly required
+pending work to survive orderly shutdown; its narrow correction accepts the
+recorded shutdown pause followed by restore, without new decisions or progress.
+Failed attempts remain in log.md. Generic or placeholder model explanations
+remain a quality limitation. Public Pages stays at the earlier qualified release;
+this slice is promoted only to the internal CubeChat preview after exact checks.
+
 ### November 9 — repeated private replies
 
 The Conan/cube screenshots reproduce repeated replies to distinct current
