@@ -474,7 +474,9 @@ async function runRoute(definition, options, baseUrl, expectedPeers) {
   const screenshot = async (label, viewport) => {
     if (viewport) { await page.setViewportSize(viewport); await page.waitForTimeout(400); }
     const file = path.join(options.outputDir, `${definition.id}-${label}.png`);
-    const bytes = await page.screenshot({ path: file, timeout: Math.max(1, Math.min(5000, remaining())) });
+    // Software-rendered scenes can take longer to capture than UI interactions.
+    // The route watchdog still bounds this operation and preserves failures.
+    const bytes = await page.screenshot({ path: file, timeout: Math.max(1, Math.min(30000, remaining())) });
     result.screenshots.push({ file, viewport: viewport ?? page.viewportSize(), bytes: bytes.length,
       sha256: createHash('sha256').update(bytes).digest('hex') });
     await sample(label);

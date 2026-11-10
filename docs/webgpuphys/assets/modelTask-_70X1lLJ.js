@@ -1,0 +1,884 @@
+var ns=Object.defineProperty;var as=(u,w,B)=>w in u?ns(u,w,{enumerable:!0,configurable:!0,writable:!0,value:B}):u[w]=B;var ke=(u,w,B)=>as(u,typeof w!="symbol"?w+"":w,B);import{c as ss}from"./GgufArtifactReader-CdObKf3m.js";import{t as oe,b as mr,M as Wr,n as os,d as is}from"./peercomputeDevice-BdF3V6og.js";
+import{v as ls,a as us,b as cs,c as ms,d as fs,G as ds,g as ps,e as gs}from"./runtimeDefinition-uJlCD5bc.js";import"./device-B4S7QtIr.js";function _s(u,w){var cn,mn,fn,dn,pn,gn;const B=class{constructor(){throw new Error("Nested GGUF workers are prohibited")}};
+var N=!!globalThis.window,O=!!globalThis.WorkerGlobalScope,T=((mn=(cn=globalThis.process)==null?void 0:cn.versions)==null?
+void 0:mn.node)&&((fn=globalThis.process)==null?void 0:fn.type)!="renderer",h=O&&((dn=self.name)==null?void 0:dn.startsWith(
+"em-pthread"));if(T){var J=require("worker_threads");global.Worker=J.Worker,O=!J.isMainThread,h=O&&J.workerData=="em-pth\
+read"}var $="./this.program",y=(e,r)=>{throw r},x=(gn=(pn=globalThis.document)==null?void 0:pn.currentScript)==null?void 0:
+gn.src;typeof __filename<"u"?x=__filename:O&&(x=self.location.href);var v="";function M(e){return u.locateFile?u.locateFile(
+e,v):v+e}var b,F;if(T){var G=require("fs");v=__dirname+"/",F=e=>{e=V(e)?new URL(e):e;var r=G.readFileSync(e);return r},b=
+async(e,r=!0)=>{e=V(e)?new URL(e):e;var t=G.readFileSync(e,r?void 0:"utf8");return t},process.argv.length>1&&($=process.
+argv[1].replace(/\\/g,"/")),process.argv.slice(2),typeof module<"u"&&(module.exports=u),y=(e,r)=>{throw process.exitCode=
+e,r}}else if(N||O){try{v=new URL(".",x).href}catch{}T||(O&&(F=e=>{var r=new XMLHttpRequest;return r.open("GET",e,!1),r.responseType=
+"arraybuffer",r.send(null),new Uint8Array(r.response)}),b=async e=>{if(V(e))return new Promise((t,n)=>{var s=new XMLHttpRequest;
+s.open("GET",e,!0),s.responseType="arraybuffer",s.onload=()=>{if(s.status==200||s.status==0&&s.response){t(s.response);return}
+n(s.status)},s.onerror=n,s.send(null)});var r=await fetch(e,{credentials:"same-origin"});if(r.ok)return r.arrayBuffer();
+throw new Error(r.status+" : "+r.url)})}var ue=console.log.bind(console),W=console.error.bind(console);if(T){var Z=require("util"),
+ee=e=>typeof e=="object"?Z.inspect(e):e;ue=(...e)=>G.writeSync(1,e.map(ee).join(" ")+`
+`),W=(...e)=>G.writeSync(2,e.map(ee).join(" ")+`
+`)}var ae=ue,X=W,_e,ve,K=!1,me;function z(e,r){e||ce(r)}var V=e=>e.startsWith("file://");function l(){Ne.buffer!=te.buffer&&
+je()}if(T&&h){var se=J.parentPort;se.on("message",e=>{var r;return(r=global.onmessage)==null?void 0:r.call(global,{data:e})}),
+Object.assign(globalThis,{self:global,postMessage:e=>se.postMessage(e)}),process.on("uncaughtException",e=>{postMessage(
+{cmd:"uncaughtException",error:e}),process.exit(1)})}var ie;if(h){var Be=!1;self.onunhandledrejection=r=>{throw r.reason||
+r};async function e(r){try{var t=r.data,n=t.cmd;if(n==="load"){let s=[];self.onmessage=o=>s.push(o),ie=()=>{postMessage(
+{cmd:"loaded"});for(let o of s)e(o);self.onmessage=e};for(const o of t.handlers)(!u[o]||u[o].proxy)&&(u[o]=(...i)=>{postMessage(
+{cmd:"callHandler",handler:o,args:i})},o=="print"&&(ae=u[o]),o=="printErr"&&(X=u[o]));Ne=t.wasmMemory,je(),ve=t.wasmModule,
+Vr(),cr()}else if(n==="run"){En(t.pthread_ptr),Ur(t.pthread_ptr,0,0,1,0,0),q.threadInitTLS(),xr(t.pthread_ptr),Be||(Be=!0);
+try{await tt(t.start_routine,t.arg)}catch(s){if(s!="unwind")throw s}}else t.target==="setimmediate"||(n==="checkMailbox"?
+Be&&or():n&&(X(`worker: received unknown command ${n}`),X(t)))}catch(s){throw Kt(),s}}self.onmessage=e}var te,fe,he,A,C,
+Ue,ye,Q,k,Je=!1;function je(){var e=Ne.buffer;te=new Int8Array(e),he=new Int16Array(e),u.HEAPU8=fe=new Uint8Array(e),A=new Int32Array(
+e),C=new Uint32Array(e),Ue=new Float32Array(e),ye=new Float64Array(e),Q=new BigInt64Array(e),k=new BigUint64Array(e)}function Ze(){
+if(!h){if(u.wasmMemory)Ne=u.wasmMemory;else{var e=u.INITIAL_MEMORY||134217728;Ne=new WebAssembly.Memory({initial:BigInt(
+e/65536),maximum:65536n,shared:!0,address:"i64"})}je()}}function er(){if(u.preRun)for(typeof u.preRun=="function"&&(u.preRun=
+[u.preRun]);u.preRun.length;)Yr(u.preRun.shift());Hr(Pr)}function de(){if(Je=!0,h)return ie();!u.noFSInit&&!a.initialized&&
+a.init(),Ae.__wasm_call_ctors(),a.ignorePermissions=!1}function rr(){if(!h){if(u.postRun)for(typeof u.postRun=="function"&&
+(u.postRun=[u.postRun]);u.postRun.length;)kn(u.postRun.shift());Hr(et)}}function ce(e){var t;(t=u.onAbort)==null||t.call(
+u,e),e="Aborted("+e+")",X(e),K=!0,e+=". Build with -sASSERTIONS for more info.",Je&&nn();var r=new WebAssembly.RuntimeError(
+e);throw r}var Le;function we(){return M("wllama.wasm")}function $e(e){if(e==Le&&_e)return new Uint8Array(_e);if(F)return F(
+e);throw"both async and sync fetching of the wasm failed"}async function ge(e){if(!_e)try{var r=await b(e);return new Uint8Array(
+r)}catch{}return $e(e)}async function De(e,r){try{var t=await ge(e),n=await WebAssembly.instantiate(t,r);return n}catch(s){
+X(`failed to asynchronously prepare wasm: ${s}`),ce(s)}}async function tr(e,r,t){if(!e&&!V(r)&&!T)try{var n=fetch(r,{credentials:"\
+same-origin"}),s=await WebAssembly.instantiateStreaming(n,t);return s}catch(o){X(`wasm streaming compile failed: ${o}`),
+X("falling back to ArrayBuffer instantiation")}return De(r,t)}function Mr(){es(),ze.__instrumented||(ze.__instrumented=!0,
+be.instrumentWasmImports(ze));var e={env:ze,wasi_snapshot_preview1:ze};return e}async function Vr(){function e(i,c){return Ae=
+i.exports,Ae=be.instrumentWasmExports(Ae),Ae=rs(Ae),Sn(Ae._emscripten_tls_init),Za(Ae),ve=c,nr(),Ae}ar();function r(i){return e(
+i.instance,i.module)}var t=Mr();if(u.instantiateWasm)return new Promise((i,c)=>{u.instantiateWasm(t,(f,_)=>{i(e(f,_))})});
+if(h){var n=new WebAssembly.Instance(ve,Mr());return e(n,ve)}Le??(Le=we());var s=await tr(_e,Le,t),o=r(s);return o}class zr{constructor(r){
+ke(this,"name","ExitStatus");this.message=`Program terminated with exit(${r})`,this.status=r}}var Jr=e=>{e.terminate(),e.
+onmessage=r=>{}},$r=e=>{var r=q.pthreads[e];q.returnWorkerToPool(r)},Hr=e=>{for(;e.length>0;)e.shift()(u)},Pr=[],Yr=e=>Pr.
+push(e),Re=0,He=null,nr=e=>{var t;if(Re--,(t=u.monitorRunDependencies)==null||t.call(u,Re),Re==0&&He){var r=He;He=null,r()}},
+ar=e=>{var r;Re++,(r=u.monitorRunDependencies)==null||r.call(u,Re)},Xr=e=>{var r=q.getNewWorker();if(!r)return 6;q.runningWorkers.
+push(r),q.pthreads[e.pthread_ptr]=r,r.pthread_ptr=e.pthread_ptr;var t={cmd:"run",start_routine:e.startRoutine,arg:e.arg,
+pthread_ptr:e.pthread_ptr};return T&&r.unref(),r.postMessage(t,e.transferList),0},sr=0,pr=()=>hr||sr>0,Ee=()=>ln(),Se=e=>sn(
+e),gr=e=>on(e),ne=(e,r,t,...n)=>{for(var s=n.length*2,o=Ee(),i=gr(s*8),c=i/8,f=0;f<n.length;f++){var _=n[f];typeof _=="b\
+igint"?((l(),Q)[c+2*f]=1n,(l(),Q)[c+2*f+1]=_):((l(),Q)[c+2*f]=0n,(l(),ye)[c+2*f+1]=_)}var g=Zt(e,r,s,i,t);return Se(o),g};
+function Qr(e){var r;if(h)return ne(0,0,1,e);me=e,pr()||(q.terminateAllThreads(),(r=u.onExit)==null||r.call(u,e),K=!0),y(
+e,new zr(e))}function Kr(e){if(h)return ne(1,0,0,e);_r(e)}var Zr=(e,r)=>{if(me=e,h)throw Kr(e),"unwind";Qr(e)},_r=Zr,q={
+unusedWorkers:[],runningWorkers:[],tlsInitFunctions:[],pthreads:{},init(){h||q.initMainThread()},initMainThread(){for(var e=u.
+pthreadPoolSize;e--;)q.allocateUnusedWorker();Yr(async()=>{var r=q.loadWasmModuleToAllWorkers();ar(),await r,nr()})},terminateAllThreads:()=>{
+for(var e of q.runningWorkers)Jr(e);for(var e of q.unusedWorkers)Jr(e);q.unusedWorkers=[],q.runningWorkers=[],q.pthreads=
+{}},returnWorkerToPool:e=>{var r=e.pthread_ptr;delete q.pthreads[r],q.unusedWorkers.push(e),q.runningWorkers.splice(q.runningWorkers.
+indexOf(e),1),e.pthread_ptr=0,en(r)},threadInitTLS(){q.tlsInitFunctions.forEach(e=>e())},loadWasmModuleToWorker:e=>new Promise(
+r=>{e.onmessage=o=>{var i=o.data,c=i.cmd;if(i.targetThread&&i.targetThread!=ur()){var f=q.pthreads[i.targetThread];f?f.postMessage(
+i,i.transferList):X(`Internal error! Worker sent a message "${c}" to target pthread ${i.targetThread}, but that thread n\
+o longer exists!`);return}c==="checkMailbox"?or():c==="spawnThread"?Xr(i):c==="cleanupThread"?Te(()=>$r(i.thread)):c==="\
+loaded"?(e.loaded=!0,T&&!e.pthread_ptr&&e.unref(),r(e)):i.target==="setimmediate"?e.postMessage(i):c==="uncaughtExceptio\
+n"?e.onerror(i.error):c==="callHandler"?u[i.handler](...i.args):c&&X(`worker sent an unknown command ${c}`)},e.onerror=o=>{
+var i="worker sent an error!";throw X(`${i} ${o.filename}:${o.lineno}: ${o.message}`),o},T&&(e.on("message",o=>e.onmessage(
+{data:o})),e.on("error",o=>e.onerror(o)));var t=[],n=["onExit","onAbort","print","printErr"];for(var s of n)u.propertyIsEnumerable(
+s)&&t.push(s);e.postMessage({cmd:"load",handlers:t,wasmMemory:Ne,wasmModule:ve})}),async loadWasmModuleToAllWorkers(){return h?
+void 0:Promise.all(q.unusedWorkers.map(q.loadWasmModuleToWorker))},allocateUnusedWorker(){var e,r=x;u.mainScriptUrlOrBlob&&
+(r=u.mainScriptUrlOrBlob,typeof r!="string"&&(r=URL.createObjectURL(r))),e=new B(r,{workerData:"em-pthread",name:"em-pth\
+read"}),q.unusedWorkers.push(e)},getNewWorker(){return q.unusedWorkers.length==0&&(q.allocateUnusedWorker(),q.loadWasmModuleToWorker(
+q.unusedWorkers[0])),q.unusedWorkers.pop()}},et=[],kn=e=>et.push(e);function En(e){var r=Number((l(),k)[(e+88)/8]),t=Number(
+(l(),k)[(e+96)/8]),n=r-t;an(r,n),Se(r)}var vr=[],rt=e=>{e=Number(e);var r=vr[e];return r||(vr[e]=r=un.get(BigInt(e)),be.
+isAsyncExport(r)&&(vr[e]=r=be.makeAsyncFunction(r))),r},tt=async(e,r)=>{sr=0,hr=0;var t=(s=>WebAssembly.promising(rt(e)).
+call(null,BigInt(s)))(r);function n(s){if(pr()){me=s;return}Lr(s)}t=await t,n(t)};tt.isAsync=!0;var hr=!0,Sn=e=>q.tlsInitFunctions.
+push(e),Ne;function nt(e,r,t,n){return h?ne(2,0,1,e,r,t,n):at(e,r,t,n)}var Nn=()=>!!globalThis.SharedArrayBuffer,In=9007199254740992,
+xn=-9007199254740992,p=e=>e<xn||e>In?NaN:Number(e);function at(e,r,t,n){if(e=p(e),r=p(r),t=p(t),n=p(n),!Nn())return 6;var s=[],
+o=0;if(h&&(s.length===0||o))return nt(e,r,t,n);var i={startRoutine:t,pthread_ptr:e,arg:n,transferList:s};return h?(i.cmd=
+"spawnThread",postMessage(i,s),0):Xr(i)}var We=()=>{var e=Number((l(),k)[P.varargs/8]);return P.varargs+=8,e},wr=()=>{var e=(l(),
+A)[+P.varargs/4];return P.varargs+=4,e},H={isAbs:e=>e.charAt(0)==="/",splitPath:e=>{var r=/^(\/?|)([\s\S]*?)((?:\.{1,2}|[^\/]+?|)(\.[^.\/]*|))(?:[\/]*)$/;
+return r.exec(e).slice(1)},normalizeArray:(e,r)=>{for(var t=0,n=e.length-1;n>=0;n--){var s=e[n];s==="."?e.splice(n,1):s===
+".."?(e.splice(n,1),t++):t&&(e.splice(n,1),t--)}if(r)for(;t;t--)e.unshift("..");return e},normalize:e=>{var r=H.isAbs(e),
+t=e.slice(-1)==="/";return e=H.normalizeArray(e.split("/").filter(n=>!!n),!r).join("/"),!e&&!r&&(e="."),e&&t&&(e+="/"),(r?
+"/":"")+e},dirname:e=>{var r=H.splitPath(e),t=r[0],n=r[1];return!t&&!n?".":(n&&(n=n.slice(0,-1)),t+n)},basename:e=>e&&e.
+match(/([^\/]+|\/)\/*$/)[1],join:(...e)=>H.normalize(e.join("/")),join2:(e,r)=>H.normalize(e+"/"+r)},Tn=()=>e=>e.set(crypto.
+getRandomValues(new Uint8Array(e.byteLength))),br=e=>{(br=Tn())(e)},qe={resolve:(...e)=>{for(var r="",t=!1,n=e.length-1;n>=
+-1&&!t;n--){var s=n>=0?e[n]:a.cwd();if(typeof s!="string")throw new TypeError("Arguments to path.resolve must be strings");
+if(!s)return"";r=s+"/"+r,t=H.isAbs(s)}return r=H.normalizeArray(r.split("/").filter(o=>!!o),!t).join("/"),(t?"/":"")+r||
+"."},relative:(e,r)=>{e=qe.resolve(e).slice(1),r=qe.resolve(r).slice(1);function t(_){for(var g=0;g<_.length&&_[g]==="";g++)
+;for(var E=_.length-1;E>=0&&_[E]==="";E--);return g>E?[]:_.slice(g,E-g+1)}for(var n=t(e.split("/")),s=t(r.split("/")),o=Math.
+min(n.length,s.length),i=o,c=0;c<o;c++)if(n[c]!==s[c]){i=c;break}for(var f=[],c=i;c<n.length;c++)f.push("..");return f=f.
+concat(s.slice(i)),f.join("/")}},st=globalThis.TextDecoder&&new TextDecoder,Bn=(e,r,t,n)=>{for(var s=r+t;e[r]&&!(r>=s);)
+++r;return r},Me=(e,r=0,t,n)=>{var s=Bn(e,r,t);if(s-r>16&&e.buffer&&st)return st.decode(e.buffer instanceof ArrayBuffer?
+e.subarray(r,s):e.slice(r,s));for(var o="";r<s;){var i=e[r++];if(!(i&128)){o+=String.fromCharCode(i);continue}var c=e[r++]&
+63;if((i&224)==192){o+=String.fromCharCode((i&31)<<6|c);continue}var f=e[r++]&63;if((i&240)==224?i=(i&15)<<12|c<<6|f:i=(i&
+7)<<18|c<<12|f<<6|e[r++]&63,i<65536)o+=String.fromCharCode(i);else{var _=i-65536;o+=String.fromCharCode(55296|_>>10,56320|
+_&1023)}}return o},yr=[],Ie=e=>{for(var r=0,t=0;t<e.length;++t){var n=e.charCodeAt(t);n<=127?r++:n<=2047?r+=2:n>=55296&&
+n<=57343?(r+=4,++t):r+=3}return r},ot=(e,r,t,n)=>{if(!(n>0))return 0;for(var s=t,o=t+n-1,i=0;i<e.length;++i){var c=e.codePointAt(
+i);if(c<=127){if(t>=o)break;r[t++]=c}else if(c<=2047){if(t+1>=o)break;r[t++]=192|c>>6,r[t++]=128|c&63}else if(c<=65535){
+if(t+2>=o)break;r[t++]=224|c>>12,r[t++]=128|c>>6&63,r[t++]=128|c&63}else{if(t+3>=o)break;r[t++]=240|c>>18,r[t++]=128|c>>
+12&63,r[t++]=128|c>>6&63,r[t++]=128|c&63,i++}}return r[t]=0,t-s},kr=(e,r,t)=>{var n=Ie(e)+1,s=new Array(n),o=ot(e,s,0,s.
+length);return s.length=o,s},Fn=()=>{var o;if(!yr.length){var e=null;if(T){var r=256,t=Buffer.alloc(r),n=0,s=process.stdin.
+fd;try{n=G.readSync(s,t,0,r)}catch(i){if(i.toString().includes("EOF"))n=0;else throw i}n>0&&(e=t.slice(0,n).toString("ut\
+f-8"))}else(o=globalThis.window)!=null&&o.prompt&&(e=window.prompt("Input: "),e!==null&&(e+=`
+`));if(!e)return null;yr=kr(e)}return yr.shift()},Oe={ttys:[],init(){},shutdown(){},register(e,r){Oe.ttys[e]={input:[],output:[],
+ops:r},a.registerDevice(e,Oe.stream_ops)},stream_ops:{open(e){var r=Oe.ttys[e.node.rdev];if(!r)throw new a.ErrnoError(43);
+e.tty=r,e.seekable=!1},close(e){e.tty.ops.fsync(e.tty)},fsync(e){e.tty.ops.fsync(e.tty)},read(e,r,t,n,s){if(!e.tty||!e.tty.
+ops.get_char)throw new a.ErrnoError(60);for(var o=0,i=0;i<n;i++){var c;try{c=e.tty.ops.get_char(e.tty)}catch{throw new a.
+ErrnoError(29)}if(c===void 0&&o===0)throw new a.ErrnoError(6);if(c==null)break;o++,r[t+i]=c}return o&&(e.node.atime=Date.
+now()),o},write(e,r,t,n,s){if(!e.tty||!e.tty.ops.put_char)throw new a.ErrnoError(60);try{for(var o=0;o<n;o++)e.tty.ops.put_char(
+e.tty,r[t+o])}catch{throw new a.ErrnoError(29)}return n&&(e.node.mtime=e.node.ctime=Date.now()),o}},default_tty_ops:{get_char(e){
+return Fn()},put_char(e,r){r===null||r===10?(ae(Me(e.output)),e.output=[]):r!=0&&e.output.push(r)},fsync(e){var r;((r=e.
+output)==null?void 0:r.length)>0&&(ae(Me(e.output)),e.output=[])},ioctl_tcgets(e){return{c_iflag:25856,c_oflag:5,c_cflag:191,
+c_lflag:35387,c_cc:[3,28,127,21,4,0,1,0,17,19,26,0,18,15,23,22,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]}},ioctl_tcsets(e,r,t){return 0},
+ioctl_tiocgwinsz(e){return[24,80]}},default_tty1_ops:{put_char(e,r){r===null||r===10?(X(Me(e.output)),e.output=[]):r!=0&&
+e.output.push(r)},fsync(e){var r;((r=e.output)==null?void 0:r.length)>0&&(X(Me(e.output)),e.output=[])}}},An=(e,r)=>(l(),
+fe).fill(0,e,e+r),it=(e,r)=>Math.ceil(e/r)*r,Er=e=>{e=it(e,65536);var r=Qt(65536,e);return r&&An(r,e),r},D={ops_table:null,
+mount(e){return D.createNode(null,"/",16895,0)},createNode(e,r,t,n){if(a.isBlkdev(t)||a.isFIFO(t))throw new a.ErrnoError(
+63);D.ops_table||(D.ops_table={dir:{node:{getattr:D.node_ops.getattr,setattr:D.node_ops.setattr,lookup:D.node_ops.lookup,
+mknod:D.node_ops.mknod,rename:D.node_ops.rename,unlink:D.node_ops.unlink,rmdir:D.node_ops.rmdir,readdir:D.node_ops.readdir,
+symlink:D.node_ops.symlink},stream:{llseek:D.stream_ops.llseek}},file:{node:{getattr:D.node_ops.getattr,setattr:D.node_ops.
+setattr},stream:{llseek:D.stream_ops.llseek,read:D.stream_ops.read,write:D.stream_ops.write,mmap:D.stream_ops.mmap,msync:D.
+stream_ops.msync}},link:{node:{getattr:D.node_ops.getattr,setattr:D.node_ops.setattr,readlink:D.node_ops.readlink},stream:{}},
+chrdev:{node:{getattr:D.node_ops.getattr,setattr:D.node_ops.setattr},stream:a.chrdev_stream_ops}});var s=a.createNode(e,
+r,t,n);return a.isDir(s.mode)?(s.node_ops=D.ops_table.dir.node,s.stream_ops=D.ops_table.dir.stream,s.contents={}):a.isFile(
+s.mode)?(s.node_ops=D.ops_table.file.node,s.stream_ops=D.ops_table.file.stream,s.usedBytes=0,s.contents=null):a.isLink(s.
+mode)?(s.node_ops=D.ops_table.link.node,s.stream_ops=D.ops_table.link.stream):a.isChrdev(s.mode)&&(s.node_ops=D.ops_table.
+chrdev.node,s.stream_ops=D.ops_table.chrdev.stream),s.atime=s.mtime=s.ctime=Date.now(),e&&(e.contents[r]=s,e.atime=e.mtime=
+e.ctime=s.atime),s},getFileDataAsTypedArray(e){return e.contents?e.contents.subarray?e.contents.subarray(0,e.usedBytes):
+new Uint8Array(e.contents):new Uint8Array(0)},expandFileStorage(e,r){var t=e.contents?e.contents.length:0;if(!(t>=r)){var n=1024*
+1024;r=Math.max(r,t*(t<n?2:1.125)>>>0),t!=0&&(r=Math.max(r,256));var s=e.contents;e.contents=new Uint8Array(r),e.usedBytes>
+0&&e.contents.set(s.subarray(0,e.usedBytes),0)}},resizeFileStorage(e,r){if(e.usedBytes!=r)if(r==0)e.contents=null,e.usedBytes=
+0;else{var t=e.contents;e.contents=new Uint8Array(r),t&&e.contents.set(t.subarray(0,Math.min(r,e.usedBytes))),e.usedBytes=
+r}},node_ops:{getattr(e){var r={};return r.dev=a.isChrdev(e.mode)?e.id:1,r.ino=e.id,r.mode=e.mode,r.nlink=1,r.uid=0,r.gid=
+0,r.rdev=e.rdev,a.isDir(e.mode)?r.size=4096:a.isFile(e.mode)?r.size=e.usedBytes:a.isLink(e.mode)?r.size=e.link.length:r.
+size=0,r.atime=new Date(e.atime),r.mtime=new Date(e.mtime),r.ctime=new Date(e.ctime),r.blksize=4096,r.blocks=Math.ceil(r.
+size/r.blksize),r},setattr(e,r){for(const t of["mode","atime","mtime","ctime"])r[t]!=null&&(e[t]=r[t]);r.size!==void 0&&
+D.resizeFileStorage(e,r.size)},lookup(e,r){throw D.doesNotExistError||(D.doesNotExistError=new a.ErrnoError(44),D.doesNotExistError.
+stack="<generic error, no stack>"),D.doesNotExistError},mknod(e,r,t,n){return D.createNode(e,r,t,n)},rename(e,r,t){var n;
+try{n=a.lookupNode(r,t)}catch{}if(n){if(a.isDir(e.mode))for(var s in n.contents)throw new a.ErrnoError(55);a.hashRemoveNode(
+n)}delete e.parent.contents[e.name],r.contents[t]=e,e.name=t,r.ctime=r.mtime=e.parent.ctime=e.parent.mtime=Date.now()},unlink(e,r){
+delete e.contents[r],e.ctime=e.mtime=Date.now()},rmdir(e,r){var t=a.lookupNode(e,r);for(var n in t.contents)throw new a.
+ErrnoError(55);delete e.contents[r],e.ctime=e.mtime=Date.now()},readdir(e){return[".","..",...Object.keys(e.contents)]},
+symlink(e,r,t){var n=D.createNode(e,r,41471,0);return n.link=t,n},readlink(e){if(!a.isLink(e.mode))throw new a.ErrnoError(
+28);return e.link}},stream_ops:{read(e,r,t,n,s){var o=e.node.contents;if(s>=e.node.usedBytes)return 0;var i=Math.min(e.node.
+usedBytes-s,n);if(i>8&&o.subarray)r.set(o.subarray(s,s+i),t);else for(var c=0;c<i;c++)r[t+c]=o[s+c];return i},write(e,r,t,n,s,o){
+if(r.buffer===(l(),te).buffer&&(o=!1),!n)return 0;var i=e.node;if(i.mtime=i.ctime=Date.now(),r.subarray&&(!i.contents||i.
+contents.subarray)){if(o)return i.contents=r.subarray(t,t+n),i.usedBytes=n,n;if(i.usedBytes===0&&s===0)return i.contents=
+r.slice(t,t+n),i.usedBytes=n,n;if(s+n<=i.usedBytes)return i.contents.set(r.subarray(t,t+n),s),n}if(D.expandFileStorage(i,
+s+n),i.contents.subarray&&r.subarray)i.contents.set(r.subarray(t,t+n),s);else for(var c=0;c<n;c++)i.contents[s+c]=r[t+c];
+return i.usedBytes=Math.max(i.usedBytes,s+n),n},llseek(e,r,t){var n=r;if(t===1?n+=e.position:t===2&&a.isFile(e.node.mode)&&
+(n+=e.node.usedBytes),n<0)throw new a.ErrnoError(28);return n},mmap(e,r,t,n,s){if(!a.isFile(e.node.mode))throw new a.ErrnoError(
+43);var o,i,c=e.node.contents;if(!(s&2)&&c&&c.buffer===(l(),te).buffer)i=!1,o=c.byteOffset;else{if(i=!0,o=Er(r),!o)throw new a.
+ErrnoError(48);c&&((t>0||t+r<c.length)&&(c.subarray?c=c.subarray(t,t+r):c=Array.prototype.slice.call(c,t,t+r)),(l(),te).
+set(c,o))}return{ptr:o,allocated:i}},msync(e,r,t,n,s){return D.stream_ops.write(e,r,0,n,t,!1),0}}},Cn=e=>{var r={r:0,"r+":2,
+w:577,"w+":578,a:1089,"a+":1090},t=r[e];if(typeof t>"u")throw new Error(`Unknown file open mode: ${e}`);return t},Sr=(e,r)=>{
+var t=0;return e&&(t|=365),r&&(t|=146),t},Gn=async e=>{var r=await b(e);return new Uint8Array(r)},lt=(...e)=>a.createDataFile(
+...e),ut=[],jn=async(e,r)=>{typeof Browser<"u"&&Browser.init();for(var t of ut)if(t.canHandle(r))return t.handle(e,r);return e},
+Nr=async(e,r,t,n,s,o,i,c)=>{var f=r?qe.resolve(H.join2(e,r)):e;ar();try{var _=t;typeof t=="string"&&(_=await Gn(t)),_=await jn(
+_,f),c==null||c(),o||lt(e,r,_,n,s,i)}finally{nr()}},Dn=(e,r,t,n,s,o,i,c,f,_)=>{Nr(e,r,t,n,s,c,f,_).then(o).catch(i)},a={
+root:null,mounts:[],devices:{},streams:[],nextInode:1,nameTable:null,currentPath:"/",initialized:!1,ignorePermissions:!0,
+filesystems:null,syncFSRequests:0,readFiles:{},ErrnoError:class{constructor(e){ke(this,"name","ErrnoError");this.errno=e}},
+FSStream:class{constructor(){ke(this,"shared",{})}get object(){return this.node}set object(e){this.node=e}get isRead(){return(this.
+flags&2097155)!==1}get isWrite(){return(this.flags&2097155)!==0}get isAppend(){return this.flags&1024}get flags(){return this.
+shared.flags}set flags(e){this.shared.flags=e}get position(){return this.shared.position}set position(e){this.shared.position=
+e}},FSNode:class{constructor(e,r,t,n){ke(this,"node_ops",{});ke(this,"stream_ops",{});ke(this,"readMode",365);ke(this,"w\
+riteMode",146);ke(this,"mounted",null);e||(e=this),this.parent=e,this.mount=e.mount,this.id=a.nextInode++,this.name=r,this.
+mode=t,this.rdev=n,this.atime=this.mtime=this.ctime=Date.now()}get read(){return(this.mode&this.readMode)===this.readMode}set read(e){
+e?this.mode|=this.readMode:this.mode&=~this.readMode}get write(){return(this.mode&this.writeMode)===this.writeMode}set write(e){
+e?this.mode|=this.writeMode:this.mode&=~this.writeMode}get isFolder(){return a.isDir(this.mode)}get isDevice(){return a.
+isChrdev(this.mode)}},lookupPath(e,r={}){if(!e)throw new a.ErrnoError(44);r.follow_mount??(r.follow_mount=!0),H.isAbs(e)||
+(e=a.cwd()+"/"+e);e:for(var t=0;t<40;t++){for(var n=e.split("/").filter(_=>!!_),s=a.root,o="/",i=0;i<n.length;i++){var c=i===
+n.length-1;if(c&&r.parent)break;if(n[i]!=="."){if(n[i]===".."){if(o=H.dirname(o),a.isRoot(s)){e=o+"/"+n.slice(i+1).join(
+"/"),t--;continue e}else s=s.parent;continue}o=H.join2(o,n[i]);try{s=a.lookupNode(s,n[i])}catch(_){if((_==null?void 0:_.
+errno)===44&&c&&r.noent_okay)return{path:o};throw _}if(a.isMountpoint(s)&&(!c||r.follow_mount)&&(s=s.mounted.root),a.isLink(
+s.mode)&&(!c||r.follow)){if(!s.node_ops.readlink)throw new a.ErrnoError(52);var f=s.node_ops.readlink(s);H.isAbs(f)||(f=
+H.dirname(o)+"/"+f),e=f+"/"+n.slice(i+1).join("/");continue e}}}return{path:o,node:s}}throw new a.ErrnoError(32)},getPath(e){
+for(var r;;){if(a.isRoot(e)){var t=e.mount.mountpoint;return r?t[t.length-1]!=="/"?`${t}/${r}`:t+r:t}r=r?`${e.name}/${r}`:
+e.name,e=e.parent}},hashName(e,r){for(var t=0,n=0;n<r.length;n++)t=(t<<5)-t+r.charCodeAt(n)|0;return(e+t>>>0)%a.nameTable.
+length},hashAddNode(e){var r=a.hashName(e.parent.id,e.name);e.name_next=a.nameTable[r],a.nameTable[r]=e},hashRemoveNode(e){
+var r=a.hashName(e.parent.id,e.name);if(a.nameTable[r]===e)a.nameTable[r]=e.name_next;else for(var t=a.nameTable[r];t;){
+if(t.name_next===e){t.name_next=e.name_next;break}t=t.name_next}},lookupNode(e,r){var t=a.mayLookup(e);if(t)throw new a.
+ErrnoError(t);for(var n=a.hashName(e.id,r),s=a.nameTable[n];s;s=s.name_next){var o=s.name;if(s.parent.id===e.id&&o===r)return s}
+return a.lookup(e,r)},createNode(e,r,t,n){var s=new a.FSNode(e,r,t,n);return a.hashAddNode(s),s},destroyNode(e){a.hashRemoveNode(
+e)},isRoot(e){return e===e.parent},isMountpoint(e){return!!e.mounted},isFile(e){return(e&61440)===32768},isDir(e){return(e&
+61440)===16384},isLink(e){return(e&61440)===40960},isChrdev(e){return(e&61440)===8192},isBlkdev(e){return(e&61440)===24576},
+isFIFO(e){return(e&61440)===4096},isSocket(e){return(e&49152)===49152},flagsToPermissionString(e){var r=["r","w","rw"][e&
+3];return e&512&&(r+="w"),r},nodePermissions(e,r){return a.ignorePermissions?0:r.includes("r")&&!(e.mode&292)||r.includes(
+"w")&&!(e.mode&146)||r.includes("x")&&!(e.mode&73)?2:0},mayLookup(e){if(!a.isDir(e.mode))return 54;var r=a.nodePermissions(
+e,"x");return r||(e.node_ops.lookup?0:2)},mayCreate(e,r){if(!a.isDir(e.mode))return 54;try{var t=a.lookupNode(e,r);return 20}catch{}
+return a.nodePermissions(e,"wx")},mayDelete(e,r,t){var n;try{n=a.lookupNode(e,r)}catch(o){return o.errno}var s=a.nodePermissions(
+e,"wx");if(s)return s;if(t){if(!a.isDir(n.mode))return 54;if(a.isRoot(n)||a.getPath(n)===a.cwd())return 10}else if(a.isDir(
+n.mode))return 31;return 0},mayOpen(e,r){return e?a.isLink(e.mode)?32:a.isDir(e.mode)&&(a.flagsToPermissionString(r)!=="\
+r"||r&576)?31:a.nodePermissions(e,a.flagsToPermissionString(r)):44},checkOpExists(e,r){if(!e)throw new a.ErrnoError(r);return e},
+MAX_OPEN_FDS:4096,nextfd(){for(var e=0;e<=a.MAX_OPEN_FDS;e++)if(!a.streams[e])return e;throw new a.ErrnoError(33)},getStreamChecked(e){
+var r=a.getStream(e);if(!r)throw new a.ErrnoError(8);return r},getStream:e=>a.streams[e],createStream(e,r=-1){return e=Object.
+assign(new a.FSStream,e),r==-1&&(r=a.nextfd()),e.fd=r,a.streams[r]=e,e},closeStream(e){a.streams[e]=null},dupStream(e,r=-1){
+var n,s;var t=a.createStream(e,r);return(s=(n=t.stream_ops)==null?void 0:n.dup)==null||s.call(n,t),t},doSetAttr(e,r,t){var n=e==
+null?void 0:e.stream_ops.setattr,s=n?e:r;n??(n=r.node_ops.setattr),a.checkOpExists(n,63),n(s,t)},chrdev_stream_ops:{open(e){
+var t,n;var r=a.getDevice(e.node.rdev);e.stream_ops=r.stream_ops,(n=(t=e.stream_ops).open)==null||n.call(t,e)},llseek(){
+throw new a.ErrnoError(70)}},major:e=>e>>8,minor:e=>e&255,makedev:(e,r)=>e<<8|r,registerDevice(e,r){a.devices[e]={stream_ops:r}},
+getDevice:e=>a.devices[e],getMounts(e){for(var r=[],t=[e];t.length;){var n=t.pop();r.push(n),t.push(...n.mounts)}return r},
+syncfs(e,r){typeof e=="function"&&(r=e,e=!1),a.syncFSRequests++,a.syncFSRequests>1&&X(`warning: ${a.syncFSRequests} FS.s\
+yncfs operations in flight at once, probably just doing extra work`);var t=a.getMounts(a.root.mount),n=0;function s(c){return a.
+syncFSRequests--,r(c)}function o(c){if(c)return o.errored?void 0:(o.errored=!0,s(c));++n>=t.length&&s(null)}for(var i of t)
+i.type.syncfs?i.type.syncfs(i,e,o):o(null)},mount(e,r,t){var n=t==="/",s=!t,o;if(n&&a.root)throw new a.ErrnoError(10);if(!n&&
+!s){var i=a.lookupPath(t,{follow_mount:!1});if(t=i.path,o=i.node,a.isMountpoint(o))throw new a.ErrnoError(10);if(!a.isDir(
+o.mode))throw new a.ErrnoError(54)}var c={type:e,opts:r,mountpoint:t,mounts:[]},f=e.mount(c);return f.mount=c,c.root=f,n?
+a.root=f:o&&(o.mounted=c,o.mount&&o.mount.mounts.push(c)),f},unmount(e){var r=a.lookupPath(e,{follow_mount:!1});if(!a.isMountpoint(
+r.node))throw new a.ErrnoError(28);var t=r.node,n=t.mounted,s=a.getMounts(n);for(var[o,i]of Object.entries(a.nameTable))
+for(;i;){var c=i.name_next;s.includes(i.mount)&&a.destroyNode(i),i=c}t.mounted=null;var f=t.mount.mounts.indexOf(n);t.mount.
+mounts.splice(f,1)},lookup(e,r){return e.node_ops.lookup(e,r)},mknod(e,r,t){var n=a.lookupPath(e,{parent:!0}),s=n.node,o=H.
+basename(e);if(!o)throw new a.ErrnoError(28);if(o==="."||o==="..")throw new a.ErrnoError(20);var i=a.mayCreate(s,o);if(i)
+throw new a.ErrnoError(i);if(!s.node_ops.mknod)throw new a.ErrnoError(63);return s.node_ops.mknod(s,o,r,t)},statfs(e){return a.
+statfsNode(a.lookupPath(e,{follow:!0}).node)},statfsStream(e){return a.statfsNode(e.node)},statfsNode(e){var r={bsize:4096,
+frsize:4096,blocks:1e6,bfree:5e5,bavail:5e5,files:a.nextInode,ffree:a.nextInode-1,fsid:42,flags:2,namelen:255};return e.
+node_ops.statfs&&Object.assign(r,e.node_ops.statfs(e.mount.opts.root)),r},create(e,r=438){return r&=4095,r|=32768,a.mknod(
+e,r,0)},mkdir(e,r=511){return r&=1023,r|=16384,a.mknod(e,r,0)},mkdirTree(e,r){var t=e.split("/"),n="";for(var s of t)if(s){
+(n||H.isAbs(e))&&(n+="/"),n+=s;try{a.mkdir(n,r)}catch(o){if(o.errno!=20)throw o}}},mkdev(e,r,t){return typeof t>"u"&&(t=
+r,r=438),r|=8192,a.mknod(e,r,t)},symlink(e,r){if(!qe.resolve(e))throw new a.ErrnoError(44);var t=a.lookupPath(r,{parent:!0}),
+n=t.node;if(!n)throw new a.ErrnoError(44);var s=H.basename(r),o=a.mayCreate(n,s);if(o)throw new a.ErrnoError(o);if(!n.node_ops.
+symlink)throw new a.ErrnoError(63);return n.node_ops.symlink(n,s,e)},rename(e,r){var t=H.dirname(e),n=H.dirname(r),s=H.basename(
+e),o=H.basename(r),i,c,f;if(i=a.lookupPath(e,{parent:!0}),c=i.node,i=a.lookupPath(r,{parent:!0}),f=i.node,!c||!f)throw new a.
+ErrnoError(44);if(c.mount!==f.mount)throw new a.ErrnoError(75);var _=a.lookupNode(c,s),g=qe.relative(e,n);if(g.charAt(0)!==
+".")throw new a.ErrnoError(28);if(g=qe.relative(r,t),g.charAt(0)!==".")throw new a.ErrnoError(55);var E;try{E=a.lookupNode(
+f,o)}catch{}if(_!==E){var I=a.isDir(_.mode),S=a.mayDelete(c,s,I);if(S)throw new a.ErrnoError(S);if(S=E?a.mayDelete(f,o,I):
+a.mayCreate(f,o),S)throw new a.ErrnoError(S);if(!c.node_ops.rename)throw new a.ErrnoError(63);if(a.isMountpoint(_)||E&&a.
+isMountpoint(E))throw new a.ErrnoError(10);if(f!==c&&(S=a.nodePermissions(c,"w"),S))throw new a.ErrnoError(S);a.hashRemoveNode(
+_);try{c.node_ops.rename(_,f,o),_.parent=f}catch(R){throw R}finally{a.hashAddNode(_)}}},rmdir(e){var r=a.lookupPath(e,{parent:!0}),
+t=r.node,n=H.basename(e),s=a.lookupNode(t,n),o=a.mayDelete(t,n,!0);if(o)throw new a.ErrnoError(o);if(!t.node_ops.rmdir)throw new a.
+ErrnoError(63);if(a.isMountpoint(s))throw new a.ErrnoError(10);t.node_ops.rmdir(t,n),a.destroyNode(s)},readdir(e){var r=a.
+lookupPath(e,{follow:!0}),t=r.node,n=a.checkOpExists(t.node_ops.readdir,54);return n(t)},unlink(e){var r=a.lookupPath(e,
+{parent:!0}),t=r.node;if(!t)throw new a.ErrnoError(44);var n=H.basename(e),s=a.lookupNode(t,n),o=a.mayDelete(t,n,!1);if(o)
+throw new a.ErrnoError(o);if(!t.node_ops.unlink)throw new a.ErrnoError(63);if(a.isMountpoint(s))throw new a.ErrnoError(10);
+t.node_ops.unlink(t,n),a.destroyNode(s)},readlink(e){var r=a.lookupPath(e),t=r.node;if(!t)throw new a.ErrnoError(44);if(!t.
+node_ops.readlink)throw new a.ErrnoError(28);return t.node_ops.readlink(t)},stat(e,r){var t=a.lookupPath(e,{follow:!r}),
+n=t.node,s=a.checkOpExists(n.node_ops.getattr,63);return s(n)},fstat(e){var r=a.getStreamChecked(e),t=r.node,n=r.stream_ops.
+getattr,s=n?r:t;return n??(n=t.node_ops.getattr),a.checkOpExists(n,63),n(s)},lstat(e){return a.stat(e,!0)},doChmod(e,r,t,n){
+a.doSetAttr(e,r,{mode:t&4095|r.mode&-4096,ctime:Date.now(),dontFollow:n})},chmod(e,r,t){var n;if(typeof e=="string"){var s=a.
+lookupPath(e,{follow:!t});n=s.node}else n=e;a.doChmod(null,n,r,t)},lchmod(e,r){a.chmod(e,r,!0)},fchmod(e,r){var t=a.getStreamChecked(
+e);a.doChmod(t,t.node,r,!1)},doChown(e,r,t){a.doSetAttr(e,r,{timestamp:Date.now(),dontFollow:t})},chown(e,r,t,n){var s;if(typeof e==
+"string"){var o=a.lookupPath(e,{follow:!n});s=o.node}else s=e;a.doChown(null,s,n)},lchown(e,r,t){a.chown(e,r,t,!0)},fchown(e,r,t){
+var n=a.getStreamChecked(e);a.doChown(n,n.node,!1)},doTruncate(e,r,t){if(a.isDir(r.mode))throw new a.ErrnoError(31);if(!a.
+isFile(r.mode))throw new a.ErrnoError(28);var n=a.nodePermissions(r,"w");if(n)throw new a.ErrnoError(n);a.doSetAttr(e,r,
+{size:t,timestamp:Date.now()})},truncate(e,r){if(r<0)throw new a.ErrnoError(28);var t;if(typeof e=="string"){var n=a.lookupPath(
+e,{follow:!0});t=n.node}else t=e;a.doTruncate(null,t,r)},ftruncate(e,r){var t=a.getStreamChecked(e);if(r<0||(t.flags&2097155)===
+0)throw new a.ErrnoError(28);a.doTruncate(t,t.node,r)},utime(e,r,t){var n=a.lookupPath(e,{follow:!0}),s=n.node,o=a.checkOpExists(
+s.node_ops.setattr,63);o(s,{atime:r,mtime:t})},open(e,r,t=438){if(e==="")throw new a.ErrnoError(44);r=typeof r=="string"?
+Cn(r):r,r&64?t=t&4095|32768:t=0;var n,s;if(typeof e=="object")n=e;else{s=e.endsWith("/");var o=a.lookupPath(e,{follow:!(r&
+131072),noent_okay:!0});n=o.node,e=o.path}var i=!1;if(r&64)if(n){if(r&128)throw new a.ErrnoError(20)}else{if(s)throw new a.
+ErrnoError(31);n=a.mknod(e,t|511,0),i=!0}if(!n)throw new a.ErrnoError(44);if(a.isChrdev(n.mode)&&(r&=-513),r&65536&&!a.isDir(
+n.mode))throw new a.ErrnoError(54);if(!i){var c=a.mayOpen(n,r);if(c)throw new a.ErrnoError(c)}r&512&&!i&&a.truncate(n,0),
+r&=-131713;var f=a.createStream({node:n,path:a.getPath(n),flags:r,seekable:!0,position:0,stream_ops:n.stream_ops,ungotten:[],
+error:!1});return f.stream_ops.open&&f.stream_ops.open(f),i&&a.chmod(n,t&511),u.logReadFiles&&!(r&1)&&(e in a.readFiles||
+(a.readFiles[e]=1)),f},close(e){if(a.isClosed(e))throw new a.ErrnoError(8);e.getdents&&(e.getdents=null);try{e.stream_ops.
+close&&e.stream_ops.close(e)}catch(r){throw r}finally{a.closeStream(e.fd)}e.fd=null},isClosed(e){return e.fd===null},llseek(e,r,t){
+if(a.isClosed(e))throw new a.ErrnoError(8);if(!e.seekable||!e.stream_ops.llseek)throw new a.ErrnoError(70);if(t!=0&&t!=1&&
+t!=2)throw new a.ErrnoError(28);return e.position=e.stream_ops.llseek(e,r,t),e.ungotten=[],e.position},read(e,r,t,n,s){if(n<
+0||s<0)throw new a.ErrnoError(28);if(a.isClosed(e))throw new a.ErrnoError(8);if((e.flags&2097155)===1)throw new a.ErrnoError(
+8);if(a.isDir(e.node.mode))throw new a.ErrnoError(31);if(!e.stream_ops.read)throw new a.ErrnoError(28);var o=typeof s<"u";
+if(!o)s=e.position;else if(!e.seekable)throw new a.ErrnoError(70);var i=e.stream_ops.read(e,r,t,n,s);return o||(e.position+=
+i),i},write(e,r,t,n,s,o){if(n<0||s<0)throw new a.ErrnoError(28);if(a.isClosed(e))throw new a.ErrnoError(8);if((e.flags&2097155)===
+0)throw new a.ErrnoError(8);if(a.isDir(e.node.mode))throw new a.ErrnoError(31);if(!e.stream_ops.write)throw new a.ErrnoError(
+28);e.seekable&&e.flags&1024&&a.llseek(e,0,2);var i=typeof s<"u";if(!i)s=e.position;else if(!e.seekable)throw new a.ErrnoError(
+70);var c=e.stream_ops.write(e,r,t,n,s,o);return i||(e.position+=c),c},mmap(e,r,t,n,s){if((n&2)!==0&&(s&2)===0&&(e.flags&
+2097155)!==2)throw new a.ErrnoError(2);if((e.flags&2097155)===1)throw new a.ErrnoError(2);if(!e.stream_ops.mmap)throw new a.
+ErrnoError(43);if(!r)throw new a.ErrnoError(28);return e.stream_ops.mmap(e,r,t,n,s)},msync(e,r,t,n,s){return e.stream_ops.
+msync?e.stream_ops.msync(e,r,t,n,s):0},ioctl(e,r,t){if(!e.stream_ops.ioctl)throw new a.ErrnoError(59);return e.stream_ops.
+ioctl(e,r,t)},readFile(e,r={}){r.flags=r.flags||0,r.encoding=r.encoding||"binary",r.encoding!=="utf8"&&r.encoding!=="bin\
+ary"&&ce(`Invalid encoding type "${r.encoding}"`);var t=a.open(e,r.flags),n=a.stat(e),s=n.size,o=new Uint8Array(s);return a.
+read(t,o,0,s,0),r.encoding==="utf8"&&(o=Me(o)),a.close(t),o},writeFile(e,r,t={}){t.flags=t.flags||577;var n=a.open(e,t.flags,
+t.mode);typeof r=="string"&&(r=new Uint8Array(kr(r))),ArrayBuffer.isView(r)?a.write(n,r,0,r.byteLength,void 0,t.canOwn):
+ce("Unsupported data type"),a.close(n)},cwd:()=>a.currentPath,chdir(e){var r=a.lookupPath(e,{follow:!0});if(r.node===null)
+throw new a.ErrnoError(44);if(!a.isDir(r.node.mode))throw new a.ErrnoError(54);var t=a.nodePermissions(r.node,"x");if(t)
+throw new a.ErrnoError(t);a.currentPath=r.path},createDefaultDirectories(){a.mkdir("/tmp"),a.mkdir("/home"),a.mkdir("/ho\
+me/web_user")},createDefaultDevices(){a.mkdir("/dev"),a.registerDevice(a.makedev(1,3),{read:()=>0,write:(n,s,o,i,c)=>i,llseek:()=>0}),
+a.mkdev("/dev/null",a.makedev(1,3)),Oe.register(a.makedev(5,0),Oe.default_tty_ops),Oe.register(a.makedev(6,0),Oe.default_tty1_ops),
+a.mkdev("/dev/tty",a.makedev(5,0)),a.mkdev("/dev/tty1",a.makedev(6,0));var e=new Uint8Array(1024),r=0,t=()=>(r===0&&(br(
+e),r=e.byteLength),e[--r]);a.createDevice("/dev","random",t),a.createDevice("/dev","urandom",t),a.mkdir("/dev/shm"),a.mkdir(
+"/dev/shm/tmp")},createSpecialDirectories(){a.mkdir("/proc");var e=a.mkdir("/proc/self");a.mkdir("/proc/self/fd"),a.mount(
+{mount(){var r=a.createNode(e,"fd",16895,73);return r.stream_ops={llseek:D.stream_ops.llseek},r.node_ops={lookup(t,n){var s=+n,
+o=a.getStreamChecked(s),i={parent:null,mount:{mountpoint:"fake"},node_ops:{readlink:()=>o.path},id:s+1};return i.parent=
+i,i},readdir(){return Array.from(a.streams.entries()).filter(([t,n])=>n).map(([t,n])=>t.toString())}},r}},{},"/proc/self\
+/fd")},createStandardStreams(e,r,t){e?a.createDevice("/dev","stdin",e):a.symlink("/dev/tty","/dev/stdin"),r?a.createDevice(
+"/dev","stdout",null,r):a.symlink("/dev/tty","/dev/stdout"),t?a.createDevice("/dev","stderr",null,t):a.symlink("/dev/tty\
+1","/dev/stderr"),a.open("/dev/stdin",0),a.open("/dev/stdout",1),a.open("/dev/stderr",1)},staticInit(){a.nameTable=new Array(
+4096),a.mount(D,{},"/"),a.createDefaultDirectories(),a.createDefaultDevices(),a.createSpecialDirectories(),a.filesystems=
+{MEMFS:D}},init(e,r,t){a.initialized=!0,e??(e=u.stdin),r??(r=u.stdout),t??(t=u.stderr),a.createStandardStreams(e,r,t)},quit(){
+a.initialized=!1;for(var e of a.streams)e&&a.close(e)},findObject(e,r){var t=a.analyzePath(e,r);return t.exists?t.object:
+null},analyzePath(e,r){try{var t=a.lookupPath(e,{follow:!r});e=t.path}catch{}var n={isRoot:!1,exists:!1,error:0,name:null,
+path:null,object:null,parentExists:!1,parentPath:null,parentObject:null};try{var t=a.lookupPath(e,{parent:!0});n.parentExists=
+!0,n.parentPath=t.path,n.parentObject=t.node,n.name=H.basename(e),t=a.lookupPath(e,{follow:!r}),n.exists=!0,n.path=t.path,
+n.object=t.node,n.name=t.node.name,n.isRoot=t.path==="/"}catch(s){n.error=s.errno}return n},createPath(e,r,t,n){e=typeof e==
+"string"?e:a.getPath(e);for(var s=r.split("/").reverse();s.length;){var o=s.pop();if(o){var i=H.join2(e,o);try{a.mkdir(i)}catch(c){
+if(c.errno!=20)throw c}e=i}}return i},createFile(e,r,t,n,s){var o=H.join2(typeof e=="string"?e:a.getPath(e),r),i=Sr(n,s);
+return a.create(o,i)},createDataFile(e,r,t,n,s,o){var i=r;e&&(e=typeof e=="string"?e:a.getPath(e),i=r?H.join2(e,r):e);var c=Sr(
+n,s),f=a.create(i,c);if(t){if(typeof t=="string"){for(var _=new Array(t.length),g=0,E=t.length;g<E;++g)_[g]=t.charCodeAt(
+g);t=_}a.chmod(f,c|146);var I=a.open(f,577);a.write(I,t,0,t.length,0,o),a.close(I),a.chmod(f,c)}},createDevice(e,r,t,n){
+var c;var s=H.join2(typeof e=="string"?e:a.getPath(e),r),o=Sr(!!t,!!n);(c=a.createDevice).major??(c.major=64);var i=a.makedev(
+a.createDevice.major++,0);return a.registerDevice(i,{open(f){f.seekable=!1},close(f){var _;(_=n==null?void 0:n.buffer)!=
+null&&_.length&&n(10)},read(f,_,g,E,I){for(var S=0,R=0;R<E;R++){var j;try{j=t()}catch{throw new a.ErrnoError(29)}if(j===
+void 0&&S===0)throw new a.ErrnoError(6);if(j==null)break;S++,_[g+R]=j}return S&&(f.node.atime=Date.now()),S},write(f,_,g,E,I){
+for(var S=0;S<E;S++)try{n(_[g+S])}catch{throw new a.ErrnoError(29)}return E&&(f.node.mtime=f.node.ctime=Date.now()),S}}),
+a.mkdev(s,o,i)},forceLoadFile(e){if(e.isDevice||e.isFolder||e.link||e.contents)return!0;if(globalThis.XMLHttpRequest)ce(
+"Lazy loading should have been performed (contents set) in createLazyFile, but it was not. Lazy loading only works in we\
+b workers. Use --embed-file or --preload-file in emcc on the main thread.");else try{e.contents=F(e.url)}catch{throw new a.
+ErrnoError(29)}},createLazyFile(e,r,t,n,s){class o{constructor(){ke(this,"lengthKnown",!1);ke(this,"chunks",[])}get(I){if(!(I>
+this.length-1||I<0)){var S=I%this.chunkSize,R=I/this.chunkSize|0;return this.getter(R)[S]}}setDataGetter(I){this.getter=
+I}cacheLength(){var I=new XMLHttpRequest;I.open("HEAD",t,!1),I.send(null),I.status>=200&&I.status<300||I.status===304||ce(
+"Couldn't load "+t+". Status: "+I.status);var S=Number(I.getResponseHeader("Content-length")),R,j=(R=I.getResponseHeader(
+"Accept-Ranges"))&&R==="bytes",d=(R=I.getResponseHeader("Content-Encoding"))&&R==="gzip",U=1024*1024;j||(U=S);var L=(le,pe)=>{
+le>pe&&ce("invalid range ("+le+", "+pe+") or no bytes requested!"),pe>S-1&&ce("only "+S+" bytes available! programmer er\
+ror!");var re=new XMLHttpRequest;return re.open("GET",t,!1),S!==U&&re.setRequestHeader("Range","bytes="+le+"-"+pe),re.responseType=
+"arraybuffer",re.overrideMimeType&&re.overrideMimeType("text/plain; charset=x-user-defined"),re.send(null),re.status>=200&&
+re.status<300||re.status===304||ce("Couldn't load "+t+". Status: "+re.status),re.response!==void 0?new Uint8Array(re.response||
+[]):kr(re.responseText||"")},Y=this;Y.setDataGetter(le=>{var pe=le*U,re=(le+1)*U-1;return re=Math.min(re,S-1),typeof Y.chunks[le]>
+"u"&&(Y.chunks[le]=L(pe,re)),typeof Y.chunks[le]>"u"&&ce("doXHR failed!"),Y.chunks[le]}),(d||!S)&&(U=S=1,S=this.getter(0).
+length,U=S,ae("LazyFiles on gzip forces download of the whole file when length is accessed")),this._length=S,this._chunkSize=
+U,this.lengthKnown=!0}get length(){return this.lengthKnown||this.cacheLength(),this._length}get chunkSize(){return this.
+lengthKnown||this.cacheLength(),this._chunkSize}}if(globalThis.XMLHttpRequest){O||ce("Cannot do synchronous binary XHRs \
+outside webworkers in modern browsers. Use --embed-file or --preload-file in emcc");var i=new o,c={isDevice:!1,contents:i}}else
+var c={isDevice:!1,url:t};var f=a.createFile(e,r,c,n,s);c.contents?f.contents=c.contents:c.url&&(f.contents=null,f.url=c.
+url),Object.defineProperties(f,{usedBytes:{get:function(){return this.contents.length}}});var _={};for(const[E,I]of Object.
+entries(f.stream_ops))_[E]=(...S)=>(a.forceLoadFile(f),I(...S));function g(E,I,S,R,j){var d=E.node.contents;if(j>=d.length)
+return 0;var U=Math.min(d.length-j,R);if(d.slice)for(var L=0;L<U;L++)I[S+L]=d[j+L];else for(var L=0;L<U;L++)I[S+L]=d.get(
+j+L);return U}return _.read=(E,I,S,R,j)=>(a.forceLoadFile(f),g(E,I,S,R,j)),_.mmap=(E,I,S,R,j)=>{a.forceLoadFile(f);var d=Er(
+I);if(!d)throw new a.ErrnoError(48);return g(E,(l(),te),d,I,S),{ptr:d,allocated:!0}},f.stream_ops=_,f}},Pe=(e,r,t)=>e?Me(
+(l(),fe),e,r):"",P={DEFAULT_POLLMASK:5,calculateAt(e,r,t){if(H.isAbs(r))return r;var n;if(e===-100)n=a.cwd();else{var s=P.
+getStreamFromFD(e);n=s.path}if(r.length==0){if(!t)throw new a.ErrnoError(44);return n}return n+"/"+r},writeStat(e,r){(l(),
+C)[e/4]=r.dev,(l(),C)[(e+4)/4]=r.mode,(l(),k)[(e+8)/8]=BigInt(r.nlink),(l(),C)[(e+16)/4]=r.uid,(l(),C)[(e+20)/4]=r.gid,(l(),
+C)[(e+24)/4]=r.rdev,(l(),Q)[(e+32)/8]=BigInt(r.size),(l(),A)[(e+40)/4]=4096,(l(),A)[(e+44)/4]=r.blocks;var t=r.atime.getTime(),
+n=r.mtime.getTime(),s=r.ctime.getTime();return(l(),Q)[(e+48)/8]=BigInt(Math.floor(t/1e3)),(l(),k)[(e+56)/8]=BigInt(t%1e3*
+1e3*1e3),(l(),Q)[(e+64)/8]=BigInt(Math.floor(n/1e3)),(l(),k)[(e+72)/8]=BigInt(n%1e3*1e3*1e3),(l(),Q)[(e+80)/8]=BigInt(Math.
+floor(s/1e3)),(l(),k)[(e+88)/8]=BigInt(s%1e3*1e3*1e3),(l(),Q)[(e+96)/8]=BigInt(r.ino),0},writeStatFs(e,r){(l(),C)[(e+8)/
+4]=r.bsize,(l(),C)[(e+72)/4]=r.bsize,(l(),Q)[(e+16)/8]=BigInt(r.blocks),(l(),Q)[(e+24)/8]=BigInt(r.bfree),(l(),Q)[(e+32)/
+8]=BigInt(r.bavail),(l(),Q)[(e+40)/8]=BigInt(r.files),(l(),Q)[(e+48)/8]=BigInt(r.ffree),(l(),C)[(e+56)/4]=r.fsid,(l(),C)[(e+
+80)/4]=r.flags,(l(),C)[(e+64)/4]=r.namelen},doMsync(e,r,t,n,s){if(!a.isFile(r.node.mode))throw new a.ErrnoError(43);if(n&
+2)return 0;var o=(l(),fe).slice(e,e+t);a.msync(r,o,s,t,n)},getStreamFromFD(e){var r=a.getStreamChecked(e);return r},varargs:void 0,
+getStr(e){var r=Pe(e);return r}};function ct(e,r,t){if(h)return ne(3,0,1,e,r,t);t=p(t),P.varargs=t;try{var n=P.getStreamFromFD(
+e);switch(r){case 0:{var s=wr();if(s<0)return-28;for(;a.streams[s];)s++;var o;return o=a.dupStream(n,s),o.fd}case 1:case 2:
+return 0;case 3:return n.flags;case 4:{var s=wr();return n.flags|=s,0}case 5:{var s=We(),i=0;return(l(),he)[(s+i)/2]=2,0}case 6:case 7:
+return 0}return-28}catch(c){if(typeof a>"u"||c.name!=="ErrnoError")throw c;return-c.errno}}function Rn(e,r){if(h)return ne(
+4,0,1,e,r);r=p(r);try{return P.writeStat(r,a.fstat(e))}catch(t){if(typeof a>"u"||t.name!=="ErrnoError")throw t;return-t.
+errno}}var xe=(e,r,t)=>ot(e,(l(),fe),r,t);function mt(e,r){if(h)return ne(5,0,1,e,r);e=p(e),r=p(r);try{if(r===0)return-28;
+var t=a.cwd(),n=Ie(t)+1;return r<n?-68:(xe(t,e,r),n)}catch(s){if(typeof a>"u"||s.name!=="ErrnoError")throw s;return-s.errno}}
+function ft(e,r,t){if(h)return ne(6,0,1,e,r,t);r=p(r),t=p(t);try{var n=P.getStreamFromFD(e);n.getdents||(n.getdents=a.readdir(
+n.path));for(var s=280,o=0,i=a.llseek(n,0,1),c=Math.floor(i/s),f=Math.min(n.getdents.length,c+Math.floor(t/s)),_=c;_<f;_++){
+var g,E,I=n.getdents[_];if(I===".")g=n.node.id,E=4;else if(I===".."){var S=a.lookupPath(n.path,{parent:!0});g=S.node.id,
+E=4}else{var R;try{R=a.lookupNode(n.node,I)}catch(j){if((j==null?void 0:j.errno)===28)continue;throw j}g=R.id,E=a.isChrdev(
+R.mode)?2:a.isDir(R.mode)?4:a.isLink(R.mode)?10:8}(l(),Q)[(r+o)/8]=BigInt(g),(l(),Q)[(r+o+8)/8]=BigInt((_+1)*s),(l(),he)[(r+
+o+16)/2]=280,(l(),te)[r+o+18]=E,xe(I,r+o+19,256),o+=s}return a.llseek(n,_*s,0),o}catch(j){if(typeof a>"u"||j.name!=="Err\
+noError")throw j;return-j.errno}}function dt(e,r,t){if(h)return ne(7,0,1,e,r,t);t=p(t),P.varargs=t;try{var n=P.getStreamFromFD(
+e);switch(r){case 21509:return n.tty?0:-59;case 21505:{if(!n.tty)return-59;if(n.tty.ops.ioctl_tcgets){var s=n.tty.ops.ioctl_tcgets(
+n),o=We();(l(),A)[o/4]=s.c_iflag||0,(l(),A)[(o+4)/4]=s.c_oflag||0,(l(),A)[(o+8)/4]=s.c_cflag||0,(l(),A)[(o+12)/4]=s.c_lflag||
+0;for(var i=0;i<32;i++)(l(),te)[o+i+17]=s.c_cc[i]||0;return 0}return 0}case 21510:case 21511:case 21512:return n.tty?0:-59;case 21506:case 21507:case 21508:{
+if(!n.tty)return-59;if(n.tty.ops.ioctl_tcsets){for(var o=We(),c=(l(),A)[o/4],f=(l(),A)[(o+4)/4],_=(l(),A)[(o+8)/4],g=(l(),
+A)[(o+12)/4],E=[],i=0;i<32;i++)E.push((l(),te)[o+i+17]);return n.tty.ops.ioctl_tcsets(n.tty,r,{c_iflag:c,c_oflag:f,c_cflag:_,
+c_lflag:g,c_cc:E})}return 0}case 21519:{if(!n.tty)return-59;var o=We();return(l(),A)[o/4]=0,0}case 21520:return n.tty?-28:
+-59;case 21537:case 21531:{var o=We();return a.ioctl(n,r,o)}case 21523:{if(!n.tty)return-59;if(n.tty.ops.ioctl_tiocgwinsz){
+var I=n.tty.ops.ioctl_tiocgwinsz(n.tty),o=We();(l(),he)[o/2]=I[0],(l(),he)[(o+2)/2]=I[1]}return 0}case 21524:return n.tty?
+0:-59;case 21515:return n.tty?0:-59;default:return-28}}catch(S){if(typeof a>"u"||S.name!=="ErrnoError")throw S;return-S.
+errno}}function On(e,r){if(h)return ne(8,0,1,e,r);e=p(e),r=p(r);try{return e=P.getStr(e),P.writeStat(r,a.lstat(e))}catch(t){
+if(typeof a>"u"||t.name!=="ErrnoError")throw t;return-t.errno}}function Un(e,r,t,n){if(h)return ne(9,0,1,e,r,t,n);r=p(r),
+t=p(t);try{r=P.getStr(r);var s=n&256,o=n&4096;return n=n&-6401,r=P.calculateAt(e,r,o),P.writeStat(t,s?a.lstat(r):a.stat(
+r))}catch(i){if(typeof a>"u"||i.name!=="ErrnoError")throw i;return-i.errno}}function pt(e,r,t,n){if(h)return ne(10,0,1,e,
+r,t,n);r=p(r),n=p(n),P.varargs=n;try{r=P.getStr(r),r=P.calculateAt(e,r);var s=n?wr():0;return a.open(r,t,s).fd}catch(o){
+if(typeof a>"u"||o.name!=="ErrnoError")throw o;return-o.errno}}function gt(e,r){if(h)return ne(11,0,1,e,r);e=p(e),r=p(r);
+try{return e=P.getStr(e),P.writeStat(r,a.stat(e))}catch(t){if(typeof a>"u"||t.name!=="ErrnoError")throw t;return-t.errno}}
+var Ln=()=>ce("");function Wn(e){e=p(e),Ur(e,!O,1,!N,5242880,!1),q.threadInitTLS()}var Ir=e=>{if(e instanceof zr||e=="un\
+wind")return me;y(1,e)},qn=()=>{if(!pr())try{if(h){ur()&&Lr(me);return}_r(me)}catch(e){Ir(e)}},Te=e=>{if(!K)try{e(),qn()}catch(r){
+Ir(r)}};function xr(e){if(e=p(e),Atomics.waitAsync){var r=Atomics.waitAsync((l(),A),e/4,e);r.value.then(or);var t=e+228;
+Atomics.store((l(),A),t/4,1)}}var or=()=>Te(()=>{var e=ur();e&&(xr(e),rn())});function Mn(e,r){if(e=p(e),r=p(r),e==r)setTimeout(
+or);else if(h)postMessage({targetThread:e,cmd:"checkMailbox"});else{var t=q.pthreads[e];if(!t)return;t.postMessage({cmd:"\
+checkMailbox"})}}var ir=[];function Vn(e,r,t,n,s){t=p(t),s=p(s),n/=2,ir.length=n;for(var o=s/8,i=0;i<n;i++)(l(),Q)[o+2*i]?
+ir[i]=(l(),Q)[o+2*i+1]:ir[i]=(l(),ye)[o+2*i+1];var c=Ka[e];q.currentProxiedOperationCallerThread=t;var f=c(...ir);return q.
+currentProxiedOperationCallerThread=0,typeof f=="bigint"&&(f=p(f)),f}function zn(e){e=p(e),h?postMessage({cmd:"cleanupTh\
+read",thread:e}):$r(e)}function Jn(e){e=p(e),T&&q.pthreads[e].ref()}var $n=e=>e%4===0&&(e%100!==0||e%400===0),Hn=[0,31,60,
+91,121,152,182,213,244,274,305,335],Pn=[0,31,59,90,120,151,181,212,243,273,304,334],Yn=e=>{var r=$n(e.getFullYear()),t=r?
+Hn:Pn,n=t[e.getMonth()]+e.getDate()-1;return n};function Xn(e,r){e=p(e),r=p(r);var t=new Date(e*1e3);(l(),A)[r/4]=t.getSeconds(),
+(l(),A)[(r+4)/4]=t.getMinutes(),(l(),A)[(r+8)/4]=t.getHours(),(l(),A)[(r+12)/4]=t.getDate(),(l(),A)[(r+16)/4]=t.getMonth(),
+(l(),A)[(r+20)/4]=t.getFullYear()-1900,(l(),A)[(r+24)/4]=t.getDay();var n=Yn(t)|0;(l(),A)[(r+28)/4]=n,(l(),Q)[(r+40)/8]=
+BigInt(-(t.getTimezoneOffset()*60));var s=new Date(t.getFullYear(),0,1),o=new Date(t.getFullYear(),6,1).getTimezoneOffset(),
+i=s.getTimezoneOffset(),c=(o!=i&&t.getTimezoneOffset()==Math.min(i,o))|0;(l(),A)[(r+32)/4]=c}function _t(e,r,t,n,s,o,i){
+if(h)return ne(12,0,1,e,r,t,n,s,o,i);e=p(e),s=p(s),o=p(o),i=p(i);try{var c=P.getStreamFromFD(n),f=a.mmap(c,e,s,r,t),_=f.
+ptr;return(l(),A)[o/4]=f.allocated,(l(),k)[i/8]=BigInt(_),0}catch(g){if(typeof a>"u"||g.name!=="ErrnoError")throw g;return-g.
+errno}}function vt(e,r,t,n,s,o){if(h)return ne(13,0,1,e,r,t,n,s,o);e=p(e),r=p(r),o=p(o);try{var i=P.getStreamFromFD(s);t&
+2&&P.doMsync(e,i,r,n,o)}catch(c){if(typeof a>"u"||c.name!=="ErrnoError")throw c;return-c.errno}}var Qn=function(e,r,t,n){
+e=p(e),r=p(r),t=p(t),n=p(n);var s=new Date().getFullYear(),o=new Date(s,0,1),i=new Date(s,6,1),c=o.getTimezoneOffset(),f=i.
+getTimezoneOffset(),_=Math.max(c,f);(l(),k)[e/8]=BigInt(_*60),(l(),A)[r/4]=+(c!=f);var g=S=>{var R=S>=0?"-":"+",j=Math.abs(
+S),d=String(Math.floor(j/60)).padStart(2,"0"),U=String(j%60).padStart(2,"0");return`UTC${R}${d}${U}`},E=g(c),I=g(f);f<c?
+(xe(E,t,17),xe(I,n,17)):(xe(E,n,17),xe(I,t,17))},ht=()=>performance.timeOrigin+performance.now(),wt=()=>Date.now(),Kn=e=>e>=
+0&&e<=3;function Zn(e,r,t){if(t=p(t),!Kn(e))return 28;var n;e===0?n=wt():n=ht();var s=Math.round(n*1e3*1e3);return(l(),Q)[t/
+8]=BigInt(s),0}var ea=()=>{},Ve=()=>{sr+=1},ra=()=>{throw Ve(),"unwind"},ta=()=>new Error().stack.toString(),na=e=>{var r=ta(),
+t=r.split(`
+`);r="";var n=new RegExp("\\s*(.*?)@(.*?):([0-9]+):([0-9]+)"),s=new RegExp("\\s*at (.*?) \\((.*):(.*):(.*)\\)");for(var o of t){
+var i="",c="",f=0,_=0,g=s.exec(o);if((g==null?void 0:g.length)==5)i=g[1],c=g[2],f=g[3],_=g[4];else if(g=n.exec(o),(g==null?
+void 0:g.length)>=4)i=g[1],c=g[2],f=g[3],_=g[4]|0;else{r+=o+`
+`;continue}if(i=="_emscripten_log"||i=="_emscripten_get_callstack"){r="";continue}e&24&&(e&64&&(c=c.substring(c.replace(
+/\\/g,"/").lastIndexOf("/")+1)),r+=`    at ${i} (${c}:${f}:${_})
+`)}return r=r.replace(/\s+$/,""),r};function aa(e,r,t){r=p(r);var n=na(e);if(!r||t<=0)return Ie(n)+1;var s=xe(n,r,t);return s+
+1}var bt=()=>4294967296,sa=()=>BigInt(bt()),oa=()=>2,ia=()=>T?require("os").cpus().length:navigator.hardwareConcurrency,
+la=e=>{var r=Ne.buffer.byteLength,t=(e-r+65535)/65536|0;try{return Ne.grow(BigInt(t)),je(),1}catch{}};function ua(e){e=p(
+e);var r=(l(),fe).length;if(e<=r)return!1;var t=bt();if(e>t)return!1;for(var n=1;n<=4;n*=2){var s=r*(1+.2/n);s=Math.min(
+s,e+100663296);var o=Math.min(t,it(Math.max(e,s),65536)),i=la(o);if(i)return!0}return!1}var Fe=e=>{var r=Ie(e)+1,t=gr(r);
+return xe(e,t,r),t},ca=(e,r)=>{(l(),C)[e/4]=r;var t=(l(),C)[e/4];(l(),C)[(e+4)/4]=(r-t)/4294967296},ma=e=>{var r=Ie(e)+1,
+t=Ct(r);return t&&xe(e,t,r),t},Ce=e=>(l(),C)[e/4]+(l(),A)[(e+4)/4]*4294967296,m={Internals:{jsObjects:[],jsObjectInsert:(e,r)=>{
+m.Internals.jsObjects[e]=r},bufferOnUnmaps:[],futures:[],futureInsert:(e,r)=>{m.Internals.futures[e]=new Promise(t=>r.finally(
+()=>t(e)))}},getJsObject:e=>{if(e)return m.Internals.jsObjects[e]},importJsAdapter:(e,r=0)=>{var t=Jt(r);return m.Internals.
+jsObjects[t]=e,t},importJsBindGroup:(e,r=0)=>{var t=Tr(r);return m.Internals.jsObjects[t]=e,t},importJsBindGroupLayout:(e,r=0)=>{
+var t=Br(r);return m.Internals.jsObjects[t]=e,t},importJsBuffer:(e,r=0)=>{z(e.mapState==="unmapped");var t=$t(r);return m.
+Internals.jsObjectInsert(t,e),t},importJsCommandBuffer:(e,r=0)=>{var t=Fr(r);return m.Internals.jsObjects[t]=e,t},importJsCommandEncoder:(e,r=0)=>{
+var t=Ar(r);return m.Internals.jsObjects[t]=e,t},importJsComputePassEncoder:(e,r=0)=>{var t=Cr(r);return m.Internals.jsObjects[t]=
+e,t},importJsComputePipeline:(e,r=0)=>{var t=Gr(r);return m.Internals.jsObjects[t]=e,t},importJsDevice:(e,r=0)=>{var s;var t=jr(
+r),n=Ht(r,t);return m.Internals.jsObjectInsert(t,e.queue),m.Internals.jsObjectInsert(n,e),(s=u.peercomputeOnDevice)==null||
+s.call(u,e),n},importJsExternalTexture:(e,r=0)=>{var t=jt(r);return m.Internals.jsObjects[t]=e,t},importJsPipelineLayout:(e,r=0)=>{
+var t=Dt(r);return m.Internals.jsObjects[t]=e,t},importJsQuerySet:(e,r=0)=>{var t=Rt(r);return m.Internals.jsObjects[t]=
+e,t},importJsQueue:(e,r=0)=>{var t=jr(r);return m.Internals.jsObjects[t]=e,t},importJsRenderBundle:(e,r=0)=>{var t=Ot(r);
+return m.Internals.jsObjects[t]=e,t},importJsRenderBundleEncoder:(e,r=0)=>{var t=Ut(r);return m.Internals.jsObjects[t]=e,
+t},importJsRenderPassEncoder:(e,r=0)=>{var t=Lt(r);return m.Internals.jsObjects[t]=e,t},importJsRenderPipeline:(e,r=0)=>{
+var t=Wt(r);return m.Internals.jsObjects[t]=e,t},importJsSampler:(e,r=0)=>{var t=qt(r);return m.Internals.jsObjects[t]=e,
+t},importJsShaderModule:(e,r=0)=>{var t=Pt(r);return m.Internals.jsObjects[t]=e,t},importJsSurface:(e,r=0)=>{var t=Mt(r);
+return m.Internals.jsObjects[t]=e,t},importJsTexture:(e,r=0)=>{var t=Vt(r);return m.Internals.jsObjects[t]=e,t},importJsTextureView:(e,r=0)=>{
+var t=zt(r);return m.Internals.jsObjects[t]=e,t},errorCallback:(e,r,t,n)=>{var s=Ee(),o=Fe(t);((i,c,f)=>rt(e).call(null,
+i,BigInt(c),BigInt(f)))(r,BigInt(o),n),Se(s)},iterateExtensions:(e,r)=>{for(var t=Number((l(),k)[e/8]);t;t=Number((l(),k)[t/
+8])){var n=(l(),A)[(t+8)/4];r[n](t)}},setStringView:(e,r,t)=>{(l(),k)[e/8]=BigInt(r),(l(),k)[(e+8)/8]=BigInt(t)},makeStringFromStringView:e=>{
+var r=Number((l(),k)[e/8]),t=Number((l(),k)[(e+8)/8]);return Pe(r,t)},makeStringFromOptionalStringView:e=>{var r=Number(
+(l(),k)[e/8]),t=Number((l(),k)[(e+8)/8]);return r?Pe(r,t):t===0?"":void 0},makeColor:e=>({r:(l(),ye)[e/8],g:(l(),ye)[(e+
+8)/8],b:(l(),ye)[(e+16)/8],a:(l(),ye)[(e+24)/8]}),makeExtent3D:e=>({width:(l(),C)[e/4],height:(l(),C)[(e+4)/4],depthOrArrayLayers:(l(),
+C)[(e+8)/4]}),makeOrigin3D:e=>({x:(l(),C)[e/4],y:(l(),C)[(e+4)/4],z:(l(),C)[(e+8)/4]}),makeTexelCopyTextureInfo:e=>({texture:m.
+getJsObject(Number((l(),k)[e/8])),mipLevel:(l(),C)[(e+8)/4],origin:m.makeOrigin3D(e+12),aspect:m.TextureAspect[(l(),A)[(e+
+24)/4]]}),makeTexelCopyBufferLayout:e=>{var r=(l(),C)[(e+8)/4],t=(l(),C)[(e+12)/4];return{offset:Ce(e),bytesPerRow:r===4294967295?
+void 0:r,rowsPerImage:t===4294967295?void 0:t}},makeTexelCopyBufferInfo:e=>{var r=e+0,t=m.makeTexelCopyBufferLayout(r);return t.
+buffer=m.getJsObject(Number((l(),k)[(e+16)/8])),t},makePassTimestampWrites:e=>{if(e!==0)return{querySet:m.getJsObject(Number(
+(l(),k)[(e+8)/8])),beginningOfPassWriteIndex:(l(),C)[(e+16)/4],endOfPassWriteIndex:(l(),C)[(e+20)/4]}},makePipelineConstants:(e,r)=>{
+if(e){for(var t={},n=0;n<e;++n){var s=r+32*n,o=m.makeStringFromStringView(s+8);t[o]=(l(),ye)[(s+24)/8]}return t}},makePipelineLayout:e=>e?
+m.getJsObject(e):"auto",makeComputeState:e=>{if(e){var r={module:m.getJsObject(Number((l(),k)[(e+8)/8])),constants:m.makePipelineConstants(
+Number((l(),k)[(e+32)/8]),Number((l(),k)[(e+40)/8])),entryPoint:m.makeStringFromOptionalStringView(e+16)};return r}},makeComputePipelineDesc:e=>{
+var r={label:m.makeStringFromOptionalStringView(e+8),layout:m.makePipelineLayout(Number((l(),k)[(e+24)/8])),compute:m.makeComputeState(
+e+32)};return r},makeRenderPipelineDesc:e=>{function r(d){if(d)return{topology:m.PrimitiveTopology[(l(),A)[(d+8)/4]],stripIndexFormat:m.
+IndexFormat[(l(),A)[(d+12)/4]],frontFace:m.FrontFace[(l(),A)[(d+16)/4]],cullMode:m.CullMode[(l(),A)[(d+20)/4]],unclippedDepth:!!(l(),
+C)[(d+24)/4]}}function t(d){if(d)return{operation:m.BlendOperation[(l(),A)[d/4]],srcFactor:m.BlendFactor[(l(),A)[(d+4)/4]],
+dstFactor:m.BlendFactor[(l(),A)[(d+8)/4]]}}function n(d){if(d)return{alpha:t(d+12),color:t(d+0)}}function s(d){var U=m.TextureFormat[(l(),
+A)[(d+8)/4]];return U?{format:U,blend:n(Number((l(),k)[(d+16)/8])),writeMask:(l(),C)[(d+24)/4]}:void 0}function o(d,U){for(var L=[],
+Y=0;Y<d;++Y)L.push(s(U+32*Y));return L}function i(d){return{compare:m.CompareFunction[(l(),A)[d/4]],failOp:m.StencilOperation[(l(),
+A)[(d+4)/4]],depthFailOp:m.StencilOperation[(l(),A)[(d+8)/4]],passOp:m.StencilOperation[(l(),A)[(d+12)/4]]}}function c(d){
+if(d)return{format:m.TextureFormat[(l(),A)[(d+8)/4]],depthWriteEnabled:!!(l(),C)[(d+12)/4],depthCompare:m.CompareFunction[(l(),
+A)[(d+16)/4]],stencilFront:i(d+20),stencilBack:i(d+36),stencilReadMask:(l(),C)[(d+52)/4],stencilWriteMask:(l(),C)[(d+56)/
+4],depthBias:(l(),A)[(d+60)/4],depthBiasSlopeScale:(l(),Ue)[(d+64)/4],depthBiasClamp:(l(),Ue)[(d+68)/4]}}function f(d){return{
+format:m.VertexFormat[(l(),A)[(d+8)/4]],offset:Ce(d+16),shaderLocation:(l(),C)[(d+24)/4]}}function _(d,U){for(var L=[],Y=0;Y<
+d;++Y)L.push(f(U+Y*32));return L}function g(d){if(d){var U=m.VertexStepMode[(l(),A)[(d+8)/4]],L=Number((l(),k)[(d+24)/8]);
+return!U&&!L?null:{arrayStride:Ce(d+16),stepMode:U,attributes:_(L,Number((l(),k)[(d+32)/8]))}}}function E(d,U){if(d){for(var L=[],
+Y=0;Y<d;++Y)L.push(g(U+Y*40));return L}}function I(d){if(d){var U={module:m.getJsObject(Number((l(),k)[(d+8)/8])),constants:m.
+makePipelineConstants(Number((l(),k)[(d+32)/8]),Number((l(),k)[(d+40)/8])),buffers:E(Number((l(),k)[(d+48)/8]),Number((l(),
+k)[(d+56)/8])),entryPoint:m.makeStringFromOptionalStringView(d+16)};return U}}function S(d){if(d)return{count:(l(),C)[(d+
+8)/4],mask:(l(),C)[(d+12)/4],alphaToCoverageEnabled:!!(l(),C)[(d+16)/4]}}function R(d){if(d){var U={module:m.getJsObject(
+Number((l(),k)[(d+8)/8])),constants:m.makePipelineConstants(Number((l(),k)[(d+32)/8]),Number((l(),k)[(d+40)/8])),targets:o(
+Number((l(),k)[(d+48)/8]),Number((l(),k)[(d+56)/8])),entryPoint:m.makeStringFromOptionalStringView(d+16)};return U}}var j={
+label:m.makeStringFromOptionalStringView(e+8),layout:m.makePipelineLayout(Number((l(),k)[(e+24)/8])),vertex:I(e+32),primitive:r(
+e+96),depthStencil:c(Number((l(),k)[(e+128)/8])),multisample:S(e+136),fragment:R(Number((l(),k)[(e+160)/8]))};return j},
+fillLimitStruct:(e,r)=>{var t=Number((l(),k)[r/8]);function n(i,c,f,_=0){var g=e[i]??_;(l(),C)[(c+f)/4]=g}function s(i,c,f,_=0){
+var g=e[i]??_;ca(c+f,g)}if(n("maxTextureDimension1D",r,8),n("maxTextureDimension2D",r,12),n("maxTextureDimension3D",r,16),
+n("maxTextureArrayLayers",r,20),n("maxBindGroups",r,24),n("maxBindGroupsPlusVertexBuffers",r,28),n("maxBindingsPerBindGr\
+oup",r,32),n("maxDynamicUniformBuffersPerPipelineLayout",r,36),n("maxDynamicStorageBuffersPerPipelineLayout",r,40),n("ma\
+xSampledTexturesPerShaderStage",r,44),n("maxSamplersPerShaderStage",r,48),n("maxStorageBuffersPerShaderStage",r,52),n("m\
+axStorageTexturesPerShaderStage",r,56),n("maxUniformBuffersPerShaderStage",r,60),n("minUniformBufferOffsetAlignment",r,80),
+n("minStorageBufferOffsetAlignment",r,84),s("maxUniformBufferBindingSize",r,64),s("maxStorageBufferBindingSize",r,72),n(
+"maxVertexBuffers",r,88),s("maxBufferSize",r,96),n("maxVertexAttributes",r,104),n("maxVertexBufferArrayStride",r,108),n(
+"maxInterStageShaderVariables",r,112),n("maxColorAttachments",r,116),n("maxColorAttachmentBytesPerSample",r,120),n("maxC\
+omputeWorkgroupStorageSize",r,124),n("maxComputeInvocationsPerWorkgroup",r,128),n("maxComputeWorkgroupSizeX",r,132),n("m\
+axComputeWorkgroupSizeY",r,136),n("maxComputeWorkgroupSizeZ",r,140),n("maxComputeWorkgroupsPerDimension",r,144),n("maxIm\
+mediateSize",r,148),t!==0){(l(),A)[(t+8)/4];var o=t;n("maxStorageBuffersInVertexStage",o,16,e.maxStorageBuffersPerShaderStage),
+n("maxStorageBuffersInFragmentStage",o,24,e.maxStorageBuffersPerShaderStage),n("maxStorageTexturesInVertexStage",o,20,e.
+maxStorageTexturesPerShaderStage),n("maxStorageTexturesInFragmentStage",o,28,e.maxStorageTexturesPerShaderStage)}},fillAdapterInfoStruct:(e,r)=>{
+(l(),C)[(r+88)/4]=e.subgroupMinSize,(l(),C)[(r+92)/4]=e.subgroupMaxSize;var t=e.vendor+e.architecture+e.device+e.description,
+n=ma(t),s=Ie(e.vendor);m.setStringView(r+8,n,s),n+=s;var o=Ie(e.architecture);m.setStringView(r+24,n,o),n+=o;var i=Ie(e.
+device);m.setStringView(r+40,n,i),n+=i;var c=Ie(e.description);m.setStringView(r+56,n,c),n+=c,(l(),A)[(r+72)/4]=2;var f=e.
+isFallbackAdapter?3:4;(l(),A)[(r+76)/4]=f,(l(),C)[(r+80)/4]=0,(l(),C)[(r+84)/4]=0},AddressMode:[,"clamp-to-edge","repeat",
+"mirror-repeat"],BlendFactor:[,"zero","one","src","one-minus-src","src-alpha","one-minus-src-alpha","dst","one-minus-dst",
+"dst-alpha","one-minus-dst-alpha","src-alpha-saturated","constant","one-minus-constant","src1","one-minus-src1","src1-al\
+pha","one-minus-src1-alpha"],BlendOperation:[,"add","subtract","reverse-subtract","min","max"],BufferBindingType:[,,"uni\
+form","storage","read-only-storage"],BufferMapState:[,"unmapped","pending","mapped"],CompareFunction:[,"never","less","e\
+qual","less-equal","greater","not-equal","greater-equal","always"],CompilationInfoRequestStatus:[,"success","callback-ca\
+ncelled"],ComponentSwizzle:[,"0","1","r","g","b","a"],CompositeAlphaMode:[,"opaque","premultiplied","unpremultiplied","i\
+nherit"],CullMode:[,"none","front","back"],ErrorFilter:[,"validation","out-of-memory","internal"],FeatureLevel:[,"compat\
+ibility","core"],FeatureName:{1:"core-features-and-limits",2:"depth-clip-control",3:"depth32float-stencil8",4:"texture-c\
+ompression-bc",5:"texture-compression-bc-sliced-3d",6:"texture-compression-etc2",7:"texture-compression-astc",8:"texture\
+-compression-astc-sliced-3d",9:"timestamp-query",10:"indirect-first-instance",11:"shader-f16",12:"rg11b10ufloat-renderab\
+le",13:"bgra8unorm-storage",14:"float32-filterable",15:"float32-blendable",16:"clip-distances",17:"dual-source-blending",
+18:"subgroups",19:"texture-formats-tier1",20:"texture-formats-tier2",21:"primitive-index",22:"texture-component-swizzle",
+327692:"chromium-experimental-unorm16-texture-formats",327729:"chromium-experimental-multi-draw-indirect"},FilterMode:[,
+"nearest","linear"],FrontFace:[,"ccw","cw"],IndexFormat:[,"uint16","uint32"],InstanceFeatureName:[,"timed-wait-any","sha\
+der-source-spirv","multiple-devices-per-adapter"],LoadOp:[,"load","clear"],MipmapFilterMode:[,"nearest","linear"],OptionalBool:[
+"false","true"],PowerPreference:[,"low-power","high-performance"],PredefinedColorSpace:[,"srgb","display-p3"],PrimitiveTopology:[
+,"point-list","line-list","line-strip","triangle-list","triangle-strip"],QueryType:[,"occlusion","timestamp"],SamplerBindingType:[
+,,"filtering","non-filtering","comparison"],Status:[,"success","error"],StencilOperation:[,"keep","zero","replace","inve\
+rt","increment-clamp","decrement-clamp","increment-wrap","decrement-wrap"],StorageTextureAccess:[,,"write-only","read-on\
+ly","read-write"],StoreOp:[,"store","discard"],SurfaceGetCurrentTextureStatus:[,"success-optimal","success-suboptimal","\
+timeout","outdated","lost","error"],TextureAspect:[,"all","stencil-only","depth-only"],TextureDimension:[,"1d","2d","3d"],
+TextureFormat:[,"r8unorm","r8snorm","r8uint","r8sint","r16unorm","r16snorm","r16uint","r16sint","r16float","rg8unorm","r\
+g8snorm","rg8uint","rg8sint","r32float","r32uint","r32sint","rg16unorm","rg16snorm","rg16uint","rg16sint","rg16float","r\
+gba8unorm","rgba8unorm-srgb","rgba8snorm","rgba8uint","rgba8sint","bgra8unorm","bgra8unorm-srgb","rgb10a2uint","rgb10a2u\
+norm","rg11b10ufloat","rgb9e5ufloat","rg32float","rg32uint","rg32sint","rgba16unorm","rgba16snorm","rgba16uint","rgba16s\
+int","rgba16float","rgba32float","rgba32uint","rgba32sint","stencil8","depth16unorm","depth24plus","depth24plus-stencil8",
+"depth32float","depth32float-stencil8","bc1-rgba-unorm","bc1-rgba-unorm-srgb","bc2-rgba-unorm","bc2-rgba-unorm-srgb","bc\
+3-rgba-unorm","bc3-rgba-unorm-srgb","bc4-r-unorm","bc4-r-snorm","bc5-rg-unorm","bc5-rg-snorm","bc6h-rgb-ufloat","bc6h-rg\
+b-float","bc7-rgba-unorm","bc7-rgba-unorm-srgb","etc2-rgb8unorm","etc2-rgb8unorm-srgb","etc2-rgb8a1unorm","etc2-rgb8a1un\
+orm-srgb","etc2-rgba8unorm","etc2-rgba8unorm-srgb","eac-r11unorm","eac-r11snorm","eac-rg11unorm","eac-rg11snorm","astc-4\
+x4-unorm","astc-4x4-unorm-srgb","astc-5x4-unorm","astc-5x4-unorm-srgb","astc-5x5-unorm","astc-5x5-unorm-srgb","astc-6x5-\
+unorm","astc-6x5-unorm-srgb","astc-6x6-unorm","astc-6x6-unorm-srgb","astc-8x5-unorm","astc-8x5-unorm-srgb","astc-8x6-uno\
+rm","astc-8x6-unorm-srgb","astc-8x8-unorm","astc-8x8-unorm-srgb","astc-10x5-unorm","astc-10x5-unorm-srgb","astc-10x6-uno\
+rm","astc-10x6-unorm-srgb","astc-10x8-unorm","astc-10x8-unorm-srgb","astc-10x10-unorm","astc-10x10-unorm-srgb","astc-12x\
+10-unorm","astc-12x10-unorm-srgb","astc-12x12-unorm","astc-12x12-unorm-srgb"],TextureSampleType:[,,"float","unfilterable\
+-float","depth","sint","uint"],TextureViewDimension:[,"1d","2d","2d-array","cube","cube-array","3d"],ToneMappingMode:[,"\
+standard","extended"],VertexFormat:[,"uint8","uint8x2","uint8x4","sint8","sint8x2","sint8x4","unorm8","unorm8x2","unorm8\
+x4","snorm8","snorm8x2","snorm8x4","uint16","uint16x2","uint16x4","sint16","sint16x2","sint16x4","unorm16","unorm16x2","\
+unorm16x4","snorm16","snorm16x2","snorm16x4","float16","float16x2","float16x4","float32","float32x2","float32x3","float3\
+2x4","uint32","uint32x2","uint32x3","uint32x4","sint32","sint32x2","sint32x3","sint32x4","unorm10-10-10-2","unorm8x4-bgr\
+a"],VertexStepMode:[,"vertex","instance"],WGSLLanguageFeatureName:[,"readonly_and_readwrite_storage_textures","packed_4x\
+8_integer_dot_product","unrestricted_pointer_parameters","pointer_composite_access","uniform_buffer_standard_layout","su\
+bgroup_id","texture_and_sampler_let","subgroup_uniformity","texture_formats_tier1"]},fa={undefined:1,unknown:1,destroyed:2},
+Ge=()=>{sr-=1};function da(e,r,t,n,s,o){e=p(e),r=p(r),t=p(t),n=p(n),s=p(s),o=p(o);var i=m.getJsObject(e),c={};if(o){var f=Number(
+(l(),k)[(o+24)/8]);if(f){var _=Number((l(),k)[(o+32)/8]);c.requiredFeatures=Array.from((l(),C).subarray(_/4,(_+f*4)/4),d=>m.
+FeatureName[d])}var g=Number((l(),k)[(o+40)/8]);if(g){let d=function(L,Y,le,pe=!1){var re=Y+le,Qe=(l(),C)[re/4];Qe!=4294967295&&
+(!pe||Qe!=0)&&(I[L]=Qe)},U=function(L,Y,le){var pe=Y+le,re=(l(),C)[pe/4],Qe=(l(),C)[(pe+4)/4];(re!=4294967295||Qe!=4294967295)&&
+(I[L]=Ce(pe))};var E=Number((l(),k)[g/8]),I={};if(d("maxTextureDimension1D",g,8),d("maxTextureDimension2D",g,12),d("maxT\
+extureDimension3D",g,16),d("maxTextureArrayLayers",g,20),d("maxBindGroups",g,24),d("maxBindGroupsPlusVertexBuffers",g,28),
+d("maxBindingsPerBindGroup",g,32),d("maxDynamicUniformBuffersPerPipelineLayout",g,36),d("maxDynamicStorageBuffersPerPipe\
+lineLayout",g,40),d("maxSampledTexturesPerShaderStage",g,44),d("maxSamplersPerShaderStage",g,48),d("maxStorageBuffersPer\
+ShaderStage",g,52),d("maxStorageTexturesPerShaderStage",g,56),d("maxUniformBuffersPerShaderStage",g,60),d("minUniformBuf\
+ferOffsetAlignment",g,80),d("minStorageBufferOffsetAlignment",g,84),U("maxUniformBufferBindingSize",g,64),U("maxStorageB\
+ufferBindingSize",g,72),d("maxVertexBuffers",g,88),U("maxBufferSize",g,96),d("maxVertexAttributes",g,104),d("maxVertexBu\
+fferArrayStride",g,108),d("maxInterStageShaderVariables",g,112),d("maxColorAttachments",g,116),d("maxColorAttachmentByte\
+sPerSample",g,120),d("maxComputeWorkgroupStorageSize",g,124),d("maxComputeInvocationsPerWorkgroup",g,128),d("maxComputeW\
+orkgroupSizeX",g,132),d("maxComputeWorkgroupSizeY",g,136),d("maxComputeWorkgroupSizeZ",g,140),d("maxComputeWorkgroupsPer\
+Dimension",g,144),d("maxImmediateSize",g,148,!0),E!==0){(l(),A)[(E+8)/4];var S=E;"maxStorageBuffersInVertexStage"in GPUSupportedLimits.
+prototype&&(d("maxStorageBuffersInVertexStage",S,16),d("maxStorageTexturesInVertexStage",S,20),d("maxStorageBuffersInFra\
+gmentStage",S,24),d("maxStorageTexturesInFragmentStage",S,28))}c.requiredLimits=I}var R=Number((l(),k)[(o+48)/8]);if(R){
+var j={label:m.makeStringFromOptionalStringView(R+8)};c.defaultQueue=j}c.label=m.makeStringFromOptionalStringView(o+8)}Ve(),
+m.Internals.futureInsert(r,i.requestDevice(c).then(d=>{Ge(),Te(()=>{var U;m.Internals.jsObjectInsert(s,d.queue),m.Internals.
+jsObjectInsert(n,d),(U=u.peercomputeOnDevice)==null||U.call(u,d),n=BigInt(n),m.Internals.futureInsert(t,d.lost.then(L=>{
+Te(()=>{d.onuncapturederror=pe=>{};var Y=Ee(),le=Fe(L.message);Dr(t,fa[L.reason],BigInt(le)),Se(Y)})})),d.onuncapturederror=
+L=>{var Y=5;L.error instanceof GPUValidationError?Y=2:L.error instanceof GPUOutOfMemoryError?Y=3:L.error instanceof GPUInternalError&&
+(Y=4);var le=Ee(),pe=Fe(L.error.message);Xt(BigInt(n),Y,BigInt(pe)),Se(le)},Or(r,1,BigInt(n),0n)})},d=>{Ge(),Te(()=>{var U=Ee(),
+L=Fe(d.message);Or(r,3,BigInt(n),BigInt(L)),t&&Dr(t,4,BigInt(L)),Se(U)})}))}function pa(e){e=p(e);var r=m.getJsObject(e),
+t=m.Internals.bufferOnUnmaps[e];if(t){for(var n=0;n<t.length;++n)t[n]();delete m.Internals.bufferOnUnmaps[e]}r.destroy()}
+var ga=function(e,r,t){e=p(e),r=p(r),t=p(t);var n=(()=>{var s=m.getJsObject(e);t==-1&&(t=void 0);var o;try{o=s.getMappedRange(
+r,t)}catch{return 0n}var i=tn(16,o.byteLength);return(l(),fe).set(new Uint8Array(o),i),m.Internals.bufferOnUnmaps[e].push(
+()=>Gt(i)),i})();return BigInt(n)},_a=function(e,r,t,n,s){e=p(e),r=p(r),t=p(t),n=p(n),s=p(s);var o=m.getJsObject(e);m.Internals.
+bufferOnUnmaps[e]=[],s==-1&&(s=void 0),Ve(),m.Internals.futureInsert(r,o.mapAsync(t,n,s).then(()=>{Ge(),Te(()=>{Rr(r,1,0n)})},
+i=>{Ge(),Te(()=>{var c=Ee(),f=Fe(i.message),_=i.name==="AbortError"?4:i.name==="OperationError"?3:0;Rr(r,_,BigInt(f)),delete m.
+Internals.bufferOnUnmaps[e]})}))};function va(e){e=p(e);var r=m.getJsObject(e),t=m.Internals.bufferOnUnmaps[e];if(t){for(var n=0;n<
+t.length;++n)t[n]();delete m.Internals.bufferOnUnmaps[e],r.unmap()}}function ha(e){e=p(e),delete m.Internals.jsObjects[e]}
+function wa(e,r,t){e=p(e),r=p(r),t=p(t);var n=!!(l(),C)[(r+40)/4],s={label:m.makeStringFromOptionalStringView(r+8),usage:(l(),
+C)[(r+24)/4],size:Ce(r+32),mappedAtCreation:n},o=m.getJsObject(e),i;try{i=o.createBuffer(s)}catch{return!1}return m.Internals.
+jsObjectInsert(t,i),n&&(m.Internals.bufferOnUnmaps[t]=[]),!0}function ba(e,r,t){e=p(e),r=p(r),t=p(t);var n=Number((l(),k)[r/
+8]),s=(l(),A)[(n+8)/4],o={label:m.makeStringFromOptionalStringView(r+8),code:""};switch(s){case 2:{o.code=m.makeStringFromStringView(
+n+16);break}}var i=m.getJsObject(e);m.Internals.jsObjectInsert(t,i.createShaderModule(o))}var ya=e=>{const r=m.getJsObject(
+e);r.onuncapturederror=null,r.destroy()};function ka(e,r,t,n){r=p(r),t=p(t),n=p(n);var s;if(t){s={featureLevel:m.FeatureLevel[(l(),
+A)[(t+8)/4]],powerPreference:m.PowerPreference[(l(),A)[(t+12)/4]],forceFallbackAdapter:!!(l(),C)[(t+16)/4]};var o=Number(
+(l(),k)[t/8]);if(o!==0){(l(),A)[(o+8)/4];var i=o;s.xrCompatible=!!(l(),C)[(i+16)/4]}}if(!("gpu"in navigator)){var c=Ee(),
+f=Fe("WebGPU not available on this browser (navigator.gpu is not available)");Xe(r,3,BigInt(n),BigInt(f)),Se(c);return}Ve(),
+m.Internals.futureInsert(r,navigator.gpu.requestAdapter(s).then(_=>{Ge(),Te(()=>{if(_)m.Internals.jsObjectInsert(n,_),Xe(
+r,1,BigInt(n),0n);else{var g=Ee(),E=Fe("WebGPU not available on this browser (requestAdapter returned null)");Xe(r,3,BigInt(
+n),BigInt(E)),Se(g)}})},_=>{Ge(),Te(()=>{var g=Ee(),E=Fe(_.message);Xe(r,4,BigInt(n),BigInt(E)),Se(g)})}))}var Ea=function(e,r){
+e=p(e),r=p(r);var t=m.getJsObject(e);Ve(),m.Internals.futureInsert(r,t.onSubmittedWorkDone().then(()=>{Ge(),Te(()=>{Yt(r,
+1)})}))},yt=function(e,r,t){return e=p(e),r=p(r),t=p(t),be.handleAsync(async()=>{var n=[];if(t){var s=(l(),A)[t/4];n.length=
+r+1,n[r]=new Promise(f=>setTimeout(f,s,0))}else n.length=r;for(var o=0;o<r;++o){var i=Ce(e+o*8);if(!(i in m.Internals.futures))
+return i;n[o]=m.Internals.futures[i]}const c=await Promise.race(n);return delete m.Internals.futures[c],c})};yt.isAsync=
+!0;var lr={},Sa=()=>$||"./this.program",Ye=()=>{if(!Ye.strings){var e=(typeof navigator=="object"&&navigator.language||"\
+C").replace("-","_")+".UTF-8",r={USER:"web_user",LOGNAME:"web_user",PATH:"/",PWD:"/",HOME:"/home/web_user",LANG:e,_:Sa()};
+for(var t in lr)lr[t]===void 0?delete r[t]:r[t]=lr[t];var n=[];for(var t in r)n.push(`${t}=${r[t]}`);Ye.strings=n}return Ye.
+strings};function kt(e,r){if(h)return ne(14,0,1,e,r);e=p(e),r=p(r);var t=0,n=0;for(var s of Ye()){var o=r+t;(l(),k)[(e+n)/
+8]=BigInt(o),t+=xe(s,o,1/0)+1,n+=8}return 0}function Et(e,r){if(h)return ne(15,0,1,e,r);e=p(e),r=p(r);var t=Ye();(l(),k)[e/
+8]=BigInt(t.length);var n=0;for(var s of t)n+=Ie(s)+1;return(l(),k)[r/8]=BigInt(n),0}function St(e){if(h)return ne(16,0,
+1,e);try{var r=P.getStreamFromFD(e);return a.close(r),0}catch(t){if(typeof a>"u"||t.name!=="ErrnoError")throw t;return t.
+errno}}var Na=(e,r,t,n)=>{for(var s=0,o=0;o<t;o++){var i=Number((l(),k)[r/8]),c=Number((l(),k)[(r+8)/8]);r+=16;var f=a.read(
+e,(l(),te),i,c,n);if(f<0)return-1;if(s+=f,f<c)break}return s};function Nt(e,r,t,n){if(h)return ne(17,0,1,e,r,t,n);r=p(r),
+t=p(t),n=p(n);try{var s=P.getStreamFromFD(e),o=Na(s,r,t);return(l(),k)[n/8]=BigInt(o),0}catch(i){if(typeof a>"u"||i.name!==
+"ErrnoError")throw i;return i.errno}}function It(e,r,t,n){if(h)return ne(18,0,1,e,r,t,n);r=p(r),n=p(n);try{if(isNaN(r))return 61;
+var s=P.getStreamFromFD(e);return a.llseek(s,r,t),(l(),Q)[n/8]=BigInt(s.position),s.getdents&&r===0&&t===0&&(s.getdents=
+null),0}catch(o){if(typeof a>"u"||o.name!=="ErrnoError")throw o;return o.errno}}var Ia=(e,r,t,n)=>{for(var s=0,o=0;o<t;o++){
+var i=Number((l(),k)[r/8]),c=Number((l(),k)[(r+8)/8]);r+=16;var f=a.write(e,(l(),te),i,c,n);if(f<0)return-1;if(s+=f,f<c)
+break}return s};function xt(e,r,t,n){if(h)return ne(19,0,1,e,r,t,n);r=p(r),t=p(t),n=p(n);try{var s=P.getStreamFromFD(e),
+o=Ia(s,r,t);return(l(),k)[n/8]=BigInt(o),0}catch(i){if(typeof a>"u"||i.name!=="ErrnoError")throw i;return i.errno}}function xa(e,r){
+e=p(e),r=p(r);try{return br((l(),fe).subarray(e,e+r)),0}catch(t){if(typeof a>"u"||t.name!=="ErrnoError")throw t;return t.
+errno}}function Ta(e,r){e=p(e),r=p(r);var t=m.getJsObject(e);return m.fillAdapterInfoStruct(t.info,r),1}function Ba(e,r){
+e=p(e),r=p(r);var t=m.getJsObject(e);return m.fillLimitStruct(t.limits,r),1}function Fa(e,r){e=p(e);var t=m.getJsObject(
+e);return t.features.has(m.FeatureName[r])}var Aa=function(e){e=p(e);var r=(()=>{var t=m.getJsObject(e);return t.size})();
+return BigInt(r)},Ca=function(e,r){e=p(e),r=p(r);var t=(()=>{var n;r&&(n={label:m.makeStringFromOptionalStringView(r+8),
+timestampWrites:m.makePassTimestampWrites(Number((l(),k)[(r+24)/8]))});var s=m.getJsObject(e),o=Cr(0n);return m.Internals.
+jsObjectInsert(o,s.beginComputePass(n)),o})();return BigInt(t)};function Ga(e,r,t,n,s,o){e=p(e),r=p(r),t=p(t),n=p(n),s=p(
+s),o=p(o);var i=m.getJsObject(e),c=m.getJsObject(r),f=m.getJsObject(n);i.copyBufferToBuffer(c,t,f,s,o)}var ja=function(e,r){
+e=p(e);var t=(()=>{var n=m.getJsObject(e),s=Fr(0n);return m.Internals.jsObjectInsert(s,n.finish()),s})();return BigInt(t)};
+function Da(e,r,t,n){e=p(e);var s=m.getJsObject(e);s.dispatchWorkgroups(r,t,n)}function Ra(e){e=p(e);var r=m.getJsObject(
+e);r.end()}function Oa(e,r,t,n,s){e=p(e),t=p(t),n=p(n),s=p(s);var o=m.getJsObject(e),i=m.getJsObject(t);n==0?o.setBindGroup(
+r,i):o.setBindGroup(r,i,(l(),C),s/4,n)}function Ua(e,r){e=p(e),r=p(r);var t=m.getJsObject(e),n=m.getJsObject(r);t.setPipeline(
+n)}var La=function(e,r){e=p(e);var t=(()=>{var n=m.getJsObject(e),s=Br(0n);return m.Internals.jsObjectInsert(s,n.getBindGroupLayout(
+r)),s})();return BigInt(t)},Wa=function(e,r){e=p(e),r=p(r);var t=(()=>{function n(f){var _=Number((l(),k)[(f+16)/8]),g=Number(
+(l(),k)[(f+40)/8]),E=Number((l(),k)[(f+48)/8]),I=0;m.iterateExtensions(f,{327681:j=>{I=Number((l(),k)[(j+16)/8])}});var S;
+if(_){var R=Ce(f+32);R==-1&&(R=void 0),S={buffer:m.getJsObject(_),offset:Ce(f+24),size:R}}else S=m.getJsObject(g||E||I);
+return{binding:(l(),C)[(f+8)/4],resource:S}}function s(f,_){for(var g=[],E=0;E<f;++E)g.push(n(_+56*E));return g}var o={label:m.
+makeStringFromOptionalStringView(r+8),layout:m.getJsObject(Number((l(),k)[(r+24)/8])),entries:s(Number((l(),k)[(r+32)/8]),
+Number((l(),k)[(r+40)/8]))},i=m.getJsObject(e),c=Tr(0n);return m.Internals.jsObjectInsert(c,i.createBindGroup(o)),c})();
+return BigInt(t)},qa=function(e,r){e=p(e),r=p(r);var t=(()=>{var n;r&&(n={label:m.makeStringFromOptionalStringView(r+8)});
+var s=m.getJsObject(e),o=Ar(0n);return m.Internals.jsObjectInsert(o,s.createCommandEncoder(n)),o})();return BigInt(t)},Ma=function(e,r){
+e=p(e),r=p(r);var t=(()=>{var n=m.makeComputePipelineDesc(r),s=m.getJsObject(e),o=Gr(0n);return m.Internals.jsObjectInsert(
+o,s.createComputePipeline(n)),o})();return BigInt(t)};function Va(e,r){return"wgslLanguageFeatures"in navigator.gpu?navigator.
+gpu.wgslLanguageFeatures.has(m.WGSLLanguageFeatureName[r]):!1}var za=function(e,r,t){e=p(e),r=p(r),t=p(t);var n=m.getJsObject(
+e),s=Array.from((l(),Q).subarray(t/8,(t+r*8)/8),o=>m.getJsObject(o));n.submit(s)};function Ja(e,r,t,n,s){e=p(e),r=p(r),t=
+p(t),n=p(n),s=p(s);var o=m.getJsObject(e),i=m.getJsObject(r),c=(l(),fe).subarray(n,n+s);o.writeBuffer(i,t,c,0,s)}var be={
+instrumentWasmImports(e){var r=/^(invoke_.*|__asyncjs__.*)$/;for(let[t,n]of Object.entries(e))typeof n=="function"&&(n.isAsync||
+r.test(t))&&(e[t]=n=new WebAssembly.Suspending(n))},instrumentFunction(e){var r=(...t)=>e(...t);return r},instrumentWasmExports(e){
+var r=/^(wllama_start|wllama_action|main|__main_argc_argv)$/;be.asyncExports=new Set;var t={};for(let[s,o]of Object.entries(
+e))if(typeof o=="function"){r.test(s)&&(be.asyncExports.add(o),o=be.makeAsyncFunction(o));var n=be.instrumentFunction(o);
+t[s]=n}else t[s]=o;return t},asyncExports:null,isAsyncExport(e){var r;return(r=be.asyncExports)==null?void 0:r.has(e)},handleAsync:async e=>{
+Ve();try{return await e()}finally{Ge()}},handleSleep:e=>be.handleAsync(()=>new Promise(e)),makeAsyncFunction(e){return WebAssembly.
+promising(e)}},Tt=e=>{var r=u["_"+e];return r},$a=(e,r)=>{(l(),te).set(e,r)},Bt=(e,r,t,n,s)=>{var o={pointer:j=>BigInt(j),
+string:j=>{var d=0;return j!=null&&j!==0&&(d=Fe(j)),BigInt(d)},array:j=>{var d=gr(j.length);return $a(j,d),BigInt(d)}};function i(j){
+return r==="string"?Pe(Number(j)):r==="pointer"?Number(j):r==="boolean"?!!j:j}var c=Tt(e),f=[],_=0;if(n)for(var g=0;g<n.
+length;g++){var E=o[t[g]];E?(_===0&&(_=Ee()),f[g]=E(n[g])):f[g]=n[g]}var I=c(...f);function S(j){return _!==0&&Se(_),i(j)}
+var R=s==null?void 0:s.async;return R?I.then(S):(I=S(I),I)},Ha=(e,r,t,n)=>{var s=!t||t.every(i=>i==="number"||i==="boole\
+an"),o=r!=="string";return o&&s&&!n?Tt(e):(...i)=>Bt(e,r,t,i,n)},Pa=(...e)=>a.createPath(...e),Ya=(...e)=>a.unlink(...e),
+Xa=(...e)=>a.createLazyFile(...e),Qa=(...e)=>a.createDevice(...e);if(q.init(),a.createPreloadedFile=Dn,a.preloadFile=Nr,
+a.staticInit(),Ze(),u.noExitRuntime&&(hr=u.noExitRuntime),u.preloadPlugins&&(ut=u.preloadPlugins),u.print&&(ae=u.print),
+u.printErr&&(X=u.printErr),u.wasmBinary&&(_e=u.wasmBinary),u.arguments&&u.arguments,u.thisProgram&&($=u.thisProgram),u.preInit)
+for(typeof u.preInit=="function"&&(u.preInit=[u.preInit]);u.preInit.length>0;)u.preInit.shift()();u.ENV=lr,u.mmapAlloc=Er,
+u.wasmMemory=Ne,u.addRunDependency=ar,u.removeRunDependency=nr,u.ccall=Bt,u.cwrap=Ha,u.FS_preloadFile=Nr,u.FS_unlink=Ya,
+u.FS_createPath=Pa,u.FS_createDevice=Qa,u.FS=a,u.FS_createDataFile=lt,u.FS_createLazyFile=Xa,u.MEMFS=D;var Ka=[Qr,Kr,nt,
+ct,Rn,mt,ft,dt,On,Un,pt,gt,_t,vt,kt,Et,St,Nt,It,xt];function Ft(e,r,t,n){return be.handleAsync(async()=>await w(Pe(Number(
+e)),Number(r),Number(t),Number(n)))}Ft.sig="jjjjj";var At,Ct,Gt,Tr,Br,Fr,Ar,Cr,Gr,jt,Dt,Rt,Ot,Ut,Lt,Wt,qt,Mt,Vt,zt,Jt,$t,
+Ht,jr,Pt,Dr,Rr,Xe,Or,Yt,Xt,ur,Qt,Ur,Kt,Zt,en,Lr,rn,tn,nn,an,sn,on,ln,un;function Za(e){u._wllama_malloc=e.wllama_malloc,
+u._wllama_start=e.wllama_start,u._wllama_action=e.wllama_action,u._wllama_exit=e.wllama_exit,u._wllama_debug=e.wllama_debug,
+At=u._main=e.main,Ct=e.malloc,Gt=e.free,Tr=e.emwgpuCreateBindGroup,Br=e.emwgpuCreateBindGroupLayout,Fr=e.emwgpuCreateCommandBuffer,
+Ar=e.emwgpuCreateCommandEncoder,Cr=e.emwgpuCreateComputePassEncoder,Gr=e.emwgpuCreateComputePipeline,jt=e.emwgpuCreateExternalTexture,
+Dt=e.emwgpuCreatePipelineLayout,Rt=e.emwgpuCreateQuerySet,Ot=e.emwgpuCreateRenderBundle,Ut=e.emwgpuCreateRenderBundleEncoder,
+Lt=e.emwgpuCreateRenderPassEncoder,Wt=e.emwgpuCreateRenderPipeline,qt=e.emwgpuCreateSampler,Mt=e.emwgpuCreateSurface,Vt=
+e.emwgpuCreateTexture,zt=e.emwgpuCreateTextureView,Jt=e.emwgpuCreateAdapter,$t=e.emwgpuCreateBuffer,Ht=e.emwgpuCreateDevice,
+jr=e.emwgpuCreateQueue,Pt=e.emwgpuCreateShaderModule,Dr=e.emwgpuOnDeviceLostCompleted,Rr=e.emwgpuOnMapAsyncCompleted,Xe=
+e.emwgpuOnRequestAdapterCompleted,Or=e.emwgpuOnRequestDeviceCompleted,Yt=e.emwgpuOnWorkDoneCompleted,Xt=e.emwgpuOnUncapturedError,
+e._emscripten_tls_init,ur=e.pthread_self,Qt=e.emscripten_builtin_memalign,Ur=e._emscripten_thread_init,Kt=e._emscripten_thread_crashed,
+Zt=e._emscripten_run_js_on_main_thread,en=e._emscripten_thread_free_data,Lr=e._emscripten_thread_exit,rn=e._emscripten_check_mailbox,
+tn=e.memalign,nn=e.__trap,an=e.emscripten_stack_set_limits,sn=e._emscripten_stack_restore,on=e._emscripten_stack_alloc,ln=
+e.emscripten_stack_get_current,un=e.__indirect_function_table}var ze;function es(){ze={__asyncjs__js_file_read:Ft,__pthread_create_js:at,
+__syscall_fcntl64:ct,__syscall_getcwd:mt,__syscall_getdents64:ft,__syscall_ioctl:dt,__syscall_openat:pt,__syscall_stat64:gt,
+_abort_js:Ln,_emscripten_init_main_thread_js:Wn,_emscripten_notify_mailbox_postmessage:Mn,_emscripten_receive_on_main_thread_js:Vn,
+_emscripten_thread_cleanup:zn,_emscripten_thread_mailbox_await:xr,_emscripten_thread_set_strongref:Jn,_localtime_js:Xn,_mmap_js:_t,
+_munmap_js:vt,_tzset_js:Qn,clock_time_get:Zn,emscripten_check_blocking_allowed:ea,emscripten_date_now:wt,emscripten_exit_with_live_runtime:ra,
+emscripten_get_callstack:aa,emscripten_get_heap_max:sa,emscripten_get_now:ht,emscripten_has_asyncify:oa,emscripten_num_logical_cores:ia,
+emscripten_resize_heap:ua,emwgpuAdapterRequestDevice:da,emwgpuBufferDestroy:pa,emwgpuBufferGetConstMappedRange:ga,emwgpuBufferMapAsync:_a,
+emwgpuBufferUnmap:va,emwgpuDelete:ha,emwgpuDeviceCreateBuffer:wa,emwgpuDeviceCreateShaderModule:ba,emwgpuDeviceDestroy:ya,
+emwgpuInstanceRequestAdapter:ka,emwgpuQueueOnSubmittedWorkDone:Ea,emwgpuWaitAny:yt,environ_get:kt,environ_sizes_get:Et,exit:_r,
+fd_close:St,fd_read:Nt,fd_seek:It,fd_write:xt,memory:Ne,random_get:xa,wgpuAdapterGetInfo:Ta,wgpuAdapterGetLimits:Ba,wgpuAdapterHasFeature:Fa,
+wgpuBufferGetSize:Aa,wgpuCommandEncoderBeginComputePass:Ca,wgpuCommandEncoderCopyBufferToBuffer:Ga,wgpuCommandEncoderFinish:ja,
+wgpuComputePassEncoderDispatchWorkgroups:Da,wgpuComputePassEncoderEnd:Ra,wgpuComputePassEncoderSetBindGroup:Oa,wgpuComputePassEncoderSetPipeline:Ua,
+wgpuComputePipelineGetBindGroupLayout:La,wgpuDeviceCreateBindGroup:Wa,wgpuDeviceCreateCommandEncoder:qa,wgpuDeviceCreateComputePipeline:Ma,
+wgpuInstanceHasWGSLLanguageFeature:Va,wgpuQueueSubmit:za,wgpuQueueWriteBuffer:Ja}}function rs(e){e=Object.assign({},e);var r=_=>(g,E,I)=>_(
+g,BigInt(E||0),BigInt(I||0)),t=_=>g=>Number(_(BigInt(g))),n=_=>g=>_(BigInt(g)),s=_=>()=>Number(_()),o=_=>(g,E)=>Number(_(
+BigInt(g),BigInt(E))),i=_=>(g,E,I,S,R,j)=>_(BigInt(g),E,I,S,R,j),c=_=>(g,E,I,S,R)=>_(g,BigInt(E),I,BigInt(S),R),f=_=>(g,E)=>_(
+BigInt(g),BigInt(E));return e.main=r(e.main),e.malloc=t(e.malloc),e.free=n(e.free),e.pthread_self=s(e.pthread_self),e.emscripten_builtin_memalign=
+o(e.emscripten_builtin_memalign),e._emscripten_thread_init=i(e._emscripten_thread_init),e._emscripten_run_js_on_main_thread=
+c(e._emscripten_run_js_on_main_thread),e._emscripten_thread_free_data=n(e._emscripten_thread_free_data),e._emscripten_thread_exit=
+n(e._emscripten_thread_exit),e.memalign=o(e.memalign),e.emscripten_stack_set_limits=f(e.emscripten_stack_set_limits),e._emscripten_stack_restore=
+n(e._emscripten_stack_restore),e._emscripten_stack_alloc=t(e._emscripten_stack_alloc),e.emscripten_stack_get_current=s(e.
+emscripten_stack_get_current),e}async function ts(){var e=At,r=0,t=0;try{var n=e(r,BigInt(t));return n=await n,Zr(n,!0),
+n}catch(s){return Ir(s)}}function cr(){if(Re>0){He=cr;return}if(h){de();return}if(er(),Re>0){He=cr;return}async function e(){
+var t;if(u.calledRun=!0,!K){de(),(t=u.onRuntimeInitialized)==null||t.call(u);var r=u.noInitialRun||!1;r||await ts(),rr()}}
+u.setStatus?(u.setStatus("Running..."),setTimeout(()=>{setTimeout(()=>u.setStatus(""),1),e()},1)):e()}var Ae;return h||(Vr(),
+cr()),u}var hn=1,wn={erro_evt:{name:"erro_evt",structName:"glue_msg_error",className:"GlueMsgError",fields:[{type:"str",
+name:"message",isNullable:!1}]},load_req:{name:"load_req",structName:"glue_msg_load_req",className:"GlueMsgLoadReq",fields:[
+{type:"arr_str",name:"model_paths",isNullable:!1},{type:"str",name:"mmproj_path",isNullable:!0},{type:"bool",name:"n_ctx\
+_auto",isNullable:!1},{type:"bool",name:"use_mmap",isNullable:!1},{type:"bool",name:"use_mlock",isNullable:!1},{type:"in\
+t",name:"n_gpu_layers",isNullable:!1},{type:"int",name:"n_ctx",isNullable:!1},{type:"int",name:"n_threads",isNullable:!1},
+{type:"str",name:"model_alias",isNullable:!0},{type:"int",name:"log_level",isNullable:!0},{type:"bool",name:"embeddings",
+isNullable:!0},{type:"bool",name:"offload_kqv",isNullable:!0},{type:"int",name:"n_batch",isNullable:!0},{type:"int",name:"\
+n_ubatch",isNullable:!0},{type:"int",name:"n_parallel",isNullable:!0},{type:"str",name:"pooling_type",isNullable:!0},{type:"\
+str",name:"rope_scaling_type",isNullable:!0},{type:"float",name:"rope_freq_base",isNullable:!0},{type:"float",name:"rope\
+_freq_scale",isNullable:!0},{type:"float",name:"yarn_ext_factor",isNullable:!0},{type:"float",name:"yarn_attn_factor",isNullable:!0},
+{type:"float",name:"yarn_beta_fast",isNullable:!0},{type:"float",name:"yarn_beta_slow",isNullable:!0},{type:"int",name:"\
+yarn_orig_ctx",isNullable:!0},{type:"str",name:"cache_type_k",isNullable:!0},{type:"str",name:"cache_type_v",isNullable:!0},
+{type:"bool",name:"kv_unified",isNullable:!0},{type:"bool",name:"flash_attn",isNullable:!0},{type:"bool",name:"swa_full",
+isNullable:!0},{type:"int",name:"n_ctx_checkpoints",isNullable:!0},{type:"int",name:"checkpoint_min_step",isNullable:!0},
+{type:"str",name:"chat_template",isNullable:!0},{type:"bool",name:"jinja",isNullable:!0},{type:"arr_str",name:"default_t\
+emplate_kwargs_keys",isNullable:!0},{type:"arr_str",name:"default_template_kwargs_vals",isNullable:!0},{type:"bool",name:"\
+reasoning",isNullable:!0},{type:"int",name:"image_min_tokens",isNullable:!0},{type:"int",name:"image_max_tokens",isNullable:!0},
+{type:"bool",name:"warmup",isNullable:!0},{type:"bool",name:"no_kv_offload",isNullable:!0},{type:"bool",name:"mmproj_off\
+load",isNullable:!0},{type:"bool",name:"cont_batching",isNullable:!0},{type:"int",name:"n_keep",isNullable:!0},{type:"bo\
+ol",name:"ctx_shift",isNullable:!0},{type:"bool",name:"cache_idle_slots",isNullable:!0},{type:"int",name:"n_cache_reuse",
+isNullable:!0},{type:"arr_str",name:"lora_paths",isNullable:!0},{type:"arr_float",name:"lora_scales",isNullable:!0},{type:"\
+bool",name:"lora_init_without_apply",isNullable:!0},{type:"str",name:"spec_draft_model",isNullable:!0},{type:"int",name:"\
+spec_draft_ngl",isNullable:!0},{type:"int",name:"spec_draft_n_max",isNullable:!0},{type:"int",name:"spec_draft_n_min",isNullable:!0},
+{type:"float",name:"spec_draft_p_min",isNullable:!0},{type:"int",name:"spec_draft_threads",isNullable:!0},{type:"int",name:"\
+spec_draft_threads_batch",isNullable:!0},{type:"arr_str",name:"kv_overrides_keys",isNullable:!0},{type:"arr_str",name:"k\
+v_overrides_vals",isNullable:!0},{type:"int",name:"reasoning_budget_tokens",isNullable:!0},{type:"str",name:"reasoning_b\
+udget_message",isNullable:!0},{type:"str",name:"reasoning_format",isNullable:!0},{type:"bool",name:"skip_chat_parsing",isNullable:!0},
+{type:"bool",name:"prefill_assistant",isNullable:!0}]},load_res:{name:"load_res",structName:"glue_msg_load_res",className:"\
+GlueMsgLoadRes",fields:[{type:"bool",name:"success",isNullable:!1},{type:"int",name:"n_ctx",isNullable:!1},{type:"int",name:"\
+n_batch",isNullable:!1},{type:"int",name:"n_ubatch",isNullable:!1},{type:"int",name:"n_vocab",isNullable:!1},{type:"int",
+name:"n_ctx_train",isNullable:!1},{type:"int",name:"n_embd",isNullable:!1},{type:"int",name:"n_layer",isNullable:!1},{type:"\
+arr_str",name:"metadata_key",isNullable:!1},{type:"arr_str",name:"metadata_val",isNullable:!1},{type:"int",name:"token_b\
+os",isNullable:!1},{type:"int",name:"token_eos",isNullable:!1},{type:"int",name:"token_eot",isNullable:!1},{type:"arr_in\
+t",name:"list_tokens_eog",isNullable:!1},{type:"bool",name:"add_bos_token",isNullable:!1},{type:"bool",name:"add_eos_tok\
+en",isNullable:!1},{type:"bool",name:"has_encoder",isNullable:!1},{type:"int",name:"token_decoder_start",isNullable:!1},
+{type:"str",name:"media_marker",isNullable:!1},{type:"bool",name:"has_image_input",isNullable:!1},{type:"bool",name:"has\
+_audio_input",isNullable:!1}]},cmpl_req:{name:"cmpl_req",structName:"glue_msg_completion_req",className:"GlueMsgCompleti\
+onReq",fields:[{type:"bool",name:"is_chat",isNullable:!1},{type:"str",name:"data_json",isNullable:!1},{type:"arr_raw",name:"\
+files",isNullable:!1}]},cmpl_res:{name:"cmpl_res",structName:"glue_msg_completion_res",className:"GlueMsgCompletionRes",
+fields:[{type:"bool",name:"success",isNullable:!1},{type:"int",name:"req_id",isNullable:!1}]},embd_req:{name:"embd_req",
+structName:"glue_msg_embedding_req",className:"GlueMsgEmbeddingReq",fields:[{type:"str",name:"data_json",isNullable:!1},
+{type:"arr_raw",name:"files",isNullable:!1}]},embd_res:{name:"embd_res",structName:"glue_msg_embedding_res",className:"G\
+lueMsgEmbeddingRes",fields:[{type:"bool",name:"success",isNullable:!1},{type:"int",name:"req_id",isNullable:!1}]},rrnk_req:{
+name:"rrnk_req",structName:"glue_msg_rerank_req",className:"GlueMsgRerankReq",fields:[{type:"str",name:"data_json",isNullable:!1}]},
+rrnk_res:{name:"rrnk_res",structName:"glue_msg_rerank_res",className:"GlueMsgRerankRes",fields:[{type:"bool",name:"succe\
+ss",isNullable:!1},{type:"int",name:"req_id",isNullable:!1}]},sys1_req:{name:"sys1_req",structName:"glue_msg_systemone_r\
+eq",className:"GlueMsgSystemoneReq",fields:[{type:"str",name:"data_json",isNullable:!1}]},sys1_res:{name:"sys1_res",structName:"\
+glue_msg_systemone_res",className:"GlueMsgSystemoneRes",fields:[{type:"bool",name:"success",isNullable:!1},{type:"int",name:"\
+req_id",isNullable:!1}]},gres_req:{name:"gres_req",structName:"glue_msg_get_result_req",className:"GlueMsgGetResultReq",
+fields:[{type:"int",name:"req_id",isNullable:!1}]},gres_res:{name:"gres_res",structName:"glue_msg_get_result_res",className:"\
+GlueMsgGetResultRes",fields:[{type:"bool",name:"success",isNullable:!1},{type:"bool",name:"has_more",isNullable:!1},{type:"\
+bool",name:"is_error",isNullable:!1},{type:"str",name:"data_json",isNullable:!1}]},cncl_req:{name:"cncl_req",structName:"\
+glue_msg_cancel_req",className:"GlueMsgCancelReq",fields:[{type:"int",name:"req_id",isNullable:!1}]},cncl_res:{name:"cnc\
+l_res",structName:"glue_msg_cancel_res",className:"GlueMsgCancelRes",fields:[{type:"bool",name:"success",isNullable:!1}]},
+tbop_req:{name:"tbop_req",structName:"glue_msg_test_backend_ops_req",className:"GlueMsgTestBackendOpsReq",fields:[{type:"\
+arr_str",name:"args",isNullable:!1}]},tbop_res:{name:"tbop_res",structName:"glue_msg_test_backend_ops_res",className:"Gl\
+ueMsgTestBackendOpsRes",fields:[{type:"int",name:"retcode",isNullable:!1},{type:"bool",name:"success",isNullable:!1}]}},
+Ke=new Uint8Array([71,76,85,69]),qr=0,vs=1,hs=2,ws=3,bs=4,ys=5,ks=6,Es=7,Ss=8,Ns=9,Is=10,bn={str:bs,int:hs,float:ws,bool:vs,
+raw:ys,arr_str:Ns,arr_int:Es,arr_float:Ss,arr_bool:ks,arr_raw:Is,null:qr};function xs(u){let w=0;const B=new DataView(u.
+buffer),N=()=>{const W=B.getUint32(w,!0);return w+=4,W},O=()=>{const W=B.getInt32(w,!0);return w+=4,W},T=()=>{const W=B.
+getFloat32(w,!0);return w+=4,W},h=()=>N()!==0,J=W=>{const Z=W??N(),ee=new TextDecoder().decode(u.slice(w,w+Z));return w+=
+Z,ee},$=()=>{const W=N(),Z=u.slice(w,w+W);return w+=W,Z},y=W=>{const Z=N(),ee=new Array(Z);for(let ae=0;ae<Z;ae++)ee[ae]=
+W();return ee},x=()=>null,v=W=>{switch(W.type){case"str":return J();case"int":return O();case"float":return T();case"boo\
+l":return h();case"raw":return $();case"arr_str":return y(J);case"arr_int":return y(O);case"arr_float":return y(T);case"\
+arr_bool":return y(h);case"arr_raw":return y($);case"null":return x()}},M=u[0]===Ke[0]&&u[1]===Ke[1]&&u[2]===Ke[2]&&u[3]===
+Ke[3];if(w+=4,!M)throw new Error("Invalid magic number");if(N()!==hn)throw new Error("Invalid version number");const F=J(
+8),G=wn[F];if(!G)throw new Error(`Unknown message name: ${F}`);const ue={_name:F};for(const W of G.fields){const Z=N();if(Z===
+qr){if(!W.isNullable)throw new Error(`${F}: Expect field ${W.name} to be non-nullable`);ue[W.name]=null;continue}if(Z!==
+bn[W.type])throw new Error(`${F}: Expect field ${W.name} to have type ${W.type}`);ue[W.name]=v(W)}return ue}function Ts(u){
+const w=wn[u._name];if(!w)throw new Error(`Unknown message name: ${u._name}`);const B=[],N=b=>{const F=new ArrayBuffer(4);
+new DataView(F).setUint32(0,b,!0),B.push(new Uint8Array(F))},O=b=>{const F=new ArrayBuffer(4);new DataView(F).setInt32(0,
+b,!0),B.push(new Uint8Array(F))},T=b=>{const F=new ArrayBuffer(4);new DataView(F).setFloat32(0,b,!0),B.push(new Uint8Array(
+F))},h=b=>{N(b?1:0)},J=b=>{const F=new TextEncoder().encode(b);N(F.byteLength),B.push(F)},$=b=>{N(b.byteLength),B.push(b)},
+y=(b,F)=>{N(b.length);for(const G of b)F(G)};B.push(Ke),N(hn);{const b=new TextEncoder().encode(u._name);B.push(b)}for(const b of w.
+fields){const F=u[b.name];if(!b.isNullable&&F==null)throw new Error(`${u._name}: Expect field ${b.name} to be non-nullab\
+le`);if(F==null){N(qr);continue}switch(N(bn[b.type]),b.type){case"str":J(F);break;case"int":O(F);break;case"float":T(F);
+break;case"bool":h(F);break;case"raw":$(F);break;case"arr_str":y(F,J);break;case"arr_int":y(F,O);break;case"arr_float":y(
+F,T);break;case"arr_bool":y(F,h);break;case"arr_raw":y(F,$);break}}const x=B.reduce((b,F)=>b+F.byteLength,0),v=new Uint8Array(
+x);let M=0;for(const b of B)v.set(b,M),M+=b.byteLength;return v}const yn=4*1024**2,_n=1024*1024;function Bs({files:u,reader:w,
+getMemory:B,getSignal:N=()=>{}}){const O=new Map(u.map(T=>[T.name,T]));return async(T,h,J,$)=>{const y=O.get(T.replace(/^\/?models\//,
+""));if(!y||![h,J,$].every(v=>Number.isSafeInteger(v)&&v>=0)||h>y.size)throw new Error("Invalid GGUF native file read");
+const x=Math.min(J,y.size-h);if(!Number.isSafeInteger($+x)||$+x>B().byteLength)throw new Error("GGUF native file read ex\
+ceeds WASM memory");for(let v=0;v<x;){oe(N());const M=Math.min(yn,x-v),b=await w.read(y.path,h+v,M,{signal:N()});if(oe(N()),
+!(b instanceof Uint8Array)||b.byteLength!==M)throw new Error("Incomplete GGUF artifact range");new Uint8Array(B()).set(b,
+$+v),v+=M}return BigInt(x)}}function Fs(u,w){u.FS.mkdir("/models"),u.FS.mount(u.MEMFS,{root:"."},"/models");const B=new Map(
+w.map(T=>[T.name,T])),N=u.MEMFS.stream_ops;for(const T of["read","llseek"]){const h=N[T];N[T]=function(J,...$){const y=B.
+get(J.node.name);return y&&(J.node.usedBytes=y.size),h.call(this,J,...$)},u.MEMFS.ops_table.file.stream[T]=N[T]}const O=N.
+mmap;N.mmap=function(T,...h){if(B.has(T.node.name))throw new Error("GGUF artifact mmap is prohibited");return O.call(this,
+T,...h)},u.MEMFS.ops_table.file.stream.mmap=N.mmap;for(const T of w)u.FS_createDataFile("/models",T.name,new Uint8Array(
+0),!0,!1,!0)}function As(u,w,{collect:B=!1,onLost:N}={}){var $;if(w.device=u,w.runtimeFeatures=[...u.features],w.runtimeAdapter=
+u.adapterInfo?{vendor:u.adapterInfo.vendor,architecture:u.adapterInfo.architecture,isFallbackAdapter:u.adapterInfo.isFallbackAdapter??
+!1}:null,!u.features.has("shader-f16")||($=w.runtimeAdapter)!=null&&$.isFallbackAdapter)throw new Error("GGUF native run\
+time did not acquire the required hardware GPU");if(u.lost.then(y=>N==null?void 0:N(y)),!B)return()=>{};const O=Object.getOwnPropertyDescriptor(
+u,"createCommandEncoder"),T=Object.getOwnPropertyDescriptor(u.queue,"submit"),h=u.createCommandEncoder.bind(u),J=u.queue.
+submit.bind(u.queue);return u.createCommandEncoder=(...y)=>{const x=h(...y),v=x.beginComputePass.bind(x);return x.beginComputePass=
+(...M)=>{const b=v(...M);for(const F of["dispatchWorkgroups","dispatchWorkgroupsIndirect"]){const G=b[F].bind(b);b[F]=(...ue)=>{
+const W=G(...ue);return w.dispatches+=1,W}}return b},x},u.queue.submit=(...y)=>{const x=J(...y);return w.submissions+=1,
+x},()=>{O?Object.defineProperty(u,"createCommandEncoder",O):delete u.createCommandEncoder,T?Object.defineProperty(u.queue,
+"submit",T):delete u.queue.submit}}function Cs(u){const w=/offloaded\s+(\d+)\s*\/\s*(\d+)\s+layers to GPU/i.exec(u);return w?
+{gpuLayers:Number(w[1]),totalLayers:Number(w[2])}:null}function Gs(u){const w=/([A-Za-z0-9_-]+)\s+(model|KV|compute) buffer size\s*=\s*(\d+(?:\.\d+)?)\s*MiB/i.
+exec(u);return w?{backend:w[1],kind:w[2].toLowerCase(),bytes:Math.round(Number(w[3])*1024**2)}:null}async function js({wasmUrl:u,
+weights:w,reader:B,signal:N,collectGpuEvidence:O=!1,onProgress:T,onLost:h,initialize:J=_s}={}){const $=w.map((z,V)=>({...z,
+name:`model-${String(V+1).padStart(5,"0")}-of-${String(w.length).padStart(5,"0")}.gguf`})),y={dispatches:0,submissions:0,
+device:null,offload:null,buffers:[],lost:!1};let x=N,v,M,b,F,G;const ue=new Promise((z,V)=>{F=z,G=V}),W=z=>{var se;const V=Cs(
+String(z));V&&(y.offload=V,T==null||T({type:"gpu-offload",...V}));const l=Gs(String(z));l&&y.buffers.length<32&&(y.buffers.
+push(l),T==null||T({type:"native-buffer",...l,wasmMemoryBytes:((se=b==null?void 0:b.wasmMemory)==null?void 0:se.buffer.byteLength)??
+0}))},Z=z=>{v=new Error(`Model session lost: GGUF native runtime failed: ${String(z).slice(0,300)}`),G(v)};b={noInitialRun:!0,
+pthreadPoolSize:0,locateFile(z){if(z!=="wllama.wasm")throw new Error("Untrusted GGUF runtime asset request");return u},print:W,
+printErr:W,onAbort:Z,onExit:Z,preRun(){b.ENV.USE_ASYNC_FILE="1"},onRuntimeInitialized(){F()},peercomputeOnDevice(z){try{
+M==null||M(),M=As(z,y,{collect:O,onLost(V){y.lost=!0,h==null||h(V)}})}catch(V){z.destroy(),Z(V.message)}}};const ee=Bs({
+files:$,reader:B,getMemory:()=>b.wasmMemory.buffer,getSignal:()=>x});J(b,ee),await ue,oe(N),Fs(b,$);const ae=b.cwrap("wl\
+lama_start","string",[],{async:!0}),X=b.cwrap("wllama_malloc","bigint",["bigint","number"]),_e=b.cwrap("wllama_action","\
+bigint",["string","bigint"],{async:!0});let ve=!1;const K=async(z,V,l)=>{if(ve)throw new Error("Concurrent GGUF native c\
+alls are prohibited");if(v)throw v;if(y.lost)throw new Error("GPU device lost; GGUF session is unavailable");oe(l),ve=!0,
+x=l;try{const se=Ts(V);if(se.byteLength>_n)throw new Error("GGUF native message exceeds its byte budget");const ie=Number(
+X(BigInt(se.byteLength),0)),Be=new Uint8Array(b.wasmMemory.buffer);if(!Number.isSafeInteger(ie)||ie<=0||ie+se.length>Be.
+length)throw new Error("Invalid GGUF input pointer");Be.set(se,ie);const te=Number(await _e(z,BigInt(ie)));if(v)throw v;
+const fe=b.wasmMemory.buffer,he=new DataView(fe).getUint32(ie,!0);if(!Number.isSafeInteger(te)||te<=0||he>_n||te+he>fe.byteLength)
+throw new Error("Invalid GGUF output buffer");return xs(new Uint8Array(fe,te,he).slice())}catch(se){throw v??(v=new Error(
+`Model session lost: GGUF native action failed: ${String(se.message??se).slice(0,300)}`)),v}finally{ve=!1,x=void 0}},me=JSON.
+parse(await ae());if(v)throw v;if(!me.success||!y.device)throw new Error("GGUF native hardware GPU backend did not initi\
+alize");return oe(N),{files:$,action:K,evidence:y,async settleGpu(){try{await y.device.queue.onSubmittedWorkDone()}catch(z){
+throw y.lost=!0,v=new Error(`Model session lost: GGUF GPU completion failed: ${String(z.message??z).slice(0,300)}`),v}},
+close(){var z;M==null||M(),(z=y.device)==null||z.destroy()},memoryBytes(){return b.wasmMemory.buffer.byteLength}}}const Ds="\
+ERR_MODEL_CONTEXT_BUDGET",dr=1;function Rs(u,w,B){return Object.assign(new Error(`The model context holds ${w} tokens; i\
+nstructions and the current prompt need ${u}, plus ${B} reserved for the reply. Shorten the current prompt or saved cont\
+ext, or request a shorter reply.`),{code:Ds})}function Os(u){const w=u.findIndex(N=>N.role==="user"),B=u.findIndex((N,O)=>O>
+w&&N.role==="user");return w<0||B<0?null:u.filter((N,O)=>O<w||O>=B||N.role==="system")}async function Us({messages:u,contextTokens:w,
+reservedOutputTokens:B,measure:N,signal:O,onMeasured:T}){if(!Number.isSafeInteger(w)||w<1||!Number.isSafeInteger(B)||B<1)
+throw new Error("Invalid GGUF context budget");let h=u.map(x=>({...x})),J=0,$=0;const y=Math.max(1,u.filter(x=>x.role===
+"user").length);for(let x=1;x<=y;x+=1){oe(O);const v=await N(h);if(oe(O),!Number.isSafeInteger(v.inputTokens)||v.inputTokens<
+0||!Number.isSafeInteger(v.contextTokens)||v.contextTokens<1||v.contextTokens>w||!Number.isSafeInteger(v.probeOutputTokens)||
+v.probeOutputTokens<0||v.probeOutputTokens>dr)throw new Error("Invalid GGUF context measurement");$+=v.probeOutputTokens;
+const M={contextTokens:v.contextTokens,inputTokens:v.inputTokens,reservedOutputTokens:B,removedTurns:J,preflightCalls:x,
+measurementTokens:$,probeTokenBudget:dr},b=v.inputTokens>=v.contextTokens||v.inputTokens+B>v.contextTokens;if(T==null||T(
+{...M,probeOutputTokens:v.probeOutputTokens,overflow:b}),oe(O),!b)return{messages:h,contextTruncated:J>0,contextBudget:M};
+const F=Os(h);if(!F)throw Rs(v.inputTokens,v.contextTokens,B);h=F,J+=1}throw new Error("GGUF context fitting exceeded it\
+s bounded attempts")}const fr=u=>new TextEncoder().encode(u).byteLength;function Ls(u){if(!u.data_json||u.data_json==="n\
+ull")return[];if(typeof u.data_json!="string"||fr(u.data_json)>1024*1024)throw new Error("GGUF result exceeds its byte b\
+udget");let w;try{w=JSON.parse(u.data_json)}catch{throw new Error("GGUF returned invalid result JSON")}const B=Array.isArray(
+w)?w:[w];if(B.some(N=>!N||typeof N!="object"||Array.isArray(N)))throw new Error("GGUF returned invalid result data");return B}
+function Ws(u,w){const B=u[0],N=(B==null?void 0:B.error)??B,O=(N==null?void 0:N.n_prompt_tokens)??(B==null?void 0:B.n_prompt_tokens),
+T=(N==null?void 0:N.n_ctx)??(B==null?void 0:B.n_ctx);if((N==null?void 0:N.type)==="exceed_context_size_error"&&Number.isSafeInteger(
+O)&&O>=T&&Number.isSafeInteger(T)&&T>0&&T<=w)return Object.assign(new Error("GGUF native prompt exceeds the model contex\
+t"),{code:"ERR_GGUF_NATIVE_CONTEXT",inputTokens:O,contextTokens:T});const h=(N==null?void 0:N.type)==="invalid_request_e\
+rror";return Object.assign(new Error(h?"GGUF rejected the inference request":"GGUF native inference failed"),{code:h?"ER\
+R_GGUF_NATIVE_INPUT":"ERR_GGUF_NATIVE_FAILURE"})}function qs(){if(typeof WorkerGlobalScope>"u"||!(globalThis instanceof WorkerGlobalScope))
+throw new Error("GGUF inference requires a ComputeManager-owned worker")}function vn(u){var w,B,N,O,T,h,J,$,y;return{sessionId:u.
+sessionId,manifestCid:u.manifestCid,status:u.lost?"lost":u.status,runtime:"llama.cpp",runtimeVersion:gs,task:"text-gener\
+ation",workerId:u.workerId,adapter:(w=u.capabilities)==null?void 0:w.adapter,runtimeAdapter:((B=u.engine)==null?void 0:B.
+evidence.runtimeAdapter)??null,runtimeFeatures:((N=u.engine)==null?void 0:N.evidence.runtimeFeatures)??[],gpuDispatches:((O=
+u.engine)==null?void 0:O.evidence.dispatches)??0,gpuSubmissions:((T=u.engine)==null?void 0:T.evidence.submissions)??0,gpuOffload:((h=
+u.engine)==null?void 0:h.evidence.offload)??null,runtimeOptions:u.options,effectiveContextTokens:u.contextTokens??null,nativeBuffers:((J=
+u.engine)==null?void 0:J.evidence.buffers)??[],wasmMemoryBytes:(($=u.engine)==null?void 0:$.memoryBytes())??0,generatedRequests:u.
+generatedRequests,artifactReads:((y=u.reader)==null?void 0:y.getStats())??null}}function Ms({loadEngine:u=js,createReader:w=ss,
+checkCapabilities:B=ls,assertWorker:N=qs,baseUrl:O=(T=>(T=globalThis.location)==null?void 0:T.href)()}={}){let h;async function J(y,x){
+var ue,W,Z;if(h)throw new Error("GGUF worker already has a resident model");const v=us(y.manifest),M=cs(y.runtimeAssets,
+O),b=ms(y.runtimeOptions),F=mr(y.sessionId);oe(x.signal);const G={sessionId:F,manifestCid:y.manifestCid,workerId:x.workerId??
+null,manifest:v.manifest,status:"loading",options:b,generatedRequests:0,residency:new AbortController,lost:!1};h=G;try{G.
+capabilities=await B(),oe(x.signal),G.reader=w(y.artifactPort,{manifest:v.manifest,signal:G.residency.signal,maxReadBytes:yn,
+maxReads:1}),await fs(v.manifest.model,v.weights,G.reader,{signal:x.signal}),oe(x.signal),G.engine=await u({wasmUrl:M.wasm,
+weights:v.weights,reader:G.reader,signal:x.signal,collectGpuEvidence:y.collectGpuEvidence===!0,onProgress:X=>{var _e;return(_e=
+x.emitProgress)==null?void 0:_e.call(x,{...X,sessionId:F})},onLost(){var X;G.lost=!0,(X=G.active)==null||X.abort("GPU de\
+vice lost")}}),oe(x.signal);const ee=await G.engine.action("load",{_name:"load_req",model_paths:G.engine.files.map(X=>`m\
+odels/${X.name}`),use_mmap:!1,use_mlock:!1,n_ctx_auto:!1,...b,n_ubatch:Math.min(64,b.n_batch),n_parallel:1,kv_unified:!0,
+log_level:2,warmup:!1,ctx_shift:!1,cache_idle_slots:!1,reasoning:!1,jinja:!0},x.signal);if(!ee.success)throw new Error("\
+GGUF native model load failed");if(!Number.isSafeInteger(ee.n_ctx)||ee.n_ctx<1||ee.n_ctx>ds)throw new Error("GGUF native\
+ model returned an invalid context capacity");G.contextTokens=ee.n_ctx;const ae=G.engine.evidence.offload;if(!ae||ae.gpuLayers<
+1||ae.gpuLayers!==Math.min(b.n_gpu_layers,ae.totalLayers))throw new Error("GGUF did not honor the explicitly configured \
+GPU layer offload");if(oe(x.signal),G.lost)throw new Error("GPU device lost during GGUF load");return G.status="ready",vn(
+G)}catch(ee){throw G.engine&&((ue=x.emitProgress)==null||ue.call(x,{type:"model-load-memory",sessionId:F,wasmMemoryBytes:G.
+engine.memoryBytes(),nativeBuffers:G.engine.evidence.buffers??[]})),G.lost=!0,G.status="lost",G.residency.abort(ee),(W=G.
+reader)==null||W.close(ee),(Z=G.engine)==null||Z.close(),ee}}async function $(y,x){var X,_e,ve;const v=h;if(!v||v.sessionId!==
+mr(y.sessionId)||v.lost)throw new Error("Model session lost or not loaded");if(v.status!=="ready")throw new Error("GGUF \
+model session is busy");const M=mr(y.requestId),b=y.maxNewTokens??Wr.maxNewTokens;ps.validateGenerationInput({...y,maxNewTokens:b});
+const F=os(y),G=new AbortController,ue=()=>{var K;return G.abort((K=x.signal)==null?void 0:K.reason)};(X=x.signal)==null||
+X.addEventListener("abort",ue,{once:!0}),(_e=x.signal)!=null&&_e.aborted&&ue(),v.active=G,v.status="generating",v.requestId=
+M;const W=v.engine.evidence.dispatches,Z=v.engine.evidence.submissions;let ee=0;async function ae(K,me){var fe,he,A,C,Ue,
+ye,Q,k,Je,je,Ze,er;let z,V=!1,l="",se=null,ie=null,Be="unknown",te=0;try{oe(G.signal);const de=await v.engine.action("co\
+mpletion",{_name:"cmpl_req",is_chat:!0,data_json:JSON.stringify({messages:K,stream:!me,max_tokens:me?dr:b,temperature:0,
+cache_prompt:!1,chat_template_kwargs:{enable_thinking:!1}}),files:[]},G.signal);if(!de.success||!Number.isSafeInteger(de.
+req_id)||de.req_id<0)throw new Error("GGUF failed to start generation");z=de.req_id,oe(G.signal);for(let rr=0;rr<4096;rr+=
+1){oe(G.signal);const ce=await v.engine.action("get_result",{_name:"gres_req",req_id:z},G.signal);oe(G.signal);const Le=Ls(
+ce);if(!ce.success||ce.is_error)throw Ws(Le,v.contextTokens);for(const we of Le){const $e=((he=(fe=we.choices)==null?void 0:
+fe[0])==null?void 0:he.finish_reason)??we.finish_reason;$e!=null&&(Be=["stop","length"].includes($e)?$e:"unknown");const ge=(A=
+we.choices)==null?void 0:A[0],De=((C=ge==null?void 0:ge.delta)==null?void 0:C.content)??((Ue=ge==null?void 0:ge.message)==
+null?void 0:Ue.content)??we.content??"";if(typeof De!="string")throw new Error("Invalid GGUF text chunk");if(me){const tr=((ye=
+ge==null?void 0:ge.delta)==null?void 0:ye.reasoning_content)??((Q=ge==null?void 0:ge.message)==null?void 0:Q.reasoning_content)??
+"";if(typeof tr!="string")throw new Error("Invalid GGUF measurement result");if(te+=fr(De)+fr(tr),te>Wr.maxOutputBytes)throw new Error(
+"GGUF measurement exceeds its byte budget")}else{if(l+=De,fr(l)>Wr.maxOutputBytes)throw new Error("GGUF output exceeds i\
+ts byte budget");if(De&&((k=x.emitProgress)==null?void 0:k.call(x,{type:"token",sessionId:v.sessionId,requestId:M,sequence:ee++,
+text:De}))===!1)throw new Error("Token consumer rejected output")}se=((Je=we.usage)==null?void 0:Je.prompt_tokens)??((je=
+we.timings)==null?void 0:je.prompt_n)??se,ie=((Ze=we.usage)==null?void 0:Ze.completion_tokens)??((er=we.timings)==null?void 0:
+er.predicted_n)??ie}if(!ce.has_more){V=!0;break}await new Promise(we=>setTimeout(we,0))}if(!V)throw new Error("GGUF resu\
+lt polling exceeded its request budget");if(ie!==null&&(!Number.isSafeInteger(ie)||ie<0||ie>(me?dr:b)))throw new Error("\
+GGUF returned an over-budget token sequence");if(me&&(!Number.isSafeInteger(se)||se<0||ie===null))throw new Error("GGUF \
+context preflight did not return valid token usage");return{text:l,inputTokens:se,outputTokens:ie,finishReason:Be}}catch(de){
+throw((de==null?void 0:de.name)==="RuntimeError"||/Model session lost|GPU device lost/.test((de==null?void 0:de.message)??
+""))&&(v.lost=!0),de}finally{if(z!==void 0&&!v.lost)try{V||await v.engine.action("cancel",{_name:"cncl_req",req_id:z}),await v.
+engine.settleGpu()}catch{throw v.lost=!0,new Error("Model session lost while settling GGUF inference")}}}try{const K=await Us(
+{messages:F,contextTokens:v.contextTokens,reservedOutputTokens:b,signal:G.signal,async measure(z){try{const V=await ae(z,
+!0);return{inputTokens:V.inputTokens,contextTokens:v.contextTokens,probeOutputTokens:V.outputTokens}}catch(V){if(V.code!==
+"ERR_GGUF_NATIVE_CONTEXT")throw V;return{inputTokens:V.inputTokens,contextTokens:V.contextTokens,probeOutputTokens:0}}},
+onMeasured:z=>{var V;return(V=x.emitProgress)==null?void 0:V.call(x,{type:"context-budget",sessionId:v.sessionId,requestId:M,
+...z})}});oe(G.signal);const me=await ae(K.messages,!1);if(oe(G.signal),v.lost)throw new Error("GPU device lost; model s\
+ession is unavailable");return v.generatedRequests+=1,{sessionId:v.sessionId,requestId:M,...me,contextTruncated:K.contextTruncated,
+contextBudget:K.contextBudget,workerId:v.workerId,gpuDispatches:v.engine.evidence.dispatches-W,gpuSubmissions:v.engine.evidence.
+submissions-Z,gpuOffload:v.engine.evidence.offload,artifactReads:v.reader.getStats()}}catch(K){throw(K==null?void 0:K.name)===
+"RuntimeError"?(v.lost=!0,new Error(`Model session lost: GGUF native trap: ${String(K.message).slice(0,300)}`)):(/Model session lost|GPU device lost/.
+test(K.message??"")&&(v.lost=!0),K)}finally{(ve=x.signal)==null||ve.removeEventListener("abort",ue),v.active=null,v.requestId=
+null,v.status=v.lost?"lost":"ready"}}return async(y={},x={})=>{var M,b,F;if(N(),y.command==="load")return J(y,x);if(y.command===
+"generate")return $(y,x);const v=mr(y.sessionId);if(y.command==="status")return(h==null?void 0:h.sessionId)===v?vn(h):{sessionId:v,
+status:"absent"};if(!h||h.sessionId!==v)throw new Error("Model session lost or not loaded");if(y.command==="cancel")return h.
+requestId===y.requestId&&((M=h.active)==null||M.abort(is())),{sessionId:v,cancellationRequested:!0};if(y.command==="unlo\
+ad"){if(h.status==="generating")throw new Error("Cancel and await GGUF generation before unloading");return h.residency.
+abort("GGUF unload"),(b=h.reader)==null||b.close(),(F=h.engine)==null||F.close(),h=null,{sessionId:v,status:"unloaded",requiresWorkerTermination:!0}}
+throw new Error("Unknown GGUF inference command")}}const Vs=Ms(),Ys=(u,w)=>Vs(u,w);export{Ms as createGgufTaskRuntime,Ys as handleModelTask};

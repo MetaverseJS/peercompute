@@ -2152,3 +2152,12 @@ Follow/Stop through the WebGPU motor. Answers remain poetic/factually weak; mode
 quality is not claimed fixed. All170 focused checks, Cube/Earth external builds
 and promoted5176 desktop/mobile/SecretWorkshop smoke pass. Only internal CubeChat
 updated; no Pages build/deploy or push. Historical failed candidates remain above.
+
+November10 release authorized: rebuild all15 demos into docs, retain previous
+hashed assets, verify23 Pages entry routes with actual SecretWorkshop connections
+where applicable, then publish main:/docs and verify live bytes and rendering.
+Source includes the qualified CubeChat conversation/movement repair; objective
+planning remains experimental. After this publication, resume persistent resident
+objectives with model-authored ordered milestones and exact physical evidence.
+Do not clear the existing failed actual-model round-trip gate until new native
+acceptance passes. Learned routing and self-directed weight training remain later.

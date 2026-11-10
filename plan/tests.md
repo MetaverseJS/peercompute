@@ -4700,3 +4700,17 @@ clear history, replace model replies or silently change providers.
   arrays. Prior private-room assertion and Node/Vite-alias harness failures
   retained. Evidence conan/promoted-dedup-smoke-3/report.json. Temporary5191 and
   owned browsers closed; persistent internal previews remain running.
+
+## November10 full demo release
+
+Use Node24 `npm run build:all` and preserve only deleted prior-HEAD hashed assets;
+record new HTML hashes before/after retention. Run release/ports/isolation/MPM
+bundle/RoadVector overview checks and the resident-objectives regression. The
+`pages-runtime.mjs` matrix has23 entry routes across15 demos and requires actual
+authenticated SecretWorkshop connections on11 routes across10 packages. Use owned
+headless profiles, cancel automatic model downloads, inspect desktop/mobile
+captures and all console/network errors. Separate default hardware physics
+compute from reduced-count software presentation as documented above. After
+publication verify the deployed commit and local/public file hashes, then repeat
+the public browser matrix. Preserve failed attempts and do not treat fixture
+success as actual objective-model, microphone/XR or physics numerical proof.

@@ -1505,3 +1505,10 @@ Follow/Stop through the WebGPU motor. Answers remain poetic/factually weak; mode
 quality is not claimed fixed. All170 focused checks, Cube/Earth external builds
 and promoted5176 desktop/mobile/SecretWorkshop smoke pass. Only internal CubeChat
 updated; no Pages build/deploy or push. Historical failed candidates remain above.
+
+- November10 user renews permission to rebuild/push the entire Pages demo set.
+  Publish the current qualified source first, then begin the next Homunculus
+  slice: bounded model-authored resident milestones, durable evidence-backed
+  progress, owner-only controls and paused reload recovery. Source changes for
+  the new slice must follow publication; actual-model ordered completion remains
+  a separate gate from infrastructure fixtures and the fixed dialogue repetition.
