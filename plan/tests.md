@@ -4714,3 +4714,12 @@ compute from reduced-count software presentation as documented above. After
 publication verify the deployed commit and local/public file hashes, then repeat
 the public browser matrix. Preserve failed attempts and do not treat fixture
 success as actual objective-model, microphone/XR or physics numerical proof.
+
+November10 release result: all15 builds; release71 and resident111 focused tests;
+23 staged/public route acceptance;11 authenticated production-relay routes;
+114 exact public file hashes. PlanetGen's original5s screenshot failures remain;
+bounded30s captures pass without changing scene/error gates. Default physics
+hardware compute and reduced-count software visuals are separate evidence.
+Public captures retain existing mobile panel overlaps and the unqualified MPM
+momentum diagnostic. All owned test resources closed. Evidence directory:
+/home/cos/.cache/peercompute-pages-release-20261110/.

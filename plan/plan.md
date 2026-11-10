@@ -2161,3 +2161,11 @@ planning remains experimental. After this publication, resume persistent residen
 objectives with model-authored ordered milestones and exact physical evidence.
 Do not clear the existing failed actual-model round-trip gate until new native
 acceptance passes. Learned routing and self-directed weight training remain later.
+
+November10 full demo publication complete at5f3b556a on main:/docs:15 builds,
+23 staging/public routes,11 authenticated SecretWorkshop routes and114 public
+file hashes pass. Original screenshot timeout failures and existing mobile/
+physics limitations are retained in log.md. Next implementation is the approved
+model-authored resident milestone plan with receipt-derived progress; existing
+actual-model objective/shutdown gates remain open. New work stays separate from
+this published build until qualified.
