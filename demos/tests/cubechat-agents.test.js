@@ -139,6 +139,25 @@ test('one physical body follows during thinking and speaking, stops when paused,
   assert.deepEqual(result.context.agent.position,result.paused);
 });
 
+test('world senses report actual follow and stop motion independently of chat lifecycle', async t => {
+  const page = await fixture(t);
+  const result = await page.evaluate(async () => {
+    layer.upsert(base); layer.setMotor(controlledMotor); participants[0].position = [0, 3, 60];
+    layer.setIntent(base.key, { type: 'follow', targetId: participants[0].id });
+    await advance(60); layer.upsert({ ...base, status: 'thinking' });
+    const following = layer.observe(base.key, { requesterPeerId: 'owner-peer' });
+    layer.setIntent(base.key, { type: 'stop' });
+    const stopped = layer.observe(base.key);
+    layer.upsert({ ...base, key: 'remote:agent-1', ownerPeerId: 'remote', local: false });
+    return { following, stopped, remote: layer.observe('remote:agent-1') };
+  });
+  assert.equal(result.following.self.status, 'thinking');
+  assert.deepEqual(result.following.self.motion, { type: 'follow', status: 'moving', targetId: 'human:owner-peer' });
+  assert(result.following.self.position[2] > 0, 'actual Cannon body advanced under the controlled motor');
+  assert.deepEqual(result.stopped.self.motion, { type: 'stop', status: 'stopped', targetId: null });
+  assert.equal(result.remote.self.motion, undefined, 'a remote replica has no authoritative local motor');
+});
+
 test('remote body updates interpolate without running local movement or changing unrelated owner identities', async t => {
   const page = await fixture(t);
   const result = await page.evaluate(() => {

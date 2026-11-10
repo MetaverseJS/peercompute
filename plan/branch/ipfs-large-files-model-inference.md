@@ -1475,3 +1475,33 @@ saved memories unchanged until native semantic acceptance.
   Request affected agent instructions/history; do not clear memory or change
   persona based on an unrelated fixture. No additional runtime patch or public
   deployment is qualified by the comparison.
+
+- Subsequent clarification supersedes the Personal-agent repetition assumption:
+  user observes repetition only in CubeChat. Return to the captured native
+  resident failure; poor inference-demo answers are a separate quality issue.
+  Do not gate this bug fix on arithmetic competence or request Personal settings.
+
+- Candidate separates conversational speech from physical decision routing while
+  keeping identity/history and owner authority. New observations include actual
+  motor state. Focused164 checks and external Cube/Earth builds pass; native
+  current-question responsiveness and real Follow/Stop remain release gates.
+  No public Pages build/deploy or push; temporary candidate5191 only.
+
+Native split acceptance failed: consecutive scene replies share a208-character
+suffix and Follow returned null. Keep candidate unpromoted; current-question
+salience contrast is next. Passing164 regressions/builds does not close this gate.
+
+Second candidate: remove only exact self-speech memory duplicates of assistant
+turns retained by router budgeting; preserve all stored episodes and full chat.
+Use compact physical observations and authenticated `speaker` reference. Captured
+post-split speech now breaks repetition and Follow resolves the correct requester.
+All170 focused checks pass; new Cube build/TLS bytes verified. Three same-channel
+owner questions plus visitor Follow/Stop native qualification is running. No
+regular preview promotion or public Pages build/deploy/push yet.
+
+Qualified November10: native same-Nano five-turn test passes with full history
+and stored memories retained, no repeated reply/paragraph, and actual visitor
+Follow/Stop through the WebGPU motor. Answers remain poetic/factually weak; model
+quality is not claimed fixed. All170 focused checks, Cube/Earth external builds
+and promoted5176 desktop/mobile/SecretWorkshop smoke pass. Only internal CubeChat
+updated; no Pages build/deploy or push. Historical failed candidates remain above.

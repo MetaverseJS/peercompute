@@ -4657,3 +4657,46 @@ clear history, replace model replies or silently change providers.
 - External agent-global-native-paired.mjs: four actual same-Nano/peer requests through native Personal saved-agent and Global UI, actual IndexedDB journal, no model/router substitute. Private local publication recorder prevents public feed traffic. Persona is retained Conan fixture; arithmetic12/36 passes direct Global but agent returns unrelated riddles. Current prompts/history, route/CID, no truncation,12sourcehashes and cleanup PASS. Literal stale-answer repetition is not reproduced by this fresh two-turn fixture. No repair accepted.
 - Actual protocol generation normalization on captured inputs PASS: first-turn request differs only by identity/goal system text after unique IDs are excluded; current text/options match. No extra network/model calls. Evidence conan/agent-global-native-1/{report,verification,wire-input-comparison}.json.
 - First300 history-read theory rejected: actual store caps256events, rejects257. No source change or out-of-contract300+ fixture accepted as evidence for a live bug.
+
+- Scope corrected by user: only CubeChat exhibits repetition. The Personal-agent
+  arithmetic/riddle experiment does not reproduce that bug. Primary acceptance
+  uses changed current messages in the retained native CubeChat conversation and
+  traces request, context, generated output and displayed reply. Assess exact stale
+  reply/echo separately from model knowledge or style quality. Randomly varying
+  irrelevant answers do not establish restored response continuity. Preserve the
+  original journal and movement capabilities; no user-data reset as a remedy.
+
+### November9 — separate resident speech and physical decision candidate
+
+- New `world-intent-decision.test.js`6 and existing `cubechat-agents.test.js`29: final35/35PASS. Validate bounded references, immutable observation ownership, authenticated requester mapping, stale/invalid action rejection, routing/cancellation and actual motor state distinct from chat lifecycle. Controlled motor fixture is not learned-GPU proof. Initial33/35 failure retained (aliased duplicate ID projection fixed; router clone assertion corrected).
+- `agentRouter.test.js` + `world-experience.test.js`:26/26PASS; `world-conversation-turn.test.js`:9/9PASS; `world-agent-host.test.js`:38/38PASS in actual browser fixture; adjacent world goal/social/conversation-context checks56/56PASS. Total164 distinct passing cases. Keep exact commands/TAP paths in log.
+- Native acceptance uses a separate built HTTPS5191 candidate, two owned profiles/passworded room, five typed turns and ten actual same-Nano/peer requests maximum. Capture current wire inputs, saved request/result pairs, body intents, physical WebGPU Follow/Stop receipts and native rendered replies. No public text, local language weights, manufactured answers, history clearing or user-resident changes. Result pending. First harness attempt failed before inference because events limit300 exceeded API100; preserve and correct harness, never count as product evidence.
+
+- Native split run2 FAIL after4 turns/8same-Nano requests:208-character shared
+  scene suffix and null Follow action. Stop unrun. Correct request/history,
+  source/assets/transport and clean cleanup pass separately. Retain raw failures
+  in conan/native-split-2; no accepted repair or internal-preview promotion.
+
+- Exact post-split captured speech with one duplicate self-memory projected out
+  breaks literal repetition while keeping full prior history; current-model
+  hallucinated metaphors remain. Symbolic speaker reference selects correct
+  Follow target in a separate one-call test. Neither alone proves native repair.
+- Final candidate tests: decision7 + Cube body29 + router11 + Experience19 +
+  conversation10 + Host38 + adjacent56 =170PASS. Match full episode text before
+  excerpt, preserve cross-scope/shared/action records, retain memory when router
+  drops the matching turn, and strip local metadata before inference dispatch.
+  The worker can further trim by real tokenizer budget; native no-truncation
+  checks are separate. v2 five-turn native acceptance pending.
+
+- Native v2 PASS:5typed turns/10actual same-Nano/peer requests, full scoped history
+  retained, duplicate memory only projected out, no literal repeats and scene
+  shared suffix reduced208→2characters. Threeowner turns change subject; factual
+  quality remains weak. VisitorFollow moved14.39units with44WebGPUdispatches and
+  durable receipt; Stop clears activeFollow and yields stopped receipt/zero
+  velocity. Allsource/assets/private journal/cleanup checks pass. Exact evidence
+  conan/native-dedup-1/verification.json; no truncation or local language models.
+- Promoted5176 smoke PASS: trusted TLS/exact index,79script byte checks, real
+  SecretWorkshop Noise connection, desktop/390px UI and zero error/download
+  arrays. Prior private-room assertion and Node/Vite-alias harness failures
+  retained. Evidence conan/promoted-dedup-smoke-3/report.json. Temporary5191 and
+  owned browsers closed; persistent internal previews remain running.

@@ -73,7 +73,12 @@ test('transient task instructions appear once and exact scoped legacy decorators
   assert.deepEqual(events, before);
   assert.throws(() => normalizeAgentTask({ prompt: 'x', taskInstructions: 'é'.repeat(2049) }), /instructions/);
   assert.throws(() => normalizeAgentTask({ prompt: 'x', taskInstructions: instructions, legacyHistorySuffix: suffix }), /scope/);
-  assert.throws(() => normalizeAgentTask({ prompt: 'x', conversationId: 'world', legacyHistorySuffix: suffix }), /instructions/);
+  const conversation = packAgentContext({ identity: { name: 'Ada' } }, normalizeAgentTask({
+    prompt: 'Another question', conversationId: 'world:visitor', legacyHistorySuffix: suffix }), events);
+  assert.equal(conversation.taskInstructions, undefined);
+  assert.deepEqual(conversation.messages.slice(1).map(message => message.content),
+    ['Come here', 'I will try.', 'Keep [Old response format] as literal text', 'Understood.', 'Another question']);
+  assert.deepEqual(events, before, 'Retiring a task format never rewrites stored history');
 });
 
 test('new images use fresh visual context and follow-ups retain only the latest successful image exchange', () => {
@@ -106,6 +111,56 @@ test('new images use fresh visual context and follow-ups retain only the latest 
   const empty = [...events, ...turn('empty-blue', 'image-text-to-text', 'Describe blue', '')];
   assert.deepEqual(packAgentContext(head, normalizeAgentTask({ prompt: 'Continue' }), empty).messages.slice(1),
     [{ role: 'user', content: 'Continue' }]);
+});
+
+test('context history projection removes exact full replies only after retaining assistant turns', () => {
+  const full = 'A remembered observation. '.repeat(20), scope = 'world:visitor';
+  const worldContext = JSON.stringify({ scene: { name: 'Keep scene' }, memories: [
+    { text: full.slice(0, 240) }, { text: 'Keep unrelated evidence' }, { text: full.slice(0, 240) }], labels: ['Keep labels'] });
+  const metadata = { arrayKey: 'memories', entries: [{ index: 0, text: full }, { index: 2, text: full + ' Different ending.' }] };
+  const input = normalizeAgentTask({ prompt: 'Latest', conversationId: scope, worldContext, contextHistory: metadata });
+  metadata.entries[0].text = 'Changed outside';
+  const events = [{ type: 'request', operationId: 'a', conversationId: scope, text: 'Earlier' },
+    { type: 'result', operationId: 'a', conversationId: scope, text: full }];
+  const before = structuredClone({ input, events });
+  const packed = packAgentContext({ identity: { name: 'Ada' } }, input, events);
+  const context = JSON.parse(packed.worldContext);
+  assert.deepEqual(context.memories, JSON.parse(worldContext).memories.slice(1));
+  assert.deepEqual(context.scene, { name: 'Keep scene' }); assert.deepEqual(context.labels, ['Keep labels']);
+  assert(packed.messages[0].content.endsWith(packed.worldContext));
+  assert.deepEqual(packed.messages.slice(1).map(message => message.content), ['Earlier', full, 'Latest']);
+  assert.equal(Object.hasOwn(packed, 'contextHistory'), false);
+  assert.deepEqual({ input, events }, before);
+  assert.equal(packAgentContext({}, input, events.map(event => ({ ...event, conversationId: 'world:other' }))).worldContext, worldContext);
+  assert.equal(packAgentContext({}, normalizeAgentTask({ ...input, task: 'image-text-to-text', image }), events).worldContext, worldContext);
+});
+
+test('context memories remain when turn-count or byte budgets remove their corresponding assistant turn', () => {
+  const scope = 'world:visitor', worldContext = JSON.stringify({ memories: [{ text: 'First reply' }] });
+  const input = normalizeAgentTask({ prompt: 'Latest', conversationId: scope, worldContext,
+    contextHistory: { arrayKey: 'memories', entries: [{ index: 0, text: 'First reply' }] } });
+  const pair = (i, question) => [{ type: 'request', conversationId: scope, operationId: `${i}`, text: question },
+    { type: 'result', conversationId: scope, operationId: `${i}`, text: i === 0 ? 'First reply' : `Reply ${i}` }];
+  for (const events of [Array.from({ length: 13 }, (_, i) => pair(i, `Question ${i}`)).flat(),
+    [...pair(0, 'a'.repeat(40000)), ...pair(1, 'b'.repeat(40000))]]) {
+    const packed = packAgentContext({}, input, events);
+    assert(!packed.messages.some(message => message.role === 'assistant' && message.content === 'First reply'));
+    assert.equal(packed.worldContext, worldContext);
+    assert.equal(packed.contextHistory, undefined);
+  }
+});
+
+test('context projection metadata is scoped, bounded, owned and requires an existing top-level array', () => {
+  const base = { prompt: 'Latest', conversationId: 'world:visitor', worldContext: '{"memories":[{}]}',
+    contextHistory: { arrayKey: 'memories', entries: [{ index: 0, text: 'Full reply' }] } };
+  for (const patch of [{ conversationId: undefined }, { worldContext: 'plain text' },
+    { contextHistory: { ...base.contextHistory, arrayKey: 'missing' } },
+    { contextHistory: { ...base.contextHistory, entries: [{ index: 1, text: 'Reply' }] } },
+    { contextHistory: { ...base.contextHistory, entries: [{ index: 0, text: 'x'.repeat(2049) }] } },
+    { contextHistory: { ...base.contextHistory, entries: [{ index: 0, text: 'First' }, { index: 0, text: 'Second' }] } }]) {
+    assert.throws(() => normalizeAgentTask({ ...base, ...patch }), /context history/);
+  }
+  assert.equal(packAgentContext({}, normalizeAgentTask({ ...base, task: 'text-to-image' })).contextHistory, undefined);
 });
 
 function adapterFixture() {

@@ -39,6 +39,7 @@ async function boot() {
     const { WorldMemoryStore } = await import('/peercompute/src/peercompute/agents/WorldMemoryStore.js');
     const { WorldGoalStore } = await import('/peercompute/src/peercompute/agents/WorldGoalStore.js');
     const { WORLD_GOAL_INSTRUCTIONS } = await import('/demos/shared/agents/WorldGoalDecision.js');
+    const { WORLD_PHYSICAL_INTENT_INSTRUCTIONS, WORLD_PHYSICAL_OBSERVATIONS_MARKER } = await import('/demos/shared/agents/WorldIntentDecision.js');
     Object.assign(window, { calls: [], view: {}, speechChunks, worldConversationId });
     const candidate = { key: 'local', local: true, available: true, manifestCid: 'fixture', sessionId: 'fixture', runtime: 'transformers.js',
       task: 'text-generation', modalities: ['text'], outputModalities: ['text'] };
@@ -89,6 +90,10 @@ async function boot() {
             return window.noTextProvider && task === 'text-generation' ? [] : [task === 'text-to-image' ? imageCandidate : candidate];
           },
             generate: async (_candidate, input, { signal }) => {
+              if (input.messages?.[0]?.content.startsWith(WORLD_PHYSICAL_INTENT_INSTRUCTIONS + WORLD_PHYSICAL_OBSERVATIONS_MARKER)) {
+                calls.push(['intent-decision', input]);
+                return { text: JSON.stringify(window.fixtureIntentDecision ?? { intent: null }), finishReason: 'stop' };
+              }
               calls.push(['generate', input]);
               if (input.taskInstructions === WORLD_GOAL_INSTRUCTIONS) {
                 calls.push(['objective-generation']);
@@ -649,14 +654,15 @@ test('embodied replies use real durable scoped memory and display text instead o
   const result = await page.evaluate(async () => {
     await host.dispose(); window.embodiedFixture = true; await start();
     await host.spawn({ name: 'Ada' }); const key = host.getStatus().selectedKey, agentId = view.selected.agentId;
-    window.fixtureAnswer = JSON.stringify({ text: 'I will come closer.', intent: { type: 'approach', targetId: 'human:owner' } });
+    window.fixtureAnswer = 'I will come closer.';
+    window.fixtureIntentDecision = { intent: { type: 'approach', targetId: 'speaker' } };
     await host.send({ key, text: 'Please come here.' });
     physicalOutcome({ ...lastIntent, status: 'arrived', position: [15, 3, 5], policyId: 'controlled-physical-fixture', backend: 'fixture' });
     await new Promise(resolve => setTimeout(resolve, 20));
     const originalMessages = view.messages;
     await host.dispose(); await start(); await host.openConversation(key);
     const restoredMessages = view.messages;
-    window.fixtureAnswer = JSON.stringify({ text: 'We met here earlier.', intent: null });
+    window.fixtureAnswer = 'We met here earlier.'; window.fixtureIntentDecision = { intent: null };
     await host.send({ key, text: 'Do you remember meeting me?' });
     const input = calls.filter(c => c[0] === 'generate').at(-1)[1];
     return { originalMessages, restoredMessages, input, memory: await episodeStore.stats(), agentId };
@@ -666,9 +672,10 @@ test('embodied replies use real durable scoped memory and display text instead o
   const input = JSON.stringify(result.input.messages); assert.match(input, /verified-action/); assert.match(input, /approach: arrived/);
   assert.deepEqual(result.input.messages.filter(message => message.role === 'user').map(message => message.content),
     ['Please come here.', 'Do you remember meeting me?']);
-  assert.equal(typeof result.input.taskInstructions, 'string');
-  assert.equal(result.input.messages.filter(message => message.content.includes(result.input.taskInstructions)).length, 1);
-  assert(result.input.messages.find(message => message.role === 'system').content.includes(result.input.taskInstructions));
+  assert.equal(result.input.taskInstructions, undefined);
+  assert.equal(result.input.contextHistory, undefined);
+  assert(!JSON.parse(result.input.worldContext).memories.some(memory => memory.kind === 'composed-reply'));
+  assert(!result.input.messages.some(message => message.content.includes('Return one valid JSON object')));
   assert.equal(result.memory.retainedEntries >= 3, true);
 });
 
@@ -711,7 +718,7 @@ test('explicit stationary selection stops a model intention even when saved pref
   const result = await page.evaluate(async () => {
     await host.dispose(); window.embodiedFixture = true; await start();
     await host.spawn({ name: 'Ada', movement: 'stationary' }); const key = host.getStatus().selectedKey;
-    window.fixtureAnswer = JSON.stringify({ text: 'I will follow.', intent: { type: 'follow', targetId: 'human:owner' } });
+    window.fixtureAnswer = 'I will follow.'; window.fixtureIntentDecision = { intent: { type: 'follow', targetId: 'speaker' } };
     await host.send({ text: 'Follow me' });
     await host.edit({ key, movement: 'stationary' });
     return { key, actions: calls.filter(c => c[0] === 'intent' || c[0] === 'movement') };
@@ -820,7 +827,7 @@ test('a human can preempt speculative speech without pausing the resident or pub
   });
   await page.waitForFunction(() => calls.some(c => c[0] === 'generate'));
   const result = await page.evaluate(async id => {
-    window.fixtureAnswer = '{"text":"Human reply","intent":null}';
+    window.fixtureAnswer = 'Human reply';
     await host.send({ key: 'local:' + id, text: 'Talk to me instead' });
     return { head: await agents.get(id), calls, status: host.getStatus(), events: await agents.events(id) };
   }, id);

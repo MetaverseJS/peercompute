@@ -216,12 +216,14 @@ export class CubeAgentLayer {
   observe(key, { requesterPeerId } = {}) {
     const entry = this.entries.get(key); if (!entry) throw new Error('Resident body is unavailable');
     const { position, participants } = this.observeParticipants(key, { requesterPeerId });
+    const motion = entry.descriptor.local ? this.motor.getResidentStatus(key) : null;
     const obstacles = this.nearbyObstacleBodies(key).map(body => ({
       position: [body.position.x, this.groundHeight(body.position.x, body.position.z) + HALF_SIZE, body.position.z],
       radius: Math.min(30, body.boundingRadius || 3) }));
     return { observedAt: Date.now(), self: { id: `resident:${entry.descriptor.ownerPeerId}:${entry.descriptor.agentId}`,
       agentId: entry.descriptor.agentId, ownerPeerId: entry.descriptor.ownerPeerId, name: entry.descriptor.name,
-      position, velocity: entry.body.velocity.toArray(), status: entry.descriptor.status, intentRevision: entry.intentRevision },
+      position, velocity: entry.body.velocity.toArray(), status: entry.descriptor.status, intentRevision: entry.intentRevision,
+      ...(motion ? { motion: { type: motion.type, status: motion.status, targetId: motion.targetId } } : {}) },
     participants, obstacles,
     ...(requesterPeerId && participants.some(p => p.peerId === requesterPeerId) ? { requesterId: `human:${requesterPeerId}` } : {}) };
   }

@@ -39,6 +39,11 @@ someone, stop or look at another observed participant. The model proposes a type
 intention; a trained 6,914-parameter neural controller produces continuous movement
 through a local ComputeManager WebGPU worker. Movement continues while a resident
 thinks or speaks. Physics reports arrival, blocked movement and lost targets.
+Conversational turns use one journaled reply followed by a separate model request
+for an optional physical intention. The latter uses current observations and an
+authenticated speaker reference; it never becomes a remembered chat reply.
+Self-speech memory is omitted from a request only when its full text already
+appears in the conversation retained by the router. Stored episodes stay intact.
 The policy uses local collision clearance to approach, follow and detour around
 boxes, walls and doorways. In **Residents**, expand **Movement** to inspect its
 target, distance, progress, blockage and actual worker backend. **Stay here**

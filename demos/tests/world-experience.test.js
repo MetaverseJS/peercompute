@@ -38,6 +38,49 @@ test('only physical receipts create outcome memories, with the original audience
   await new Promise(resolve => setImmediate(resolve)); assert.equal(f.episodes.length, 3);
   await f.experience.dispose();
 });
+test('plain conversational speech is retained literally without parsing JSON into an intention', async () => {
+  const f = fixture(), turn = await f.turn();
+  assert.equal(await f.experience.rememberReply(turn, reply), true);
+  assert.equal(f.episodes.at(-1).text, reply); assert.equal(f.episodes.at(-1).kind, 'composed-reply');
+  assert.deepEqual(f.actions, []);
+  assert.equal(await f.experience.rememberReply(turn, 'Stale reply', { valid: () => false }), false);
+  assert.equal(f.episodes.length, 2);
+  await f.experience.dispose();
+});
+
+test('only full same-scope self-authored local speech becomes a history dedup candidate', async () => {
+  const full = 'A detailed remembered scene. '.repeat(20);
+  for (const [label, patch, eligible] of [
+    ['same scope', {}, true], ['different world', { worldId: 'cube:other' }, false],
+    ['different agent', { agentId: 'other' }, false],
+    ['another author', { who: { agentId: 'other', peerId: 'owner' } }, false],
+    ['another host', { who: { agentId: 'ada', peerId: 'other-host' } }, false],
+    ['shared report', { source: { kind: 'shared-memory', sourceAgentId: 'ancestor' } }, false],
+    ['heard statement', { kind: 'heard' }, false],
+    ['physical receipt', { kind: 'action-outcome', source: { kind: 'verified-action' } }, false],
+    ['oversized old text', { text: 'x'.repeat(2049) }, false],
+    ['invalid old text', { text: 'legacy\0text' }, false],
+  ]) {
+    const f = fixture(), episode = { agentId: 'ada', worldId: 'cube:test', audience: 'private',
+      conversationId: 'private-visitor', kind: 'composed-reply', who: { agentId: 'ada', peerId: 'owner' },
+      where: [0, 3, 0], when: 900, outcome: 'Generated speech', text: full, source: { kind: 'local-observation' }, ...patch };
+    f.episodes.push(episode); const original = structuredClone(episode);
+    const turn = await f.turn(), context = JSON.parse(turn.worldContext);
+    assert.equal(!!turn.contextHistory, eligible, label);
+    if (eligible) {
+      assert.equal(turn.contextHistory.entries[0].text, full);
+      assert.equal(turn.contextHistory.entries[0].index, 0);
+      assert(context.memories[0].excerpted); assert(context.memories[0].text.length < full.length);
+    }
+    assert.deepEqual(f.episodes[0], original); await f.experience.dispose();
+  }
+  const f = fixture();
+  f.episodes.push({ agentId: 'ada', worldId: 'cube:test', audience: 'public', conversationId: 'room', kind: 'composed-reply',
+    who: { agentId: 'ada', peerId: 'owner' }, text: full, source: { kind: 'local-observation' } });
+  const turn = await f.turn({ publicConversationId: 'room' });
+  assert.equal(turn.contextHistory, undefined, 'Public speech recalled in private is not the same conversation');
+  assert.equal(JSON.parse(turn.worldContext).memories.length, 1); await f.experience.dispose();
+});
 test('newer conversations, disappeared targets and cancelled work suppress stale physical intentions', async () => {
   const f = fixture(); const turn = await f.turn();
   await f.experience.finish(turn, reply, { valid: () => false }); assert.equal(f.actions.length, 0);
@@ -98,7 +141,8 @@ test('unsolicited encounters never fabricate heard messages and distinguish deli
 
 test('prompt projection preserves exact target identity and provenance without altering raw evidence', () => {
   const senses = { observedAt: 1234, requesterId: 'human:authenticated-visitor',
-    self: { id: 'resident:owner:ada', agentId: 'ada', ownerPeerId: 'owner', name: 'Ada', position: [0.123456789, 3, 0], intentRevision: 9 },
+    self: { id: 'resident:owner:ada', agentId: 'ada', ownerPeerId: 'owner', name: 'Ada', position: [0.123456789, 3, 0], intentRevision: 9,
+      motion: { type: 'follow', targetId: 'human:authenticated-visitor', status: 'moving' } },
     participants: [{ id: 'human:authenticated-visitor', peerId: 'authenticated-visitor', kind: 'human', name: 'Pat',
       position: [19.987654321, 3, 0], relativePosition: [19.864197532, 0, 0], velocity: [0.000000001, 0, 0], distance: 19.864197532 }], obstacles: [] };
   const episodes = [{ kind: 'action-outcome', when: 1000, who: { peerId: 'authenticated-visitor', name: 'Pat' },
@@ -112,6 +156,7 @@ test('prompt projection preserves exact target identity and provenance without a
   assert.equal(context.senses.participants[0].id, senses.participants[0].id);
   assert.deepEqual(context.senses.participants[0].position, [19.988, 3, 0]);
   assert.equal(context.senses.self.intentRevision, undefined);
+  assert.deepEqual(context.senses.self.motion, senses.self.motion, 'Observed motion is retained separately from lifecycle status');
   assert.equal(context.memories[0].source.kind, 'verified-action'); assert.equal(context.memories[0].outcome, 'approach: blocked');
   assert.match(context.memories[0].text, /Target enclosed/); assert.doesNotMatch(JSON.stringify(context), /diagnostic-hash|full-receipt-id/);
   assert.deepEqual(context.memories[1].source, { kind: 'shared-memory', sourceAgentId: 'ancestor', peerId: 'other-host' });

@@ -2119,3 +2119,36 @@ requests differ only by the identity/riddle-goal system message. This fixture do
 not repeat a previous answer verbatim; the original repetition remains unresolved.
 Use the affected current agent's instructions/history for the next comparison.
 No generic cache, transport or history deletion change is justified by this result.
+
+Latest user correction: repetition is observed ONLY in CubeChat, not the inference
+demo. Focus on the retained native resident repeated-response fixture. Poor answers
+and arithmetic/riddle quality are separate observations, not the bug acceptance
+criterion. Personal-agent configuration is no longer a prerequisite for this work.
+Preserve current prompts, resident identity/history and movement; qualify response
+continuity without substituting random variation for a responsive new reply.
+
+Candidate now separates journaled resident speech from a managed, bounded physical
+intent decision using fresh motion observations. Preserve legacy journal history
+without reinserting movement-format examples into speech. All164 focused checks
+pass; Cube/Earth external builds pass. Native same-Nano private owner/visitor
+chat and real Follow/Stop qualification is pending; established previews and
+public Pages remain unchanged until the relevant acceptance passes.
+
+Native split acceptance failed: consecutive scene replies share a208-character
+suffix and Follow returned null. Keep candidate unpromoted; current-question
+salience contrast is next. Passing164 regressions/builds does not close this gate.
+
+Second candidate: remove only exact self-speech memory duplicates of assistant
+turns retained by router budgeting; preserve all stored episodes and full chat.
+Use compact physical observations and authenticated `speaker` reference. Captured
+post-split speech now breaks repetition and Follow resolves the correct requester.
+All170 focused checks pass; new Cube build/TLS bytes verified. Three same-channel
+owner questions plus visitor Follow/Stop native qualification is running. No
+regular preview promotion or public Pages build/deploy/push yet.
+
+Qualified November10: native same-Nano five-turn test passes with full history
+and stored memories retained, no repeated reply/paragraph, and actual visitor
+Follow/Stop through the WebGPU motor. Answers remain poetic/factually weak; model
+quality is not claimed fixed. All170 focused checks, Cube/Earth external builds
+and promoted5176 desktop/mobile/SecretWorkshop smoke pass. Only internal CubeChat
+updated; no Pages build/deploy or push. Historical failed candidates remain above.

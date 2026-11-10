@@ -452,3 +452,37 @@ resident fix. Keep the user conversation intact and clarify whether Personal
 model chat also exhibits repetition before widening the next diagnostic. Cube
 preview5176 is restored with its previous build; only inference5189 received the
 separately verified Global image publication fix.
+
+User clarification: repetition has only been observed in CubeChat. The native
+Personal-agent versus Global test produced poor agent answers but did not repeat
+the prior sentence, so it is not a reproduction of this bug. Return to exact native
+CubeChat failing conversations and evaluate changed-question response continuity
+separately from model reasoning quality. Preserve identity, history and movement;
+do not delete context or randomize outputs to conceal a repeated-answer failure.
+
+Candidate: conversational speech is journaled independently from physical intent
+selection. WorldConversationTurn owns pending-decision cancellation and scoped
+history; WorldIntentDecision resolves bounded per-request references to observed
+participants. Actual local motion state reaches senses even while chat is idle
+or thinking. All164 focused checks and external Cube/Earth builds pass; native
+current-question plus real Follow/Stop acceptance remains pending. No preview
+promotion, public Pages build/deploy or push yet.
+
+Native split acceptance failed: consecutive scene replies share a208-character
+suffix and Follow returned null. Keep candidate unpromoted; current-question
+salience contrast is next. Passing164 regressions/builds does not close this gate.
+
+Second candidate: remove only exact self-speech memory duplicates of assistant
+turns retained by router budgeting; preserve all stored episodes and full chat.
+Use compact physical observations and authenticated `speaker` reference. Captured
+post-split speech now breaks repetition and Follow resolves the correct requester.
+All170 focused checks pass; new Cube build/TLS bytes verified. Three same-channel
+owner questions plus visitor Follow/Stop native qualification is running. No
+regular preview promotion or public Pages build/deploy/push yet.
+
+Qualified November10: native same-Nano five-turn test passes with full history
+and stored memories retained, no repeated reply/paragraph, and actual visitor
+Follow/Stop through the WebGPU motor. Answers remain poetic/factually weak; model
+quality is not claimed fixed. All170 focused checks, Cube/Earth external builds
+and promoted5176 desktop/mobile/SecretWorkshop smoke pass. Only internal CubeChat
+updated; no Pages build/deploy or push. Historical failed candidates remain above.

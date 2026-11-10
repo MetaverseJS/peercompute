@@ -37,7 +37,7 @@ function rounded(value) {
 export function compactWorldContext({ scene = {}, senses, memories = [] }) {
   const context = { scene: rounded(scene), senses: {
     ...selected(senses, ['observedAt', 'requesterId']),
-    self: rounded(selected(senses.self, ['id', 'name', 'position', 'velocity', 'status'])),
+    self: rounded(selected(senses.self, ['id', 'name', 'position', 'velocity', 'status', 'motion'])),
     participants: senses.participants.map(item => rounded(selected(item,
       ['id', 'kind', 'name', 'position', 'relativePosition', 'velocity', 'distance']))),
     obstacles: rounded(senses.obstacles ?? []),
@@ -141,12 +141,27 @@ export function createWorldExperience({ worldId, adapter, memory, getBody, onSta
       catch (error) { signal.throwIfAborted(); report(`Resident memory: ${error.message}`); }
     }
     const context = compactWorldContext({ scene, senses, memories });
+    const entries = [], body = getBody(key);
+    // Compaction retains retrieval order and removes only trailing memories.
+    // Match full stored text, never the 240-byte prompt excerpt. Shared reports,
+    // other conversations, heard speech and physical receipts remain evidence.
+    for (let index = 0; index < context.memories.length; index++) {
+      const memory = memories[index];
+      if (memory.kind !== 'composed-reply' || memory.source?.kind !== 'local-observation'
+          || memory.agentId !== agentId || memory.worldId !== worldId || memory.audience !== audience
+          || memory.conversationId !== conversationId || memory.who?.agentId !== agentId
+          || memory.who?.peerId !== body?.ownerPeerId || typeof memory.text !== 'string' || !memory.text
+          || memory.text.includes('\0') || encoder.encode(memory.text).length > 2048) continue;
+      const next = [...entries, { index, text: memory.text }];
+      if (size({ arrayKey: 'memories', entries: next }) <= 16384) entries.push(next.at(-1));
+    }
     await save({ ...scope, kind: observation ? 'encounter' : 'heard', who: speaker, where: senses.self.position,
       outcome: observation ? 'A nearby participant was observed; no message was received.' : 'The participant said this; it is not independently verified.', text: excerpt(statement, 1600),
       source: { kind: observation ? 'local-observation' : 'authenticated-message', eventId: eventId || crypto.randomUUID(), peerId: speaker.peerId } }, signal);
     signal.throwIfAborted();
     return { key, scope, speaker, senses, signal, prompt,
       taskInstructions: WORLD_INTENT_INSTRUCTIONS, legacyHistorySuffix: WORLD_INTENT_LEGACY_SUFFIX,
+      ...(entries.length ? { contextHistory: { arrayKey: 'memories', entries } } : {}),
       worldContext: JSON.stringify(context) };
   }
   function prepareEncounter({ target, ...options }) {
@@ -203,17 +218,22 @@ export function createWorldExperience({ worldId, adapter, memory, getBody, onSta
     if (activeByKey.get(key)?.requestId === requestId) activeByKey.delete(key);
     return true;
   }
-  async function finish(turn, result, { valid = () => true } = {}) {
-    const reply = parseWorldReply(result);
+  /** Retain actual speech without interpreting it as a physical command. */
+  async function rememberReply(turn, text, { valid = () => true } = {}) {
+    if (typeof text !== 'string' || encoder.encode(text).length > 65536) throw new TypeError('Invalid resident reply');
     turn.signal.throwIfAborted();
-    if (closed || !valid() || !getBody(turn.key)?.local) return { text: reply.text, applied: false };
+    if (closed || !valid() || !getBody(turn.key)?.local) return false;
     const body = getBody(turn.key);
     await save({ ...turn.scope, kind: 'composed-reply', who: { agentId: body.agentId, peerId: body.ownerPeerId, name: body.name },
       where: observe(turn.key, turn.speaker.peerId).self.position,
-      outcome: 'The resident generated this reply; delivery is not confirmed.', text: excerpt(reply.text, 1600),
+      outcome: 'The resident generated this reply; delivery is not confirmed.', text: excerpt(text, 1600),
       source: { kind: 'local-observation', eventId: crypto.randomUUID() } }, turn.signal);
     turn.signal.throwIfAborted();
-    if (closed || !valid() || !getBody(turn.key)?.local) return { text: reply.text, applied: false };
+    return !closed && valid() && getBody(turn.key)?.local === true;
+  }
+  async function finish(turn, result, { valid = () => true } = {}) {
+    const reply = parseWorldReply(result);
+    if (!await rememberReply(turn, reply.text, { valid })) return { text: reply.text, applied: false };
     if (!reply.intent) return { text: reply.text, applied: false };
     try {
       return { text: reply.text, ...await applyIntent(turn, reply.intent, { valid }) };
@@ -263,7 +283,7 @@ export function createWorldExperience({ worldId, adapter, memory, getBody, onSta
     const pending = outcome(event).catch(error => report(`Resident outcome: ${error.message}`));
     writes.add(pending); void pending.finally(() => writes.delete(pending));
   });
-  return { prepare, prepareEncounter, rememberSocialDecision, rememberDelivery, finish, observe, applyIntent, cancelIntent,
+  return { prepare, prepareEncounter, rememberSocialDecision, rememberDelivery, rememberReply, finish, observe, applyIntent, cancelIntent,
     subscribeVerifiedOutcomes(listener) { outcomeListeners.add(listener); return () => outcomeListeners.delete(listener); },
     getStatus: () => ({ pendingIntentions: intentions.size, memory: !!memory }),
     async dispose() { closed = true; unsubscribe(); lifetime.abort(); intentions.clear(); activeByKey.clear();

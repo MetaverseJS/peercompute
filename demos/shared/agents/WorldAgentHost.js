@@ -1,4 +1,5 @@
 import { createWorldExperience } from './WorldExperience.js';
+import { createWorldConversationTurns } from './WorldConversationTurn.js';
 import { createWorldSocialInitiative } from './WorldSocialInitiative.js';
 import { generateWorldSocialDecision } from './WorldSocialIntent.js';
 import { createWorldGoalController } from './WorldGoalController.js';
@@ -44,7 +45,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
   let runtime, agents, network, worldManager, speech, audio, ui, selectedKey, disposed = false, closing, unsubscribe;
   let refreshing, networkStarting, modelStarting, networkTimer, navigationTimer, panel, panelOpening, panelClosing, panelShell, panelReturnFocus, embodimentLease;
   let operation, operationDone, voicePreparation, voicePreparationDone, recordingStart, voiceEnabled = false, recording = false;
-  let appearance, appearancePresenter, worldChat, experience, motor, memory, social, socialOperation, socialDone;
+  let appearance, appearancePresenter, worldChat, experience, conversations, motor, memory, social, socialOperation, socialDone;
   let objectives, objectiveStore, unsubscribeObjectives;
   const objectiveStates = new Map(), objectiveDecisions = new Map();
   const socialStates = new Map();
@@ -250,14 +251,11 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     const turn = await experience?.prepare({ key: descriptor.key, agentId, conversationId, audience: 'private',
       requesterPeerId: requesterPeerId || worldNetwork()?.peerId, prompt, scene: JSON.parse(context),
       publicConversationId: await worldConversationId(worldId, 'public-room'), signal });
-    const result = await agents.run(agentId, { prompt: turn?.prompt ?? prompt, conversationId, worldContext: turn?.worldContext ?? context,
-      ...(turn?.taskInstructions ? { taskInstructions: turn.taskInstructions } : {}),
-      ...(turn?.legacyHistorySuffix ? { legacyHistorySuffix: turn.legacyHistorySuffix } : {}),
-      maxNewTokens: 512, task: 'text-generation', signal });
-    const current = await agents.get(agentId);
-    const output = turn ? await experience.finish(turn, result.result.text, { valid: () => !!bindingOf(current)
-      && (!requesterPeerId || bindingOf(current).shared) && current.status !== 'paused' }) : result.result;
-    return { text: output.text, finishReason: result.result.finishReason ?? 'stop' };
+    const output = await conversations.run({ key: descriptor.key, agentId, turn,
+      prompt: turn?.prompt ?? prompt, message: prompt, conversationId, worldContext: turn?.worldContext ?? context,
+      maxNewTokens: 512, signal, valid: current => !disposed && ownsObjective(agentId) && !!bindingOf(current)
+        && (!requesterPeerId || bindingOf(current).shared) });
+    return { text: output.text, finishReason: output.finishReason };
   }
   async function ensureModelNetwork() {
     if (disposed || runtime.networkReady || modelStarting) return modelStarting;
@@ -522,14 +520,12 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
         requesterPeerId: incoming.peerId, who: { peerId: incoming.peerId, name: incoming.name,
           ...(incoming.agentId ? { agentId: incoming.agentId } : {}) }, eventId: incoming.id,
         prompt, statement: incoming.text, scene: JSON.parse(observations), signal: combined });
-      const result = await agents.run(body.agentId, { task: 'text-generation', signal: combined,
-        ...(turn?.taskInstructions ? { taskInstructions: turn.taskInstructions } : {}),
-        ...(turn?.legacyHistorySuffix ? { legacyHistorySuffix: turn.legacyHistorySuffix } : {}),
-        conversationId, prompt: turn?.prompt ?? prompt, worldContext: turn?.worldContext ?? observations, maxNewTokens: 512 });
+      const output = await conversations.run({ key: body.key, agentId: body.agentId, turn, signal: combined,
+        conversationId, prompt: turn?.prompt ?? prompt, message: incoming.text,
+        worldContext: turn?.worldContext ?? observations, maxNewTokens: 512,
+        valid: current => !disposed && ownsObjective(body.agentId) && isCurrent() && epoch === publicEpoch
+          && bindingOf(current)?.respondToWorldChat && !worldChatDisabled.has(body.key) });
       combined.throwIfAborted();
-      const after = await agents.get(body.agentId);
-      const output = turn ? await experience.finish(turn, result.result.text, { valid: () => isCurrent() && epoch === publicEpoch
-        && bindingOf(after)?.respondToWorldChat && after.status !== 'paused' && !worldChatDisabled.has(body.key) }) : result.result;
       const answer = output.text.trim().replaceAll('\0', '');
       if (encoder.encode(answer).length <= 2048) return answer;
       let excerpt = '';
@@ -678,6 +674,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
   async function cancel() {
     const socialCancelled = interruptSocial('human');
     const goalsInterrupted = objectives?.interrupt({ reason: 'human controls' });
+    const pendingActions = conversations?.cancelPending();
     operation?.abort(new DOMException('Conversation cancelled', 'AbortError'));
     voicePreparation?.abort(new DOMException('Voice preparation cancelled', 'AbortError'));
     recordingStart?.controller.abort(new DOMException('Recording cancelled', 'AbortError'));
@@ -687,6 +684,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     await operationDone?.catch(() => {});
     await socialCancelled;
     await goalsInterrupted;
+    await pendingActions;
     if (!disposed) ui.setVoiceStatus({ enabled: voiceEnabled, recording, preparing: !!voicePreparation });
   }
   async function enableVoice(enabled) {
@@ -816,6 +814,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
       experience = createWorldExperience({ worldId, adapter, memory, getBody: key => bodies.get(key),
         onStatus: text => { if (!disposed) ui.setStatus(text); } });
     }
+    conversations = createWorldConversationTurns({ agents, experience, signal: lifetime.signal });
     appearancePresenter = createWorldAppearancePresenter({ appearance, adapter, getNetwork: () => network });
     if (typeof publishWorldMessage === 'function') worldChat = createWorldChatResponder({
       getResidents: () => list().map(body => ({ ...body,
@@ -931,6 +930,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
         await objectives?.dispose(); unsubscribeObjectives?.();
         await social?.dispose(); await worldChat?.dispose(); await appearancePresenter?.dispose(); await appearance?.dispose();
         await network?.close(); network = null;
+        await conversations?.dispose();
         adapter.setMotor?.(null); await experience?.dispose(); await motor?.dispose();
         await speech?.dispose(); await audio?.dispose(); await runtime?.dispose();
         await refreshing; await adapter.dispose(); await embodimentLease?.close();
