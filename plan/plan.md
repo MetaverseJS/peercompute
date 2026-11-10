@@ -1998,3 +1998,29 @@ context-packing correction prevents resident instructions accumulating in every
 historical prompt. Internal CubeChat5176 is updated; public Pages remains unchanged.
 Scope remains planar boxes/walls/doorways, with finite blockage detection and no
 online learning or general maze guarantee. Durable model-selected goals follow.
+
+### November 9 — resident conversation budgets and recovery
+
+User confirms following works but reports context errors and frequent pauses.
+Implement measured GGUF prompt fitting with complete-history-turn removal and
+output reserve, preserving full stored history. Confirmed oversized requests must
+leave healthy residents ready for another message. User clarification: automatically
+recover settled errors until three consecutive failed requests, then remain paused;
+a successful response resets the streak. Add owner-only Resume directly to the
+cube's chat window. Visitors cannot resume another owner's resident. Deliberate
+owner pauses and unknown/unsaved outcomes retain their recovery protections.
+Qualify long actual-model conversations and real peer ownership isolation,
+then update internal previews only. Public Pages publication stays on hold.
+
+The follow-up user instruction authorizes continuing directly into the next
+roadmap slice after this recovery fix: persistent owner-assigned objectives with
+model-selected steps, verified physical outcomes and saved progress. Keep execution
+bounded, owner-controlled and separate from profile goal strings; interrupted work
+must not replay. No public Pages build/deploy or push.
+
+Context/recovery implementation is qualified by focused suites and actual cached
+Qwen/peer checks: seven turns with measured fitting, oversized-input recovery,
+owner-only Resume and three-error behavior. The explicit private measurement
+probe consumes at most one token per attempt; original histories remain stored.
+Near-full repetitive prompts can still cause small-model instruction-following
+failures. Internal preview and local checkpoint finish this slice before goals.

@@ -44,8 +44,8 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
   const composer = node('form', undefined, 'cube-native-composer');
   const prompt = node('textarea'); prompt.rows = 2; prompt.setAttribute('aria-label', 'World message');
   const send = button('Send'); send.type = 'submit';
-  const talk = button('Talk'), cancel = button('Cancel'), voiceButton = button('Voice options');
-  const actions = node('div', undefined, 'cube-native-actions'); actions.append(send, talk, cancel, voiceButton);
+  const talk = button('Talk'), cancel = button('Cancel'), voiceButton = button('Voice options'), resume = button('Resume');
+  const actions = node('div', undefined, 'cube-native-actions'); actions.append(resume, send, talk, cancel, voiceButton);
   composer.append(prompt, actions); chatBody.append(chatHeader, scopeNote, messages, status, composer);
   dock.append(launcher, chatBody);
 
@@ -135,6 +135,9 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
     prompt.maxLength = selected ? 16000 : 1024;
     prompt.placeholder = selected ? `Message ${text(selected.name, 80)}…` : 'Message everyone in this room…';
     send.disabled = prompt.disabled || !prompt.value.trim() || typeof (selected ? onSend : onRoomSend) !== 'function';
+    resume.hidden = !paused() || !selected?.local || typeof onResume !== 'function';
+    resume.textContent = selected?.recoveryRequired ? 'Acknowledge and resume' : 'Resume';
+    resume.disabled = locked || transition || active();
     talk.hidden = voiceButton.hidden = !selected;
     talk.textContent = voiceState.recording || recordIntent ? 'Stop' : 'Talk';
     talk.disabled = locked || transition || !selected || paused() || !voiceState.enabled || voiceState.preparing
@@ -158,7 +161,9 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
         : 'Voice models download about 376 MB on first use. Text chat remains available.';
     scopeNote.textContent = !selected ? `Room: ${text(roomLabel, 80)} · visible to players in this room.`
       : `${text(selected.name, 240)} · ${selected.local ? 'resident on this device' : 'peer-hosted resident'} · private conversation.`
-        + (paused() ? selected.recoveryRequired ? ' Previous outcome unknown. Acknowledge and resume in Residents.' : ' Paused. Resume in Residents.' : '');
+        + (paused() ? !selected.local ? ' Paused. Only its owner can resume it.'
+          : selected.recoveryRequired ? ' Previous outcome unknown. Acknowledge and resume below; the old request will not replay.'
+            : ' Paused. Resume below to accept new messages.' : '');
     status.textContent = selected ? agentStatus : roomStatus || worldStatus;
     for (const control of list.querySelectorAll('button,select,input')) control.disabled = locked || transition || active() || control.dataset.unavailable === 'true';
     target.value = currentKey();
@@ -284,6 +289,7 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
       if (!disposed && expanded && !prompt.disabled && !residents.dialog.open && !voice.dialog.open) prompt.focus();
     }
   }
+  resume.onclick = () => { if (selected?.local && paused()) void mutation(onResume, selected.key); };
   function setAgents(next) {
     if (disposed) return;
     const focus = list.contains(document.activeElement) ? { key: document.activeElement.closest('[data-agent-key]')?.dataset.agentKey, label: document.activeElement.getAttribute('aria-label') } : null;

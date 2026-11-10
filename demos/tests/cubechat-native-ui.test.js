@@ -108,7 +108,12 @@ async function fixture(t, { mobile = false, enabled = true } = {}) {
         ui.setAgents(residents);
       },
       onRemove: async key => { calls.push({ type: 'remove', key }); residents = residents.filter(row => row.key !== key); ui.setAgents(residents); },
-      onResume: async key => { calls.push({ type: 'resume', key }); residents = residents.map(row => row.key === key ? { ...row, status: 'idle', recoveryRequired: false } : row); ui.setAgents(residents); },
+      onResume: async key => {
+        calls.push({ type: 'resume', key });
+        if (window.holdResume) await hold('resume');
+        if (window.failResume) throw Error('Resume was not saved');
+        residents = residents.map(row => row.key === key ? { ...row, status: 'idle', recoveryRequired: false } : row); ui.setAgents(residents);
+      },
       onPlayerCaption: text => calls.push({ type: 'caption', text }),
       onModels: async () => { calls.push({ type: 'models' }); },
       onVoice: async enabled => { calls.push({ type: 'voice', enabled }); if (window.holdVoice) await hold('voice'); ui.setVoiceStatus({ enabled, preparing: false, recording: false }); },
@@ -339,6 +344,46 @@ test('target change waits for cancellation cleanup, and failure retains the sele
   assert.equal(await page.evaluate(() => ui.getTarget()), 'local:ada'); assert.equal(await target(page).inputValue(), 'local:ada');
   await page.evaluate(() => { failCancel = false; }); await page.getByRole('button', { name: 'Cancel', exact: true }).click();
   await page.waitForFunction(() => !document.querySelector('[aria-label="World message"]').disabled);
+});
+
+test('native cube chat resumes only owned residents, preserving drafts and waiting for saved recovery', async t => {
+  const page = await fixture(t, { mobile: true }); await openChat(page); await selectAgent(page);
+  await prompt(page).fill('A new message after recovery');
+  await page.evaluate(() => {
+    holdResume = true;
+    residents = residents.map(row => row.key === 'local:ada' ? { ...row, status: 'paused' } : row);
+    ui.setAgents(residents);
+  });
+  const resume = page.locator('.cube-native-chat').getByRole('button', { name: 'Resume', exact: true });
+  assert.equal(await resume.isVisible(), true); assert.equal(await prompt(page).isDisabled(), true);
+  await resume.click(); await page.waitForFunction(() => Boolean(pending.resume));
+  assert.equal(await resume.isDisabled(), true); assert.equal(await target(page).isDisabled(), true);
+  assert.equal(await page.evaluate(() => calls.filter(call => call.type === 'agent-send').length), 0);
+  await page.evaluate(() => pending.resume.resolve());
+  await page.waitForFunction(() => !document.querySelector('[aria-label="World message"]').disabled);
+  assert.equal(await resume.isVisible(), false);
+  assert.equal(await prompt(page).inputValue(), 'A new message after recovery');
+  assert.equal(await prompt(page).evaluate(element => document.activeElement === element), true);
+
+  await page.evaluate(() => {
+    residents = residents.map(row => row.key === 'peer:remote' ? { ...row, status: 'paused', canResume: true } : row);
+    ui.setAgents(residents);
+  });
+  await target(page).selectOption('peer:remote');
+  assert.equal(await resume.isVisible(), false);
+  assert.match(await page.locator('.cube-native-chat .cube-native-note').innerText(), /Only its owner can resume/);
+  assert.equal(await prompt(page).isDisabled(), true);
+  await page.evaluate(() => [...document.querySelectorAll('.cube-native-chat button')].find(button => button.textContent === 'Resume').click());
+  assert.equal(await page.evaluate(() => calls.filter(call => call.type === 'resume').length), 1);
+
+  await target(page).selectOption('local:paused');
+  const acknowledge = page.locator('.cube-native-chat').getByRole('button', { name: 'Acknowledge and resume', exact: true });
+  assert.equal(await acknowledge.isVisible(), true);
+  assert.match(await page.locator('.cube-native-chat .cube-native-note').innerText(), /old request will not replay/);
+  await page.evaluate(() => { holdResume = false; failResume = true; }); await acknowledge.click();
+  await page.locator('.cube-native-chat [role="status"]').filter({ hasText: 'Resume was not saved' }).waitFor();
+  assert.equal(await prompt(page).isDisabled(), true); assert.equal(await acknowledge.isEnabled(), true);
+  assert.equal(await page.evaluate(() => calls.filter(call => call.type === 'agent-send').length), 0);
 });
 
 test('Residents is one accessible roster with owner-only movement/recovery/removal and spawn defaults', async t => {

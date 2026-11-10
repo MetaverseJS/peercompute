@@ -38,6 +38,20 @@ export class AgentRuntime {
   }
   async list(options) { this.#open(); return (await this.store.list(options)).map((head) => this.#view(head)); }
   async get(id) { this.#open(); return this.#view(await this.store.get(id)); }
+  async #consecutiveFailures(id) {
+    let count = 0;
+    for (let after; ;) {
+      const page = await this.store.events(id, { after, limit: 100 });
+      for (const event of page) {
+        if (event.ownerResumed === true) count = 0;
+        else if (event.type === 'failed') count++;
+        else if (event.type !== 'request' && event.type !== 'edited') count = 0;
+      }
+      if (page.length < 100) break;
+      after = page.at(-1).sequence;
+    }
+    return count;
+  }
   events(id, options) { this.#open(); return this.store.events(id, options); }
   getAttachment(id, attachmentId) { this.#open(); return this.store.getAttachment(id, attachmentId); }
   subscribe(listener) { this.#open(); this.listeners.add(listener); return () => this.listeners.delete(listener); }
@@ -171,6 +185,7 @@ export class AgentRuntime {
           entry.generation = Promise.resolve(this.inference.generate(candidate, { ...packed, requestId }, {
             signal: combined, onProgress: progress, onToken: (text) => {
               if (combined.aborted) return;
+              if (text) entry.outputStarted = true;
               const event = { type: 'token', agentId: id, text };
               this.#emit(event); try { Promise.resolve(entry.onEvent?.(event)).catch(() => {}); } catch { /* Rendering is not execution. */ }
             },
@@ -196,21 +211,34 @@ export class AgentRuntime {
             ...(imageId ? { imageAttachmentId: imageId } : {}) };
         } catch (error) {
           if (!this.unsaved.has(id)) {
-            const status = error.committed ? 'outcome-unknown' : combined.aborted ? 'cancelled' : 'failed';
+            // Acceptance by a peer is not generation. This explicit preflight
+            // rejection guarantees no output; generic committed errors do not.
+            const rejectedInput = error.code === 'ERR_MODEL_CONTEXT_BUDGET' && !entry.outputStarted && !combined.aborted;
+            const status = rejectedInput ? 'failed' : error.committed ? 'outcome-unknown' : combined.aborted ? 'cancelled' : 'failed';
+            // Each caller must submit a new task: readiness never replays the
+            // failed one. A durable three-failure streak requires owner Resume.
+            let nextStatus = 'paused';
+            if (status === 'failed') {
+              try { if (await this.#consecutiveFailures(id) < 2) nextStatus = 'waiting'; }
+              catch { /* Missing history cannot justify automatic recovery. */ }
+            }
             const text = String(error.message ?? error).slice(0, 2048);
             try {
-              await this.#save(id, saved, { head: { ...saved, status: 'paused' },
+              await this.#save(id, saved, { head: { ...saved, status: nextStatus },
                 ...(prepared ? { operation: { id: requestId, status, ...(entry.route ? { route: entry.route } : {}) } } : {}),
                 event: { type: status, operationId: requestId, text, ...(entry.route ? { route: entry.route } : {}),
                   ...(!prepared ? { dispatched: false } : {}) } });
             } catch { /* #save preserves the failed checkpoint for explicit reconciliation. */ }
-            if (!this.unsaved.has(id)) this.#activity(id, { status: 'paused', error: text, ...(entry.route ? { route: entry.route } : {}) });
+            if (!this.unsaved.has(id)) {
+              entry.failureHandled = true;
+              this.#activity(id, { status: nextStatus, error: text, ...(entry.route ? { route: entry.route } : {}) });
+            }
           }
           throw error;
         }
       }, { signal });
     } catch (error) {
-      if (!this.unsaved.has(id)) this.#activity(id, { status: 'paused', error: String(error.message ?? error).slice(0, 2048) });
+      if (!this.unsaved.has(id) && !entry.failureHandled) this.#activity(id, { status: 'paused', error: String(error.message ?? error).slice(0, 2048) });
       throw error;
     }
   }
@@ -233,10 +261,13 @@ export class AgentRuntime {
       this.#activity(id, { status: 'paused' }); return paused;
     });
   }
-  async resume(id) {
+  async resume(id, { signal } = {}) {
     this.#open();
     if (this.entries.has(id)) throw failure('Wait for cleanup before resuming', 'ERR_AGENT_BUSY');
-    return this.store.withRun(id, async ({ head }) => {
+    return this.store.withRun(id, async ({ head, signal: lockSignal }) => {
+      const combined = signal ? AbortSignal.any([signal, lockSignal]) : lockSignal;
+      combined.throwIfAborted();
+      if (head.authority.hostId !== this.store.hostId) throw failure('This agent belongs to a different local installation', 'ERR_AGENT_AUTHORITY');
       const pending = this.unsaved.get(id);
       let next;
       if (pending) {
@@ -249,16 +280,17 @@ export class AgentRuntime {
           if (head.pendingOperation?.id === change.operation.id) change.operation.status = 'outcome-unknown';
           else { delete change.operation; change.event = { type: 'cancelled', text: 'Unsent task discarded while retrying an unsaved checkpoint.' }; delete change.attachments; }
         }
-        next = await this.store.commit(id, { expectedRevision: head.revision, ...change });
+        change.event = { ...change.event, ownerResumed: true };
+        next = await this.store.commit(id, { expectedRevision: head.revision, ...change }, { signal: combined });
         this.unsaved.delete(id);
       } else {
         next = await this.#save(id, head, { head: { ...head, status: 'waiting' },
           ...(activeOperation(head) ? { operation: { ...head.pendingOperation, status: 'outcome-unknown' } } : {}),
           event: { type: activeOperation(head) ? 'outcome-unknown' : 'resumed',
-            text: activeOperation(head) ? 'Interrupted operation acknowledged; no task was replayed.' : 'Ready for a new direct task; no task was started.' } });
+            text: activeOperation(head) ? 'Interrupted operation acknowledged; no task was replayed.' : 'Ready for a new direct task; no task was started.' } }, combined);
       }
       this.#activity(id, { status: 'waiting' }); this.#emit({ type: 'changed', agentId: id, head: next }); return next;
-    });
+    }, { signal });
   }
   async dispose() {
     if (this.disposing) return this.disposing;

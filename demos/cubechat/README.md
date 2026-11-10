@@ -45,6 +45,20 @@ target, distance, progress, blockage and actual worker backend. **Stay here**
 stops it immediately. The optional **Roam (scripted)** setting remains a separate
 baseline. Movement does not require the language model to run every frame.
 
+Long GGUF conversations fit the loaded model's context by leaving older complete
+turns out of the current request; saved conversations and memories stay intact.
+The runtime measures the native chat template using a private one-token probe
+whose text is discarded, then reserves room for the reply. This costs additional
+model work. Instructions or a current message that cannot fit receive a specific
+error rather than being silently cut.
+
+A resident returns to ready after its first two settled request failures and
+pauses after the third consecutive failure. A successful reply resets that count.
+Tap a paused cube you own and use **Resume** in its chat to accept new messages;
+failed messages are never replayed automatically. Other players cannot resume
+your resident. Deliberate pauses, uncertain outcomes and unsaved changes retain
+their recovery protections.
+
 Use **Edit** on a resident you own to change its name, personality, goals,
 appearance and preferences while retaining its identity and memories. **Clone to
 this node** creates your own independently active resident from an owner's shared

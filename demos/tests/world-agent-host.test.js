@@ -139,6 +139,30 @@ async function boot() {
     await start();
 }
 
+test('native chat Resume is owner-only and never dispatches a previous request', async t => {
+  const page = await fixture(t);
+  const result = await page.evaluate(async () => {
+    const head = await host.spawn({ name: 'Ada' }), key = `local:${head.agentId}`;
+    await agents.pause(head.agentId); await host.openConversation(key);
+    await callbacks.onResume(key);
+    const resumed = await agents.get(head.agentId), resumedStatus = view.status;
+    networkOptions.onDirectory([{ agentId: 'remote', ownerPeerId: 'visitor', name: 'Peer resident',
+      position: [25, 3, 5], color: '#8fffd4', status: 'paused', canResume: true }]);
+    await host.openConversation('visitor:remote');
+    let denied;
+    try { await callbacks.onResume('visitor:remote'); } catch (error) { denied = error.message; }
+    return { resumed, resumedStatus, denied, bodies: host.getStatus().bodies, calls, status: view.status,
+      hasRemoteResumeCallback: Object.hasOwn(networkOptions, 'resume') };
+  });
+  assert.equal(result.resumed.status, 'waiting'); assert.equal(result.resumed.pendingOperation, null);
+  assert.match(result.denied, /Only the owner/);
+  assert.equal(result.bodies.find(body => !body.local).status, 'paused');
+  assert.equal(result.calls.some(call => Array.isArray(call) && ['generate', 'remote-request'].includes(call[0])), false);
+  assert.equal(result.hasRemoteResumeCallback, false);
+  assert.match(result.resumedStatus, /No previous request was replayed/);
+  assert.equal(result.status, 'Paused. Only its owner can resume this resident.');
+});
+
 test('navigation inspection is owner-local, visibility-gated and stops polling on disposal', async t => {
   const page = await fixture(t);
   const key = await page.evaluate(async () => {

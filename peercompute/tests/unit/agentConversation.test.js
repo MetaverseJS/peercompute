@@ -109,6 +109,18 @@ test('plaintext connections cannot query or execute agents', { timeout: 15000 },
   assert.equal(owner.received.length, 0);
 });
 
+test('authenticated visitors cannot send a Resume command to another resident owner', { timeout: 15000 }, async t => {
+  const [client, owner] = await fixture(t);
+  owner.agents = [{ ...body(), status: 'paused', canResume: true, error: 'private failure' }];
+  const records = await client.service.refresh();
+  assert.deepEqual(records, [{ ...body(), status: 'paused', ownerPeerId: owner.node.peerId.toString() }]);
+  const request = envelope(client, owner, { type: 'resume' }); delete request.prompt;
+  const response = await raw(client, owner, request);
+  assert.equal(response.type, 'error'); assert.match(response.message, /Unknown.*operation/);
+  assert.equal(owner.received.length, 0); assert.equal(owner.agents[0].status, 'paused');
+  assert.equal(typeof client.service.requestResume, 'undefined');
+});
+
 test('UTF-8 prompt limits and 64KiB replies hold even when JSON escaping would exceed frame bounds', { timeout: 15000 }, async (t) => {
   const [client, owner] = await fixture(t); owner.agents = [body()];
   assert.throws(() => client.service.request(owner.node.peerId.toString(), { agentId: 'ada', prompt: 'é'.repeat(8193) }), /bounds/);

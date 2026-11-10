@@ -177,7 +177,7 @@ test('worker re-probes CID bytes before native initialization and rejects substi
     createReader: () => ({ read: (path, offset, length) => ranged(f)(offset, length), close() { closed++; }, getStats: () => ({}) }),
     loadEngine: async () => { engines++; return { files: [{ name: 'model.gguf' }],
       evidence: { offload: { gpuLayers: 1, totalLayers: 1 } }, memoryBytes: () => 0,
-      action: async () => ({ success: true }), close() {} }; },
+      action: async () => ({ success: true, n_ctx: 2048 }), close() {} }; },
   });
   assert.equal((await runtime({ command: 'load', sessionId: 'hub_test', manifestCid: cid, manifest: source,
     runtimeAssets: { wasm: '/wllama.wasm' } }, {})).status, 'ready');

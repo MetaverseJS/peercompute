@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { compactWorldContext, createWorldExperience } from '../shared/agents/WorldExperience.js';
+import { compactWorldContext, createWorldExperience, WORLD_PROMPT_CONTEXT_BYTES } from '../shared/agents/WorldExperience.js';
 import { WORLD_INTENT_INSTRUCTIONS, WORLD_INTENT_LEGACY_SUFFIX } from '../shared/agents/WorldIntent.js';
 
 function fixture() {
@@ -133,4 +133,38 @@ test('new turns retain raw prompts and validated senses while reusing verified o
   assert.equal(saved.where[0], 10.123456789); assert.match(saved.text, /trained-hash/); assert(saved.source.eventId);
   assert.equal(f.episodes.filter(item => item.kind === 'heard').some(item => item.text.includes('response format')), false);
   await f.experience.dispose();
+});
+
+test('long recalled passages are bounded excerpts while durable memories and current prompts remain complete', async () => {
+  const f = fixture(), original = 'A remembered detail about the garden. '.repeat(32);
+  for (let i = 0; i < 6; i++) await f.turn({ prompt: `${i}: ${original}` });
+  const before = structuredClone(f.episodes);
+  const prompt = 'Please follow me, and remember our conversation.';
+  const turn = await f.turn({ prompt }), context = JSON.parse(turn.worldContext);
+  assert.equal(turn.prompt, prompt);
+  assert(new TextEncoder().encode(turn.worldContext).length <= WORLD_PROMPT_CONTEXT_BYTES);
+  assert(context.memories.length > 0 && context.memories.length < 6);
+  assert(context.memories.every(memory => memory.excerpted && new TextEncoder().encode(memory.text).length <= 240));
+  assert(context.omitted.memories > 0);
+  assert.deepEqual(f.episodes.slice(0, before.length), before);
+  assert.equal(f.episodes[0].text, `0: ${original}`);
+  assert.equal(context.senses.requesterId, 'human:visitor');
+  await f.experience.dispose();
+});
+
+test('crowded prompt context keeps the current requester and explicit omissions without mutating sensing evidence', () => {
+  const participants = Array.from({ length: 24 }, (_, i) => ({ id: `human:${i}-${'x'.repeat(60)}`,
+    name: `Participant ${i}`, kind: 'human', position: [i, 3, i], relativePosition: [i, 0, i], velocity: [0, 0, 0], distance: i }));
+  const senses = { self: { id: 'resident:owner:ada', position: [0, 3, 0] }, requesterId: participants.at(-1).id,
+    participants, obstacles: Array.from({ length: 12 }, (_, i) => ({ position: [i, 0, i], radius: 3 })) };
+  const scene = { kind: 'public-room-chat', world: 'CubeChat', residents: participants,
+    messages: Array.from({ length: 10 }, (_, i) => ({ id: `message-${i}`, peerId: 'visitor', name: 'Pat', text: 'Long room message. '.repeat(80) })) };
+  const before = structuredClone({ scene, senses });
+  const context = compactWorldContext({ scene, senses });
+  assert(new TextEncoder().encode(JSON.stringify(context)).length <= WORLD_PROMPT_CONTEXT_BYTES);
+  assert.equal(context.senses.requesterId, senses.requesterId);
+  assert(context.senses.participants.some(person => person.id === senses.requesterId));
+  assert(context.omitted.participants > 0 && context.omitted.sceneDetail > 0);
+  assert(context.scene.messages.every(message => message.excerpted));
+  assert.deepEqual({ scene, senses }, before);
 });

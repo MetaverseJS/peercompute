@@ -1409,3 +1409,16 @@ Fresh96/100 reaching and20/20 following cases pass; actual Qwen come/follow
 commands and native stop pass with physical memory receipts. Transient agent
 task instructions and compact prompt projection fix repeated instruction growth
 without clearing history. Internal CubeChat5176 updated; no public build or push.
+
+November9 user reports continuing context-budget errors and frequent resident
+pauses, while following works. Add actual GGUF context fitting and recoverable
+request handling, plus local/remote Resume in the native chat opened from a cube.
+Preserve durable memory and owner control over deliberate pause/unknown outcomes
+unless user explicitly changes that policy. Validate actual long conversations
+and peer recovery, update internal previews only; no Pages publication or push.
+
+Clarification during this work: automatically resume after settled errors until
+three consecutive failed requests, then pause. A successful response or explicit
+owner Resume resets the streak. Users cannot resume someone else's paused peer;
+the native chat Resume control is owner-only. This replaces the earlier proposed
+remote-resume action. Never replay a failed request automatically.

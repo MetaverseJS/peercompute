@@ -261,7 +261,9 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
           ? originalWorldPrompt(event.text) : parseWorldReply(event.text).text })));
     }
     showMessages(key);
-    ui.setStatus(descriptor.status === 'paused' ? 'Paused. Resume to start a new conversation.' : `Talk to ${descriptor.name}.`);
+    ui.setStatus(descriptor.status === 'paused'
+      ? descriptor.local ? 'Paused. Resume to start a new conversation.' : 'Paused. Only its owner can resume this resident.'
+      : `Talk to ${descriptor.name}.`);
   }
   async function spawn({ name, goals = [], localOnly = false, shared = true, appearancePrompt = '', respondToWorldChat = false, initiateConversations = false,
     instructions, shareMemories = false, sharePrivateMemories = false, allowCloning = shareMemories, movement = 'stationary' }) {
@@ -560,9 +562,10 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     await refreshLocal(); ui.setStatus('Body removed. Agent identity and memory are still saved.');
   }
   async function resume(key) {
-    requireConversationIdle();
+    await ready; alive(); requireConversationIdle();
     const body = bodies.get(key); if (!body?.local) throw new Error('Only the owner can resume this agent');
     await agents.resume(body.agentId); await refreshLocal(); await select(key);
+    ui.setStatus(`${body.name} is ready for a new message. No previous request was replayed.`);
   }
   async function converse({ key, text, voiceReply, signal }) {
     signal.throwIfAborted();

@@ -2,6 +2,10 @@ import { parseWorldReply, validateWorldIntent, WORLD_INTENT_INSTRUCTIONS, WORLD_
 
 const encoder = new TextEncoder();
 const size = value => encoder.encode(JSON.stringify(value)).length;
+// Optional observations must leave room for identity, the current message and
+// output in small language models. The worker still measures the real tokens.
+export const WORLD_PROMPT_CONTEXT_BYTES = 3072;
+const MEMORY_PROMPT_BYTES = 1024;
 function excerpt(value, maximum) {
   let result = '';
   for (const ch of String(value ?? '')) { if (encoder.encode(result + ch).length > maximum) break; result += ch; }
@@ -37,15 +41,39 @@ export function compactWorldContext({ scene = {}, senses, memories = [] }) {
     if (item.kind === 'action-outcome' && source.kind === 'verified-action') {
       text = text?.replace(/ Policy [^;]+; backend [^.]+\./, '');
     }
+    text = String(text ?? '');
+    const originalOutcome = String(item.outcome ?? '');
+    const brief = excerpt(text, 240), outcome = excerpt(originalOutcome, 200);
     return { kind: item.kind, when: item.when, who: { ...(id ? { id } : {}), ...(who.name ? { name: who.name } : {}) },
-      where: rounded(item.where), outcome: item.outcome, text, source };
+      where: rounded(item.where), outcome, text: brief, source,
+      ...(brief !== text || outcome !== originalOutcome ? { excerpted: true } : {}) };
   }) };
-  // Retrieval relevance order is preserved. Old episodes yield to live senses
-  // and the current room conversation, just as in the full adapter budget.
-  while (size(context) > 8192 && context.memories.length) context.memories.pop();
-  if (size(context) > 8192) context.scene = { note: 'Older scene context omitted to retain current senses',
-    ...(scene.messages ? { messages: rounded(scene.messages.slice(-2)) } : {}) };
-  if (size(context) > 8192) throw new Error('Resident context exceeds its conversation budget');
+  const omitted = {};
+  const mark = key => { omitted[key] = (omitted[key] ?? 0) + 1; context.omitted = omitted; };
+  // Retrieval relevance order is preserved. Full episodes remain in storage;
+  // excerpts and omissions describe this single inference projection only.
+  while (size(context.memories) > MEMORY_PROMPT_BYTES && context.memories.length) {
+    context.memories.pop(); mark('memories');
+  }
+  const oversized = () => size(context) > WORLD_PROMPT_CONTEXT_BYTES;
+  if (oversized()) {
+    context.scene = { ...selected(scene, ['kind', 'world']), note: 'Compact scene; current message is in the user turn',
+      ...(scene.messages ? { messages: scene.messages.slice(-2).map(message => {
+        const text = excerpt(message.text, 256);
+        return { ...selected(message, ['id', 'peerId', 'agentId', 'name']), text,
+          ...(text !== message.text ? { excerpted: true } : {}) };
+      }) } : {}) };
+    mark('sceneDetail');
+  }
+  while (oversized() && context.memories.length) { context.memories.pop(); mark('memories'); }
+  while (oversized() && context.senses.obstacles.length) { context.senses.obstacles.pop(); mark('obstacles'); }
+  while (oversized() && context.senses.participants.length) {
+    const index = context.senses.participants.findLastIndex(item => item.id !== context.senses.requesterId);
+    if (index < 0) break;
+    context.senses.participants.splice(index, 1); mark('participants');
+  }
+  if (oversized()) { context.scene = { note: 'Scene omitted to retain current participant senses' }; mark('sceneDetail'); }
+  if (oversized()) throw new Error('Resident self and current participant observations exceed the conversation budget');
   return context;
 }
 

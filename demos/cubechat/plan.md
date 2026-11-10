@@ -358,3 +358,25 @@ Limits: qualified on planar individual boxes/walls/doorways, not arbitrary mazes
 climbing or online learning. Visual-only geometry has no physics obstacle;
 rotated boxes use conservative bounds. Stop after15seconds without new ground or
 120seconds on an unchanged target. Durable autonomous goals remain the follow-on.
+
+#### Follow-up: conversation budget and Resume in chat
+
+The user confirms successful following but still sees context-budget errors and
+frequent pauses. Finish native measured GGUF history fitting and avoid pausing a
+healthy resident for a rejected over-budget request. Add Resume beside the native
+chat composer when the selected resident is paused. Subsequent user clarification
+makes Resume owner-only: visitors cannot resume another host's resident. Settled
+errors automatically return to ready until three consecutive failed requests;
+success resets the streak. Explicit owner Resume resets it without replaying a
+failed prompt. Deliberate pause and unknown/unsaved outcomes remain protected. Preserve
+history and movement authority; no automatic prompt replay. Actual multi-turn
+model, peer recovery, desktop/mobile and internal-preview acceptance are required.
+
+Context/recovery qualification passes: native measured fitting preserves complete
+stored turns and memories; seven actual Qwen turns retain the latest follow
+request. A4093token current prompt is rejected and the next valid request works.
+First-two-ready/third-paused, owner-only native Resume, success reset, unknown and
+deliberate pauses pass with two actual peers. The shipped native backend samples
+one token even for max_tokens:0, so measurement now explicitly budgets one token
+and discards its text. Model quality remains distinct from context fit. Internal
+preview publication follows; public Pages remains on hold.

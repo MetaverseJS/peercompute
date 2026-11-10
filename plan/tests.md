@@ -4449,3 +4449,38 @@ Exact promoted5176 preview also passes trusted TLS, entry/main asset byte equali
 v4 API, real SecretWorkshop Noise connection and desktop/mobile inspector checks.
 Mobile overflow is checked after the canvas resize, with a bounded5second wait.
 All owned browsers and the temporary5196server closed; persistent previews remain.
+
+### November 9 — context fitting and resident recovery acceptance
+
+- GGUF: a bounded private one-token probe supplies actual templated token
+  counts; reserve requested output, remove oldest complete turns without mutating
+  messages/history, retain system/current user, report trimming, bound retries.
+  Test cancellation/cleanup, oversized fixed payload, native non-context errors
+  and readiness after a rejected request. No invented tokenizer action.
+- Agents: first two settled errors return to ready; the third consecutive error
+  pauses. Success or explicit owner Resume resets the persisted/derived streak.
+  Unknown outcome, persistence failure, owner pause and cleanup remain protected.
+  Native clicked-cube chat exposes owner-only Resume; a visitor cannot resume a
+  remote resident. Test races, no replay and no loss of history. No private history or
+  failure text leaks through public resident descriptors.
+- Browser: actual cached Qwen over-budget history and continued conversation,
+  then oversized-current-prompt rejection followed by a valid request. Two owned
+  peers verify owner chat Resume and forbidden visitor resume, then real follow-up
+  inference. Inspect desktop/mobile UI and console in unique SecretWorkshop rooms.
+  External builds only; verify exact internal HTTPS previews, close owned processes.
+
+Focused current results:47/47GGUF suite,14/14adjacent admission/service,62/62
+agent/protocol,63/63native UI/host and17/17world prompt/intent tests pass (overlap;
+not summed). Actual cached Qwen has26/26GPU layers and2048token context; seven
+resident turns, native overflow recovery and authentic two-peer recovery pass.
+The original zero-token assumption and a near-full repetitive-history model
+quality failure remain recorded. Browser-3 final transport assertion was too
+narrow: WebRTC exposes native DTLS, while the relay reports Noise. Assess corrected
+transport semantics from preserved evidence rather than altering the raw receipt.
+Internal final preview checks and local checkpoint still follow.
+
+Final internal previews:5176desktop/mobile native controls and SecretWorkshop
+connection pass;5189mobile application connection/390px fit pass. Both owned
+browser sessions have zero errors/downloads/cleanup failures. All promoted entry
+bytes match external builds under trusted TLS. CubeChat13.03s, Earth18.33s and
+inference11.08s builds pass. Public Pages remains unchanged.

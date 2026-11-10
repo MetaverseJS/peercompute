@@ -3,10 +3,41 @@ import { normalizeModelMessages } from '../modelTask.js';
 import { MODEL_POLICY, abortError, throwIfAborted, validateSessionId } from '../modelManifest.js';
 import { createGgufEngine, GGUF_NATIVE_READ_BYTES } from './engine.js';
 import { verifyGgufHubWeights } from './hubAdmission.js';
-import { GGUF_RUNTIME_VERSION, ggufRuntimeDefinition, validateGgufCapabilities,
+import { fitGgufContext, GGUF_MEASUREMENT_TOKEN_BUDGET } from './contextBudget.js';
+import { GGUF_CONTEXT_LIMIT, GGUF_RUNTIME_VERSION, ggufRuntimeDefinition, validateGgufCapabilities,
   validateGgufManifest, validateGgufRuntimeAssets, validateGgufRuntimeOptions } from './runtimeDefinition.js';
 
 const byteLength = (text) => new TextEncoder().encode(text).byteLength;
+function resultChunks(response) {
+  if (!response.data_json || response.data_json === 'null') return [];
+  if (typeof response.data_json !== 'string' || byteLength(response.data_json) > 1024 * 1024) {
+    throw new Error('GGUF result exceeds its byte budget');
+  }
+  let parsed;
+  try { parsed = JSON.parse(response.data_json); }
+  catch { throw new Error('GGUF returned invalid result JSON'); }
+  const chunks = Array.isArray(parsed) ? parsed : [parsed];
+  if (chunks.some((chunk) => !chunk || typeof chunk !== 'object' || Array.isArray(chunk))) {
+    throw new Error('GGUF returned invalid result data');
+  }
+  return chunks;
+}
+
+function nativeFailure(chunks, contextTokens) {
+  const body = chunks[0], detail = body?.error ?? body;
+  // Native error messages may contain prompts. Expose only a known category and
+  // validated counts, never the native message or serialized response.
+  const inputTokens = detail?.n_prompt_tokens ?? body?.n_prompt_tokens;
+  const limit = detail?.n_ctx ?? body?.n_ctx;
+  if (detail?.type === 'exceed_context_size_error' && Number.isSafeInteger(inputTokens) && inputTokens >= limit
+      && Number.isSafeInteger(limit) && limit > 0 && limit <= contextTokens) {
+    return Object.assign(new Error('GGUF native prompt exceeds the model context'),
+      { code: 'ERR_GGUF_NATIVE_CONTEXT', inputTokens, contextTokens: limit });
+  }
+  const invalidInput = detail?.type === 'invalid_request_error';
+  return Object.assign(new Error(invalidInput ? 'GGUF rejected the inference request' : 'GGUF native inference failed'),
+    { code: invalidInput ? 'ERR_GGUF_NATIVE_INPUT' : 'ERR_GGUF_NATIVE_FAILURE' });
+}
 function requireManagedWorker() {
   if (typeof WorkerGlobalScope === 'undefined' || !(globalThis instanceof WorkerGlobalScope)) {
     throw new Error('GGUF inference requires a ComputeManager-owned worker');
@@ -21,6 +52,7 @@ function status(entry) {
     runtimeFeatures: entry.engine?.evidence.runtimeFeatures ?? [],
     gpuDispatches: entry.engine?.evidence.dispatches ?? 0, gpuSubmissions: entry.engine?.evidence.submissions ?? 0,
     gpuOffload: entry.engine?.evidence.offload ?? null, runtimeOptions: entry.options,
+    effectiveContextTokens: entry.contextTokens ?? null,
     nativeBuffers: entry.engine?.evidence.buffers ?? [],
     wasmMemoryBytes: entry.engine?.memoryBytes() ?? 0, generatedRequests: entry.generatedRequests,
     artifactReads: entry.reader?.getStats() ?? null };
@@ -62,6 +94,12 @@ export function createGgufTaskRuntime({ loadEngine = createGgufEngine,
         reasoning: false, jinja: true,
       }, context.signal);
       if (!response.success) throw new Error('GGUF native model load failed');
+      // Native contexts may be padded; use the actual bounded allocation rather
+      // than assuming the requested size was honored exactly.
+      if (!Number.isSafeInteger(response.n_ctx) || response.n_ctx < 1 || response.n_ctx > GGUF_CONTEXT_LIMIT) {
+        throw new Error('GGUF native model returned an invalid context capacity');
+      }
+      current.contextTokens = response.n_ctx;
       const offload = current.engine.evidence.offload;
       if (!offload || offload.gpuLayers < 1 || offload.gpuLayers !== Math.min(options.n_gpu_layers, offload.totalLayers)) {
         throw new Error('GGUF did not honor the explicitly configured GPU layer offload');
@@ -99,52 +137,98 @@ export function createGgufTaskRuntime({ loadEngine = createGgufEngine,
     current.active = controller; current.status = 'generating'; current.requestId = requestId;
     const dispatches = current.engine.evidence.dispatches;
     const submissions = current.engine.evidence.submissions;
-    let nativeRequest;
-    let completed = false;
-    let text = '', sequence = 0, inputTokens = null, outputTokens = null, finishReason = 'unknown';
-    try {
-      const started = await current.engine.action('completion', { _name: 'cmpl_req', is_chat: true,
-        data_json: JSON.stringify({ messages, stream: true, max_tokens: maxNewTokens,
-          temperature: 0, cache_prompt: false, chat_template_kwargs: { enable_thinking: false } }), files: [],
-      }, controller.signal);
-      if (!started.success || !Number.isInteger(started.req_id)) throw new Error('GGUF failed to start generation');
-      nativeRequest = started.req_id;
-      throwIfAborted(controller.signal);
-      for (let poll = 0; poll < 4096; poll += 1) {
+    let sequence = 0;
+    async function complete(projected, measureOnly) {
+      let nativeRequest, completed = false;
+      let text = '', inputTokens = null, outputTokens = null, finishReason = 'unknown', measuredBytes = 0;
+      try {
         throwIfAborted(controller.signal);
-        const response = await current.engine.action('get_result', { _name: 'gres_req', req_id: nativeRequest }, controller.signal);
+        const started = await current.engine.action('completion', { _name: 'cmpl_req', is_chat: true,
+          data_json: JSON.stringify({ messages: projected, stream: !measureOnly,
+            max_tokens: measureOnly ? GGUF_MEASUREMENT_TOKEN_BUDGET : maxNewTokens,
+            temperature: 0, cache_prompt: false, chat_template_kwargs: { enable_thinking: false } }), files: [],
+        }, controller.signal);
+        if (!started.success || !Number.isSafeInteger(started.req_id) || started.req_id < 0) throw new Error('GGUF failed to start generation');
+        nativeRequest = started.req_id;
         throwIfAborted(controller.signal);
-        if (!response.success || response.is_error) throw new Error('GGUF generation failed or exceeded the context budget; shorten the conversation or request fewer output tokens');
-        if (response.data_json && response.data_json !== 'null') {
-          if (byteLength(response.data_json) > 1024 * 1024) throw new Error('GGUF result exceeds its byte budget');
-          const parsed = JSON.parse(response.data_json);
-          for (const chunk of Array.isArray(parsed) ? parsed : [parsed]) {
+        for (let poll = 0; poll < 4096; poll += 1) {
+          throwIfAborted(controller.signal);
+          const response = await current.engine.action('get_result', { _name: 'gres_req', req_id: nativeRequest }, controller.signal);
+          throwIfAborted(controller.signal);
+          const chunks = resultChunks(response);
+          if (!response.success || response.is_error) throw nativeFailure(chunks, current.contextTokens);
+          for (const chunk of chunks) {
             const nativeReason = chunk.choices?.[0]?.finish_reason ?? chunk.finish_reason;
             if (nativeReason != null) finishReason = ['stop', 'length'].includes(nativeReason) ? nativeReason : 'unknown';
-            const delta = chunk.choices?.[0]?.delta?.content ?? chunk.content ?? '';
+            const choice = chunk.choices?.[0];
+            const delta = choice?.delta?.content ?? choice?.message?.content ?? chunk.content ?? '';
             if (typeof delta !== 'string') throw new Error('Invalid GGUF text chunk');
-            text += delta;
-            if (byteLength(text) > MODEL_POLICY.maxOutputBytes) throw new Error('GGUF output exceeds its byte budget');
-            if (delta && context.emitProgress?.({ type: 'token', sessionId: current.sessionId,
-              requestId, sequence: sequence++, text: delta }) === false) throw new Error('Token consumer rejected output');
+            if (measureOnly) {
+              const reasoning = choice?.delta?.reasoning_content ?? choice?.message?.reasoning_content ?? '';
+              if (typeof reasoning !== 'string') throw new Error('Invalid GGUF measurement result');
+              measuredBytes += byteLength(delta) + byteLength(reasoning);
+              if (measuredBytes > MODEL_POLICY.maxOutputBytes) throw new Error('GGUF measurement exceeds its byte budget');
+              // Never retain, emit, cache or use this sampled text as an answer.
+            } else {
+              text += delta;
+              if (byteLength(text) > MODEL_POLICY.maxOutputBytes) throw new Error('GGUF output exceeds its byte budget');
+              if (delta && context.emitProgress?.({ type: 'token', sessionId: current.sessionId,
+                requestId, sequence: sequence++, text: delta }) === false) throw new Error('Token consumer rejected output');
+            }
             inputTokens = chunk.usage?.prompt_tokens ?? chunk.timings?.prompt_n ?? inputTokens;
             outputTokens = chunk.usage?.completion_tokens ?? chunk.timings?.predicted_n ?? outputTokens;
           }
+          if (!response.has_more) { completed = true; break; }
+          // Yield a task turn so manager cancellation can reach this owned worker.
+          await new Promise((resolve) => setTimeout(resolve, 0));
         }
-        if (!response.has_more) { completed = true; break; }
-        // Yield a task turn so manager cancellation can reach this owned worker.
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        if (!completed) throw new Error('GGUF result polling exceeded its request budget');
+        if (outputTokens !== null && (!Number.isSafeInteger(outputTokens) || outputTokens < 0
+            || outputTokens > (measureOnly ? GGUF_MEASUREMENT_TOKEN_BUDGET : maxNewTokens))) {
+          throw new Error('GGUF returned an over-budget token sequence');
+        }
+        if (measureOnly && (!Number.isSafeInteger(inputTokens) || inputTokens < 0 || outputTokens === null)) {
+          throw new Error('GGUF context preflight did not return valid token usage');
+        }
+        return { text, inputTokens, outputTokens, finishReason };
+      } catch (error) {
+        if (error?.name === 'RuntimeError' || /Model session lost|GPU device lost/.test(error?.message ?? '')) current.lost = true;
+        throw error;
+      } finally {
+        if (nativeRequest !== undefined && !current.lost) {
+          try {
+            if (!completed) await current.engine.action('cancel', { _name: 'cncl_req', req_id: nativeRequest });
+            // A request is not reusable until native cancellation and GPU work
+            // have both settled, even when its caller has already cancelled.
+            await current.engine.settleGpu();
+          } catch {
+            current.lost = true;
+            throw new Error('Model session lost while settling GGUF inference');
+          }
+        }
       }
-      if (!completed) throw new Error('GGUF result polling exceeded its request budget');
-      await current.engine.settleGpu();
+    }
+    try {
+      const fitted = await fitGgufContext({ messages, contextTokens: current.contextTokens,
+        reservedOutputTokens: maxNewTokens, signal: controller.signal,
+        async measure(projected) {
+          try {
+            const measured = await complete(projected, true);
+            return { inputTokens: measured.inputTokens, contextTokens: current.contextTokens, probeOutputTokens: measured.outputTokens };
+          } catch (error) {
+            if (error.code !== 'ERR_GGUF_NATIVE_CONTEXT') throw error;
+            return { inputTokens: error.inputTokens, contextTokens: error.contextTokens, probeOutputTokens: 0 };
+          }
+        },
+        onMeasured: (budget) => context.emitProgress?.({ type: 'context-budget', sessionId: current.sessionId, requestId, ...budget }),
+      });
+      throwIfAborted(controller.signal);
+      const result = await complete(fitted.messages, false);
       throwIfAborted(controller.signal);
       if (current.lost) throw new Error('GPU device lost; model session is unavailable');
-      if (outputTokens !== null && (!Number.isSafeInteger(outputTokens) || outputTokens > maxNewTokens)) {
-        throw new Error('GGUF returned an over-budget token sequence');
-      }
       current.generatedRequests += 1;
-      return { sessionId: current.sessionId, requestId, text, inputTokens, outputTokens,
-        finishReason, contextTruncated: false,
+      return { sessionId: current.sessionId, requestId, ...result,
+        contextTruncated: fitted.contextTruncated, contextBudget: fitted.contextBudget,
         workerId: current.workerId, gpuDispatches: current.engine.evidence.dispatches - dispatches,
         gpuSubmissions: current.engine.evidence.submissions - submissions,
         gpuOffload: current.engine.evidence.offload, artifactReads: current.reader.getStats() };
@@ -157,12 +241,7 @@ export function createGgufTaskRuntime({ loadEngine = createGgufEngine,
       throw error;
     } finally {
       context.signal?.removeEventListener('abort', abort);
-      try {
-        if (!completed && nativeRequest !== undefined && !current.lost) {
-          await current.engine.action('cancel', { _name: 'cncl_req', req_id: nativeRequest });
-        }
-      } catch (error) { current.lost = true; throw new Error(`Model session lost during GGUF cancellation: ${error.message}`); }
-      finally { current.active = null; current.requestId = null; current.status = current.lost ? 'lost' : 'ready'; }
+      current.active = null; current.requestId = null; current.status = current.lost ? 'lost' : 'ready';
     }
   }
 

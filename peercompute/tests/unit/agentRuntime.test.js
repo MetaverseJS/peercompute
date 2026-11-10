@@ -246,14 +246,91 @@ test('several agents execute in FIFO order and disposal waits for late cancellat
   await assert.rejects(task, { name: 'AbortError' }); assert.equal(f.runtime.entries.size, 0);
 });
 
-test('a no-model failure persists a paused activity record without an execution receipt', async (t) => {
+test('a no-model failure returns to waiting without an execution receipt or retry', async (t) => {
   const f = await fixture(t, { inference: { async listCandidates() { return []; } } });
   await f.runtime.resume(f.id);
   await assert.rejects(f.runtime.run(f.id, { prompt: 'Private task' }), { code: 'ERR_AGENT_NO_MODEL' });
   const restored = new AgentRuntime({ store: f.store, inference: f.inference });
-  assert.equal((await restored.get(f.id)).status, 'paused');
+  assert.equal((await restored.get(f.id)).status, 'waiting');
+  assert.equal((await f.runtime.get(f.id)).activity.status, 'waiting');
   const event = (await restored.events(f.id)).at(-1);
   assert.equal(event.type, 'failed'); assert.equal(event.dispatched, false); assert.match(event.text, /No compatible local model/);
   assert.equal((await f.store.operations(f.id)).length, 0); assert.equal(f.calls.filter((item) => item.type === 'generate').length, 0);
   await restored.dispose();
+});
+
+test('three consecutive settled failures pause durably; success and owner Resume reset the streak', async t => {
+  let calls = 0, failing = true;
+  const f = await fixture(t, { inference: { async generate() {
+    calls++; if (failing) throw new Error('Provider unavailable'); return { text: 'Recovered' };
+  } } });
+  await f.runtime.resume(f.id);
+  // Exercise the journal cursor rather than relying on the first events page.
+  for (let i = 0; i < 102; i++) await f.runtime.update(f.id, { name: 'Ada' });
+  for (let i = 0; i < 2; i++) {
+    await assert.rejects(f.runtime.run(f.id, { prompt: `Attempt ${i}` }), /Provider unavailable/);
+    assert.equal((await f.runtime.get(f.id)).status, 'waiting');
+    assert.equal((await f.runtime.get(f.id)).activity.status, 'waiting');
+    assert.equal(calls, i + 1, 'readiness must not replay a failed request');
+  }
+  const reopened = new AgentRuntime({ store: f.store, inference: f.inference });
+  t.after(() => reopened.dispose());
+  await assert.rejects(reopened.run(f.id, { prompt: 'Third attempt' }), /Provider unavailable/);
+  assert.equal((await reopened.get(f.id)).status, 'paused');
+  assert.equal((await reopened.get(f.id)).pendingOperation, null);
+  await assert.rejects(reopened.run(f.id, { prompt: 'Blocked' }), { code: 'ERR_AGENT_PAUSED' });
+  assert.equal(calls, 3);
+  await reopened.resume(f.id); assert.equal(calls, 3);
+  await assert.rejects(reopened.run(f.id, { prompt: 'Fresh attempt' }), /Provider unavailable/);
+  assert.equal((await reopened.get(f.id)).status, 'waiting');
+  failing = false; await reopened.run(f.id, { prompt: 'Success resets' }); failing = true;
+  for (let i = 0; i < 2; i++) {
+    await assert.rejects(reopened.run(f.id, { prompt: 'Separate attempt' }), /Provider unavailable/);
+    assert.equal((await reopened.get(f.id)).status, 'waiting');
+  }
+  await reopened.pause(f.id);
+  await assert.rejects(reopened.run(f.id, { prompt: 'Owner paused' }), { code: 'ERR_AGENT_PAUSED' });
+});
+
+test('confirmed context rejection after peer admission is failed, ready and never replayed', async t => {
+  let calls = 0;
+  const f = await fixture(t, { inference: { async generate(_candidate, _input, callbacks) {
+    calls++; callbacks.onProgress({ type: 'accepted', peerId: 'host' });
+    throw Object.assign(new Error('Input cannot fit'), { code: 'ERR_MODEL_CONTEXT_BUDGET', committed: true });
+  } } });
+  await f.runtime.resume(f.id);
+  await assert.rejects(f.runtime.run(f.id, { prompt: 'Large request' }), { code: 'ERR_MODEL_CONTEXT_BUDGET' });
+  const head = await f.runtime.get(f.id);
+  assert.equal(head.status, 'waiting'); assert.equal(head.activity.status, 'waiting');
+  assert.equal(head.pendingOperation, null); assert.equal(calls, 1);
+  assert.equal((await f.store.operations(f.id))[0].status, 'failed');
+  f.inference.generate = async () => { calls++; return { text: 'New request' }; };
+  await f.runtime.run(f.id, { prompt: 'Smaller separate request' }); assert.equal(calls, 2);
+});
+
+test('context error code cannot hide output already emitted or bypass an unsaved checkpoint', async t => {
+  const f = await fixture(t, { inference: { async generate(_candidate, _input, callbacks) {
+    callbacks.onToken('Partial output');
+    throw Object.assign(new Error('Invalid late budget error'), { code: 'ERR_MODEL_CONTEXT_BUDGET', committed: true });
+  } } });
+  await f.runtime.resume(f.id);
+  await assert.rejects(f.runtime.run(f.id, { prompt: 'Request' }), /Invalid late/);
+  assert.equal((await f.runtime.get(f.id)).status, 'paused');
+  assert.equal((await f.store.operations(f.id))[0].status, 'outcome-unknown');
+  await f.runtime.resume(f.id);
+  f.inference.generate = async () => { throw Object.assign(new Error('Rejected'), { code: 'ERR_MODEL_CONTEXT_BUDGET' }); };
+  const commit = f.store.commit.bind(f.store);
+  f.store.commit = async (id, change, options) => {
+    if (change.event?.type === 'failed') throw new Error('Storage unavailable');
+    return commit(id, change, options);
+  };
+  await assert.rejects(f.runtime.run(f.id, { prompt: 'Rejected' }), { code: 'ERR_MODEL_CONTEXT_BUDGET' });
+  assert.equal((await f.runtime.get(f.id)).activity.unsaved, true);
+  assert.throws(() => f.runtime.run(f.id, { prompt: 'Blocked' }), { code: 'ERR_AGENT_UNSAVED' });
+  f.store.commit = commit;
+  await f.runtime.resume(f.id);
+  for (let i = 0; i < 2; i++) {
+    await assert.rejects(f.runtime.run(f.id, { prompt: 'Fresh attempt' }), { code: 'ERR_MODEL_CONTEXT_BUDGET' });
+    assert.equal((await f.runtime.get(f.id)).status, 'waiting');
+  }
 });

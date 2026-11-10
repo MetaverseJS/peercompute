@@ -185,7 +185,7 @@ test('GPU queue rejection quarantines the native engine before device.lost resol
 });
 
 function fixture({ offload = { gpuLayers: 56, totalLayers: 66 }, abortOnToken = false, trap = false, lateAbort = false, responses } = {}) {
-  const calls = [], requests = []; let closed = false, responseIndex = 0;
+  const calls = [], requests = []; let closed = false, responseIndex = 0, preflight = false;
   const tokens = [];
   const controller = new AbortController();
   const engine = { files: [{ name: 'model.gguf' }], evidence: { offload, dispatches: 0, submissions: 0 },
@@ -195,15 +195,18 @@ function fixture({ offload = { gpuLayers: 56, totalLayers: 66 }, abortOnToken = 
       if (name === 'load') {
         assert.equal(body.n_threads, 1); assert.equal(body.use_mmap, false);
         assert.equal(body.n_ctx, 2048); assert.equal(body.n_batch, 64); assert.equal(body.ctx_shift, false);
-        return { success: true };
+        return { success: true, n_ctx: 2048 };
       }
       if (name === 'completion') {
         if (trap) throw new WebAssembly.RuntimeError('unreachable');
+        preflight = JSON.parse(body.data_json).stream === false;
         return { success: true, req_id: 7 };
       }
       if (name === 'get_result') {
         engine.evidence.dispatches += 3; engine.evidence.submissions += 1;
         if (lateAbort) controller.abort();
+        if (preflight) return { success: true, has_more: false, data_json: JSON.stringify({
+          choices: [{ message: { content: 'Discarded' } }], usage: { prompt_tokens: 20, completion_tokens: 1 } }) };
         if (responses) return responses[responseIndex++];
         return { success: true, has_more: abortOnToken, data_json: JSON.stringify({ choices: [{ delta: { content: 'Hello' } }],
           usage: { prompt_tokens: 3, completion_tokens: 1 } }) };
@@ -217,17 +220,20 @@ function fixture({ offload = { gpuLayers: 56, totalLayers: 66 }, abortOnToken = 
   const load = () => runtime({ command: 'load', sessionId: 'session', manifestCid: cid, manifest: manifest(),
     runtimeAssets: { wasm: '/runtime/wllama.wasm' }, runtimeOptions: { n_gpu_layers: 56 } }, { workerId: 'worker-3' });
   const generate = (options = {}) => runtime({ command: 'generate', sessionId: 'session', requestId: 'request', prompt: 'Hello', maxNewTokens: 8, ...options },
-    { signal: controller.signal, emitProgress(event) { tokens.push(event.text); if (abortOnToken) controller.abort(); } });
+    { signal: controller.signal, emitProgress(event) { if (event.type !== 'token') return;
+      tokens.push(event.text); if (abortOnToken) controller.abort(); } });
   return { runtime, load, generate, calls, tokens, requests };
 }
 
 test('GGUF managed lifecycle keeps the reader resident and requires owned termination on unload', async () => {
   const f = fixture();
   assert.equal((await f.load()).gpuOffload.gpuLayers, 56);
-  const result = await f.generate(); assert.equal(result.text, 'Hello'); assert.equal(result.gpuDispatches, 3);
+  const result = await f.generate(); assert.equal(result.text, 'Hello'); assert.equal(result.gpuDispatches, 6);
   assert.equal(result.workerId, 'worker-3');
   assert.equal(result.finishReason, 'unknown'); assert.equal(result.contextTruncated, false);
-  assert.deepEqual(f.calls, ['load', 'completion', 'get_result']);
+  assert.deepEqual(f.calls, ['load', 'completion', 'get_result', 'completion', 'get_result']);
+  assert.deepEqual(result.contextBudget, { contextTokens: 2048, inputTokens: 20,
+    reservedOutputTokens: 8, removedTurns: 0, preflightCalls: 1, measurementTokens: 1, probeTokenBudget: 1 });
   const unloaded = await f.runtime({ command: 'unload', sessionId: 'session' });
   assert.equal(unloaded.requiresWorkerTermination, true);
   assert.deepEqual(f.calls.slice(-2), ['close-reader', 'close-engine']);
@@ -247,21 +253,21 @@ test('GGUF preserves native completion reasons including EOS at the requested li
     assert.equal(result.finishReason, expected); assert.equal(result.contextTruncated, false);
     assert.equal(result.text, 'Leaves capture sunlight. Roots absorb water.');
     assert.equal(result.outputTokens, 1024);
-    const request = JSON.parse(f.requests.find((entry) => entry.name === 'completion').body.data_json);
+    const request = JSON.parse(f.requests.findLast((entry) => entry.name === 'completion').body.data_json);
     assert.equal(request.max_tokens, 1024); assert.equal(request.cache_prompt, false);
-    assert.equal(f.calls.filter((name) => name === 'completion').length, 1);
+    assert.equal(f.calls.filter((name) => name === 'completion').length, 2);
     await f.runtime({ command: 'unload', sessionId: 'session' });
   }
 });
 
-test('GGUF rejects excessive output budgets before native work and context errors do not trigger retries', async () => {
+test('GGUF rejects excessive output budgets before native work and untyped native errors do not trigger retries', async () => {
   const f = fixture({ responses: [{ success: true, is_error: true, has_more: false,
     data_json: JSON.stringify({ error: { message: 'prompt exceeds context size' } }) }] });
   await f.load();
   await assert.rejects(f.generate({ maxNewTokens: MODEL_POLICY.maxNewTokens + 1 }), /token budget/);
   assert.deepEqual(f.calls, ['load']);
-  await assert.rejects(f.generate({ prompt: 'Explain the life cycle of a sunflower.' }), /context budget; shorten the conversation/);
-  assert.equal(f.calls.filter((name) => name === 'completion').length, 1);
+  await assert.rejects(f.generate({ prompt: 'Explain the life cycle of a sunflower.' }), { code: 'ERR_GGUF_NATIVE_FAILURE' });
+  assert.equal(f.calls.filter((name) => name === 'completion').length, 2);
   assert.equal(f.calls.at(-1), 'cancel');
   assert.equal((await f.runtime({ command: 'status', sessionId: 'session' })).status, 'ready');
   await f.runtime({ command: 'unload', sessionId: 'session' });
