@@ -1467,3 +1467,11 @@ saved memories unchanged until native semantic acceptance.
   preview services restored after crash. Public Pages/build/push remains held.
   Preserve the separate unresolved resident repetition investigation; no failed
   context or sampling experiment is promoted as a fix.
+
+- User clarifies that the failing Personal target is an agent; Global is direct
+  model chat. Same exact Nano host now returns correct direct arithmetic and
+  unrelated fresh Conan riddles with correct journal/current-request delivery.
+  Preserve this context difference separately from earlier literal repetition.
+  Request affected agent instructions/history; do not clear memory or change
+  persona based on an unrelated fixture. No additional runtime patch or public
+  deployment is qualified by the comparison.

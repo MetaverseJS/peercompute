@@ -2104,3 +2104,18 @@ transfer/history checks pass; the actual preview connects to SecretWorkshop and
 fits mobile/desktop. Four crashed internal previews are restored as owned user
 services. Public Pages and push remain held. Repetition is separately unresolved;
 full versus cached-prefix numerical comparisons do not demonstrate cache corruption.
+
+Latest repetition diagnostic: user reports Global answers while Personal repeats.
+Compare native tab requests against the same exact model/host, retaining independent
+histories and distinguishing direct model targets from saved agents. Isolate test
+publication from the public feed. Fresh Nano action-contract removal changes the
+output but still fails arithmetic; it is not a qualified remedy. Local Qwen also
+reproduces the resident fixture, so the broader problem is not remote-only.
+
+User confirms Personal targets a saved agent. Native same-Nano comparison now
+reproduces correct direct Global arithmetic versus irrelevant fresh Conan riddles,
+with correct current prompts and actual journal history. First-turn normalized
+requests differ only by the identity/riddle-goal system message. This fixture does
+not repeat a previous answer verbatim; the original repetition remains unresolved.
+Use the affected current agent's instructions/history for the next comparison.
+No generic cache, transport or history deletion change is justified by this result.
