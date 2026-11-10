@@ -5,7 +5,7 @@ const encoder = new TextEncoder();
 const labels = Object.freeze({ ready: 'Ready', planning: 'Choosing the next step', acting: 'Acting',
   'waiting-for-model': 'Waiting for a model', paused: 'Paused', completed: 'Complete · model assessment', cancelled: 'Cancelled' });
 const terminal = new Set(['completed', 'cancelled']);
-const actions = Object.freeze({ approach: 'Approach', 'look-at': 'Look at', stop: 'Stop' });
+const actions = Object.freeze({ approach: 'Approach', 'look-at': 'Look at', stop: 'Stop', 'move-to': 'Move to saved place' });
 const outcomes = Object.freeze({ arrived: 'Reached stopping distance', stopped: 'Stopped', 'target-lost': 'Target lost',
   blocked: 'Blocked', cancelled: 'Cancelled', failed: 'Failed' });
 const objectiveText = value => typeof value === 'string' ? value.replaceAll('\0', '').slice(0, 1024) : '';

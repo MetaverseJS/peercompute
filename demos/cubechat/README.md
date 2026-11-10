@@ -64,15 +64,22 @@ failed messages are never replayed automatically. Other players cannot resume
 your resident. Deliberate pauses, uncertain outcomes and unsaved changes retain
 their recovery protections.
 
-Expand the experimental **Objective** section on a resident you own in **Residents** to start a task such
-as “Visit Nova, then come back to me.” A language model first writes an ordered
-plan of up to six approach, look-at or stop milestones. It then chooses an action
-for the current milestone using fresh observations. The existing neural motor
-carries it out; only a matching successful physical receipt advances progress.
-The panel shows the saved plan, verified milestones, current step, last physical
-result and the model's separate completion assessment.
+Ask a resident you own for a physical task in its normal chat, for example “go
+far away and then come back.” A separate model decision admits the original
+request to the persistent task planner. The model selects up to six milestones
+from approach, look-at, stop and move-to. CubeChat supplies nearby and distant
+collision-clear ground destinations; the neural motor still chooses movement.
+Fixed destinations and the starting place are saved. An unqualified return or
+“back here” means that starting place; “back to me” follows your current location.
+The chat shows accepted/current-step/blocked/completed status and task controls.
+The **Objective** section in **Residents** also supports explicit assignment and
+shows the complete plan and physical results. Only the owner can assign or
+control persistent tasks. A new task cannot silently replace unfinished work;
+cancel the old task first. Conversational promises do not establish progress:
+only matching physical receipts advance milestones.
 
-**Pause**, **Resume** and **Cancel** control the objective independently of chat.
+**Pause task**, **Resume task** and **Cancel task** are available in owner chat;
+the detailed Objective panel retains the same controls.
 Human conversation takes priority over planning; a new movement command pauses
 the superseded objective. Progress is saved privately before work starts. Reload
 restores it paused. Resume keeps completed milestones, observes the world again
@@ -93,6 +100,16 @@ current subtask while retaining the original goal as context. Model explanations
 can still be generic or copy schema placeholders; physical receipts establish
 the verified progress. Earlier Qwen3.5 2B tests repeated a destination, and that
 model/export/runtime combination remains unqualified for multi-step objectives.
+
+Spatial chat has also completed actual peer-model journeys around a physical
+wall and back to a saved origin, and to an owner who moved after planning. The
+chat's task row reports verified physical progress separately from model speech.
+Small models can still misinterpret destinations or emit invalid plans; one local
+Qwen0.8 run repeatedly rejected valid nearby points. Peer outages can also pause
+work. Reload retained the first completed spatial leg without replay and accepted
+Resume; its final return and live cancellation qualification remain open after
+the test GPU filled. The storage/controller and neural-physics regressions cover
+those paths independently.
 
 Use **Edit** on a resident you own to change its name, personality, goals,
 appearance and preferences while retaining its identity and memories. **Clone to

@@ -1,6 +1,7 @@
 import './cubeWorldUi.css';
 import { createResidentNavigationInspector } from '../../../shared/agents/ResidentNavigationInspector.js';
 import { createResidentGoalControls } from '../../../shared/agents/ResidentGoalControls.js';
+import { createResidentTaskStatus } from '../../../shared/agents/ResidentTaskStatus.js';
 import { normalizeStandingSocialGoal } from '../../../../peercompute/src/peercompute/agents/WorldAgentContracts.js';
 
 let sequence = 0;
@@ -92,7 +93,9 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
   const send = button('Send'); send.type = 'submit';
   const talk = button('Talk'), cancel = button('Cancel'), voiceButton = button('Voice options'), resume = button('Resume');
   const actions = node('div', undefined, 'cube-native-actions'); actions.append(resume, send, talk, cancel, voiceButton);
-  composer.append(prompt, actions); chatBody.append(chatHeader, scopeNote, messages, status, composer);
+  const taskStatus = createResidentTaskStatus({ onPauseGoal, onResumeGoal, onCancelGoal });
+  const taskSnapshots = new Map();
+  composer.append(prompt, actions); chatBody.append(chatHeader, scopeNote, messages, taskStatus.element, status, composer);
   dock.append(launcher, chatBody);
 
   const makeDialog = (title) => {
@@ -219,6 +222,8 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
     }
     // Objective interruption must remain available while inference or movement runs.
     for (const controls of goalControls.values()) controls.setEnabled(!locked && !transition);
+    taskStatus.set(selected, taskSnapshots.get(selected?.key));
+    taskStatus.setEnabled(!locked && !transition);
     target.value = currentKey();
   }
   function renderTargets() {
@@ -360,6 +365,7 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
     const localKeys = new Set(agents.filter(agent => agent.local).map(agent => agent.key));
     for (const [key,inspector] of navigationInspectors) if (!localKeys.has(key)) { inspector.dispose(); navigationInspectors.delete(key); }
     for (const [key, controls] of goalControls) if (!localKeys.has(key)) { controls.dispose(); goalControls.delete(key); }
+    for (const key of taskSnapshots.keys()) if (!localKeys.has(key)) taskSnapshots.delete(key);
     const keysInList = new Set(agents.map(agent => agent.key));
     for (const [key, row] of residentRows) if (!keysInList.has(key)) { row.remove(); residentRows.delete(key); }
     const rows = []; empty.hidden = agents.length > 0;
@@ -474,6 +480,8 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
     if (disposed || !agents.some(agent => agent.key === key && agent.local)
       || (snapshot?.key !== undefined && snapshot.key !== key)) return;
     goalControls.get(key)?.setStatus(snapshot);
+    taskSnapshots.set(key, snapshot);
+    if (selected?.key === key) taskStatus.set(selected, snapshot);
   }
   function setNavigationStatus(key,snapshot) {
     if (disposed || !agents.some(agent => agent.key === key && agent.local)
@@ -638,6 +646,7 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
       drafts.clear(); histories.clear(); movementByKey.clear(); restores.clear(); captionPrimed.clear(); agents = []; roomMessages = [];
       for (const inspector of navigationInspectors.values()) inspector.dispose(); navigationInspectors.clear();
       for (const controls of goalControls.values()) controls.dispose(); goalControls.clear(); residentRows.clear();
+      taskStatus.dispose(); taskSnapshots.clear();
     }
   };
 }

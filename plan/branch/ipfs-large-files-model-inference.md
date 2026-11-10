@@ -1545,3 +1545,18 @@ Personal-guide code and internal preview delivered with model-quality limitation
 all four profile fields have validated persistence paths; actual models saved
 name/goals/appearance but did not reliably place personality traits in instructions.
 Keep full native qualification open and retain failed cases. No Pages or push.
+
+
+### November10 — owner chat spatial task authorization
+
+User approves the next Humunculus slice: ordinary CubeChat chat can assign a
+persistent model-selected spatial journey with an immutable origin and physical
+receipt-based progress. Preserve neural movement, owner-only controls, reload
+without replay and private objectives. Add compact task progress to the native
+chat. Qualify real model and WebGPU movement internally; no Pages deploy or push.
+
+Spatial-chat implementation now runs in internalCubeChat5176 with actual
+peer-model/WebGPU out-and-back/wall and moving-owner proof.266focusedtests pass.
+Keep fullnative reload/cancel qualification open after GPUpreflightblockedreruns;
+keep small-model/network failures separate from verified movement and persistence.
+No Pages or push; localcommit only.

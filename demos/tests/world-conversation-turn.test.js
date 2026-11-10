@@ -187,3 +187,16 @@ test('owner cancellation covers a replacement awaiting the superseded decision c
   assert.equal(f.decisions.length, 1); assert.deepEqual(f.actions, []);
   assert.deepEqual((await f.agents.events(f.body.agentId)).filter(event => event.type === 'result').map(event => event.text), ['Reply 1', 'Reply 2']);
 });
+
+test('owner chat task proposal preserves journaled speech without dispatching a fabricated immediate action', async t => {
+  const f = await fixture(t), prompt = 'Explore a distant place then return here.';
+  f.decide = async options => { assert.equal(options.allowTask, true); return { task: true }; };
+  const result = await f.run(prompt, { allowTask: true });
+  assert.equal(result.task.objective, prompt);
+  assert.equal(result.task.residentRevision, (await f.agents.get(f.body.agentId)).revision);
+  assert.deepEqual(f.actions, []);
+  assert.equal((await f.agents.events(f.body.agentId)).at(-1).text, result.text);
+  f.decide = async () => ({ task: true });
+  const visitor = await f.run('Visitor cannot assign a persistent task.');
+  assert.equal(visitor.task, undefined); assert.match(visitor.text, /Action not started/);
+});

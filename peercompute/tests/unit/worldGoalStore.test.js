@@ -410,3 +410,67 @@ test('stop milestone requires its own acknowledged stopped receipt', async t => 
   assert.deepEqual(record.completedMilestones, [{ index: 0, requestId: 'stop' }]);
   assert.equal(worldGoalMilestonesComplete(record), true);
 });
+
+test('assignment captures an immutable origin across reload and requester reassignment', async t => {
+  const { store, indexedDBImpl } = await fixture(t), originPosition = [12, 4, -20];
+  const saving = store.assign({ ...assignment, originPosition });
+  originPosition[0] = 700;
+  let record = await saving;
+  assert.deepEqual(record.originPosition, [12, 4, -20]);
+  assert.throws(() => change(store, record, { originPosition: [0, 0, 0] }), /patch fields/);
+  record = await start(store, record);
+  record = await planned(store, record, planOf({ label: 'Return to the starting place', type: 'move-to', position: record.originPosition }));
+  record = await change(store, record, { status: 'paused' });
+  await store.close(); const { store: reopened } = await fixture(t, { indexedDBImpl });
+  record = await reopened.get(scope);
+  record = await change(reopened, record, { status: 'ready', requesterId: 'human:new-session' });
+  assert.deepEqual(record.originPosition, [12, 4, -20]);
+  assert.deepEqual(activeWorldGoalMilestone(record).intent, { type: 'move-to', position: [12, 4, -20] });
+  assert.equal(record.pendingAction, null);
+  const sparse = []; sparse.length = 3;
+  for (const position of [null, [0, Infinity, 0], sparse, [0, 0, 0, 0]]) {
+    assert.throws(() => reopened.assign({ ...assignment, agentId: 'invalid-origin', originPosition: position }));
+  }
+});
+
+test('fixed point arrivals require matching requested coordinates and measured XZ proximity before credit', async t => {
+  const { store } = await fixture(t), point = [120, 4, -30];
+  let record = await start(store, await store.assign({ ...assignment, originPosition: [0, 4, 0] }));
+  record = await planned(store, record, planOf({ label: 'Explore east', type: 'move-to', position: point },
+    { label: 'Return to origin', type: 'move-to', position: record.originPosition }));
+  record = await action(store, await decision(store, record), 'outbound');
+  assert.deepEqual(record.pendingAction.intent, { type: 'move-to', position: point, stopDistance: 10 });
+  const arrived = { requestId: 'outbound', type: 'move-to', status: 'arrived', at: 100000,
+    targetPosition: point, position: [126, 100, -22] }; // XZ distance 10; Y is decorative.
+  for (const invalid of [{ ...arrived, targetPosition: [120, 4, -29] }, { ...arrived, position: [126, 4, -21.99] },
+    { ...arrived, position: undefined }, { ...arrived, targetId: 'nova' }, { ...arrived, targetPosition: undefined }]) {
+    await assert.rejects(change(store, record, { status: 'ready', pendingAction: null, lastReceipt: invalid }));
+    assert.deepEqual(await store.get(scope), record);
+  }
+  record = await change(store, record, { status: 'ready', pendingAction: null, lastReceipt: arrived });
+  assert.deepEqual(record.completedMilestones, [{ index: 0, requestId: 'outbound' }]);
+  assert.equal(worldGoalMilestonesComplete(record), false);
+  assert.deepEqual(activeWorldGoalMilestone(record).intent, { type: 'move-to', position: [0, 4, 0] });
+  await assert.rejects(change(store, record, { status: 'completed', modelAssessment: 'Went out, but not back yet.' }), /every planned milestone/);
+  record = await action(store, await decision(store, record), 'return');
+  record = await change(store, record, { status: 'ready', pendingAction: null,
+    lastReceipt: { ...arrived, requestId: 'return', targetPosition: [0, 4, 0], position: [0, 2, 0] } });
+  record = await change(store, record, { status: 'completed', modelAssessment: 'The outbound and return legs each have an arrival receipt.' });
+  assert.equal(worldGoalMilestonesComplete(record), true);
+  assert.deepEqual(record.receipts.map(item => item.targetPosition), [point, [0, 4, 0]]);
+});
+
+test('blocked point receipts preserve the destination without granting progress or replaying it after reload', async t => {
+  const { store, indexedDBImpl } = await fixture(t), point = [70, 4, 90];
+  let record = await start(store, await store.assign(assignment));
+  record = await planned(store, record, planOf({ label: 'Visit clearing', type: 'move-to', position: point }));
+  record = await action(store, await decision(store, record), 'blocked-point');
+  record = await change(store, record, { status: 'paused', pendingAction: null,
+    lastReceipt: { requestId: 'blocked-point', type: 'move-to', targetPosition: point, status: 'blocked', at: 100000,
+      position: [3, 4, 0], reason: 'Terrain blocked the route.' } });
+  await store.close(); const { store: reopened } = await fixture(t, { indexedDBImpl });
+  assert.deepEqual(await reopened.get(scope), record);
+  assert.equal(record.pendingAction, null); assert.deepEqual(record.completedMilestones, []);
+  assert.equal(worldGoalMilestonesComplete(record), false);
+  assert.deepEqual(activeWorldGoalMilestone(record).intent.position, point);
+});

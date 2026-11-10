@@ -1,12 +1,12 @@
 import { agentIdentifier } from './AgentContracts.js';
 import { normalizeWorldPosition } from './WorldAgentContracts.js';
-import { normalizeWorldGoalPlan, worldGoalMilestoneMatchesAction, worldGoalMilestonesComplete,
+import { normalizeWorldGoalPlan, normalizeWorldGoalPosition, worldGoalMilestoneMatchesAction, worldGoalMilestonesComplete,
   WORLD_GOAL_PLAN_LIMITS } from './WorldGoalPlan.js';
 
 export const WORLD_GOAL_LIMITS = Object.freeze({ maxSteps: 8, maxFailures: 3, maxDurationMs: 600_000 });
 export const WORLD_GOAL_STATUSES = Object.freeze(['paused', 'ready', 'planning', 'acting', 'waiting-for-model', 'completed', 'cancelled']);
 const TERMINAL = new Set(['completed', 'cancelled']);
-const ACTIONS = new Set(['approach', 'look-at', 'stop']);
+const ACTIONS = new Set(['approach', 'look-at', 'move-to', 'stop']);
 const RECEIPT_STATUSES = new Set(['arrived', 'stopped', 'target-lost', 'blocked', 'cancelled', 'failed']);
 const MUTABLE = ['requesterId', 'status', 'reason', 'steps', 'failures', 'startedAt', 'deadlineAt', 'nextDecisionAt',
   'pendingDecision', 'pendingAction', 'lastReceipt', 'currentStep', 'modelAssessment', 'plan'];
@@ -40,14 +40,19 @@ export function worldGoalScope(value) {
 }
 const scopeKey = scope => JSON.stringify([scope.worldId, scope.agentId]);
 function intent(value) {
-  fields(value, ['type', 'targetId', 'stopDistance'], 'intent');
+  fields(value, ['type', 'targetId', 'position', 'stopDistance'], 'intent');
   if (!ACTIONS.has(value.type)) throw new TypeError('Invalid goal intent type');
   if (value.type === 'stop') {
-    if (Object.hasOwn(value, 'targetId') || Object.hasOwn(value, 'stopDistance')) throw new TypeError('Goal stop has no target');
+    if (Object.hasOwn(value, 'targetId') || Object.hasOwn(value, 'position') || Object.hasOwn(value, 'stopDistance')) throw new TypeError('Goal stop has no target');
     return { type: 'stop' };
   }
   const stopDistance = value.stopDistance ?? 10;
   if (!Number.isFinite(stopDistance) || stopDistance < 8 || stopDistance > 30) throw new TypeError('Invalid goal stop distance');
+  if (value.type === 'move-to') {
+    if (Object.hasOwn(value, 'targetId')) throw new TypeError('Goal point intent has no participant target');
+    return { type: value.type, position: normalizeWorldGoalPosition(value.position), stopDistance };
+  }
+  if (Object.hasOwn(value, 'position')) throw new TypeError('Goal participant intent has no position');
   return { type: value.type, targetId: text(value.targetId, 320, 'target'), stopDistance };
 }
 function pendingDecision(value) {
@@ -64,7 +69,7 @@ function pendingAction(value) {
       ? { milestoneIndex: integer(value.milestoneIndex, WORLD_GOAL_PLAN_LIMITS.maxMilestones - 1, 'milestone index') } : {}) };
 }
 function receipt(value) {
-  fields(value, ['requestId', 'type', 'targetId', 'status', 'at', 'position', 'reason'], 'receipt');
+  fields(value, ['requestId', 'type', 'targetId', 'targetPosition', 'status', 'at', 'position', 'reason'], 'receipt');
   if (!ACTIONS.has(value.type) || !RECEIPT_STATUSES.has(value.status)) throw new TypeError('Invalid goal receipt outcome');
   if ((value.status === 'stopped' && value.type !== 'stop') || (value.status === 'arrived' && value.type === 'stop')) {
     throw new TypeError('Goal receipt outcome does not match action');
@@ -72,9 +77,17 @@ function receipt(value) {
   const result = { requestId: agentIdentifier(value.requestId, 'receipt ID'), type: value.type,
     status: value.status, at: timestamp(value.at, 'receipt time') };
   if (value.type === 'stop') {
-    if (Object.hasOwn(value, 'targetId')) throw new TypeError('Goal stop receipt has no target');
-  } else result.targetId = text(value.targetId, 320, 'receipt target');
-  if (Object.hasOwn(value, 'position')) result.position = normalizeWorldPosition(value.position);
+    if (Object.hasOwn(value, 'targetId') || Object.hasOwn(value, 'targetPosition')) throw new TypeError('Goal stop receipt has no target');
+  } else if (value.type === 'move-to') {
+    if (Object.hasOwn(value, 'targetId')) throw new TypeError('Goal point receipt has no participant target');
+    result.targetPosition = normalizeWorldGoalPosition(value.targetPosition);
+    if (value.status === 'arrived') result.position = normalizeWorldGoalPosition(value.position);
+  } else {
+    if (Object.hasOwn(value, 'targetPosition')) throw new TypeError('Goal participant receipt has no target position');
+    result.targetId = text(value.targetId, 320, 'receipt target');
+  }
+  if (Object.hasOwn(value, 'position')) result.position = value.type === 'move-to'
+    ? normalizeWorldGoalPosition(value.position) : normalizeWorldPosition(value.position);
   if (Object.hasOwn(value, 'reason')) result.reason = text(value.reason, 512, 'receipt reason', true);
   return result;
 }
@@ -131,9 +144,16 @@ function changedRecord(previous, patch, now) {
   if (!same(next.lastReceipt, previous.lastReceipt)) {
     const action = previous.pendingAction, outcome = next.lastReceipt;
     if (!action || !outcome || outcome.requestId !== action.requestId || outcome.type !== action.intent.type
-        || outcome.targetId !== action.intent.targetId || outcome.at < action.issuedAt || outcome.at > now + 60_000) {
+        || outcome.targetId !== action.intent.targetId
+        || (outcome.type === 'move-to' && !same(outcome.targetPosition, action.intent.position))
+        || outcome.at < action.issuedAt || outcome.at > now + 60_000) {
       throw new Error('Goal receipt does not match its acknowledged action');
     }
+    // Point locomotion is planar. Y is retained for world grounding, but does not
+    // change whether the measured body reached the authorized XZ destination.
+    if (outcome.type === 'move-to' && outcome.status === 'arrived'
+        && Math.hypot(outcome.position[0] - outcome.targetPosition[0], outcome.position[2] - outcome.targetPosition[2])
+          > action.intent.stopDistance) throw new Error('Goal point arrival lies outside its acknowledged stopping distance');
     if (previous.receipts.some(item => item.requestId === outcome.requestId)) throw new Error('Goal receipt request was already settled');
     if (previous.receipts.length >= WORLD_GOAL_LIMITS.maxSteps) throw new Error('Goal receipt budget exhausted');
     if (next.pendingAction) throw new Error('Goal receipt must settle the pending action');
@@ -239,9 +259,10 @@ export class WorldGoalStore {
     return { key: scopeKey(record), record };
   }
   assign(input, { expectedRevision = 0, signal } = {}) {
-    fields(input, ['worldId', 'agentId', 'objective', 'requesterId'], 'assignment');
+    fields(input, ['worldId', 'agentId', 'objective', 'requesterId', 'originPosition'], 'assignment');
     const scope = worldGoalScope({ worldId: input.worldId, agentId: input.agentId });
     const objective = text(input.objective, 1024, 'objective'), requesterId = text(input.requesterId, 320, 'requester');
+    const origin = Object.hasOwn(input, 'originPosition') ? { originPosition: normalizeWorldGoalPosition(input.originPosition) } : {};
     integer(expectedRevision, Number.MAX_SAFE_INTEGER, 'expected revision');
     const now = this._time();
     return this._transaction('readwrite', async store => {
@@ -255,7 +276,7 @@ export class WorldGoalStore {
         await request(store.delete(oldest.key));
       }
       const record = { schema: 'peercompute.world-goal.v1', ...scope, goalId: crypto.randomUUID(), ownerHostId: this.hostId,
-        revision: (previous?.revision ?? 0) + 1, objective, requesterId, status: 'paused', reason: '', steps: 0, failures: 0,
+        revision: (previous?.revision ?? 0) + 1, objective, requesterId, ...origin, status: 'paused', reason: '', steps: 0, failures: 0,
         startedAt: null, deadlineAt: null, nextDecisionAt: null, pendingDecision: null, pendingAction: null,
         lastReceipt: null, receipts: [], plan: null, completedMilestones: [], currentStep: '', modelAssessment: '',
         limits: { ...WORLD_GOAL_LIMITS }, trace: [], createdAt: now, updatedAt: now };

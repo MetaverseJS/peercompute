@@ -4838,3 +4838,35 @@ exercise obstacles, unknown targets, unavailable inference, owner Stop and
 pause/reload/resume without replay. Assert no hidden direct intent injection or
 hardcoded itinerary. These are proposed tests; this recommendation ran no models,
 physics, behavioral tests or builds, and did not reproduce the user's exact turn.
+
+
+### November 10 — spatial tasks from owner chat
+
+Focused suite: worldGoalPlan/Store, world-goal-decision/controller, world-intent/
+intent-decision/conversation-turn/chat-task/experience, cubechat-navigation/
+spatial-targets, world-agent-host, cubechat-native-ui/guide and resident-goal-controls.
+265checks pass. Tests preserve existing suites and explicitly reject guessed
+coordinate bypass, visitor task admission, stale resident revisions, aborted
+IndexedDB admissions and wrong-target/out-of-radius receipts. CPU-reference
+neural weights with real Cannon physics qualify geometry and movement numerics;
+they do not qualify the browser WebGPU worker.
+
+`demos/tests/resident-spatial-browser.mjs` requires explicit SPATIAL_GO=1, trusted
+SPATIAL_ORIGIN, frozen SPATIAL_PROVENANCE, external SPATIAL_EVIDENCE and an owned
+profile. It captures actual inputs/outputs, sampled body movement and physical
+receipts for origin/requester/near/obstacle/cancel/reload/unavailable cases.
+SPATIAL_LOCAL_CID permits only an already cached owned model; no HF downloads.
+Remote cases use ordinary network routing. Failed model/network/harness cases
+remain evidence; no synthetic output or scripted itinerary can establish native
+acceptance. Final results belong in log.md and the CubeChat plan.
+
+Final spatial slice evidence (November10):266/266 focusedchecks,49motor/geometry
+checks,61planner/controllerchecks and Cube/Earth productionbuilds pass. Native
+obstacle1 andrequester2 pass actualpeer planning/assessment, bothphysicallegs and
+managedWebGPU work. Unavailable1 passes no false task/movement. Reload2 establishes
+exact first-leg checkpoint, no replay and acknowledged Resume but harnessrace
+stopped before its secondleg. The race is corrected; reload3/cancel1 preflights
+refused only554MiB freeGPU, beforebrowser/modelwork. These are notpassingfullcase
+results. Near-localcases expose weak-modelplanning; near-peercases failednetwork
+discovery. Keepfailedreports. Internal5176smoke passes79scriptbytechecks, normalTLS,
+SecretWorkshopNoise and desktop/390px UI. Allownedbrowsers/candidateserver close.

@@ -1,4 +1,5 @@
 import { parseWorldReply, validateWorldIntent, WORLD_INTENT_INSTRUCTIONS, WORLD_INTENT_LEGACY_SUFFIX } from './WorldIntent.js';
+import { normalizeWorldGoalPosition } from '../../../peercompute/src/peercompute/agents/WorldGoalPlan.js';
 
 const encoder = new TextEncoder();
 const size = value => encoder.encode(JSON.stringify(value)).length;
@@ -105,12 +106,14 @@ export function createWorldExperience({ worldId, adapter, memory, getBody, onSta
     const result = structuredClone(raw); result.observedAt = now();
     result.participants = result.participants.slice(0, 24);
     result.obstacles = (result.obstacles ?? []).slice(0, 12);
+    if (result.locations) result.locations = result.locations.slice(0, 12);
     while (size(result) > 4608 && result.obstacles.length) result.obstacles.pop();
     while (size(result) > 4608 && result.participants.length) {
       const index = result.participants.findLastIndex(item => item.id !== result.requesterId);
       if (index < 0) break;
       result.participants.splice(index, 1);
     }
+    while (size(result) > 4608 && result.locations?.length) result.locations.pop();
     if (!result.participants.some(item => item.id === result.requesterId)) delete result.requesterId;
     if (size(result) > 4608) throw new Error('Resident self observation exceeds its budget');
     return result;
@@ -190,14 +193,19 @@ export function createWorldExperience({ worldId, adapter, memory, getBody, onSta
   }
   /** Caller checkpoints requestId before invoking this effect. Both chat and
    * objectives use the same fresh target/authority validation and receipt path. */
-  async function applyIntent(turn, value, { requestId = crypto.randomUUID(), valid = () => true } = {}) {
+  async function applyIntent(turn, value, { requestId = crypto.randomUUID(), valid = () => true, authorizedPositions = [] } = {}) {
     turn.signal.throwIfAborted();
     if (closed || !valid() || !getBody(turn.key)?.local) throw new Error('Resident intention is no longer current');
     if (typeof requestId !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/.test(requestId)
         || intentions.has(requestId)) throw new Error('Invalid or duplicate intention request');
     const current = observe(turn.key, turn.speaker?.peerId);
-    const intent = validateWorldIntent(value, { observed: turn.senses, current, now: now() });
+    const intent = validateWorldIntent(value, { observed: turn.senses, current, now: now(), authorizedPositions });
     if (!intent) throw new Error('A physical intention is required');
+    if (intent.type === 'move-to') {
+      if (typeof adapter.validateSpatialTarget !== 'function') throw new Error('This body cannot validate fixed destinations');
+      const checked = normalizeWorldGoalPosition(adapter.validateSpatialTarget(turn.key, intent.position));
+      if (checked.some((v, axis) => v !== intent.position[axis])) throw new Error('The adapter changed the requested destination');
+    }
     intentions.set(requestId, { ...turn, intent, at: now() });
     activeByKey.set(turn.key, { requestId, ...intent });
     while (intentions.size > 64) intentions.delete(intentions.keys().next().value);
@@ -243,15 +251,22 @@ export function createWorldExperience({ worldId, adapter, memory, getBody, onSta
     }
   }
   async function outcome(event) {
-    if (!Array.isArray(event?.position) || event.position.length !== 3
-        || event.position.some(value => !Number.isFinite(value) || Math.abs(value) > 1e8)) return;
+    try { normalizeWorldGoalPosition(event?.position); } catch { return; }
+    const sameTarget = intent => {
+      if (event.targetId !== intent.targetId) return false;
+      if (intent.type !== 'move-to') return event.targetPosition === undefined;
+      try { return normalizeWorldGoalPosition(event.targetPosition).every((v, axis) => v === intent.position[axis]); }
+      catch { return false; }
+    };
     const active = activeByKey.get(event.key);
     // A completed receipt may be awaiting durable goal storage while a newer
     // scene command takes over. Its cancellation still revokes old cleanup.
     if (event.status === 'cancelled' && active?.requestId === event.requestId
-        && active.type === event.type && active.targetId === event.targetId) activeByKey.delete(event.key);
+        && active.type === event.type && sameTarget(active)) activeByKey.delete(event.key);
     const turn = intentions.get(event?.requestId);
-    if (!turn || turn.key !== event.key || event.type !== turn.intent.type || event.targetId !== turn.intent.targetId) return;
+    if (!turn || turn.key !== event.key || event.type !== turn.intent.type || !sameTarget(turn.intent)) return;
+    if (turn.intent.type === 'move-to' && event.status === 'arrived'
+        && Math.hypot(event.position[0] - turn.intent.position[0], event.position[2] - turn.intent.position[2]) > turn.intent.stopDistance) return;
     if (!['arrived', 'stopped', 'target-lost', 'blocked', 'cancelled', 'failed'].includes(event.status)) return;
     const continues = turn.intent.type === 'follow' && ['arrived', 'target-lost'].includes(event.status);
     if (!continues) intentions.delete(event.requestId);
@@ -266,6 +281,7 @@ export function createWorldExperience({ worldId, adapter, memory, getBody, onSta
     const receipt = { key: turn.key, agentId: body.agentId, requestId: event.requestId, type: event.type,
       status: event.status, at: now(), position: [...event.position],
       ...(event.targetId ? { targetId: event.targetId } : {}),
+      ...(turn.intent.type === 'move-to' ? { targetPosition: [...turn.intent.position] } : {}),
       ...(event.reason ? { reason: excerpt(event.reason, 240) } : {}) };
     // Objective checkpoints are independent of best-effort episodic retention.
     // Terminal tracking was removed above before callbacks can stop the motor.
@@ -276,7 +292,7 @@ export function createWorldExperience({ worldId, adapter, memory, getBody, onSta
       ? { peerId: target.peerId || target.ownerPeerId || body.ownerPeerId, ...(target.agentId ? { agentId: target.agentId } : {}), name: target.name }
       : { agentId: body.agentId, peerId: body.ownerPeerId, name: body.name },
     where: event.position, outcome: `${event.type}: ${event.status}`,
-    text: excerpt(`Physical adapter reported ${event.status}${target ? ` near ${target.name}` : ''}. Policy ${event.policyId ?? 'none'}; backend ${event.backend ?? 'none'}.${event.reason ? ` ${event.reason}` : ''}`, 1600),
+    text: excerpt(`Physical adapter reported ${event.status}${target ? ` near ${target.name}` : turn.intent.type === 'move-to' ? ` for destination ${JSON.stringify(turn.intent.position)}` : ''}. Policy ${event.policyId ?? 'none'}; backend ${event.backend ?? 'none'}.${event.reason ? ` ${event.reason}` : ''}`, 1600),
     source: { kind: 'verified-action', eventId: `${event.requestId}:${turn.outcomeSequence}` } });
   }
   const unsubscribe = adapter.subscribeOutcomes(event => {

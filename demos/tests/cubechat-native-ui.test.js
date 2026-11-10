@@ -942,3 +942,25 @@ test('guide controls respect busy state, failed save drafts, and loss of local o
   assert.equal(await roster.getByRole('button', { name: 'Edit Ada', exact: true }).count(), 0);
   assert.equal(await roster.locator('[data-agent-key="local:ada"] [data-standing-status]').count(), 0);
 });
+
+test('resident chat presents owner task progress and interrupt controls without opening Residents', async t => {
+  const page = await fixture(t, { mobile: true });
+  await page.evaluate(() => {
+    ui.open(); ui.select(residents[0]);
+    ui.setGoalStatus('local:ada', { goalId: 'task1', revision: 4, status: 'acting', objective: 'Explore then return.',
+      requesterId: 'human:owner', plan: { version: 1, milestones: [{ label: 'Explore', type: 'move-to', position: [80, 3, 0] }] },
+      completedMilestones: [], receipts: [] });
+  });
+  const task = page.getByRole('region', { name: 'Current resident task' });
+  assert.match(await task.innerText(), /Step 1\/1: Explore/);
+  await task.getByRole('button', { name: 'Pause task' }).click();
+  assert.deepEqual(await page.evaluate(() => calls.find(c => c.type === 'goal-pause')),
+    { type: 'goal-pause', key: 'local:ada', goalId: 'task1', expectedRevision: 4 });
+  await page.evaluate(() => ui.setGoalStatus('local:ada', { goalId: 'task1', revision: 5, status: 'paused', objective: 'Explore then return.', reason: 'Owner paused' }));
+  await task.getByRole('button', { name: 'Resume task' }).click();
+  assert.equal(await page.evaluate(() => calls.find(c => c.type === 'goal-resume').expectedRevision), 5);
+  await page.evaluate(() => ui.select(residents[1]));
+  assert.equal(await task.isVisible(), false);
+  await page.evaluate(() => ui.setGoalStatus('peer:remote', { goalId: 'foreign', revision: 6, status: 'paused' }));
+  assert.equal(await task.isVisible(), false);
+});

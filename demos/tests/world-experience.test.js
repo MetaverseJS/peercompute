@@ -23,6 +23,35 @@ function fixture() {
       conversationId: 'private-visitor', audience: 'private', requesterPeerId: 'visitor', prompt: 'Come here', ...input }) };
 }
 const reply = JSON.stringify({ text: 'I will try.', intent: { type: 'approach', targetId: 'human:visitor' } });
+test('fixed tasks revalidate local geometry and publish only exact destination and actual arrival receipts', async () => {
+  const f = fixture(), originalObserve = f.adapter.observe, target = [96, 12.6, 0], origin = [0, 3, 0], receipts = [];
+  f.adapter.observe = () => ({ ...originalObserve(), spatial: { frame: 'planar-xz', bounds: { min: [-120, -120], max: [120, 120] }, maximumLegDistance: 160 },
+    locations: [] });
+  let blocked = false;
+  f.adapter.validateSpatialTarget = (_key, position) => { if (blocked) throw new Error('Destination now occupied'); return [...position]; };
+  f.experience.subscribeVerifiedOutcomes(receipt => receipts.push(receipt));
+  const turn = await f.turn();
+  await assert.rejects(f.experience.applyIntent(turn, { type: 'move-to', position: target }), /not observed or authorized/);
+  blocked = true;
+  await assert.rejects(f.experience.applyIntent(turn, { type: 'move-to', position: target }, { authorizedPositions: [target] }), /occupied/);
+  assert.equal(f.actions.length, 0);
+  blocked = false;
+  await f.experience.applyIntent(turn, { type: 'move-to', position: target }, { requestId: 'point-task', authorizedPositions: [target] });
+  const action = f.actions.at(-1);
+  for (const invalid of [
+    { targetPosition: origin, position: target },
+    { targetPosition: target, position: [80, 3, 0] },
+    { targetPosition: target, position: [90, , 0] },
+    { targetPosition: target, position: [90, 3, 0], targetId: 'injected' },
+  ]) f.outcome({ ...action, status: 'arrived', ...invalid });
+  await new Promise(resolve => setImmediate(resolve)); assert.equal(receipts.length, 0);
+  f.outcome({ ...action, status: 'arrived', targetPosition: target, position: [89, 500, 0] });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(receipts.length, 1); assert.deepEqual(receipts[0].targetPosition, target);
+  assert.deepEqual(receipts[0].position, [89, 500, 0], 'planar arrival does not pretend decorative terrain height is physics');
+  assert.match(f.episodes.at(-1).text, /destination/);
+  await f.experience.dispose();
+});
 test('only physical receipts create outcome memories, with the original audience and participant', async () => {
   const f = fixture(); const turn = await f.turn(); await f.experience.finish(turn, reply);
   assert.equal(f.actions.length, 1); assert.equal(f.episodes.length, 2); assert.equal(f.episodes[0].kind, 'heard');

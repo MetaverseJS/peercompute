@@ -40,8 +40,8 @@ async function fixture({ decide, dispatch, stop, observe, planFirst = true, canR
   const controller = createWorldGoalController(options); await controller.ready;
   // Most lifecycle cases begin after a real acknowledged fixture-model plan.
   // Plan-stage cases opt out and inspect that first decision explicitly.
-  const assign = async () => {
-    const assigned = await controller.assign({ agentId: 'agent', objective: 'Visit Nova, then return to me.', requesterId: 'human:owner' });
+  const assign = async (input = {}) => {
+    const assigned = await controller.assign({ agentId: 'agent', objective: 'Visit Nova, then return to me.', requesterId: 'human:owner', ...input });
     if (planFirst) { seedingPlan = true; try { await step(); } finally { seedingPlan = false; } }
     return assigned;
   };
@@ -57,7 +57,8 @@ async function fixture({ decide, dispatch, stop, observe, planFirst = true, canR
     const goal = await store.get({ worldId: 'world', agentId: 'agent' });
     const action = goal.pendingAction;
     return controller.receiveReceipt({ agentId: 'agent' }, { requestId: action.requestId, type: action.intent.type,
-      targetId: action.intent.targetId, status, position: [10, 0, 0], ...override });
+      targetId: action.intent.targetId, ...(action.intent.position ? { targetPosition: action.intent.position } : {}),
+      status, position: action.intent.position ?? [10, 0, 0], ...override });
   };
   return { controller, store, options, calls, changes, pending, assign, idle, step, receipt, timers,
     advance: ms => { clock += ms; }, get sensed() { return sensed; },
@@ -451,7 +452,7 @@ test('blocked and lost effects keep the same milestone for model wait or retry w
 test('fresh observation loss or a newer physical revision rejects a selected action before dispatch', async () => {
   for (const changed of ['target', 'revision']) {
     const f = await fixture({ observe(_scope, _input, current) {
-      if (current.readSequence === 3) {
+      if (current.readSequence === 4) {
         if (changed === 'target') current.participants = current.participants.filter(item => item.id !== 'human:nova');
         else current.self.intentRevision++;
       }
@@ -531,4 +532,144 @@ test('plan construction plus six actions and final assessment exactly exhaust th
     const result = await f.step(); assert.equal(result.status, 'completed'); assert.equal(result.steps, 8);
     assert.equal(result.completedMilestones.length, 6); assert.equal(f.pending.length, 6);
   } finally { await f.close(); }
+});
+
+async function spatialFixture({ origin = [4, 2, 6], ...options } = {}) {
+  let position = [...origin], locations = [{ id: 'east-far', name: 'East far clear ground', position: [origin[0] + 96, origin[1], origin[2]] }];
+  const f = await fixture({ planFirst: false,
+    observe(_scope, _input, current) {
+      current.self.position = [...position]; current.locations = structuredClone(locations);
+      current.spatial = { frame: 'planar-xz', bounds: { min: [-250, -250], max: [250, 250] }, maximumLegDistance: 160 };
+      return current;
+    },
+    decide(_scope, { goal, observed }) {
+      if (!goal.plan) return { decision: 'plan', milestones: [
+        { label: 'Go far away', type: 'move-to', position: observed.locations[0].position },
+        { label: 'Return here', type: 'move-to', position: goal.originPosition }] };
+      const next = goal.plan.milestones[goal.completedMilestones.length];
+      return next ? { decision: 'act', intent: { type: 'move-to', position: next.position } }
+        : { decision: 'done', assessment: 'Both fixed destinations have physical arrival evidence.',
+          receiptIds: goal.completedMilestones.map(item => item.requestId) };
+    }, ...options });
+  return { ...f, place(value) { position = [...value]; }, replaceLocations(value) { locations = structuredClone(value); } };
+}
+
+test('fixed-point tasks capture origin before planning and advance only from exact physical arrival receipts', async () => {
+  const f = await spatialFixture();
+  try {
+    const assigned = await f.assign({ objective: 'Go far away and then return here.' });
+    assert.deepEqual(assigned.originPosition, [4, 2, 6]); assert.equal(assigned.plan, null);
+    const planned = await f.step(); assert.deepEqual(planned.plan.milestones[1].position, assigned.originPosition);
+    await f.step(); const leaving = f.pending[0];
+    assert.deepEqual(leaving.authorizedPositions, [[100, 2, 6]]);
+    assert.equal(await f.receipt('arrived', { targetPosition: [101, 2, 6] }), false);
+    assert.equal(await f.receipt('arrived', { position: [4, 2, 6] }), false);
+    assert.equal(await f.receipt('arrived', { position: [NaN, 2, 6] }), false);
+    assert.deepEqual((await f.controller.get('agent')).completedMilestones, []);
+    f.place([100, 4, 6]); f.replaceLocations([]);
+    assert.equal(await f.receipt('arrived', { position: [100, 4, 6] }), true);
+    const returning = await f.step();
+    assert.deepEqual(returning.pendingAction.intent.position, [4, 2, 6]);
+    assert.deepEqual(f.pending[1].authorizedPositions, [[4, 2, 6]]);
+    assert.equal(await f.receipt('arrived', { targetPosition: [100, 2, 6] }), false);
+    f.place([4, 2, 6]); await f.receipt();
+    const finished = await f.step(); assert.equal(finished.status, 'completed');
+    assert.deepEqual(finished.receipts.map(item => item.targetPosition), [[100, 2, 6], [4, 2, 6]]);
+    assert.equal(finished.completedMilestones.length, 2); assert.equal(finished.steps, 4);
+  } finally { await f.close(); }
+});
+
+test('explicit new task skips an old chat cooldown but a later conversation still yields its execution', async () => {
+  const f = await spatialFixture();
+  try {
+    await f.controller.interrupt({ agentId: 'agent' });
+    await f.assign(); await f.step();
+    assert.equal((await f.step()).status, 'acting'); assert.equal(f.pending.length, 1);
+    await f.controller.interrupt({ agentId: 'agent' });
+    f.place([100, 2, 6]); await f.receipt();
+    await f.step(); assert.equal(f.pending.length, 1, 'A later chat retains its cooldown');
+    f.advance(30000); assert.equal((await f.step()).status, 'acting'); assert.equal(f.pending.length, 2);
+  } finally { await f.close(); }
+});
+
+test('point-task reload preserves origin and verified progress while requiring explicit resume with a fresh request', async () => {
+  const f = await spatialFixture(); let second;
+  try {
+    await f.assign(); await f.step(); await f.step(); f.place([100, 2, 6]); await f.receipt(); await f.step();
+    const before = await f.controller.get('agent'), dispatches = [];
+    f.replaceLocations([]);
+    second = createWorldGoalController({ ...f.options, dispatch(_scope, input) { dispatches.push(input); return { applied: true }; } });
+    await second.ready; await second.tick();
+    const restored = await second.get('agent');
+    assert.equal(restored.status, 'paused'); assert.equal(dispatches.length, 0);
+    assert.deepEqual(restored.originPosition, [4, 2, 6]); assert.deepEqual(restored.completedMilestones, before.completedMilestones);
+    await second.resume({ agentId: 'agent', goalId: restored.goalId, expectedRevision: restored.revision, requesterId: 'human:reconnected' });
+    await second.tick();
+    for (let i = 0; i < 100 && second.getStatus().active; i++) await new Promise(resolve => setImmediate(resolve));
+    const resumed = await second.get('agent');
+    assert.equal(resumed.status, 'acting'); assert.equal(resumed.pendingAction.milestoneIndex, 1);
+    assert.notEqual(resumed.pendingAction.requestId, before.pendingAction.requestId);
+    assert.equal(dispatches.length, 1); assert.deepEqual(dispatches[0].intent.position, [4, 2, 6]);
+    assert.deepEqual(resumed.originPosition, before.originPosition); assert.deepEqual(resumed.plan, before.plan);
+    await second.cancel({ agentId: 'agent', goalId: resumed.goalId, expectedRevision: resumed.revision });
+    assert.equal(await second.receiveReceipt({ agentId: 'agent' }, { requestId: resumed.pendingAction.requestId,
+      type: 'move-to', targetPosition: [4, 2, 6], position: [4, 2, 6], status: 'arrived' }), false);
+    assert.equal((await second.get('agent')).status, 'cancelled');
+  } finally { await second?.dispose(); await f.close(); }
+});
+
+test('cancelled or stale task admission does not create a durable objective or return anchor', async () => {
+  const aborted = new AbortController(); aborted.abort();
+  const f = await fixture({ planFirst: false });
+  try {
+    await assert.rejects(f.assign({ signal: aborted.signal }), { name: 'AbortError' });
+    assert.equal(await f.store.get({ agentId: 'agent', worldId: 'world' }), undefined);
+  } finally { await f.close(); }
+  const stale = await fixture({ planFirst: false, observe(_scope, _input, current) { current.observedAt -= 121000; return current; } });
+  try {
+    await assert.rejects(stale.assign(), /stale/);
+    assert.equal(await stale.store.get({ agentId: 'agent', worldId: 'world' }), undefined);
+  } finally { await stale.close(); }
+});
+
+test('admission abort during the origin write rolls it back and abort before resume leaves an inert checkpoint', async () => {
+  const f = await fixture({ planFirst: false }), controller = new AbortController();
+  const assign = f.store.assign.bind(f.store);
+  f.store.assign = (input, options) => { const pending = assign(input, options); controller.abort(); return pending; };
+  try {
+    await assert.rejects(f.assign({ signal: controller.signal }), { name: 'AbortError' });
+    assert.equal(await f.store.get({ agentId: 'agent', worldId: 'world' }), undefined);
+    await f.step(); assert.equal(f.pending.length, 0);
+  } finally { f.store.assign = assign; await f.close(); }
+
+  const g = await fixture({ planFirst: false }), cancellation = new AbortController(), waiting = deferred(), entered = deferred();
+  const originalAssign = g.store.assign.bind(g.store), get = g.store.get.bind(g.store); let assigned = false;
+  g.store.assign = async (...args) => { const value = await originalAssign(...args); assigned = true; return value; };
+  g.store.get = async (scope, options) => {
+    if (assigned && options?.signal) { entered.resolve(); await waiting.promise; }
+    return get(scope, options);
+  };
+  try {
+    const admission = g.assign({ signal: cancellation.signal });
+    await entered.promise; cancellation.abort(); waiting.resolve();
+    await assert.rejects(admission, { name: 'AbortError' });
+    const saved = await get({ agentId: 'agent', worldId: 'world' });
+    assert.equal(saved.status, 'paused'); assert.equal(saved.startedAt, null); assert.equal(saved.plan, null);
+    await g.step(); assert.equal(g.pending.length, 0);
+  } finally { waiting.resolve(); g.store.assign = originalAssign; g.store.get = get; await g.close(); }
+});
+
+test('resident revision changes during admission cannot activate a task from stale chat authority', async () => {
+  for (const changedAt of [1, 2]) {
+    const f = await fixture({ planFirst: false, observe(_scope, _input, current) {
+      current.residentRevision = current.readSequence >= changedAt ? 43 : 42; return current;
+    } });
+    try {
+      await assert.rejects(f.assign({ expectedResidentRevision: 42 }), { code: 'ERR_WORLD_GOAL_ADMISSION_REVISION' });
+      const saved = await f.store.get({ agentId: 'agent', worldId: 'world' });
+      if (changedAt === 1) assert.equal(saved, undefined);
+      else { assert.equal(saved.status, 'paused'); assert.equal(saved.startedAt, null); }
+      await f.step(); assert.equal(f.pending.length, 0);
+    } finally { await f.close(); }
+  }
 });

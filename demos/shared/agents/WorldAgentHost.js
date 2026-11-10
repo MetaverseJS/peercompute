@@ -1,5 +1,6 @@
 import { createWorldExperience } from './WorldExperience.js';
 import { createWorldConversationTurns } from './WorldConversationTurn.js';
+import { admitWorldChatTask, chatTaskFailure } from './WorldChatTask.js';
 import { createWorldSocialInitiative } from './WorldSocialInitiative.js';
 import { createWorldStandingGoalRunner } from './WorldStandingGoal.js';
 import { proposeWorldSelfProfile } from './WorldSelfProfile.js';
@@ -265,8 +266,19 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     const output = await conversations.run({ key: descriptor.key, agentId, turn,
       prompt: turn?.prompt ?? prompt, message: prompt, conversationId, worldContext: turn?.worldContext ?? context,
       taskInstructions: worldKnowledge,
+      allowTask: !requesterPeerId && !!objectives,
       maxNewTokens: 512, signal, valid: current => !disposed && ownsObjective(agentId) && !!bindingOf(current)
         && (!requesterPeerId || bindingOf(current).shared) });
+    if (!requesterPeerId && output.applied) await pauseResidentObjective(agentId);
+    if (output.task) {
+      try {
+        await admitWorldChatTask({ proposal: output.task, message: prompt, agentId,
+          requesterId: `human:${worldNetwork()?.peerId}`, signal,
+          isOwner: () => !requesterPeerId && !disposed && ownsObjective(agentId),
+          getHead: id => agents.get(id), assign: input => objectives.assign(input) });
+      } catch (error) { signal?.throwIfAborted(); output.text += chatTaskFailure(error); }
+      return { text: output.text, finishReason: output.finishReason };
+    }
     // Only a conversation from this installation's owner can reshape a resident.
     // Speech is already journaled; a separate structured proposal cannot rewrite
     // the spoken history or grant itself tools, sharing, or network permissions.
@@ -984,7 +996,8 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
         observe: async ({ agentId }, { goal, signal }) => {
           const key = localKey(agentId), head = await agents.get(agentId);
           signal.throwIfAborted();
-          if (!ownsObjective(agentId) || !head || !bindingOf(head)) throw new Error('The objective has no locally owned body');
+          if (!ownsObjective(agentId) || !head || !bindingOf(head) || head.status === 'paused' || head.recoveryRequired
+              || head.activity?.unsaved) throw new Error('The objective has no available locally owned body');
           const observed = experience.observe(key, worldNetwork()?.peerId);
           if (observed.participants.some(participant => participant.id === goal.requesterId)) observed.requesterId = goal.requesterId;
           else delete observed.requesterId;
@@ -1006,7 +1019,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
           return generateWorldGoalDecision({ inference: agents.inference, head, goal, observed,
             signal: AbortSignal.any([signal, lifetime.signal]) });
         },
-        dispatch: async ({ agentId }, { goalId, requestId, intent, observed }, { signal }) => {
+        dispatch: async ({ agentId }, { goalId, requestId, intent, observed, authorizedPositions }, { signal }) => {
           const conversationId = await worldConversationId(worldId, `objective:${goalId}`);
           const key = localKey(agentId), body = bodies.get(key), head = await agents.get(agentId);
           if (!ownsObjective(agentId) || !bindingOf(head) || head.status === 'paused' || head.recoveryRequired
@@ -1015,7 +1028,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
           }
           const turn = { key, scope: { worldId, agentId, audience: 'private', conversationId }, senses: observed,
             speaker: { peerId: body.ownerPeerId, name: 'Owner' }, signal: AbortSignal.any([signal, lifetime.signal]) };
-          try { return await experience.applyIntent(turn, intent, { requestId, valid: () => !disposed && ownsObjective(agentId)
+          try { return await experience.applyIntent(turn, intent, { requestId, authorizedPositions, valid: () => !disposed && ownsObjective(agentId)
             && !operation && !privateResponses }); }
           finally { objectiveDecisions.delete(goalId); }
         },

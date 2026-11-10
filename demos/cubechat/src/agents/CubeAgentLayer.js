@@ -5,6 +5,7 @@ import { SpeechBubbleLayer } from '../../../shared/world/SpeechBubbleLayer.js';
 import { MOTOR_DYNAMICS as MOTOR } from '../../../shared/agents/motor/motorContracts.js';
 import { CubeResidentMotor } from './CubeResidentMotor.js';
 import { createCubeNavigationSensors } from './CubeNavigationSensors.js';
+import { createCubeSpatialTargets } from './CubeSpatialTargets.js';
 
 const HALF_SIZE = 3;
 const MAX_COORDINATE = 1_000_000;
@@ -90,8 +91,13 @@ export class CubeAgentLayer {
     Object.assign(this, { scene, physics, getPlayerPosition, getParticipants, onSelect, captionDurationMs, maximumAgents, motionFactory, remoteInterpolationSeconds });
     this.entries = new Map(); this.closed = false; this.selectedKey = null; this.intentRevision = 0;
     this.navigationSensors = createCubeNavigationSensors({ physics, getEntries: () => this.entries });
+    this.spatialTargets = createCubeSpatialTargets({ physics, getEntries: () => this.entries, sensors: this.navigationSensors,
+      getBounds: () => Number.isFinite(this.scene.gridSize) && this.scene.gridSize > 7
+        ? { min: [-this.scene.gridSize / 2 + 3.5, -this.scene.gridSize / 2 + 3.5], max: [this.scene.gridSize / 2 - 3.5, this.scene.gridSize / 2 - 3.5] } : null,
+      groundHeight: (x, z) => this.groundHeight(x, z) });
     this.motor = new CubeResidentMotor({ getEntries: () => this.entries,
       observe: key => this.observeParticipants(key, { physical: true }),
+      validateSpatialTarget: (key, position) => this.validateSpatialTarget(key, position),
       senseNavigation: (key, target) => this.navigationSensors.sample(key, target) });
     this.onPhysicsStep = () => this.beforePhysics();
     this.physics.world.addEventListener('preStep', this.onPhysicsStep);
@@ -165,6 +171,7 @@ export class CubeAgentLayer {
   }
   getMotorStatus() { return this.motor.getStatus(); }
   getResidentMotorStatus(key) { return this.motor.getResidentStatus(key); }
+  validateSpatialTarget(key, position) { return this.spatialTargets.validate(key, position); }
 
   /** Shared participant admission; motor reads omit public obstacle/terrain work. */
   observeParticipants(key, { requesterPeerId, physical = false } = {}) {
@@ -223,8 +230,9 @@ export class CubeAgentLayer {
     return { observedAt: Date.now(), self: { id: `resident:${entry.descriptor.ownerPeerId}:${entry.descriptor.agentId}`,
       agentId: entry.descriptor.agentId, ownerPeerId: entry.descriptor.ownerPeerId, name: entry.descriptor.name,
       position, velocity: entry.body.velocity.toArray(), status: entry.descriptor.status, intentRevision: entry.intentRevision,
-      ...(motion ? { motion: { type: motion.type, status: motion.status, targetId: motion.targetId } } : {}) },
-    participants, obstacles,
+      ...(motion ? { motion: { type: motion.type, status: motion.status, targetId: motion.targetId,
+        ...(motion.targetPosition ? { targetPosition: motion.targetPosition } : {}) } } : {}) },
+    participants, obstacles, ...(entry.descriptor.local ? this.spatialTargets.describe(key) : {}),
     ...(requesterPeerId && participants.some(p => p.peerId === requesterPeerId) ? { requesterId: `human:${requesterPeerId}` } : {}) };
   }
 

@@ -41,7 +41,7 @@ async function boot() {
     const { WorldStandingGoalStore } = await import('/peercompute/src/peercompute/agents/WorldStandingGoalStore.js');
     const { cubeGuidePreset, CUBECHAT_GUIDE_FACTS } = await import('/demos/cubechat/src/agents/cubeGuide.js');
     const { WORLD_GOAL_INSTRUCTIONS, WORLD_GOAL_OBSERVATIONS_MARKER } = await import('/demos/shared/agents/WorldGoalDecision.js');
-    const { WORLD_PHYSICAL_INTENT_INSTRUCTIONS, WORLD_PHYSICAL_OBSERVATIONS_MARKER } = await import('/demos/shared/agents/WorldIntentDecision.js');
+    const { WORLD_PHYSICAL_INTENT_INSTRUCTIONS, WORLD_CHAT_TASK_INSTRUCTIONS, WORLD_PHYSICAL_OBSERVATIONS_MARKER } = await import('/demos/shared/agents/WorldIntentDecision.js');
     Object.assign(window, { calls: [], view: {}, speechChunks, worldConversationId });
     const candidate = { key: 'local', local: true, available: true, manifestCid: 'fixture', sessionId: 'fixture', runtime: 'transformers.js',
       task: 'text-generation', modalities: ['text'], outputModalities: ['text'] };
@@ -102,7 +102,7 @@ async function boot() {
                 if (window.profileError) throw Object.assign(new Error('Profile context is too large'), { code: 'ERR_MODEL_CONTEXT_BUDGET' });
                 return { text: JSON.stringify(window.fixtureProfilePatch ?? null), finishReason: 'stop' };
               }
-              if (input.messages?.[0]?.content.startsWith(WORLD_PHYSICAL_INTENT_INSTRUCTIONS + WORLD_PHYSICAL_OBSERVATIONS_MARKER)) {
+              if ([WORLD_PHYSICAL_INTENT_INSTRUCTIONS, WORLD_CHAT_TASK_INSTRUCTIONS].some(prefix => input.messages?.[0]?.content.startsWith(prefix + WORLD_PHYSICAL_OBSERVATIONS_MARKER))) {
                 calls.push(['intent-decision', input]);
                 return { text: JSON.stringify(window.fixtureIntentDecision ?? { intent: null }), finishReason: 'stop' };
               }
@@ -1080,7 +1080,7 @@ test('owner conversation can update a permitted profile while visitors and opt-o
   for (const input of result.speech.slice(1)) {
     assert.match(input.messages[0].content, /WASD moves/);
     assert.match(input.messages[0].content, /Generate face requires an available image model/);
-    assert.match(input.messages[0].content, /separate objective controls/);
+    assert.match(input.messages[0].content, /Owner chat can start/);
     assert.doesNotMatch(input.messages[0].content, /Resident response format/);
   }
   assert.equal(result.events.filter(event => event.type === 'request').length, 3);
@@ -1151,4 +1151,34 @@ test('cold standing-goal discovery does not consume the separate inference deadl
   await page.evaluate(() => { window.setTimeout = originalTimeout; window.waitPreflight = false; finishPreflight(); });
   await page.waitForFunction(() => host.getStatus().bodies[0]?.standingStatus === 'spoken', null, { timeout: 5000 });
   assert.equal(await page.evaluate(() => calls.filter(item => Array.isArray(item) && item[0] === 'public-message').length), 1);
+});
+
+test('owner chat admits original task durably, pauses immediate control and never grants visitors task authority', async t => {
+  const page = await fixture(t);
+  const result = await page.evaluate(async () => {
+    await host.dispose(); window.embodiedFixture = true; await start();
+    const head = await host.spawn({ name: 'Ada', shared: true, selfModifiable: true });
+    const key = 'local:' + head.agentId, prompt = 'Explore a distant place and return to this spot.';
+    window.fixtureIntentDecision = { task: true };
+    await host.send({ key, text: prompt });
+    const goal = await host.getObjective(key);
+    const profiles = calls.filter(c => c[0] === 'profile-decision').length;
+    window.fixtureIntentDecision = { intent: { type: 'stop' } };
+    await host.send({ key, text: 'Stop moving.' });
+    const paused = await host.getObjective(key);
+    const before = calls.filter(c => c[0] === 'intent-decision').length;
+    window.fixtureIntentDecision = { task: true };
+    const visitor = await networkOptions.respond({ agentId: head.agentId, prompt: 'Go away and return.', requesterPeerId: 'visitor' }, { signal: new AbortController().signal });
+    return { key, prompt, goal, profiles, paused, visitor, visitorCalls: calls.filter(c => c[0] === 'intent-decision').slice(before),
+      current: await host.getObjective(key), events: await agents.events(head.agentId) };
+  });
+  assert.equal(result.goal.objective, result.prompt);
+  assert.deepEqual(result.goal.originPosition, [1, 3, 5]);
+  assert.equal(result.goal.status, 'ready'); assert.equal(result.profiles, 0);
+  assert.equal(result.paused.status, 'paused');
+  assert.equal(result.current.goalId, result.goal.goalId);
+  assert.match(result.visitor.text, /Action not started/);
+  assert(!result.visitorCalls[0][1].messages[0].content.includes('Classify the owner'));
+  assert(result.events.some(e => e.type === 'request' && e.text === result.prompt));
+  assert(!result.events.some(e => e.type === 'result' && e.text?.includes('task":true')));
 });

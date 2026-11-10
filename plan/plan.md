@@ -2233,3 +2233,18 @@ already has multi-step persistence but no spatial-point contract. Reuse neural
 movement and receipt-backed milestones, provide honest in-chat task status, and
 qualify actual outbound/return movement before goal-directed social errands.
 Recommendation only; see demos/cubechat/plan.md. No runtime change authorized here.
+
+
+### November 10 — active CubeChat spatial-chat slice
+
+Implementing the authorized chat-to-task path before social errands: owner model
+admission → persistent milestone planner → grounded point/origin or participant
+target → existing neural motor → exact physical receipt. Shared contracts,
+controller and chat task controls are reusable by future Humunculus adapters.
+Implementation complete on internal CubeChat5176:266component checks and
+Cube/Earth builds pass; real peer-model/WebGPU wall-detour/out-and-back and moving
+requester tests pass. Exact preview assets, desktop/mobile UI and SecretWorkshop
+Noise pass. Reload persistence/no replay/Resume acknowledgement is verified;
+remaining return-after-reload and live cancel gates stay open because the GPU
+filled before rerun. Small-model plan quality and intermittent remote discovery
+are recorded limitations. No Pages build/deploy/push.

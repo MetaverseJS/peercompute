@@ -102,3 +102,24 @@ test('cancellation cannot dispatch a late request or apply a model result after 
     assert.equal(generated, phase === 'generation' ? 1 : 0);
   }
 });
+
+test('persistent task admission is an explicit owner capability and preserves the raw request', () => {
+  const message = 'Explore a distant patch of ground and return to this spot.', observed = observation();
+  const owner = projectWorldIntentRequest(message, observed, { allowTask: true });
+  assert.equal(owner.prompt, message);
+  assert.deepEqual(owner.resolve('{"task":true}'), { task: true });
+  for (const value of ['{"task":false}', '{"task":true,"intent":null}', '{"task":"yes"}', '{"task":true,"objective":"different"}']) {
+    assert.throws(() => owner.resolve(value));
+  }
+  assert.throws(() => projectWorldIntentRequest(message, observed).resolve('{"task":true}'));
+  assert.throws(() => owner.resolve('{"task":true}', { now: observed.observedAt + 120001 }));
+  assert.deepEqual(owner.resolve(follow), { intent: { type: 'follow', targetId: 'human:visitor', stopDistance: 10 } });
+});
+
+test('single-action specialist cannot bypass persistent point-task admission using guessed coordinates', () => {
+  const observed = observation(); observed.self.position = [0, 3, 0];
+  observed.spatial = { frame: 'planar-xz', bounds: { min: [-200, -200], max: [200, 200] }, maximumLegDistance: 160 };
+  observed.locations = [{ id: 'known', name: 'Open ground', position: [32, 3, 0] }];
+  for (const allowTask of [true, false]) assert.throws(() => projectWorldIntentRequest('Go there.', observed, { allowTask })
+    .resolve('{"intent":{"type":"move-to","position":[32,3,0]}}'));
+});

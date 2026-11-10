@@ -1,5 +1,5 @@
 import * as CANNON from 'cannon-es';
-import { NAVIGATION_SENSORS, sampleNavigationSensors } from '../../../shared/agents/motor/navigationSensors.js';
+import { NAVIGATION_SENSORS, sampleNavigationSensors, inflateNavigationObstacle } from '../../../shared/agents/motor/navigationSensors.js';
 
 const MAXIMUM_BODIES = 2048;
 
@@ -45,7 +45,11 @@ export function createCubeNavigationSensors({ physics, getEntries }) {
           obstacles.push({ min: [lower.x, lower.z], max: [upper.x, upper.z] });
         }
       }
-      return { ...sampleNavigationSensors({ position, targetPosition, obstacles }),
+      const destinationClear = obstacles.every(obstacle => {
+        const bounds = inflateNavigationObstacle(obstacle);
+        return targetPosition.some((value, axis) => value < bounds.min[axis] || value > bounds.max[axis]);
+      });
+      return { ...sampleNavigationSensors({ position, targetPosition, obstacles }), destinationClear,
         relativePosition: targetPosition.map((value, index) => value - position[index]) };
     },
   };

@@ -39,3 +39,20 @@ test('legacy prompt display only removes the exact known suffix, never a quoted 
   assert.equal(originalWorldPrompt(literal), literal);
   assert.equal(originalWorldPrompt(worldIntentPrompt(literal)), literal);
 });
+
+test('fixed destinations require exact grounded references or a saved task authorization plus current bounds', () => {
+  const position = [96, 12.6, 0], senses = { ...observed, self: { position: [0, 3, 0], intentRevision: 1 },
+    spatial: { frame: 'planar-xz', bounds: { min: [-120, -120], max: [120, 120] }, maximumLegDistance: 160 },
+    locations: [{ id: 'far', position }] };
+  const validate = (value, options = {}) => validateWorldIntent(value, { observed: senses, current: senses, now: 1200, ...options });
+  const intent = { type: 'move-to', position };
+  assert.deepEqual(validate(intent), { ...intent, stopDistance: 8 });
+  for (const bad of [{ ...intent, position: [97, 3, 0] }, { ...intent, targetId: 'human:authenticated-peer' },
+    { ...intent, position: [96, , 0] }, { ...intent, position: Object.assign([96, 3, 0], { x: 1 }) }]) assert.throws(() => validate(bad));
+  const regenerated = { ...senses, locations: [], self: { position: [88, 3, 0], intentRevision: 1 } };
+  const origin = [0, 3, 0];
+  assert.deepEqual(validate({ type: 'move-to', position: origin }, { observed: regenerated, current: regenerated, authorizedPositions: [origin] }).position, origin);
+  assert.throws(() => validate(intent, { current: { ...senses, spatial: undefined } }), /does not support/);
+  assert.throws(() => validate(intent, { current: { ...senses, spatial: { ...senses.spatial, bounds: { min: [-40, -40], max: [40, 40] } } } }), /outside/);
+  assert.throws(() => validate(intent, { current: { ...senses, self: { ...senses.self, position: [-100, 3, 0] } } }), /range/);
+});

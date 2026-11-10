@@ -604,3 +604,36 @@ returns within a defined tolerance, with exact receipts and no false completion.
 Vary start locations, language and distances; cover obstacles, owner movement,
 Stop, model unavailability and pause/reload/resume without replay. This is a
 recommendation, not implementation or deployment authorization.
+
+
+### November 10 — chat-driven spatial tasks implementation
+
+User authorized implementation with “ok do it.” Owner chat now optionally admits
+the untouched request through a separate model specialist into durable objectives.
+Journey interpretation stays model-owned. Point goals use bounded sensed ground
+locations and an immutable origin; participant-role returns remain dynamic.
+The shared contract validates exact requested target and measured planar arrival.
+CubeChat owns its collision geometry, candidates and existing neural motor.
+New generic chat admission and compact task-status components preserve cancellation,
+revision checks, owner-only controls and explicit paused restoration. Direct
+coordinate responses cannot bypass the durable planner.
+
+Final focused266/266 tests and Cube/Earth builds pass. Actual ordinary-chat peer
+runs complete96-unit out-and-back around a physical wall (596WebGPUdispatches),
+and return to an owner moved45units after planning (399dispatches). Both use exact
+physical receipts and actual model assessment. No-model case causes no movement.
+Reload retains first-leg progress/origin/plan, sends no new request before Resume,
+and acknowledges Resume; the test read paused state before the asynchronous
+Resume commit and stopped early. Harness synchronization is corrected, but its
+full retry and native cancellation trial could not launch with only554MiB GPU
+free. Keep those native gates open; component/physics coverage passes.
+
+Small-model planning and intermittent peer discovery/inference remain limitations;
+invalid/uncertain requests pause without false completion. Failed trials and the
+unsuccessful planner-prompt contrast remain recorded. Only the successful neutral
+chat-admission schema contrast was adopted. Internal5176 is updated; exact TLS,
+79loadedscript-byte checks, actual SecretWorkshop Noise and desktop/390px visuals
+pass. No Pages or remote push. Semantic correctness
+of arbitrary plans remains a model-quality question. Each movement leg is bounded
+to160worldunits and six milestones; sampled ground is not a complete world map.
+Earlier guide/profile and network qualifications retain their recorded limitations.

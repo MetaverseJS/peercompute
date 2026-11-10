@@ -8,7 +8,7 @@ export const CUBECHAT_GUIDE_FACTS = Object.freeze([
   'Resident replies can use compatible models loaded on this device or hosted by another online PeerCompute peer.',
   'Voice requires separately enabled speech models and microphone permission. Text chat does not require a microphone.',
   'Saving an appearance description does not generate cube imagery. Generate face requires an available image model.',
-  'Profile goals describe a resident. The separate objective controls start executable movement tasks.',
+  'Profile goals describe a resident. Owner chat can start executable movement tasks, including journeys to nearby ground and back. Task status in chat reports actual progress; Pause, Resume and Cancel control it. Spoken promises are not proof of movement.',
 ]);
 
 export function cubeGuidePreset(worldId) {

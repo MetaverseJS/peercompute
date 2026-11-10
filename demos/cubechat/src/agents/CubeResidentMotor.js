@@ -1,16 +1,21 @@
 import { MOTOR_DYNAMICS as D } from '../../../shared/agents/motor/motorContracts.js';
+import { normalizeWorldGoalPosition } from '../../../../peercompute/src/peercompute/agents/WorldGoalPlan.js';
 
 const clamp = (value, maximum) => Math.max(-maximum, Math.min(maximum, value));
 const validPair = value => Array.isArray(value) && value.length === 2 && value.every(Number.isFinite);
+// Learned settling and floor contact can stop just outside a point's strict
+// receipt radius. Ask the same policy to aim slightly inside it; never enlarge
+// the acknowledged radius or substitute a scripted acceleration.
+const POINT_CONTROL_MARGIN = .6;
 export const CUBE_NAVIGATION_PROGRESS = Object.freeze({ cellSize: 3, maximumCells: 256, blockedSeconds: 15, attemptSeconds: 120 });
 const positionOf = entry => [entry.body.position.x, entry.body.position.z];
 const cellOf = position => position.map(value => Math.floor(value / CUBE_NAVIGATION_PROGRESS.cellSize)).join(':');
 
 /** Owns asynchronous motor decisions, never model weights or worker lifetime. */
 export class CubeResidentMotor {
-  constructor({ getEntries, observe, senseNavigation, now = () => performance.now() }) {
+  constructor({ getEntries, observe, senseNavigation, validateSpatialTarget, now = () => performance.now() }) {
     if (![getEntries, observe, senseNavigation, now].every(value => typeof value === 'function')) throw new TypeError('Resident navigation requires observations and collision sensing');
-    Object.assign(this, { getEntries, observe, senseNavigation, now });
+    Object.assign(this, { getEntries, observe, senseNavigation, validateSpatialTarget, now });
     this.service = null; this.listeners = new Set(); this.commands = new Map();
     this.intents = new Map(); this.pending = null; this.closed = false; this.ticks = 0; this.epoch = 0;
   }
@@ -30,31 +35,43 @@ export class CubeResidentMotor {
     if (intent.lastOutcome === status && status !== 'cancelled') return;
     intent.lastOutcome = status;
     const position = this.getEntries().get(key)?.mesh.position.toArray();
+    if (position && intent.type === 'move-to') {
+      const body = this.getEntries().get(key).body;
+      position[0] = body.position.x; position[2] = body.position.z;
+    }
     const event = { key, ...(intent.requestId ? { requestId: intent.requestId } : {}), type: intent.type,
       ...(intent.targetId ? { targetId: intent.targetId } : {}), status, position,
+      ...(intent.type === 'move-to' ? { targetPosition: [...intent.position], stopDistance: intent.stopDistance } : {}),
       ...(intent.policyId ? { policyId: intent.policyId, backend: intent.backend } : {}), ...detail };
     for (const listener of this.listeners) { try { Promise.resolve(listener(event)).catch(() => {}); } catch { /* Observer only. */ } }
   }
   setIntent(key, input, { restoredOwner = false } = {}) {
     const entry = this.getEntries().get(key);
     if (!entry?.descriptor.local) throw new Error('Only the resident owner can set an intention');
-    if (!input || !['stop', 'look-at', 'approach', 'follow'].includes(input.type)) throw new TypeError('Unknown resident intention');
-    const stopDistance = input.stopDistance ?? D.defaultStopDistance;
+    if (!input || !['stop', 'look-at', 'approach', 'follow', 'move-to'].includes(input.type)) throw new TypeError('Unknown resident intention');
+    const fixed = input.type === 'move-to';
+    const stopDistance = input.stopDistance ?? (fixed ? 8 : D.defaultStopDistance);
     if (!Number.isFinite(stopDistance) || stopDistance < 8 || stopDistance > 30) throw new RangeError('Stop distance must be between 8 and 30');
     // Restoring a saved owner-follow preference can precede presence discovery.
     // This exception cannot select an arbitrary unseen person or resident.
     const deferredOwner = restoredOwner && input.type === 'follow' && input.targetId === `human:${entry.descriptor.ownerPeerId}`;
-    if (input.type !== 'stop' && (typeof input.targetId !== 'string' || (!deferredOwner && !this.observe(key).participants.some(p => p.id === input.targetId)))) {
+    let position;
+    if (fixed) {
+      if (input.targetId !== undefined || typeof this.validateSpatialTarget !== 'function') throw new Error('Fixed destinations are unavailable');
+      position = normalizeWorldGoalPosition(input.position);
+      this.validateSpatialTarget(key, position);
+    } else if (input.position !== undefined) throw new TypeError('Only move-to accepts a position');
+    if (!fixed && input.type !== 'stop' && (typeof input.targetId !== 'string' || (!deferredOwner && !this.observe(key).participants.some(p => p.id === input.targetId)))) {
       throw new Error('The target is not currently observed');
     }
     if (input.requestId !== undefined && (typeof input.requestId !== 'string' || input.requestId.length > 128)) throw new TypeError('Invalid intention request');
     const previous = this.intents.get(key); if (previous) this.emit(key, previous, 'cancelled');
-    const intent = { type: input.type, targetId: input.targetId, requestId: input.requestId, stopDistance, generation: Symbol(), lastOutcome: null };
+    const intent = { type: input.type, targetId: input.targetId, ...(position ? { position } : {}), requestId: input.requestId, stopDistance, generation: Symbol(), lastOutcome: null };
     this.intents.set(key, intent); this.commands.delete(key); this.halt(entry);
     this.resetProgress(intent, entry);
     this.cancelUnusedBatch();
     if (intent.type === 'stop') { this.halt(entry); this.emit(key, intent, 'stopped'); }
-    return { type: intent.type, targetId: intent.targetId, requestId: intent.requestId, stopDistance };
+    return { type: intent.type, ...(fixed ? { position: [...position] } : { targetId: intent.targetId }), requestId: intent.requestId, stopDistance };
   }
   halt(entry) { if (entry) { entry.body.velocity.x = entry.body.velocity.z = 0; entry.body.force.x = entry.body.force.z = 0; } }
   cancelUnusedBatch() {
@@ -107,7 +124,9 @@ export class CubeResidentMotor {
       if (entry.descriptor.status === 'paused') { this.suspend(key); continue; }
       intent.suspended = false;
       if (intent.type === 'stop' || intent.blocked || intent.failed || intent.completed) { this.halt(entry); continue; }
-      const target = this.observe(key).participants.find(p => p.id === intent.targetId);
+      const fixed = intent.type === 'move-to';
+      const target = fixed ? { kind: 'location', name: 'Saved destination', position: intent.position }
+        : this.observe(key).participants.find(p => p.id === intent.targetId);
       if (!target) {
         if (intent.lastOutcome !== 'target-lost') { intent.generation = Symbol(); this.resetProgress(intent, entry); }
         this.halt(entry); this.commands.delete(key); this.cancelUnusedBatch(); intent.distance = null;
@@ -123,16 +142,18 @@ export class CubeResidentMotor {
       const speed = Math.hypot(entry.body.velocity.x - (intent.type === 'follow' ? targetVelocity[0] : 0),
         entry.body.velocity.z - (intent.type === 'follow' ? targetVelocity[1] : 0));
       let navigation = intent.navigation;
-      const mayArrive = distance <= intent.stopDistance + .6 && speed < .6;
+      const mayArrive = distance <= intent.stopDistance + (fixed ? 0 : .6) && speed < .6;
       try {
         if (controlDue || !navigation || (mayArrive && intent.lastOutcome !== 'arrived' && navigation.targetClear)) {
+          if (fixed) this.validateSpatialTarget(key, intent.position);
           navigation = intent.navigation = this.senseNavigation(key, target);
         }
       }
       catch (error) {
-        intent.failed = true; intent.blockedReason = String(error.message).slice(0, 240); intent.generation = Symbol();
+        const blocked = fixed && error.code === 'SPATIAL_TARGET_UNAVAILABLE';
+        intent[blocked ? 'blocked' : 'failed'] = true; intent.blockedReason = String(error.message).slice(0, 240); intent.generation = Symbol();
         this.halt(entry); this.commands.delete(key); this.cancelUnusedBatch();
-        this.emit(key, intent, 'failed', { reason: intent.blockedReason }); continue;
+        this.emit(key, intent, blocked ? 'blocked' : 'failed', { reason: intent.blockedReason }); continue;
       }
       if (intent.lastOutcome === 'target-lost') intent.lastOutcome = null;
       intent.distance = distance; intent.targetClear = navigation.targetClear;
@@ -143,7 +164,7 @@ export class CubeResidentMotor {
         this.emit(key, intent, 'arrived', { target: [...target.position] });
         intent.progress.lastNovel = intent.progress.elapsed; intent.progress.attempt = 0;
         intent.blocked = false;
-        if (intent.type === 'approach') {
+        if (intent.type === 'approach' || fixed) {
           intent.completed = true; intent.generation = Symbol(); this.halt(entry); this.commands.delete(key); this.cancelUnusedBatch(); continue;
         }
       } else if ((distance > intent.stopDistance + 2 || !navigation.targetClear) && intent.lastOutcome === 'arrived') intent.lastOutcome = null;
@@ -160,7 +181,7 @@ export class CubeResidentMotor {
       } else this.halt(entry);
       if (controlDue && requests.length < D.maximumResidents) {
         requests.push({ id: key, observation: { relativePosition: [dx, dz], velocity: [entry.body.velocity.x, entry.body.velocity.z],
-          targetVelocity, stopDistance: intent.stopDistance, clearance: navigation.clearance, targetClear: navigation.targetClear,
+          targetVelocity, stopDistance: intent.stopDistance - (fixed ? POINT_CONTROL_MARGIN : 0), clearance: navigation.clearance, targetClear: navigation.targetClear,
           previousAcceleration: fresh ? [...command.acceleration] : [0, 0] } });
         identities.set(key, intent.generation);
       }
@@ -207,6 +228,7 @@ export class CubeResidentMotor {
       : intent.lastOutcome === 'target-lost' ? 'target-lost' : intent.lastOutcome === 'arrived' ? 'arrived'
       : !fresh ? 'loading' : intent.targetClear ? 'moving' : 'detouring';
     return { key, type: intent?.type ?? entry.movement ?? 'idle', targetId: intent?.targetId ?? null,
+      ...(intent?.type === 'move-to' ? { targetPosition: [...intent.position] } : {}),
       targetName: intent?.targetName ?? null, status, distance: intent?.distance ?? null,
       stopDistance: intent?.stopDistance ?? null,
       progress: { distanceTravelled: progress?.travelled ?? 0,

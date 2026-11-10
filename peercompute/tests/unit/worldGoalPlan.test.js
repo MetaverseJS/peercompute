@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { WORLD_GOAL_PLAN_LIMITS, normalizeWorldGoalPlan, activeWorldGoalMilestone,
+import { WORLD_GOAL_PLAN_LIMITS, normalizeWorldGoalPlan, normalizeWorldGoalPosition, activeWorldGoalMilestone,
   worldGoalMilestoneMatchesAction, worldGoalMilestonesComplete } from '../../src/peercompute/agents/WorldGoalPlan.js';
 
 const visit = { label: 'Visit Nova', type: 'approach', targetId: 'nova' };
@@ -81,4 +81,58 @@ test('historical requester receipts retain identity through Resume and stop requ
   assert.equal(worldGoalMilestonesComplete(goal), true);
   goal.receipts[1].status = 'arrived'; assert.equal(worldGoalMilestonesComplete(goal), false);
   goal.receipts[1].status = 'stopped'; goal.receipts[1].targetId = 'new-owner'; assert.equal(worldGoalMilestonesComplete(goal), false);
+});
+
+const destination = [140, 4, -20];
+const step = { label: 'Explore the clearing', type: 'move-to', position: destination };
+const goalFor = (...milestones) => ({ plan: { version: 1, milestones }, completedMilestones: [], receipts: [], requesterId: 'human:owner' });
+
+test('spatial milestones resolve to fixed detached destinations alongside existing participant milestones', () => {
+  const goal = goalFor(step, { label: 'Return to owner', type: 'approach', targetRole: 'requester' });
+  const normalized = normalizeWorldGoalPlan(goal.plan);
+  assert.deepEqual(normalized, goal.plan);
+  normalized.milestones[0].position[0] = 99;
+  assert.equal(destination[0], 140);
+  const active = activeWorldGoalMilestone(goal);
+  assert.deepEqual(active, { index: 0, milestone: step, intent: { type: 'move-to', position: destination } });
+  active.intent.position[0] = 88;
+  assert.equal(activeWorldGoalMilestone(goal).intent.position[0], 140);
+  assert.equal(worldGoalMilestoneMatchesAction(goal, { milestoneIndex: 0, intent: { type: 'move-to', position: [...destination], stopDistance: 8 } }), true);
+  for (const intent of [{ type: 'move-to', position: [139, 4, -20] }, { type: 'move-to', position: destination, targetId: 'human:owner' },
+    { type: 'approach', targetId: 'human:owner' }]) {
+    assert.equal(worldGoalMilestoneMatchesAction(goal, { milestoneIndex: 0, intent }), false);
+  }
+});
+
+test('fixed positions reject sparse, oversized, nonnumeric and hidden coordinates', () => {
+  const sparse = []; sparse.length = 3; sparse[0] = 1; sparse[2] = 3;
+  const hidden = [1, 2, 3]; Object.defineProperty(hidden, 'hidden', { value: true });
+  const inherited = Object.setPrototypeOf([1, NaN, 3], { some: () => false });
+  for (const value of [sparse, hidden, inherited, new Float32Array([1, 2, 3]), [1, 2], [1, 2, 3, 4], [1, NaN, 3],
+    [1, Infinity, 3], [1, '2', 3], [1, null, 3], [1, 1e8 + 1, 3], Object.assign([1, 2, 3], { [Symbol('extra')]: true })]) {
+    assert.throws(() => normalizeWorldGoalPosition(value), /three bounded coordinates/);
+    assert.throws(() => normalizeWorldGoalPlan({ version: 1, milestones: [{ ...step, position: value }] }));
+  }
+  const input = [1e8, 0, -1e8], copy = normalizeWorldGoalPosition(input);
+  assert.deepEqual(copy, input); assert.notEqual(copy, input);
+});
+
+test('point and participant targets cannot be mixed or inferred from ambiguous fields', () => {
+  for (const milestone of [{ ...step, targetId: 'nova' }, { ...step, targetRole: 'requester' },
+    { label: 'Missing point', type: 'move-to' }, { ...step, type: 'stop' },
+    { ...step, type: 'approach', targetId: 'nova' }, { ...step, type: 'look-at', targetRole: 'requester' }]) {
+    assert.throws(() => normalizeWorldGoalPlan({ version: 1, milestones: [milestone] }));
+  }
+});
+
+test('point progress requires one exact destination receipt with measured position', () => {
+  const goal = goalFor(step);
+  goal.completedMilestones = [{ index: 0, requestId: 'outbound' }];
+  const receipt = { requestId: 'outbound', type: 'move-to', status: 'arrived', targetPosition: [...destination], position: [140, 7, -20] };
+  for (const invalid of [{ ...receipt, targetPosition: [140, 4, -19] }, { ...receipt, status: 'blocked' },
+    { ...receipt, position: undefined }, { ...receipt, targetId: 'nova' }]) {
+    goal.receipts = [invalid]; assert.equal(worldGoalMilestonesComplete(goal), false);
+  }
+  goal.receipts = [receipt]; assert.equal(worldGoalMilestonesComplete(goal), true);
+  goal.receipts.push({ ...receipt }); assert.equal(worldGoalMilestonesComplete(goal), false);
 });

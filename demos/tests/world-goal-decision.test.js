@@ -325,3 +325,79 @@ test('assessment current request cites completed evidence against retained objec
   assert.equal(request.messages.at(-1).content, request.prompt);
   assert.deepEqual(selected.receiptIds, ['receipt-1', 'receipt-2']); assert.deepEqual(finished, before);
 });
+
+const spatialSenses = () => ({ ...structuredClone(observed),
+  spatial: { frame: 'planar-xz', bounds: { min: [-250, -250], max: [250, 250] }, maximumLegDistance: 160 },
+  locations: [{ id: 'clear:east', name: 'East, far clear ground', position: [96, 0, 0], distance: 96 },
+    { id: 'clear:north', name: 'North, nearby clear ground', position: [0, 0, -32], distance: 32 }] });
+const spatialGoal = () => ({ ...structuredClone(initial), objective: 'Travel far away, then return here.', originPosition: [0, 0, 0] });
+const spatialPlan = () => ({ version: 1, milestones: [
+  { label: 'Visit far ground', type: 'move-to', position: [96, 0, 0] },
+  { label: 'Return to starting place', type: 'move-to', position: [0, 0, 0] }] });
+
+test('spatial plans resolve grounded location references and saved origin without inventing coordinates', () => {
+  const initial = spatialGoal(), senses = spatialSenses(), projection = projectWorldGoal(initial, senses);
+  const context = JSON.parse(projection.worldContext);
+  assert.deepEqual(context.locations.map(item => item.id), ['l1', 'l2', 'origin']);
+  assert.deepEqual(context.locations.map(item => item.distance), [96, 32, 0]);
+  assert.equal(projection.prompt, initial.objective);
+  assert.match(projection.instructions, /A return without a named person or place means origin\./);
+  assert.doesNotMatch(projection.worldContext, /clear:east|clear:north/);
+  const result = resolve(projection, { decision: 'plan', milestones: [
+    { label: 'Visit far ground', type: 'move-to', locationId: 'l1' },
+    { label: 'Return to starting place', type: 'move-to', locationId: 'origin' }] });
+  assert.deepEqual(result.milestones, spatialPlan().milestones);
+  const bad = [
+    { type: 'move-to', locationId: 'l99' }, { type: 'move-to', locationId: 'speaker' },
+    { type: 'move-to', locationId: 'destination' }, { type: 'move-to', position: [96, 0, 0] },
+    { type: 'move-to', locationId: 'l1', position: [96, 0, 0] },
+    { type: 'approach', locationId: 'l1' }, { type: 'move-to', locationId: 'l1', targetId: 'speaker' },
+  ];
+  for (const milestone of bad) assert.throws(() => resolve(projection,
+    { decision: 'plan', milestones: [{ label: 'Invalid destination', ...milestone }] }), { code: 'ERR_WORLD_GOAL_DECISION' });
+  assert.throws(() => parse({ decision: 'plan', milestones: [{ label: 'Ungrounded', type: 'move-to', position: [97, 0, 0] }] }, initial, senses),
+    { code: 'ERR_WORLD_GOAL_DECISION' });
+});
+
+test('frozen ground choices cannot be changed by later location reordering or movement', () => {
+  const senses = spatialSenses(), projection = projectWorldGoal(spatialGoal(), senses);
+  senses.locations.reverse(); senses.locations[1].position[0] = -96; senses.self.position[0] = 20;
+  assert.deepEqual(resolve(projection, { decision: 'plan', milestones: [
+    { label: 'Chosen place', type: 'move-to', locationId: 'l1' }] }).milestones[0].position, [96, 0, 0]);
+  const moved = spatialSenses(); moved.self.position = [80, 3, 0]; moved.locations = [];
+  const saved = { ...spatialGoal(), plan: spatialPlan() };
+  const active = projectWorldGoal(saved, moved), context = JSON.parse(active.worldContext);
+  assert.equal(context.activeMilestone.locationId, 'destination'); assert.equal(context.activeMilestone.distance, 16);
+  assert.equal(context.locations, undefined);
+  assert.deepEqual(schemas(active)[0].intent, { type: 'move-to', locationId: 'destination' });
+  assert.deepEqual(resolve(active, schemas(active)[0]).intent, { type: 'move-to', position: [96, 0, 0], stopDistance: 8 });
+  assert.throws(() => resolve(active, { decision: 'act', intent: { type: 'move-to', locationId: 'origin' } }), { code: 'ERR_WORLD_GOAL_DECISION' });
+  assert.throws(() => parse({ decision: 'act', intent: { type: 'move-to', position: [0, 0, 0] } }, saved, moved), { code: 'ERR_WORLD_GOAL_DECISION' });
+});
+
+test('return here persists fixed origin while return to me persists the requester role', () => {
+  const initial = spatialGoal(), senses = spatialSenses(), projection = projectWorldGoal(initial, senses);
+  const here = resolve(projection, { decision: 'plan', milestones: [{ label: 'Return here', type: 'move-to', locationId: 'origin' }] });
+  const me = resolve(projection, { decision: 'plan', milestones: [{ label: 'Return to me', type: 'approach', targetId: 'speaker' }] });
+  assert.deepEqual(here.milestones, [{ label: 'Return here', type: 'move-to', position: [0, 0, 0] }]);
+  assert.deepEqual(me.milestones, [{ label: 'Return to me', type: 'approach', targetRole: 'requester' }]);
+  const relocated = spatialSenses(); relocated.self.position = [90, 4, 0]; relocated.locations = [];
+  relocated.participants[1] = { ...relocated.participants[1], id: 'human:reconnected', position: [40, 0, 80] };
+  const fixed = projectWorldGoal({ ...initial, requesterId: 'human:reconnected', plan: { version: 1, milestones: here.milestones } }, relocated);
+  assert.deepEqual(resolve(fixed, schemas(fixed)[0]).intent.position, [0, 0, 0]);
+  const moving = projectWorldGoal({ ...initial, requesterId: 'human:reconnected', plan: { version: 1, milestones: me.milestones } }, relocated);
+  assert.equal(resolve(moving, schemas(moving)[0]).intent.targetId, 'human:reconnected');
+});
+
+test('spatial admission requires a supported world, known origin, fresh bounded senses and exact locations', () => {
+  const initial = spatialGoal(), senses = spatialSenses();
+  const proposed = { decision: 'plan', milestones: [{ label: 'Far point', type: 'move-to', position: [96, 0, 0] }] };
+  for (const invalid of [{ ...senses, spatial: undefined }, { ...senses, observedAt: now - 121000 },
+    { ...senses, spatial: { ...senses.spatial, bounds: { min: [-50, -50], max: [50, 50] } } }]) {
+    assert.throws(() => parse(proposed, initial, invalid), { code: 'ERR_WORLD_GOAL_DECISION' });
+  }
+  const noOrigin = projectWorldGoal({ ...initial, originPosition: undefined }, senses);
+  assert.throws(() => resolve(noOrigin, { decision: 'plan', milestones: [{ label: 'Return', type: 'move-to', locationId: 'origin' }] }),
+    { code: 'ERR_WORLD_GOAL_DECISION' });
+  assert.throws(() => projectWorldGoal(initial, { ...senses, locations: Array(13).fill(senses.locations[0]) }), { code: 'ERR_WORLD_GOAL_DECISION' });
+});

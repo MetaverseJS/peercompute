@@ -4,6 +4,8 @@ import * as CANNON from 'cannon-es';
 import { createCubeNavigationSensors } from '../cubechat/src/agents/CubeNavigationSensors.js';
 import { CubeResidentMotor } from '../cubechat/src/agents/CubeResidentMotor.js';
 import { MOTOR_DYNAMICS as D } from '../shared/agents/motor/motorContracts.js';
+import checkpoint from '../shared/agents/motor/residentMotorCheckpoint.js';
+import { referenceMotorAction } from '../shared/agents/motor/policyReference.js';
 
 function fixture(t) {
   const world = new CANNON.World({ gravity: new CANNON.Vec3(0, 0, 0) }), entries = new Map(), bodies = new Map();
@@ -19,6 +21,12 @@ function fixture(t) {
   const sensor = createCubeNavigationSensors({ physics: { world, bodies }, getEntries: () => entries });
   let clock = 0, participants = [target]; const calls = [], events = [];
   const motor = new CubeResidentMotor({ getEntries: () => entries, observe: () => ({ participants }),
+    validateSpatialTarget: (key, position) => {
+      if (!sensor.sample(key, { kind: 'location', position }).destinationClear) {
+        const error = new Error('Destination became occupied'); error.code = 'SPATIAL_TARGET_UNAVAILABLE'; throw error;
+      }
+      return [...position];
+    },
     senseNavigation: (key, observed) => sensor.sample(key, observed), now: () => clock });
   motor.subscribe(event => events.push(event));
   motor.setService({ infer: async batch => { calls.push(batch); return { backend: 'fixture', policyId: 'controlled-force', worker: false,
@@ -218,4 +226,65 @@ test('arrival rechecks visibility between scheduled controls and stale commands 
   await f.tick(1); assert.equal(f.events.some(event => event.status === 'arrived'), false);
   f.world.removeBody(wall); f.motor.invalidateNavigation(); await f.tick(1);
   assert.equal(f.events.at(-1).status, 'arrived');
+});
+
+test('fixed destinations survive changing participants, acknowledge exact points and recheck new occupancy', async t => {
+  const f = fixture(t), position = [45, 30, 0];
+  f.motor.setIntent('ada', { type: 'move-to', position, requestId: 'point' }); position[0] = 100;
+  f.loseTarget(); await f.tick(6);
+  assert.equal(f.motor.getResidentStatus('ada').status, 'moving');
+  assert.deepEqual(f.calls.at(-1)[0].observation.relativePosition, [45, 0]);
+  assert.deepEqual(f.motor.getResidentStatus('ada').targetPosition, [45, 30, 0]);
+  f.box([45, 3, 0], [3, 3, 3]); await f.tick(6);
+  assert.equal(f.motor.getResidentStatus('ada').status, 'blocked');
+  assert.deepEqual(f.events.at(-1).targetPosition, [45, 30, 0]);
+  assert.equal(f.events.some(event => event.status === 'arrived'), false);
+});
+
+test('the existing learned checkpoint moves out and back to immutable points through real Cannon physics', async t => {
+  for (const destination of [[96, 3, 0], [-70, 20, 48], [20, -5, -85]]) {
+    const f = fixture(t), origin = f.body.position.toArray(); f.loseTarget();
+    if (destination[0] === 96) f.box([48, 3, 0], [1, 3, 14]);
+    f.motor.setService({ infer: async batch => ({ backend: 'cpu-numerical-reference', worker: false, policyId: checkpoint.policyId,
+      results: batch.map(({ id, observation }) => ({ id, acceleration: referenceMotorAction(checkpoint.weights, observation) })) }) });
+    const before = () => {
+      const speed = Math.hypot(f.body.velocity.x, f.body.velocity.z);
+      if (speed > D.maxSpeed) { f.body.velocity.x *= D.maxSpeed / speed; f.body.velocity.z *= D.maxSpeed / speed; }
+      f.motor.beforeStep();
+    };
+    f.world.addEventListener('preStep', before); t.after(() => f.world.removeEventListener('preStep', before));
+    for (const [index, position] of [destination, origin].entries()) {
+      f.motor.setIntent('ada', { type: 'move-to', position, stopDistance: 8, requestId: `leg-${index}` });
+      for (let tick = 0; tick < 7300 && !['arrived', 'blocked', 'failed'].includes(f.motor.getResidentStatus('ada').status); tick++) {
+        f.advanceClock(D.fixedDt * 1000); f.world.step(D.fixedDt);
+        if (f.motor.pending) await f.motor.pending.done;
+      }
+      const status = f.motor.getResidentStatus('ada');
+      assert.equal(status.status, 'arrived', JSON.stringify({ destination, index, status, actual: f.body.position.toArray() }));
+      assert(Math.hypot(f.body.position.x - position[0], f.body.position.z - position[2]) <= 8);
+      assert.deepEqual(f.events.at(-1).targetPosition, position);
+      assert.equal(f.events.at(-1).stopDistance, 8);
+      assert.equal(f.events.at(-1).backend, 'cpu-numerical-reference', 'unit rollout is not claimed as WebGPU proof');
+    }
+    assert(f.calls.length === 0, 'fixture force service was replaced by the actual trained checkpoint');
+  }
+});
+
+test('fixed destinations settle inside the acknowledged radius on the real contact floor', async t => {
+  const f = fixture(t), target = [8.4, 3, 0]; f.loseTarget();
+  const floor = new CANNON.Body({ mass: 0, shape: new CANNON.Plane() }); floor.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
+  f.world.addBody(floor); f.world.gravity.set(0, -40, 0); f.world.defaultContactMaterial.friction = .0001;
+  f.world.defaultContactMaterial.restitution = .05; f.world.solver.iterations = 20; f.body.linearFactor.set(1, 0, 1);
+  f.motor.setService({ infer: async batch => ({ backend: 'cpu-numerical-reference', worker: false, policyId: checkpoint.policyId,
+    results: batch.map(({ id, observation }) => ({ id, acceleration: referenceMotorAction(checkpoint.weights, observation) })) }) });
+  const before = () => { f.body.position.y = 3; f.body.velocity.y = f.body.force.y = 0; f.motor.beforeStep(); };
+  f.world.addEventListener('preStep', before); t.after(() => f.world.removeEventListener('preStep', before));
+  f.motor.setIntent('ada', { type: 'move-to', position: target, stopDistance: 8 });
+  for (let tick = 0; tick < 1300 && !['arrived', 'blocked', 'failed'].includes(f.motor.getResidentStatus('ada').status); tick++) {
+    f.advanceClock(D.fixedDt * 1000); f.world.step(D.fixedDt); if (f.motor.pending) await f.motor.pending.done;
+  }
+  const status = f.motor.getResidentStatus('ada');
+  assert.equal(status.status, 'arrived', JSON.stringify({ distance: status.distance, reason: status.blockedReason }));
+  assert(Math.hypot(f.body.position.x - target[0], f.body.position.z - target[2]) <= 8);
+  assert.equal(f.events.at(-1).stopDistance, 8, 'control margin must not enlarge the acknowledged arrival radius');
 });

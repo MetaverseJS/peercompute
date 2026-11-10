@@ -1,11 +1,15 @@
 import { validateWorldIntent } from './WorldIntent.js';
 import { parseWorldGoalDecision } from './WorldGoalDecision.js';
-import { activeWorldGoalMilestone, worldGoalMilestoneMatchesAction } from '../../../peercompute/src/peercompute/agents/WorldGoalPlan.js';
+import { activeWorldGoalMilestone, normalizeWorldGoalPosition, worldGoalMilestoneMatchesAction } from '../../../peercompute/src/peercompute/agents/WorldGoalPlan.js';
 
 const clone = value => value == null ? value : structuredClone(value);
 const terminal = goal => !goal || ['completed', 'cancelled'].includes(goal.status);
 const failure = (message, code = 'ERR_WORLD_GOAL') => Object.assign(new Error(message), { code });
 const cancelled = reason => new DOMException(reason, 'AbortError');
+const pointAuthority = goal => {
+  const intent = activeWorldGoalMilestone(goal)?.intent;
+  return intent?.type === 'move-to' ? { authorizedPositions: [intent.position] } : {};
+};
 function brief(value, maximum = 240) {
   let text = '';
   for (const character of String(value ?? '').replaceAll('\0', '')) {
@@ -27,7 +31,7 @@ export function createWorldGoalController({ store, worldId, observe, decide, dis
       || tickMs > 30000 || !Number.isSafeInteger(decisionTimeoutMs) || decisionTimeoutMs < 1 || decisionTimeoutMs > 60000) {
     throw new TypeError('Objective controller requires bounded storage, model and physical adapters');
   }
-  const heads = new Map(), queues = new Map(), controls = new Set(), settling = new Map(), unresolved = new Map();
+  const heads = new Map(), queues = new Map(), controls = new Set(), settling = new Map(), unresolved = new Map(), expedited = new Set();
   let active, timer, closed = false, disposal, ticking, syncing, quietUntil = 0;
   const scope = agentId => ({ agentId, worldId });
   const owned = agentId => owns(scope(agentId)) === true;
@@ -37,15 +41,18 @@ export function createWorldGoalController({ store, worldId, observe, decide, dis
     reason: 'Objective state or cleanup was not acknowledged. Owner Resume must reconcile it.' } : clone(goal);
   const notify = goal => {
     if (!goal || !owned(goal.agentId)) return goal;
+    if (terminal(goal)) expedited.delete(goal.goalId);
     heads.set(goal.agentId, clone(goal));
     try { Promise.resolve(onChange(snapshot(goal))).catch(() => {}); } catch { /* Display is observational. */ }
     return goal;
   };
-  const read = async agentId => { assertOwned(agentId); const goal = await store.get(scope(agentId)); assertOwned(agentId); return notify(goal); };
-  const commit = async (goal, patch, event) => {
+  const read = async (agentId, signal) => { signal?.throwIfAborted(); assertOwned(agentId);
+    const goal = await store.get(scope(agentId), { signal }); signal?.throwIfAborted(); assertOwned(agentId); return notify(goal); };
+  const commit = async (goal, patch, event, signal) => {
+    signal?.throwIfAborted();
     assertOwned(goal.agentId);
     return notify(await store.commit(scope(goal.agentId), {
-      goalId: goal.goalId, expectedRevision: goal.revision, patch, ...(event ? { event } : {}) }));
+      goalId: goal.goalId, expectedRevision: goal.revision, patch, ...(event ? { event } : {}) }, { signal }));
   };
   function locked(agentId, work) {
     const previous = queues.get(agentId) ?? Promise.resolve();
@@ -73,6 +80,7 @@ export function createWorldGoalController({ store, worldId, observe, decide, dis
   function forgetLostOwnership() {
     for (const agentId of [...heads.keys()]) if (!owned(agentId)) {
       if (active?.agentId === agentId) active.controller.abort(cancelled('Resident body ownership changed'));
+      expedited.delete(heads.get(agentId)?.goalId);
       heads.delete(agentId); unresolved.delete(agentId);
     }
   }
@@ -100,29 +108,55 @@ export function createWorldGoalController({ store, worldId, observe, decide, dis
     return syncing;
   }
 
-  async function assign({ agentId, objective, requesterId }) {
+  async function assign({ agentId, objective, requesterId, signal, expectedResidentRevision }) {
     await ready; if (closed) throw new Error('Objective controller is closed');
+    signal?.throwIfAborted();
+    const admissionSignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(decisionTimeoutMs)]) : AbortSignal.timeout(decisionTimeoutMs);
     const assigned = await locked(agentId, async () => {
-      const previous = await read(agentId);
+      const previous = await read(agentId, admissionSignal);
       if (!terminal(previous)) throw failure('Pause or cancel the current objective before assigning another');
       assertOwned(agentId);
-      const goal = notify(await store.assign({ agentId, worldId, objective, requesterId },
-        { expectedRevision: previous?.revision ?? 0 }));
+      const observed = await observe(scope(agentId), { goal: { agentId, worldId, objective, requesterId }, signal: admissionSignal });
+      admissionSignal.throwIfAborted(); assertOwned(agentId);
+      if (closed) throw new Error('Objective controller is closed');
+      if (expectedResidentRevision !== undefined && observed.residentRevision !== expectedResidentRevision) {
+        throw failure('Resident settings changed before task admission', 'ERR_WORLD_GOAL_ADMISSION_REVISION');
+      }
+      validateWorldIntent({ type: 'stop' }, { observed, current: observed, now: time() });
+      const originPosition = normalizeWorldGoalPosition(observed.self?.position);
+      const goal = notify(await store.assign({ agentId, worldId, objective, requesterId, originPosition },
+        { expectedRevision: previous?.revision ?? 0, signal: admissionSignal }));
+      expedited.delete(previous?.goalId);
       return goal;
     });
-    return resume({ agentId, goalId: assigned.goalId, expectedRevision: assigned.revision, requesterId });
+    admissionSignal.throwIfAborted();
+    const resumed = await resume({ agentId, goalId: assigned.goalId, expectedRevision: assigned.revision, requesterId,
+      signal: admissionSignal, expectedResidentRevision });
+    // An explicitly requested new task need not inherit the conversation's
+    // cooldown. A later conversation still interrupts and removes this grant.
+    expedited.add(resumed.goalId);
+    return resumed;
   }
   async function resume(input) {
     await ready; if (closed) throw new Error('Objective controller is closed');
+    input.signal?.throwIfAborted();
     return locked(input.agentId, async () => {
-      let goal = await read(input.agentId); assertCurrent(goal, input);
+      let goal = await read(input.agentId, input.signal); assertCurrent(goal, input);
+      if (input.expectedResidentRevision !== undefined) {
+        const observed = await observe(scope(input.agentId), { goal: clone(goal), signal: input.signal });
+        input.signal?.throwIfAborted(); assertOwned(input.agentId);
+        if (closed) throw new Error('Objective controller is closed');
+        if (observed.residentRevision !== input.expectedResidentRevision) {
+          throw failure('Resident settings changed before task admission', 'ERR_WORLD_GOAL_ADMISSION_REVISION');
+        }
+      }
       if (settling.has(input.agentId)) throw failure('Wait for physical cleanup before resuming');
       if (goal.status !== 'paused' && !unresolved.has(input.agentId)) throw failure('Only a paused objective can be resumed');
       if (unresolved.has(input.agentId)) {
         const pending = unresolved.get(input.agentId);
         if (pending.requestId) await stop(scope(input.agentId), { goalId: goal.goalId, requestId: pending.requestId, reason: 'Owner recovery' });
         if (goal.status !== 'paused') goal = await commit(goal, { status: 'paused', reason: 'Owner acknowledged interrupted objective state.' },
-          { type: 'reconciled' });
+          { type: 'reconciled' }, input.signal);
       }
       // An interrupted decision may have consumed compute. Charge it once,
       // discard its unknown result, and never restart that same request.
@@ -131,7 +165,7 @@ export function createWorldGoalController({ store, worldId, observe, decide, dis
       const reason = budgetReason(candidate);
       if (reason) {
         const paused = await commit(goal, { status: 'paused', reason, steps, pendingDecision: null, pendingAction: null },
-          { type: 'budget-exhausted', text: reason });
+          { type: 'budget-exhausted', text: reason }, input.signal);
         unresolved.delete(input.agentId); notify(paused); return paused;
       }
       const at = time();
@@ -139,7 +173,7 @@ export function createWorldGoalController({ store, worldId, observe, decide, dis
         ...(goal.startedAt === null ? { startedAt: at, deadlineAt: at + goal.limits.maxDurationMs } : {}),
         ...(input.requesterId !== undefined ? { requesterId: input.requesterId } : {}),
         pendingDecision: null, pendingAction: null, nextDecisionAt: at },
-      { type: 'owner-resumed', text: 'Observe afresh and continue saved milestones; never replay pending requests.' });
+      { type: 'owner-resumed', text: 'Observe afresh and continue saved milestones; never replay pending requests.' }, input.signal);
       unresolved.delete(input.agentId); notify(updated); arm(); return updated;
     });
   }
@@ -180,6 +214,7 @@ export function createWorldGoalController({ store, worldId, observe, decide, dis
 
   async function interrupt({ agentId, reason = 'Human conversation has priority' } = {}) {
     await ready;
+    for (const goal of heads.values()) if (agentId === undefined || goal.agentId === agentId) expedited.delete(goal.goalId);
     quietUntil = Math.max(quietUntil, time() + 30000);
     const run = active;
     if (run && run.stage !== 'dispatch' && (agentId === undefined || run.agentId === agentId)) {
@@ -249,7 +284,8 @@ export function createWorldGoalController({ store, worldId, observe, decide, dis
       const currentObserved = decision.decision === 'act'
         ? await observe(scope(run.agentId), { goal: clone(prepared), signal: run.controller.signal }) : observed;
       run.controller.signal.throwIfAborted();
-      if (decision.decision === 'act') decision.intent = validateWorldIntent(decision.intent, { observed, current: currentObserved, now: time() });
+      if (decision.decision === 'act') decision.intent = validateWorldIntent(decision.intent,
+        { observed, current: currentObserved, now: time(), ...pointAuthority(prepared) });
       let issued;
       await locked(run.agentId, async () => {
         const current = await read(run.agentId);
@@ -286,7 +322,7 @@ export function createWorldGoalController({ store, worldId, observe, decide, dis
         try {
           run.controller.signal.throwIfAborted(); assertOwned(run.agentId); run.stage = 'dispatch';
           const acknowledgement = await dispatch(scope(run.agentId), { goalId: issued.goalId, requestId: issued.pendingAction.requestId,
-            intent: clone(issued.pendingAction.intent), observed: clone(currentObserved) }, { signal: run.controller.signal });
+            intent: clone(issued.pendingAction.intent), observed: clone(currentObserved), ...pointAuthority(issued) }, { signal: run.controller.signal });
           if (acknowledgement?.applied === false) throw failure('The world did not apply this objective action');
         } catch (error) {
           if (!owned(run.agentId)) throw error;
@@ -321,7 +357,18 @@ export function createWorldGoalController({ store, worldId, observe, decide, dis
           || event.type !== pending.intent.type || event.targetId !== pending.intent.targetId
           || (goal.plan && !worldGoalMilestoneMatchesAction(goal, pending))
           || !['arrived', 'stopped', 'target-lost', 'blocked', 'cancelled', 'failed'].includes(event.status)) return;
+      if (pending.intent.type === 'move-to') {
+        try {
+          const target = normalizeWorldGoalPosition(event.targetPosition);
+          if (!target.every((value, index) => value === pending.intent.position[index])) return;
+          if (event.status === 'arrived') {
+            const actual = normalizeWorldGoalPosition(event.position);
+            if (Math.hypot(actual[0] - target[0], actual[2] - target[2]) > pending.intent.stopDistance) return;
+          }
+        } catch { return; }
+      } else if (event.targetPosition !== undefined) return;
       const receipt = { requestId: event.requestId, type: event.type, ...(event.targetId ? { targetId: event.targetId } : {}),
+        ...(event.targetPosition ? { targetPosition: clone(event.targetPosition) } : {}),
         status: event.status, at: time(), ...(event.position ? { position: clone(event.position) } : {}),
         ...(event.reason ? { reason: brief(event.reason) } : {}) };
       let resolve;
@@ -376,9 +423,10 @@ export function createWorldGoalController({ store, worldId, observe, decide, dis
           await control({ agentId: goal.agentId, goalId: goal.goalId }, 'paused', 'The ten-minute objective budget is exhausted.', true);
         }
       }
-      if (active || time() < quietUntil) return;
+      if (active) return;
       const candidates = [...heads.values()].filter(goal => ['ready', 'waiting-for-model'].includes(goal.status)
         && !controls.has(goal.agentId) && !unresolved.has(goal.agentId) && !settling.has(goal.agentId)
+        && (time() >= quietUntil || expedited.has(goal.goalId))
         && (goal.nextDecisionAt === null || time() >= goal.nextDecisionAt))
         .sort((a, b) => a.updatedAt - b.updatedAt || a.agentId.localeCompare(b.agentId));
       for (const goal of candidates) {

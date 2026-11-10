@@ -1,5 +1,5 @@
 import { routeAgentTask } from '../../../peercompute/src/peercompute/agents/AgentRouter.js';
-import { activeWorldGoalMilestone, normalizeWorldGoalPlan, worldGoalMilestoneMatchesAction,
+import { activeWorldGoalMilestone, normalizeWorldGoalPlan, normalizeWorldGoalPosition, worldGoalMilestoneMatchesAction,
   worldGoalMilestonesComplete } from '../../../peercompute/src/peercompute/agents/WorldGoalPlan.js';
 import { validateWorldIntent } from './WorldIntent.js';
 
@@ -7,7 +7,21 @@ const bytes = value => new TextEncoder().encode(value).length;
 const failure = () => Object.assign(new Error('The model did not return a valid bounded objective decision'), { code: 'ERR_WORLD_GOAL_DECISION' });
 const brief = (value, maximum, required = false) => typeof value === 'string' && !value.includes('\0')
   && bytes(value) <= maximum && (!required || value.trim());
-export const WORLD_GOAL_ACTIONS = Object.freeze(['approach', 'look-at', 'stop']);
+export const WORLD_GOAL_ACTIONS = Object.freeze(['approach', 'look-at', 'stop', 'move-to']);
+const samePosition = (a, b) => a?.length === 3 && b?.length === 3 && a.every((value, index) => value === b[index]);
+const pointAuthority = intent => intent?.type === 'move-to' ? { authorizedPositions: [intent.position] } : {};
+
+function goalLocations(goal, observed) {
+  const locations = observed.locations ?? [];
+  if (!Array.isArray(locations) || locations.length > 12) throw failure();
+  const result = locations.map((location, index) => {
+    if (!brief(location?.id, 320, true) || !brief(location.name, 120, true)) throw failure();
+    return { id: `l${index + 1}`, name: location.name, position: normalizeWorldGoalPosition(location.position) };
+  });
+  if (goal.originPosition && observed.spatial) result.push({ id: 'origin', name: 'Saved task starting place',
+    position: normalizeWorldGoalPosition(goal.originPosition) });
+  return result;
+}
 
 // This specialist interprets an objective and chooses actions. Persona and chat
 // history are deliberately absent; its output never becomes a conversational turn.
@@ -22,17 +36,25 @@ function instructionsFor(context) {
   if (context.phase === 'plan') return WORLD_GOAL_INSTRUCTIONS
     + 'This request creates an ordered physical plan. Return decision plan or pause. '
     + 'Interpret the entire objective as 1 to 6 milestones, including every requested step in order. '
-    + 'Each milestone has label (at most 64 UTF-8 bytes), type and, if targeted, targetId. '
+    + 'Each milestone has label (at most 64 UTF-8 bytes), type and its target reference. '
     + 'Use approach to visit, look-at to face, or stop without a target. '
     + 'Approach already stops when it reaches its target. Do not add a separate stop to a visit unless explicitly requested. A stop milestone has only label and type:stop; it never has targetId or targetRole. '
     + 'Me means speaker. Use exact current speaker/pN participant references. '
+    + (context.locations?.length ? 'Use move-to with locationId to visit a listed fixed ground location. '
+      + 'Select a location whose direction and distance fit the request; never invent coordinates or references. '
+      + 'Here, back here, or returning to the starting place means locationId origin; returning to me means approach targetId speaker, which follows the requester\'s current position. '
+      + 'A return without a named person or place means origin. '
+      + 'Locations are options, not a suggested itinerary. Include only steps the objective requests. ' : '')
     + 'Replace schema placeholders with task-specific labels and observed references:\n'
-    + '{"decision":"plan","milestones":[{"label":"SHORT_LABEL","type":"approach","targetId":"REF"}]}\n'
+    + (context.locations?.length
+      ? '{"decision":"plan","milestones":[{"label":"SHORT_LABEL","type":"move-to","locationId":"LOCATION_REF"}]}\n'
+      : '{"decision":"plan","milestones":[{"label":"SHORT_LABEL","type":"approach","targetId":"REF"}]}\n')
     + 'Pause if a required target is absent or the objective cannot fit these actions and six milestones:\n' + pauseSchema;
   if (context.phase === 'milestone') {
     const active = context.activeMilestone;
-    const actionable = active.type === 'stop' || active.targetPresent;
-    const intent = { type: active.type, ...(active.type === 'stop' ? {} : { targetId: active.targetId }) };
+    const actionable = active.type === 'stop' || active.type === 'move-to' || active.targetPresent;
+    const intent = { type: active.type, ...(active.type === 'stop' ? {} : active.type === 'move-to'
+      ? { locationId: active.locationId } : { targetId: active.targetId }) };
     return WORLD_GOAL_INSTRUCTIONS
       + 'The ordered milestones are already saved. This request decides only the current activeMilestone. '
       + 'Return decision act, wait or pause. Do not author or repeat a plan. '
@@ -40,7 +62,8 @@ function instructionsFor(context) {
       + (actionable ? 'If ready, propose the active action using this schema:\n'
         + JSON.stringify({ decision: 'act', intent, reason: 'SHORT_REASON' }) + '\n'
         : 'The active target has no current observed reference, so wait or pause. ')
-      + (active.type === 'stop' ? 'Stop has no targetId or stopDistance. '
+      + (active.type === 'stop' ? 'Stop has no targetId or stopDistance. ' : active.type === 'move-to'
+        ? 'Use only locationId destination, the saved fixed point of this milestone. The motor validates the path and reports actual arrival. '
         : 'Use only the active observed target reference. The motor handles movement and stopping distance; a distant target is valid. ')
       + 'Wait for a specific changing condition that prevents action, or pause when owner help is needed:\n'
       + '{"decision":"wait","reason":"SHORT_REASON"}\n' + pauseSchema;
@@ -83,6 +106,7 @@ export function projectWorldGoal(goal, observed) {
       || !Number.isFinite(observed.observedAt)) throw failure();
   const saved = structuredClone(goal), sensed = structuredClone(observed), objective = worldGoalPrompt(saved);
   const references = new Map(), originals = new Map(), receiptIds = new Map();
+  const locations = goalLocations(saved, sensed), points = new Map(locations.map(location => [location.id, location.position]));
   const participants = sensed.participants.map((item, index) => {
     if (!brief(item.id, 320, true) || references.has(item.id)) throw failure();
     const id = item.id === saved.requesterId ? 'speaker' : `p${index + 1}`;
@@ -95,11 +119,17 @@ export function projectWorldGoal(goal, observed) {
       ...(receipt.targetId ? { targetId: references.get(receipt.targetId) ?? null } : {}) }];
   }));
   const active = activeWorldGoalMilestone(saved), motion = sensed.self.motion;
+  if (active?.intent.type === 'move-to') points.set('destination', normalizeWorldGoalPosition(active.intent.position));
+  const locationSummary = location => ({ id: location.id, name: location.name,
+    distance: Math.round(Math.hypot(location.position[0] - sensed.self.position[0], location.position[2] - sensed.self.position[2])),
+    relativePosition: location.position.map((value, index) => Math.round(value - sensed.self.position[index])) });
   const context = { phase: !saved.plan ? 'plan' : active ? 'milestone' : 'assess',
     stepsUsed: saved.steps, maximumSteps: saved.limits.maxSteps,
     ...(active ? { activeMilestone: { index: active.index, label: active.milestone.label, type: active.intent.type,
       ...(active.intent.targetId ? { targetId: references.get(active.intent.targetId) ?? null,
-        targetPresent: references.has(active.intent.targetId) } : {}) } } : {}),
+        targetPresent: references.has(active.intent.targetId) } : {}),
+      ...(active.intent.type === 'move-to' ? { locationId: 'destination',
+        distance: locationSummary({ position: active.intent.position }).distance } : {}) } } : {}),
     completedMilestones: (saved.completedMilestones ?? []).map(item => ({ index: item.index,
       label: saved.plan.milestones[item.index].label, ...evidence.get(item.requestId) })),
     ...(saved.lastReceipt ? { latestAttempt: { ...evidence.get(saved.lastReceipt.requestId),
@@ -107,6 +137,7 @@ export function projectWorldGoal(goal, observed) {
     self: { ...(motion ? { motion: { type: motion.type, status: motion.status,
       targetId: references.get(motion.targetId) ?? null } } : {}) },
     participants, requesterId: references.get(saved.requesterId) ?? null,
+    ...(!saved.plan && locations.length ? { locations: locations.map(locationSummary) } : {}),
     ...(saved.plan ? { originalObjective: objective } : {}) };
   const worldContext = JSON.stringify(context);
   if (bytes(worldContext) > 24576) throw failure();
@@ -118,6 +149,12 @@ export function projectWorldGoal(goal, observed) {
           if (!Array.isArray(decision.milestones)) throw failure();
           decision.milestones = decision.milestones.map(milestone => {
             if (!milestone || typeof milestone !== 'object' || Array.isArray(milestone)) throw failure();
+            if (milestone.type === 'move-to') {
+              if (Object.hasOwn(milestone, 'position') || !points.has(milestone.locationId)
+                  || milestone.locationId === 'destination') throw failure();
+              const { locationId, ...rest } = milestone;
+              return { ...rest, position: points.get(locationId) };
+            }
             if (!Object.hasOwn(milestone, 'targetId')) return milestone;
             if (!originals.has(milestone.targetId)) throw failure();
             if (milestone.targetId === 'speaker') {
@@ -131,6 +168,12 @@ export function projectWorldGoal(goal, observed) {
         if (decision.decision === 'act' && decision.intent?.targetId !== undefined) {
           if (!originals.has(decision.intent.targetId)) throw failure();
           decision.intent.targetId = originals.get(decision.intent.targetId);
+        }
+        if (decision.decision === 'act' && decision.intent?.type === 'move-to') {
+          if (Object.hasOwn(decision.intent, 'position') || decision.intent.locationId !== 'destination'
+              || !points.has('destination')) throw failure();
+          const { locationId, ...rest } = decision.intent;
+          decision.intent = { ...rest, position: points.get(locationId) };
         }
         if (decision.decision === 'done') {
           if (!Array.isArray(decision.receiptIds) || decision.receiptIds.some(id => !receiptIds.has(id))) throw failure();
@@ -154,15 +197,19 @@ export function parseWorldGoalDecision(value, { goal, observed, now = Date.now()
     if (result.decision === 'plan') {
       if (goal?.plan) throw failure();
       const plan = normalizeWorldGoalPlan({ version: 1, milestones: result.milestones });
-      for (const milestone of plan.milestones) validateWorldIntent({ type: milestone.type,
-        ...(milestone.type !== 'stop' ? { targetId: milestone.targetRole === 'requester' ? goal.requesterId : milestone.targetId } : {}) },
-      { observed, current: observed, now });
+      const locations = goalLocations(goal, observed);
+      for (const milestone of plan.milestones) {
+        const intent = { type: milestone.type, ...(milestone.type === 'move-to' ? { position: milestone.position }
+          : milestone.type !== 'stop' ? { targetId: milestone.targetRole === 'requester' ? goal.requesterId : milestone.targetId } : {}) };
+        if (milestone.type === 'move-to' && !locations.some(location => samePosition(location.position, milestone.position))) throw failure();
+        validateWorldIntent(intent, { observed, current: observed, now, ...pointAuthority(intent) });
+      }
       return { decision: 'plan', milestones: plan.milestones };
     }
     if (result.decision === 'act') {
       if (!WORLD_GOAL_ACTIONS.includes(result.intent?.type) || !brief(result.reason ?? '', 240)) throw failure();
-      const intent = validateWorldIntent(result.intent, { observed, current: observed, now });
       const active = activeWorldGoalMilestone(goal);
+      const intent = validateWorldIntent(result.intent, { observed, current: observed, now, ...pointAuthority(active?.intent) });
       if (!active || !worldGoalMilestoneMatchesAction(goal, { milestoneIndex: active.index, intent })) throw failure();
       return { decision: 'act', intent, reason: (result.reason ?? '').trim() };
     }

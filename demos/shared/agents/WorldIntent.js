@@ -1,7 +1,9 @@
+import { normalizeWorldGoalPosition } from '../../../peercompute/src/peercompute/agents/WorldGoalPlan.js';
+
 const encoder = new TextEncoder();
 const marker = '\n\n[Resident response format]\n';
 export const WORLD_INTENT_MAX_AGE_MS = 120000;
-const types = new Set(['approach', 'follow', 'stop', 'look-at']);
+const types = new Set(['approach', 'follow', 'stop', 'look-at', 'move-to']);
 
 /** A language specialist proposes one bounded intention; it never writes poses or code. */
 export const WORLD_INTENT_INSTRUCTIONS = 'You CAN control your body by proposing an intent. The world will execute it after this reply. '
@@ -40,16 +42,43 @@ export function parseWorldReply(value) {
   } catch { return { text, intent: null }; }
 }
 
-export function validateWorldIntent(value, { observed, current, now = Date.now() } = {}) {
+export function validateWorldIntent(value, { observed, current, now = Date.now(), authorizedPositions = [] } = {}) {
   if (value == null) return null;
   if (!value || Array.isArray(value) || !types.has(value.type)
-      || Object.keys(value).some(key => !['type', 'targetId', 'stopDistance'].includes(key))) throw new Error('Unsupported resident intention');
+      || Object.keys(value).some(key => !['type', 'targetId', 'stopDistance', 'position'].includes(key))) throw new Error('Unsupported resident intention');
   if (!Number.isFinite(observed?.observedAt) || now < observed.observedAt || now - observed.observedAt > WORLD_INTENT_MAX_AGE_MS) {
     throw new Error('World observations are stale; ask again');
   }
   if (observed.self?.intentRevision !== undefined && observed.self.intentRevision !== current?.self?.intentRevision) {
     throw new Error('A newer movement command superseded this intention');
   }
+  if (value.type === 'move-to') {
+    if (value.targetId !== undefined) throw new Error('A fixed destination cannot also target a participant');
+    const position = normalizeWorldGoalPosition(value.position);
+    const pair = item => Array.isArray(item) && item.length === 2 && item.every(Number.isFinite);
+    for (const senses of [observed, current]) {
+      const spatial = senses?.spatial;
+      if (spatial?.frame !== 'planar-xz' || !pair(spatial.bounds?.min) || !pair(spatial.bounds?.max)
+          || !Number.isFinite(spatial.maximumLegDistance) || spatial.maximumLegDistance <= 0 || spatial.maximumLegDistance > 2000
+          || spatial.bounds.min.some((v, axis) => v >= spatial.bounds.max[axis])) throw new Error('This world does not support fixed destinations');
+      if ([position[0], position[2]].some((v, axis) => v < spatial.bounds.min[axis] || v > spatial.bounds.max[axis])) {
+        throw new Error('Destination is outside the observed walking surface');
+      }
+    }
+    const currentPosition = normalizeWorldGoalPosition(current.self?.position);
+    if (Math.hypot(position[0] - currentPosition[0], position[2] - currentPosition[2]) > current.spatial.maximumLegDistance) {
+      throw new Error('Destination is beyond the current movement range');
+    }
+    if (!Array.isArray(authorizedPositions) || authorizedPositions.length > 64) throw new Error('Invalid authorized destinations');
+    const candidates = [...(observed.locations ?? []).map(location => location.position), ...authorizedPositions];
+    if (!candidates.some(candidate => {
+      try { return normalizeWorldGoalPosition(candidate).every((v, axis) => v === position[axis]); } catch { return false; }
+    })) throw new Error('The destination was not observed or authorized by the saved task');
+    const stopDistance = value.stopDistance ?? 8;
+    if (!Number.isFinite(stopDistance) || stopDistance < 8 || stopDistance > 30) throw new Error('Resident stopping distance must be 8–30');
+    return { type: 'move-to', position, stopDistance };
+  }
+  if (value.position !== undefined) throw new Error('Only move-to accepts a fixed destination');
   if (value.type === 'stop') {
     if (value.targetId !== undefined || value.stopDistance !== undefined) throw new Error('Stop does not accept a target');
     return { type: 'stop' };
