@@ -4790,3 +4790,11 @@ show progress lists below the fold. Public assets remain unchanged.
   no Safari/device qualification. Chromium console/page/download errors empty;
   real SecretWorkshop Noise connected. Evidence: peercompute-mobile-overflow-20261110
   in the external cache; six unit-browser checks and production build pass.
+
+### Proposed social-errand acceptance — November10
+
+Future tests should prove model-composed movement/question/reply/return/report
+across two real peers, with varied names and prompts. Match the exact reply and
+its author, distinguish delivery from answer, retain progress without duplicate
+sends after reload, and cover departure, timeout, cancellation and privacy. These
+are proposed criteria, not tests executed or features implemented in this turn.

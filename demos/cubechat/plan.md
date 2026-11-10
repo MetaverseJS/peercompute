@@ -516,3 +516,28 @@ Follow/Stop through the WebGPU motor. Answers remain poetic/factually weak; mode
 quality is not claimed fixed. All170 focused checks, Cube/Earth external builds
 and promoted5176 desktop/mobile/SecretWorkshop smoke pass. Only internal CubeChat
 updated; no Pages build/deploy or push. Historical failed candidates remain above.
+
+### November 10 — proposed next slice: goal-directed social errands
+
+After qualified saved movement milestones, compose movement, targeted dialogue
+and memory into a task such as “Go ask Nova what she knows about this place, then
+come back and tell me.” Recommendation only; implementation is not yet requested.
+
+Reuse the neural motor, goal checkpoints, authenticated resident conversations
+and scoped memory. Add typed conversational skills/outcomes, durable question/
+reply correlation and task-relevant memory retrieval. Transport delivery is not
+an answer, and a received answer is an attributed statement rather than proven
+fact. Reports must use the real matching reply. Share only the intended question
+through its chosen audience; never expose private journals or the entire goal.
+Replace blanket social/objective exclusion with explicit task-owned arbitration.
+
+The model composes supported skills; do not script this example's itinerary.
+Keep decisions event-driven and budgeted, motor control local, human priority,
+owner controls and paused restore. Reconcile uncertain question delivery before
+any retry. Show current skill and observed outcome in the existing Objective UI.
+
+Acceptance: two actual peers, varied names/questions, attributed replies, return/
+report, retained progress and no duplicate send after reload, target departure,
+no reply, cancellation and privacy. The skill interface should serve other worlds.
+This advances Humunculus composed skills; learned routing and self-directed
+weight training follow measured skill outcomes rather than being claimed here.

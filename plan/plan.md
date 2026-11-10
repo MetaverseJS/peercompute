@@ -2195,3 +2195,9 @@ longer permit outer page scrolling; chat and dialogs retain their own scrolling.
 Six focused checks and14 built-page Chromium layouts pass. Native phone browser
 chrome/keyboard overflow was not reproduced; WebKit launch is unavailable due
 to a missing system library. Internal5189 only; no Pages update or push.
+
+November10 next-slice recommendation (not implementation authorization):
+CubeChat goal-directed social errands combine the qualified movement objectives
+with existing targeted resident conversations and scoped memory. Add typed
+conversation outcomes, reply correlation and grounded reporting, preserving
+ownership/budgets/reload rules. See demos/cubechat/plan.md; no runtime changes.
