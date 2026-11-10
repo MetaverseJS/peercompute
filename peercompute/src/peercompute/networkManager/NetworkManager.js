@@ -2439,8 +2439,7 @@ export class NetworkManager {
     for (const peerId of this.bootstrapPeerIds) {
       const connections = this._getConnectionsForPeer(peerId);
       connections.forEach((conn) => {
-        if (conn?.status && conn.status !== 'open') return;
-        conn.close?.().catch?.(() => {});
+        this._retireIdleConnection(conn, 'bootstrap-retention');
       });
     }
   }
@@ -3515,10 +3514,27 @@ export class NetworkManager {
   _closeConnectionsToPeer(peerId) {
     if (!this.libp2p?.getConnections || !peerId) return;
     const connections = this._getConnectionsForPeer(peerId);
-    connections.forEach((conn) => {
-      if (conn?.status && conn.status !== 'open') return;
-      conn.close?.().catch?.(() => {});
-    });
+    connections.forEach((conn) => this._retireIdleConnection(conn, 'topology'));
+  }
+
+  _hasActiveApplicationStreams(connection) {
+    // Read installed service protocols rather than duplicating inference or
+    // gossip version lists. Persistent pubsub/maintenance streams must not pin
+    // an otherwise idle topology neighbor; arbitrary application streams must.
+    const services = this.libp2p?.services ?? {};
+    const maintenance = new Set([services.identify?.protocol, services.identifyPush?.protocol, services.ping?.protocol,
+      ...(services.pubsub?.protocols ?? []), ...(services.pubsub?.multicodecs ?? [])].filter(Boolean));
+    return (connection.streams ?? []).some(stream => typeof stream.protocol === 'string' && stream.protocol.length > 0
+      && !['closed', 'aborted', 'reset'].includes(stream.status) && !maintenance.has(stream.protocol));
+  }
+
+  _retireIdleConnection(connection, reason) {
+    if (!isConnectionOpen(connection) || this._getPeerConnectionRecovery().protectionMs(connection) > 0
+        || this._hasActiveApplicationStreams(connection)) return false;
+    this._infoLog('[NetworkManager] Retiring idle connection', connection.remotePeer?.toString?.(),
+      connection.id, reason, toAddrString(connection.remoteAddr));
+    connection.close?.().catch?.(() => {});
+    return true;
   }
 
   _handleTopologyMessage(payload, envelope) {
@@ -4470,7 +4486,7 @@ export class NetworkManager {
         this._scheduleRelayPrune(peerId, protectedMs);
         return;
       }
-      conn.close?.().catch?.(() => {});
+      if (!this._retireIdleConnection(conn, 'direct-upgrade')) this._scheduleRelayPrune(peerId, 1000);
     });
   }
 

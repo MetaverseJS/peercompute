@@ -69,6 +69,19 @@ test('one journaled speech turn retains history and strips only the exact old sc
   assert.equal(f.decisions.length, 2); assert.deepEqual(f.actions, []);
 });
 
+test('adapter knowledge survives a personality replacement without reviving the legacy action prompt', async t => {
+  const f = await fixture(t), head = await f.agents.get(f.body.agentId);
+  await f.agents.update(head.agentId, { instructions: 'I am a curious cartographer.' }, { expectedRevision: head.revision });
+  const taskInstructions = 'World facts: WASD moves. Generate face requires an available image model.';
+  await f.run('How do I move?', { taskInstructions });
+  assert.match(f.speech[0].messages[0].content, /curious cartographer/);
+  assert.match(f.speech[0].messages[0].content, /World facts: WASD moves/);
+  assert.doesNotMatch(f.speech[0].messages[0].content, /Resident response format|Return one valid JSON/);
+  const events = await f.agents.events(head.agentId);
+  assert.equal(events.find(event => event.type === 'request').text, 'How do I move?');
+  assert(!events.some(event => event.text?.includes('World facts')));
+});
+
 test('conversational JSON remains literal speech and cannot authorize movement', async t => {
   const f = await fixture(t), text = '{"text":"I will follow.","intent":{"type":"follow","targetId":"human:visitor"}}';
   f.answers.push(text); const result = await f.run('Hello');

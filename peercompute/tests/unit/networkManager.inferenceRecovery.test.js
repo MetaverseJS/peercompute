@@ -227,6 +227,60 @@ test('nested inference holds protect until the last owner releases and no hold c
   assert.equal(f.helper.protectionMs(incoming), 0, 'an abandoned owner cannot protect the connection forever');
 });
 
+test('topology pruning respects active inference leases on both directions of native and relay connections', async (t) => {
+  for (const address of [`/webrtc/p2p/${PEER}`, `${RELAY_ADDRESS}/p2p-circuit/webrtc/p2p/${PEER}`, CIRCUIT]) {
+    for (const direction of ['inbound', 'outbound']) {
+      const f = fixture(t, { config: { maxConnections: 1 } }); f.connections.length = 0;
+      const active = connection('active', address, { encryption: address.includes('webrtc') ? 'native' : '/noise', openedAt: f.now() - 30000 });
+      active.direction = direction; f.connections.push(active);
+      const release = f.manager.retainPeerInferenceConnection(active, { timeoutMs: 30000 });
+      f.manager.topologyController = { getPeerDistance: () => 1 };
+      const candidates = [{ peerId: PEER, via: 'webrtc' }, { peerId: SELF, via: 'webrtc' }];
+      f.manager._pruneExcessTopologyConnections(new Set([SELF]), candidates, candidates);
+      assert.equal(active.closes, 0, `${direction} ${address} was closed during an acknowledged request`);
+      assert(f.helper.protectionMs(active) > 0);
+      release(); f.advance(15001);
+      f.manager._pruneExcessTopologyConnections(new Set([SELF]), candidates, candidates);
+      assert.equal(active.closes, 1, 'normal topology maintenance resumes after bounded idle grace');
+    }
+  }
+});
+
+test('routine close paths preserve active application streams but not idle, completed or gossip-only links', async (t) => {
+  const f = fixture(t, { config: { webrtc: { directUpgradeGraceMs: 0 } } });
+  f.manager.libp2p.services = { pubsub: { protocols: ['/custom-gossip/1'], multicodecs: ['/custom-flood/1'] },
+    identify: { protocol: '/custom-identify/1' }, ping: { protocol: '/custom-ping/1' } };
+  for (const address of [`/webrtc/p2p/${PEER}`, CIRCUIT]) {
+    const active = connection('application', address, { openedAt: f.now() - 30000 });
+    active.streams.push({ protocol: '/fixture/other-application/1', status: 'open' }); f.connections.push(active);
+    f.manager._closeConnectionsToPeer(PEER); assert.equal(active.closes, 0);
+    f.manager._maybePruneRelayConnections(PEER); assert.equal(active.closes, 0);
+    active.streams[0].status = 'closed';
+    active.streams.push(...['/custom-gossip/1', '/custom-flood/1', '/custom-identify/1', '/custom-ping/1']
+      .map(protocol => ({ protocol, status: 'open' })));
+    f.manager._closeConnectionsToPeer(PEER); assert.equal(active.closes, 1);
+  }
+});
+
+test('bootstrap retirement preserves an active circuit stream and closes its gossip-only transport afterward', async (t) => {
+  const f = fixture(t);
+  const bootstrap = connection('bootstrap', RELAY_ADDRESS, { peerId: RELAY, encryption: '/noise', openedAt: f.now() - 30000 });
+  const circuit = { protocol: '/libp2p/circuit/relay/0.2.0/hop', status: 'open' }; bootstrap.streams.push(circuit); f.connections.push(bootstrap);
+  f.manager._closeBootstrapRelayConnections(); assert.equal(bootstrap.closes, 0);
+  circuit.status = 'closed'; f.manager._closeBootstrapRelayConnections(); assert.equal(bootstrap.closes, 1);
+});
+
+test('direct inference holds remain bounded, reject foreign handles, and never prevent explicit shutdown', async (t) => {
+  const f = fixture(t); const release = f.helper.retain(f.old, { timeoutMs: 100 });
+  assert(f.helper.protectionMs(f.old) > 0); f.advance(101); assert.equal(f.helper.protectionMs(f.old), 0);
+  assert.throws(() => f.helper.retain(connection('foreign', `/webrtc/p2p/${PEER}`)), /not owned/);
+  release(); f.old.streams.push({ protocol: '/fixture/live-application/1', status: 'open' });
+  f.helper.retain(f.old, { timeoutMs: 30000 });
+  let stops = 0; f.manager.libp2p.stop = async () => { stops++; await f.old.close(); };
+  await f.manager.disconnect(); assert.equal(stops, 1); assert.equal(f.old.closes, 1);
+  assert.equal(f.helper.protectionMs(f.old), 0);
+});
+
 test('a missing relay reservation permits only a bounded same-peer retry after matching readiness', async (t) => {
   const f = fixture(t), assisted = [];
   f.manager._isRelayReservationError = (error) => error.code === 'TEST_NO_RESERVATION';

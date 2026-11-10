@@ -1530,3 +1530,18 @@ November10 mobile report: constrain standalone inference document scrolling,
 keeping transcript/dialog and embedded-world scrolling intact. Local CSS-shell
 change plus internal5189 preview only; Pages publication is not part of this fix.
 Native device overscroll remains distinct from passing emulated viewport checks.
+
+
+### November 10 — personal guide follow-up
+
+User authorizes default personal CubeChat guides, superseding an interim shared
+room greeter preference. Guides ask co-creation questions, retain owner edits,
+and may update bounded identity/goals/appearance fields after owner conversation.
+Standing welcomes use durable encounter receipts and existing managed inference;
+no automatic weights/microphone/image generation. Preserve all current residents,
+owner permissions and pause/removal. Qualify internally without Pages or push.
+
+Personal-guide code and internal preview delivered with model-quality limitations:
+all four profile fields have validated persistence paths; actual models saved
+name/goals/appearance but did not reliably place personality traits in instructions.
+Keep full native qualification open and retain failed cases. No Pages or push.

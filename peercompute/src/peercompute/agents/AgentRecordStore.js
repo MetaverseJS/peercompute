@@ -100,6 +100,37 @@ export class AgentRecordStore {
       return record;
     }, signal);
   }
+  /** Provision an installation default once; deletion never grants permission to recreate it. */
+  async ensureDefault(key, input, { signal } = {}) {
+    this._newWork();
+    if (typeof key !== 'string' || !key.trim() || key.includes('\0') || new TextEncoder().encode(key).byteLength > 512) {
+      throw new TypeError('Invalid agent default key');
+    }
+    const fields = normalizeAgentInput(input);
+    if ('authority' in input) throw new TypeError('Default agent authority is assigned by the local store');
+    const metadataKey = `default-agent:${key}`;
+    return this._transaction(['heads', 'metadata'], 'readwrite', async (tx) => {
+      const heads = tx.objectStore('heads'), metadata = tx.objectStore('metadata');
+      const marker = await request(metadata.get(metadataKey));
+      if (marker !== undefined) {
+        const id = agentIdentifier(marker?.agentId, 'default ID');
+        if (marker.hostId !== this.hostId) throw new Error('This installation does not own the default agent');
+        const stored = await request(heads.get(id));
+        if (!stored) return { head: null, created: false, removed: true };
+        const head = normalizeAgentRecord(stored.record);
+        if (head.agentId !== id || head.authority.hostId !== this.hostId) throw new Error('Invalid default agent identity or local authority');
+        return { head, created: false, removed: false };
+      }
+      const at = this._time();
+      const head = normalizeAgentRecord({ schema: AGENT_SCHEMA, agentId: crypto.randomUUID(), agentKind: 'general', ...fields,
+        authority: { kind: 'local', hostId: this.hostId, epoch: 0 }, revision: 1, status: 'paused', createdAt: at, updatedAt: at, pendingOperation: null });
+      await request(heads.add({ id: head.agentId, record: head, eventCount: 0, eventBytes: 0,
+        nextSequence: 1, operationCount: 0, attachmentCount: 0, attachmentBytes: 0 }));
+      // Kept outside the head and deletion collections, so exports/clones cannot inherit this role.
+      await request(metadata.add({ agentId: head.agentId, hostId: this.hostId }, metadataKey));
+      return { head, created: true, removed: false };
+    }, signal);
+  }
   get(id, { signal } = {}) {
     agentIdentifier(id); return this._transaction(['heads'], 'readonly', async (tx) => (await request(tx.objectStore('heads').get(id)))?.record, signal);
   }

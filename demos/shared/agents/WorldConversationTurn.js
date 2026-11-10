@@ -35,8 +35,9 @@ export function createWorldConversationTurns({ agents, experience, signal: paren
     // Do not dispatch the next speech request on that model before then.
     if (previous) await previous.promise.catch(() => {});
     await headFor(entry);
-    const { turn, prompt, conversationId, worldContext, maxNewTokens, agentId } = entry;
+    const { turn, prompt, conversationId, worldContext, taskInstructions, maxNewTokens, agentId } = entry;
     const outcome = await agents.run(agentId, { task: 'text-generation', prompt, conversationId, worldContext,
+      ...(taskInstructions ? { taskInstructions } : {}),
       ...(turn?.legacyHistorySuffix ? { legacyHistorySuffix: turn.legacyHistorySuffix } : {}),
       ...(turn?.contextHistory ? { contextHistory: turn.contextHistory } : {}),
       maxNewTokens, signal: entry.signal });
@@ -78,14 +79,14 @@ export function createWorldConversationTurns({ agents, experience, signal: paren
       return { ...result, text: text + annotation(error) };
     }
   }
-  function run({ key, agentId, turn, prompt, message = prompt, conversationId, worldContext,
+  function run({ key, agentId, turn, prompt, message = prompt, conversationId, worldContext, taskInstructions,
     maxNewTokens = 512, signal, valid = () => true } = {}) {
     const combined = AbortSignal.any([lifetime.signal, ...(parentSignal ? [parentSignal] : []), ...(signal ? [signal] : [])]);
     combined.throwIfAborted();
     const previous = active.get(key);
     if (previous?.phase === 'speech') return Promise.reject(Object.assign(new Error('This resident is already replying.'), { code: 'ERR_AGENT_BUSY' }));
     previous?.decision.abort(aborted('A newer message superseded this pending action.'));
-    const entry = { key, agentId, turn, prompt, message, conversationId, worldContext, maxNewTokens, valid,
+    const entry = { key, agentId, turn, prompt, message, conversationId, worldContext, taskInstructions, maxNewTokens, valid,
       signal: combined, phase: 'speech', decision: new AbortController() };
     active.set(key, entry);
     entry.promise = execute(entry, previous).finally(() => {

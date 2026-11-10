@@ -15,6 +15,7 @@ import { ArtifactStore } from '../artifacts/ArtifactStore.js';
 import { AgentRecordStore } from '../agents/AgentRecordStore.js';
 import { WorldMemoryStore } from '../agents/WorldMemoryStore.js';
 import { WorldGoalStore } from '../agents/WorldGoalStore.js';
+import { WorldStandingGoalStore } from '../agents/WorldStandingGoalStore.js';
 
 export const STATE_TASK_GRAPH_CACHE_ARTIFACT_ADMISSION_SCHEMA = 'peercompute.state.task-graph-cache-artifact-admission.v0';
 export const STATE_TASK_GRAPH_CACHE_ARTIFACT_INVALIDATION_SCHEMA = 'peercompute.state.task-graph-cache-artifact-invalidation.v0';
@@ -96,6 +97,7 @@ export class StateManager {
     this.agentRecordStores = new Map();
     this.worldMemoryStores = new Map();
     this.worldGoalStores = new Map();
+    this.worldStandingGoalStores = new Map();
   }
 
   /**
@@ -270,6 +272,20 @@ export class StateManager {
   }
 
   getWorldGoalStore(name = 'default') { return this.worldGoalStores.get(name) || null; }
+
+  /** Local standing-goal encounter receipts are never replicated or auto-replayed. */
+  createWorldStandingGoalStore(options = {}) {
+    if (this.destroyed) throw new Error('StateManager is destroyed');
+    const name = options.name || 'default';
+    if (this.worldStandingGoalStores.has(name)) throw new Error(`World standing goal store ${name} is already registered`);
+    const store = new WorldStandingGoalStore({ ...options, name, onDestroy: closed => {
+      if (this.worldStandingGoalStores.get(name) === closed) this.worldStandingGoalStores.delete(name);
+      options.onDestroy?.(closed);
+    } });
+    this.worldStandingGoalStores.set(name, store); return store;
+  }
+
+  getWorldStandingGoalStore(name = 'default') { return this.worldStandingGoalStores.get(name) || null; }
 
   async ensureArtifact(cid, { storeName = 'default', signal } = {}) {
     if (this.destroyed) throw new Error('StateManager is destroyed');
@@ -1005,6 +1021,7 @@ export class StateManager {
       for (const store of [...this.agentRecordStores.values()]) await cleanup(() => store.destroy());
       for (const store of [...this.worldMemoryStores.values()]) await cleanup(() => store.destroy());
       for (const store of [...this.worldGoalStores.values()]) await cleanup(() => store.destroy());
+      for (const store of [...this.worldStandingGoalStores.values()]) await cleanup(() => store.destroy());
       // Local artifact bytes live outside Yjs but remain owned by this manager.
       // Destroy handles without deleting their optional persistent records.
       await cleanup(() => this.dataState.destroyArtifactStores());

@@ -272,3 +272,55 @@ quiet decisions, including with an outgoing personality. Generated introductions
 have been tested with controlled inference responses; natural greeting quality
 is not yet demonstrated for that small model. Initiative permits speech rather
 than forcing it.
+
+
+## Personal guide
+
+CubeChat supplies its controls and application facts separately from the editable
+personality, so a new self-description does not erase the guide’s world knowledge.
+
+A new installation gets one **CubeChat Guide** in each room, next to its player.
+It uses a compatible loaded local model or an available peer model; creating the
+guide does not download model weights. With no provider, Residents shows that it
+is waiting for a model. Tap its cube for private chat, or find it in the hamburger
+menu → Residents. Existing task controls let you give it physical objectives.
+
+The guide has a standing welcome goal aimed at its own player. Its introduction
+is public, but other players' guides will not automatically greet you as well.
+A committed encounter record prevents another welcome on reload, even when the
+network peer ID changes. Ordinary residents can optionally have a standing goal
+for other nearby players; their encounter identity lasts for that peer session.
+
+In private chat it asks short questions about its name, personality, appearance
+and purpose. **Let resident update its personality, goals and appearance** permits
+a separate model decision to save changes to those fields. The permission is on
+for the guide and off for ordinary new residents. Only its owner's conversation
+can trigger these changes; visitors cannot edit another player's guide. Model
+output cannot change sharing, local-only routing, permissions or executable code.
+You can review, edit or turn this off in Edit resident. Profile changes use the
+same revision-checked IndexedDB store as manual edits.
+
+Chat reports which fields were actually saved. Invalid model proposals leave the
+profile unchanged and show an error; small models can also omit a preference or
+put it in the wrong profile field. Review the saved profile in Residents and
+correct it there when needed. A successful model response is not proof that
+every requested preference was applied.
+
+An appearance description stays saved without an image provider. Generate the
+face separately when an image model is available. Automatic welcomes and profile
+changes do not turn on the microphone or load speech/image models. Paused, edited
+or removed guides stay that way after reload; removed bodies are not recreated.
+Clones do not inherit default-guide registration, standing-goal authorization or
+self-edit permission. Public/history clone consent remains separate.
+
+Standing encounters are bounded to three attempts per target, 90 seconds between
+attempts and six claims per hour per resident. Quiet decisions complete the
+encounter. Interrupted or uncertain sends are retained and never replayed
+automatically; a transport receipt does not prove a person read the message.
+Manual conversation and owner tasks take precedence over automatic introductions.
+
+Reusable components are `AgentRecordStore.ensureDefault`,
+`WorldStandingGoalStore`, `WorldStandingGoal` and `WorldSelfProfile`. CubeChat
+only supplies its guide preset, scene observations and native controls. This
+extends the Humunculus identity/memory/skill architecture; it does not train
+weights or implement unrestricted autonomous social errands.

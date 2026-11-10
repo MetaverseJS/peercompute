@@ -149,6 +149,8 @@ test('real private Noise peers recover a stalled open link automatically and ret
     await delay(140); // Outlive the fresh handshake grace on both endpoints.
     requestor.manager._maybePruneRelayConnections(host.node.peerId.toString());
     host.manager._maybePruneRelayConnections(requestor.node.peerId.toString());
+    requestor.manager._closeConnectionsToPeer(host.node.peerId.toString());
+    host.manager._closeConnectionsToPeer(requestor.node.peerId.toString());
     assert.equal(fresh.status, 'open', 'active request holds its specific relay');
     input.onToken('blue'); return { text: 'blue' };
   };
@@ -162,6 +164,29 @@ test('real private Noise peers recover a stalled open link automatically and ret
   let lateAborted = 0;
   for (const value of stalled.pending) value.resolve({ abort() { lateAborted++; } });
   await delay(0); assert.equal(lateAborted, 1);
+});
+
+test('real direct Noise inference survives topology retirement on both endpoints and releases after completion', { timeout: 15000 }, async t => {
+  const { requestor, host, original } = await fixture(t);
+  await requestor.service.refresh();
+  const inbound = host.node.getConnections(requestor.node.peerId).find(connection => !connection.remoteAddr.toString().includes('/p2p-circuit'));
+  assert(inbound); assert.equal(original.direction, 'outbound'); assert.equal(inbound.direction, 'inbound');
+  host.run = async input => {
+    host.generations++; await delay(140);
+    assert(requestor.manager.peerConnectionRecovery.protectionMs(original) > 0, 'caller must retain the actual generation connection');
+    assert(host.manager.peerConnectionRecovery.protectionMs(inbound) > 0, 'host must retain its accepted generation connection');
+    requestor.manager._closeConnectionsToPeer(host.node.peerId.toString());
+    host.manager._closeConnectionsToPeer(requestor.node.peerId.toString());
+    assert.equal(original.status, 'open'); assert.equal(inbound.status, 'open');
+    input.onToken('completed'); return { text: 'completed' };
+  };
+  const result = await requestor.service.generate(cid, { prompt: 'Complete one request' });
+  assert.equal(result.text, 'completed'); assert.equal(host.generations, 1);
+  assert.equal(result.connectionEncryption, '/noise'); assert.doesNotMatch(result.connectionAddress, /p2p-circuit/);
+  await until(() => host.service.inbound.size === 0 && requestor.service.outbound.size === 0);
+  await delay(140); // Both service-owned leases and their short fixture idle grace have ended.
+  requestor.manager._closeConnectionsToPeer(host.node.peerId.toString());
+  await until(() => original.status === 'closed');
 });
 
 test('cancellation while bounded repair finishes sends no generation header or prompt', { timeout: 15000 }, async (t) => {

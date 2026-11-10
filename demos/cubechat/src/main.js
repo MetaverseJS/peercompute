@@ -16,6 +16,7 @@ import {
 import { registerPeercomputeBotBridge } from '../../shared/peercomputeBotBridge.js';
 import { installWorldAgents } from '../../shared/agents/WorldAgentHost.js';
 import { CubeAgentLayer } from './agents/CubeAgentLayer.js';
+import { cubeGuidePreset, CUBECHAT_GUIDE_FACTS } from './agents/cubeGuide.js';
 import { cubeShell, createCubeSettingsUi } from './ui/CubeSettingsUi.js';
 import { createCubeWorldUi } from './ui/CubeWorldUi.js';
 import { SpeechBubbleLayer } from '../../shared/world/SpeechBubbleLayer.js';
@@ -158,6 +159,8 @@ class CubeChat {
     });
     try {
       host = installWorldAgents({
+        defaultResident: cubeGuidePreset(`cubechat:${this.currentRoom.roomId}`),
+        worldKnowledge: CUBECHAT_GUIDE_FACTS.join(' '),
         worldId: `cubechat:${this.currentRoom.roomId}`,
         worldLabel: 'CubeChat',
         adapter: layer,

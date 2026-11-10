@@ -33,7 +33,7 @@ export class PeerConnectionRecovery {
   }
 
   observe(connection, { openedNow = false } = {}) {
-    if (!relay(connection) || this.protections.has(connection)) return;
+    if (!connection || this.protections.has(connection)) return;
     const timestamp = connection.timeline?.open ?? connection.stat?.timeline?.open;
     const opened = timestamp instanceof Date ? timestamp.getTime() : Number(timestamp?.timestamp ?? timestamp);
     this.protections.set(connection, { freshUntil: Number.isFinite(opened) ? opened + this.freshGraceMs
@@ -42,7 +42,7 @@ export class PeerConnectionRecovery {
   }
 
   protectionMs(connection) {
-    if (this.closed || !open(connection) || !relay(connection)) return 0;
+    if (this.closed || !open(connection)) return 0;
     this.observe(connection);
     const value = this.protections.get(connection), now = this.now();
     for (const [id, until] of value.leases) if (until <= now) value.leases.delete(id);
@@ -53,7 +53,6 @@ export class PeerConnectionRecovery {
   retain(connection, { timeoutMs = 300000 } = {}) {
     bounded(timeoutMs, 1, 301000);
     if (this.closed || !open(connection)) throw failure('Inference connection is closed');
-    if (!relay(connection)) return () => {};
     if (!this.manager.libp2p?.getConnections().includes(connection)) throw failure('Inference connection is not owned by this manager');
     this.observe(connection);
     const value = this.protections.get(connection), id = Symbol('inference-stream');

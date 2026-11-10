@@ -541,3 +541,35 @@ report, retained progress and no duplicate send after reload, target departure,
 no reply, cancellation and privacy. The skill interface should serve other worlds.
 This advances Humunculus composed skills; learned routing and self-directed
 weight training follow measured skill outcomes rather than being claimed here.
+
+
+### November 10 — personal guide implementation
+
+The approved standing welcome slice now provisions one editable personal guide
+per installation/room. User briefly chose one room greeter, then superseded that
+with personal companions and requested self-modification and co-creation questions.
+Private default markers preserve identity and removal; owner-targeted automatic
+welcomes use a durable claim/prepare/receipt ledger, existing encounter sensing
+and model routing. Custom standing goals may target new nearby human sessions.
+
+Owner conversation may trigger a separate validated profile patch for name,
+instructions, goals and appearance text. Default-guide self modification is on;
+ordinary residents and clones require owner opt-in. No model output controls
+permissions, locality, shared history, authority or code. Owner tasks continue
+through the existing physical-objective controller. Profile-goal text is not an
+execution plan. Automatic voice/image downloads remain absent.
+
+Implementation checks pass195/195, network retention regressions85/85, and the
+final presentation-only profile confirmation change passes8focused cases. Actual
+Nano peer inference produced both welcomes with acknowledged two-peer delivery.
+Actual cached local Qwen saved goals/name/appearance, retained them through reload,
+respected a visitor and owner opt-out, and preserved body removal. Application
+facts remain available independently of editable personality.
+
+Qualification remains partial: no complete native scenario passed every criterion.
+Small models omitted requested personality text or put traits into goals; a
+one-call generic mapping clarification did not improve this and was not adopted.
+Intermittent room-stream opening/provider availability also failed some runs.
+Keep those cases visible; do not treat fixtures as actual model-quality proof.
+The internal preview is available for testing; no Pages deploy or push. The
+broader ask/await-reply/return social-errand slice remains future work.

@@ -84,7 +84,8 @@ async function fixture(t, { mobile = false, enabled = true } = {}) {
       },
       onSpawn: async input => {
         calls.push({ type: 'spawn', input }); if (window.failSpawn) throw Error('Save failed');
-        const agent = { key: 'local:new', agentId: 'new', local: true, name: input.name, status: 'idle', appearancePrompt: input.appearancePrompt, respondToWorldChat: input.respondToWorldChat, initiateConversations: input.initiateConversations, appearanceStatus: input.appearancePrompt ? 'waiting' : undefined };
+        const agent = { key: 'local:new', agentId: 'new', local: true, name: input.name, status: 'idle', appearancePrompt: input.appearancePrompt, respondToWorldChat: input.respondToWorldChat, initiateConversations: input.initiateConversations, appearanceStatus: input.appearancePrompt ? 'waiting' : undefined,
+          selfModifiable: input.selfModifiable, ...(input.standingGoal ? { standingGoal: input.standingGoal } : {}) };
         residents.push(agent); ui.setAgents(residents); ui.open(); ui.select(agent); ui.setMessages([]);
       },
       onAssignGoal: async input => { calls.push({ type: 'goal-assign', ...input }); if (window.failGoal) throw Error('Goal save failed'); if (window.holdGoal) await hold('goal'); },
@@ -408,7 +409,7 @@ test('Residents is one accessible roster with owner-only movement/recovery/remov
   await dialog.getByRole('button', { name: 'Place resident', exact: true }).click();
   await dialog.waitFor({ state: 'hidden' });
   const created = await page.evaluate(() => calls.find(call => call.type === 'spawn').input);
-  assert.deepEqual(created, { name: 'New resident', instructions: '', allowCloning: true, shareMemories: true, sharePrivateMemories: false, initiateConversations: false, movement: 'stationary', goals: ['Listen', 'Help visitors'], appearancePrompt: 'A friendly blue robot face', respondToWorldChat: false, localOnly: false, shared: true });
+  assert.deepEqual(created, { name: 'New resident', instructions: '', allowCloning: true, shareMemories: true, sharePrivateMemories: false, initiateConversations: false, selfModifiable: false, movement: 'stationary', goals: ['Listen', 'Help visitors'], appearancePrompt: 'A friendly blue robot face', respondToWorldChat: false, localOnly: false, shared: true });
   assert.deepEqual(await page.evaluate(() => calls.filter(call => call.type === 'movement').at(-1)), { type: 'movement', key: 'local:new', mode: 'stationary' });
   assert.equal(await page.evaluate(() => ui.getTarget()), 'local:new');
   await openResidents(page);
@@ -546,7 +547,7 @@ test('owner profile editor saves appearance, identity, policy and clone consent 
   await editor.getByRole('checkbox',{name:'Include private conversations',exact:true}).check();
   await editor.getByRole('button',{name:'Save resident',exact:true}).click();await editor.waitFor({state:'hidden'});
   const saved=await page.evaluate(()=>calls.find(c=>c.type==='edit').input);
-  assert.deepEqual(saved,{key:'local:ada',name:'Ada updated',instructions:'Be curious',goals:['Meet visitors','Learn shapes'],appearancePrompt:'A green cube face',movement:'follow',localOnly:true,shared:true,respondToWorldChat:true,initiateConversations:false,allowCloning:true,shareMemories:true,sharePrivateMemories:true});
+  assert.deepEqual(saved,{key:'local:ada',name:'Ada updated',instructions:'Be curious',goals:['Meet visitors','Learn shapes'],appearancePrompt:'A green cube face',movement:'follow',localOnly:true,shared:true,respondToWorldChat:true,initiateConversations:false,selfModifiable:false,allowCloning:true,shareMemories:true,sharePrivateMemories:true});
   await roster.getByRole('button',{name:'Clone Ada updated',exact:true}).click();
   assert.deepEqual(await page.evaluate(()=>calls.find(c=>c.type==='clone').input),{key:'local:ada'});
 });
@@ -811,4 +812,133 @@ test('mobile objective panel wraps progress and keeps controls inside Residents 
   assert.equal(await page.locator('.cube-native-chat [data-resident-goal]').count(), 0);
   assert.equal(await roster.evaluate(element => element.scrollWidth <= element.clientWidth), true);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+});
+
+test('standing social creation is opt-in, preserves custom fields, and resets for the next resident', async t => {
+  const page = await fixture(t, { mobile: true }); await openResidents(page);
+  const roster = page.getByRole('dialog', { name: 'Residents', exact: true });
+  await roster.locator('summary').filter({ hasText: 'Place a resident' }).click();
+  const panel = roster.locator('[data-standing-goal-fields]');
+  assert.equal(await panel.evaluate(element => element.open), false);
+  const self = roster.getByRole('checkbox', { name: 'Let resident update its personality, goals and appearance', exact: true });
+  assert.equal(await self.isChecked(), false);
+  await panel.locator('summary').click();
+  const enabled = panel.getByRole('checkbox', { name: 'Enable standing social goal', exact: true });
+  assert.equal(await enabled.isChecked(), false);
+  await enabled.check(); await panel.getByRole('textbox', { name: 'Standing social objective', exact: true }).fill('Introduce yourself to visitors.');
+  await panel.getByRole('combobox', { name: 'Standing social audience', exact: true }).selectOption('new-players'); await self.check();
+  await roster.getByRole('textbox', { name: 'Resident name', exact: true }).fill('Welcome resident');
+  assert.equal(await panel.evaluate(element => element.scrollWidth <= element.clientWidth), true);
+  await roster.getByRole('button', { name: 'Place resident', exact: true }).click(); await roster.waitFor({ state: 'hidden' });
+  const saved = await page.evaluate(() => calls.find(call => call.type === 'spawn').input);
+  assert.deepEqual(saved.standingGoal, { id: 'social-goal-v1', enabled: true, objective: 'Introduce yourself to visitors.', target: 'new-players' });
+  assert.equal(saved.selfModifiable, true); assert.equal(saved.initiateConversations, false); assert.equal(saved.respondToWorldChat, false);
+  await openResidents(page); assert.equal(await panel.evaluate(element => element.open), false);
+  assert.equal(await self.isChecked(), false); await panel.locator('summary').click();
+  assert.equal(await enabled.isChecked(), false);
+  assert.equal(await panel.getByRole('textbox', { name: 'Standing social objective', exact: true }).inputValue(), '');
+  assert.equal(await panel.getByRole('combobox', { name: 'Standing social audience', exact: true }).inputValue(), 'owner');
+});
+
+test('guide edits retain standing goal identity and drafts across roster updates and allow opting out', async t => {
+  const page = await fixture(t);
+  await page.evaluate(() => {
+    residents[0] = { ...residents[0], selfModifiable: true, standingGoal: { id: 'welcome-v1', enabled: true, objective: 'Welcome my owner.', target: 'owner' } };
+    ui.setAgents(residents); ui.openResidents();
+  });
+  const roster = page.getByRole('dialog', { name: 'Residents', exact: true });
+  await roster.getByRole('button', { name: 'Edit Ada', exact: true }).click();
+  const editor = page.getByRole('dialog', { name: 'Edit resident', exact: true }), panel = editor.locator('[data-standing-goal-fields]');
+  await panel.locator('summary').click();
+  const objective = panel.getByRole('textbox', { name: 'Standing social objective', exact: true });
+  const self = editor.getByRole('checkbox', { name: 'Let resident update its personality, goals and appearance', exact: true });
+  assert.equal(await self.isChecked(), true); assert.equal(await objective.inputValue(), 'Welcome my owner.');
+  await objective.fill('Show visitors how to chat.'); await objective.evaluate(element => element.setSelectionRange(5, 12));
+  const sameNode = await page.evaluate(() => {
+    const dialog = [...document.querySelectorAll('dialog[open]')].find(element => element.querySelector('h2')?.textContent === 'Edit resident');
+    const control = dialog.querySelector('[aria-label="Standing social objective"]');
+    for (let i = 0; i < 4; i++) {
+      residents[0] = { ...residents[0], standingStatus: 'considering', standingGoal: { ...residents[0].standingGoal, objective: 'Fresh profile data' } };
+      ui.setAgents(residents);
+    }
+    return control === dialog.querySelector('[aria-label="Standing social objective"]') && document.activeElement === control;
+  });
+  assert.equal(sameNode, true); assert.equal(await objective.inputValue(), 'Show visitors how to chat.');
+  assert.deepEqual(await objective.evaluate(element => [element.selectionStart, element.selectionEnd]), [5, 12]);
+  assert.equal(await panel.evaluate(element => element.open), true);
+  await panel.getByRole('combobox', { name: 'Standing social audience', exact: true }).selectOption('new-players');
+  await panel.getByRole('checkbox', { name: 'Enable standing social goal', exact: true }).uncheck(); await self.uncheck();
+  await editor.getByRole('button', { name: 'Save resident', exact: true }).click(); await editor.waitFor({ state: 'hidden' });
+  const saved = await page.evaluate(() => calls.find(call => call.type === 'edit').input);
+  assert.deepEqual(saved.standingGoal, { id: 'welcome-v1', enabled: false, objective: 'Show visitors how to chat.', target: 'new-players' });
+  assert.equal(saved.selfModifiable, false);
+  await roster.getByRole('button', { name: 'Edit Ada', exact: true }).click(); await panel.locator('summary').click();
+  assert.equal(await panel.getByRole('checkbox', { name: 'Enable standing social goal', exact: true }).isChecked(), false);
+  await objective.fill(''); await editor.getByRole('button', { name: 'Save resident', exact: true }).click(); await editor.waitFor({ state: 'hidden' });
+  assert.deepEqual(await page.evaluate(() => calls.filter(call => call.type === 'edit').at(-1).input.standingGoal),
+    { id: 'welcome-v1', enabled: false, objective: '', target: 'new-players' });
+});
+
+test('standing objectives enforce UTF8 capacity and enabled text before calling the host', async t => {
+  const page = await fixture(t); await openResidents(page);
+  const roster = page.getByRole('dialog', { name: 'Residents', exact: true });
+  await roster.locator('summary').filter({ hasText: 'Place a resident' }).click();
+  await roster.getByRole('textbox', { name: 'Resident name', exact: true }).fill('Bounded resident');
+  const panel = roster.locator('[data-standing-goal-fields]'); await panel.locator('summary').click();
+  await panel.getByRole('checkbox', { name: 'Enable standing social goal', exact: true }).check();
+  await roster.getByRole('button', { name: 'Place resident', exact: true }).click();
+  assert.equal(await page.evaluate(() => calls.filter(call => call.type === 'spawn').length), 0);
+  assert.match(await roster.getByRole('status').innerText(), /needs an objective/);
+  const objective = panel.getByRole('textbox', { name: 'Standing social objective', exact: true }); await objective.fill('é'.repeat(1025));
+  await roster.getByRole('button', { name: 'Place resident', exact: true }).click();
+  assert.equal(await page.evaluate(() => calls.filter(call => call.type === 'spawn').length), 0);
+  assert.match(await roster.getByRole('status').innerText(), /2048 UTF-8 bytes/);
+  assert.equal(await objective.inputValue(), 'é'.repeat(1025));
+  await objective.fill('é'.repeat(1024)); await roster.getByRole('button', { name: 'Place resident', exact: true }).click(); await roster.waitFor({ state: 'hidden' });
+  assert.equal(await page.evaluate(() => new TextEncoder().encode(calls.find(call => call.type === 'spawn').input.standingGoal.objective).length), 2048);
+});
+
+test('standing and profile statuses are owner-only, bounded, and never promise remote delivery', async t => {
+  const page = await fixture(t, { mobile: true });
+  await page.evaluate(() => {
+    residents[0] = { ...residents[0], selfModifiable: true, standingGoal: { id: 'welcome-v1', enabled: true, objective: 'PRIVATE_OWNER_OBJECTIVE', target: 'owner' } };
+    residents[1] = { ...residents[1], selfModifiable: true, standingGoal: { id: 'welcome-v1', enabled: true, objective: 'PRIVATE_REMOTE_OBJECTIVE', target: 'owner' }, standingStatus: 'spoken', profileStatus: 'updated' };
+    ui.setAgents(residents); ui.openResidents();
+  });
+  const roster = page.getByRole('dialog', { name: 'Residents', exact: true }), local = roster.locator('[data-agent-key="local:ada"]');
+  assert.equal(await local.locator('[data-profile-status]').count(), 0);
+  assert.equal(await roster.locator('[data-agent-key="peer:remote"] [data-standing-status], [data-agent-key="peer:remote"] [data-profile-status]').count(), 0);
+  assert.equal(await roster.getByText('PRIVATE_REMOTE_OBJECTIVE', { exact: true }).count(), 0);
+  for (const state of ['observing', 'waiting-for-model', 'considering', 'spoken', 'already-handled', 'quiet', 'unknown', 'blocked', 'failed', 'cooldown', 'disabled']) {
+    await page.evaluate(state => { residents[0].standingStatus = state; ui.setAgents(residents); }, state);
+    const note = local.locator('[data-standing-status]'); assert.equal(await note.getAttribute('data-standing-status'), state);
+    assert.match(await note.innerText(), /Standing goal:/);
+    if (state === 'spoken') assert.match(await note.innerText(), /peer delivery is not confirmed here/);
+    if (state === 'unknown') assert.match(await note.innerText(), /will not repeat automatically/);
+  }
+  for (const state of ['updating', 'updated', 'failed', 'disabled']) {
+    await page.evaluate(state => { residents[0].profileStatus = state; ui.setAgents(residents); }, state);
+    assert.equal(await local.locator('[data-profile-status]').getAttribute('data-profile-status'), state);
+  }
+  await page.evaluate(() => { residents[0].standingStatus = '__proto__'; residents[0].profileStatus = '<img src=x onerror=alert(1)>'; ui.setAgents(residents); });
+  assert.equal(await local.locator('img').count(), 0); assert.equal(await local.locator('[data-standing-status]').innerText(), 'Standing goal: Status unavailable.');
+  assert.equal(await roster.evaluate(element => element.scrollWidth <= element.clientWidth), true);
+});
+
+test('guide controls respect busy state, failed save drafts, and loss of local ownership', async t => {
+  const page = await fixture(t); await openResidents(page);
+  const roster = page.getByRole('dialog', { name: 'Residents', exact: true });
+  await roster.getByRole('button', { name: 'Edit Ada', exact: true }).click();
+  const editor = page.getByRole('dialog', { name: 'Edit resident', exact: true }), panel = editor.locator('[data-standing-goal-fields]');
+  await panel.locator('summary').click(); const objective = panel.getByRole('textbox', { name: 'Standing social objective', exact: true });
+  await objective.fill('Remember this draft'); await panel.getByRole('checkbox', { name: 'Enable standing social goal', exact: true }).check();
+  await page.evaluate(() => ui.setBusy(true));
+  assert.equal(await objective.isDisabled(), true);
+  assert.equal(await editor.getByRole('checkbox', { name: 'Let resident update its personality, goals and appearance', exact: true }).isDisabled(), true);
+  await page.evaluate(() => { ui.setBusy(false); window.failEdit = true; });
+  await editor.getByRole('button', { name: 'Save resident', exact: true }).click(); await editor.getByRole('status').filter({ hasText: 'Profile save failed' }).waitFor();
+  assert.equal(await objective.inputValue(), 'Remember this draft'); assert.equal(await objective.isDisabled(), false);
+  await page.evaluate(() => { residents[0].local = false; ui.setAgents(residents); }); await editor.waitFor({ state: 'hidden' });
+  assert.equal(await roster.getByRole('button', { name: 'Edit Ada', exact: true }).count(), 0);
+  assert.equal(await roster.locator('[data-agent-key="local:ada"] [data-standing-status]').count(), 0);
 });

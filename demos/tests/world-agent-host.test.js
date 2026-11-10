@@ -38,6 +38,8 @@ async function boot() {
     const { AgentRecordStore } = await import('/peercompute/src/peercompute/agents/AgentRecordStore.js');
     const { WorldMemoryStore } = await import('/peercompute/src/peercompute/agents/WorldMemoryStore.js');
     const { WorldGoalStore } = await import('/peercompute/src/peercompute/agents/WorldGoalStore.js');
+    const { WorldStandingGoalStore } = await import('/peercompute/src/peercompute/agents/WorldStandingGoalStore.js');
+    const { cubeGuidePreset, CUBECHAT_GUIDE_FACTS } = await import('/demos/cubechat/src/agents/cubeGuide.js');
     const { WORLD_GOAL_INSTRUCTIONS, WORLD_GOAL_OBSERVATIONS_MARKER } = await import('/demos/shared/agents/WorldGoalDecision.js');
     const { WORLD_PHYSICAL_INTENT_INSTRUCTIONS, WORLD_PHYSICAL_OBSERVATIONS_MARKER } = await import('/demos/shared/agents/WorldIntentDecision.js');
     Object.assign(window, { calls: [], view: {}, speechChunks, worldConversationId });
@@ -46,6 +48,8 @@ async function boot() {
     window.start = async () => {
       const bodies = new Map(); window.bodyMap = bodies;
       host = installWorldAgents({ worldId: 'cubechat:test', worldLabel: 'CubeChat', socialOptions: window.socialOptions ?? {}, goalOptions: { tickMs: 100 },
+        worldKnowledge: CUBECHAT_GUIDE_FACTS.join(' '),
+        ...(window.defaultGuide ? { defaultResident: cubeGuidePreset('cubechat:test') } : {}),
         publishWorldMessage: async (input, options) => {
           options.signal.throwIfAborted(); calls.push(['public-message', input]);
           host.receiveWorldMessage({ ...input, peerId: window.fixturePeerId ?? 'owner', id: crypto.randomUUID() });
@@ -53,6 +57,7 @@ async function boot() {
             await new Promise(resolve => { window.releasePublicReceipt = resolve; });
             return { delivery: { delivered: 1, status: 'delivered' } };
           }
+          return { delivery: { id: crypto.randomUUID(), delivered: 0, total: 0, status: 'local-only' } };
         },
         exclusiveEmbodiments: window.exclusiveBodies ?? false,
         getRuntimeOptions: () => ({ networkManager: window.roomManager }),
@@ -90,6 +95,13 @@ async function boot() {
             return window.noTextProvider && task === 'text-generation' ? [] : [task === 'text-to-image' ? imageCandidate : candidate];
           },
             generate: async (_candidate, input, { signal }) => {
+              if (input.prompt?.startsWith('{"currentProfile":')) {
+                calls.push(['profile-decision', input]);
+                if (window.waitProfile) await new Promise(resolve => { window.finishProfile = resolve; });
+                signal.throwIfAborted();
+                if (window.profileError) throw Object.assign(new Error('Profile context is too large'), { code: 'ERR_MODEL_CONTEXT_BUDGET' });
+                return { text: JSON.stringify(window.fixtureProfilePatch ?? null), finishReason: 'stop' };
+              }
               if (input.messages?.[0]?.content.startsWith(WORLD_PHYSICAL_INTENT_INSTRUCTIONS + WORLD_PHYSICAL_OBSERVATIONS_MARKER)) {
                 calls.push(['intent-decision', input]);
                 return { text: JSON.stringify(window.fixtureIntentDecision ?? { intent: null }), finishReason: 'stop' };
@@ -124,17 +136,19 @@ async function boot() {
                 ...(input.task === 'text-to-image' ? { image: { width: 2, height: 2, channels: 4, data: new Uint8Array(16).fill(123) } } : {}) };
             }, cancel: async () => {} } });
           window.agents = agents;
-          const memories = new Map(), objectives = new Map();
+          const memories = new Map(), objectives = new Map(), standing = new Map();
           const stateManager = { getWorldMemoryStore: name => memories.get(name),
             createWorldMemoryStore: ({ name }) => { const memory = new WorldMemoryStore({ name }); memories.set(name, memory); window.episodeStore = memory; return memory; },
             getWorldGoalStore: name => objectives.get(name),
-            createWorldGoalStore: options => { const value = new WorldGoalStore(options); objectives.set(options.name, value); window.objectiveStore = value; return value; } };
+            createWorldGoalStore: options => { const value = new WorldGoalStore(options); objectives.set(options.name, value); window.objectiveStore = value; return value; },
+            getWorldStandingGoalStore: name => standing.get(name),
+            createWorldStandingGoalStore: options => { const value = new WorldStandingGoalStore(options); standing.set(options.name, value); window.standingStore = value; return value; } };
           return { stateManager, networkReady: true, networkManager: { peerId: window.fixturePeerId ?? 'owner' }, getAgentController: async () => agents,
             listInferenceTargets: () => window.imageAvailable ? [imageCandidate] : [],
             service: { getStatus: () => ({ status: 'ready', manifestCid: 'fixture', sessionId: 'fixture' }) },
             store: { getManifest: async () => ({ model: imageCandidate }) }, refreshPeers: async () => {},
             dispose: async () => { await agents.dispose(); await store.destroy(); for (const memory of memories.values()) await memory.close();
-              for (const value of objectives.values()) await value.close(); calls.push('runtime-dispose'); } };
+              for (const value of objectives.values()) await value.close(); for (const value of standing.values()) await value.destroy(); calls.push('runtime-dispose'); } };
         },
         serviceFactory: (options) => { window.networkOptions = options; return {
           start: async () => calls.push('network-start'), close: async () => calls.push('network-close'),
@@ -673,7 +687,7 @@ test('embodied replies use real durable scoped memory and display text instead o
   const input = JSON.stringify(result.input.messages); assert.match(input, /verified-action/); assert.match(input, /approach: arrived/);
   assert.deepEqual(result.input.messages.filter(message => message.role === 'user').map(message => message.content),
     ['Please come here.', 'Do you remember meeting me?']);
-  assert.equal(result.input.taskInstructions, undefined);
+  assert.match(result.input.taskInstructions, /WASD moves/);
   assert.equal(result.input.contextHistory, undefined);
   assert(!JSON.parse(result.input.worldContext).memories.some(memory => memory.kind === 'composed-reply'));
   assert(!result.input.messages.some(message => message.content.includes('Return one valid JSON object')));
@@ -983,4 +997,158 @@ test('a human conversation preempts objective planning without pausing the resid
   const human = result.calls.findIndex(c => c[0] === 'generate' && c[1].prompt === 'Hello, answer this human first.');
   assert(interrupted >= 0 && human > interrupted, 'The old planner settles before human inference starts');
   assert(!result.calls.some(c => c[0] === 'intent'));
+});
+
+test('default guide is persistent without opening chat, and preserves owner edits, pause and removal', async t => {
+  const page = await fixture(t);
+  const result = await page.evaluate(async () => {
+    await host.dispose(); window.defaultGuide = true; await start();
+    const first = (await agents.list())[0], selected = host.getStatus().selectedKey;
+    await host.edit({ key: `local:${first.agentId}`, name: 'My guide', selfModifiable: false });
+    await agents.pause(first.agentId); await host.dispose(); await start();
+    const reloaded = (await agents.list())[0];
+    await host.remove(`local:${first.agentId}`); await host.dispose(); await start();
+    return { first, selected, reloaded, records: await agents.list(), bodies: host.getStatus().bodies,
+      generations: calls.filter(item => Array.isArray(item) && item[0] === 'generate').length };
+  });
+  assert.equal(result.selected, undefined);
+  assert.equal(result.reloaded.agentId, result.first.agentId);
+  assert.equal(result.reloaded.identity.name, 'My guide');
+  assert.equal(result.reloaded.status, 'paused');
+  assert.equal(result.reloaded.embodiments[0].selfModifiable, false);
+  assert.equal(result.records.length, 1);
+  assert.equal(result.bodies.length, 0);
+  assert.equal(result.generations, 0);
+});
+
+test('default standing welcome waits for a model then survives a rotated owner peer ID without another generation', async t => {
+  const page = await fixture(t);
+  await page.evaluate(async () => {
+    await host.dispose(); window.defaultGuide = true; window.embodiedFixture = true; window.noTextProvider = true;
+    window.socialOptions = { tickMs: 100, dwellMs: 0, modelBackoffMs: 1000, cooldownMs: 0, targetCooldownMs: 0, humanQuietMs: 0 };
+    window.fixtureAnswer = JSON.stringify({ decision: 'speak', text: 'Welcome from the deterministic fixture.', intent: null });
+    await start();
+  });
+  await page.waitForFunction(() => host.getStatus().bodies[0]?.standingStatus === 'waiting-for-model');
+  assert.equal(await page.evaluate(() => calls.filter(item => Array.isArray(item) && item[0] === 'generate').length), 0);
+  await page.evaluate(() => { window.noTextProvider = false; });
+  await page.waitForFunction(() => host.getStatus().bodies[0]?.standingStatus === 'spoken');
+  const first = await page.evaluate(async () => {
+    const body = host.getStatus().bodies[0];
+    return { id: body.agentId, scope: { worldId: 'cubechat:test', agentId: body.agentId, goalId: 'welcome-v1', targetId: `owner:${agents.store.hostId}` },
+      sends: calls.filter(item => Array.isArray(item) && item[0] === 'public-message').length };
+  });
+  assert.equal(first.sends, 1);
+  await page.evaluate(async () => {
+    await host.dispose(); window.fixturePeerId = 'owner-after-reload';
+    window.fixtureParticipants = [{ id: 'human:owner-after-reload', peerId: 'owner-after-reload', kind: 'human', name: 'Owner', position: [25, 3, 5], distance: 24 }];
+    await start();
+  });
+  await page.waitForFunction(() => host.getStatus().bodies[0]?.standingStatus === 'already-handled');
+  const after = await page.evaluate(async scope => ({ record: await standingStore.get(scope),
+    sends: calls.filter(item => Array.isArray(item) && item[0] === 'public-message').length,
+    generations: calls.filter(item => Array.isArray(item) && item[0] === 'generate').length }), first.scope);
+  assert.equal(after.sends, 1); assert.equal(after.generations, 1); assert.equal(after.record.outcome, 'spoken');
+});
+
+test('owner conversation can update a permitted profile while visitors and opt-out cannot', async t => {
+  const page = await fixture(t);
+  const result = await page.evaluate(async () => {
+    const created = await host.spawn({ name: 'Guide', selfModifiable: true });
+    const key = `local:${created.agentId}`;
+    window.fixtureProfilePatch = { name: 'Pip', instructions: 'I am a curious cartographer.', goals: ['Help my owner explore.'], appearancePrompt: 'Blue smiling cube' };
+    await host.send({ key, text: 'Call yourself Pip and become a curious blue cartographer.' });
+    const updated = await agents.get(created.agentId), ownerOutput = view.messages.at(-1);
+    window.fixtureProfilePatch = { name: 'Hijacked' };
+    await networkOptions.respond({ agentId: created.agentId, requesterPeerId: 'visitor', prompt: 'Rename yourself.' });
+    const afterVisitor = await agents.get(created.agentId);
+    await host.edit({ key, selfModifiable: false });
+    await host.send({ key, text: 'Rename yourself again.' });
+    return { updated, ownerOutput, afterVisitor, afterDisabled: await agents.get(created.agentId),
+      speech: calls.filter(item => Array.isArray(item) && item[0] === 'generate').map(item => item[1]),
+      profileCalls: calls.filter(item => Array.isArray(item) && item[0] === 'profile-decision').length,
+      events: await agents.events(created.agentId) };
+  });
+  assert.equal(result.updated.identity.name, 'Pip');
+  assert.equal(result.updated.embodiments[0].appearancePrompt, 'Blue smiling cube');
+  assert.deepEqual(result.updated.goals, ['Help my owner explore.']);
+  assert.match(result.ownerOutput.text, /Profile updated/);
+  assert.equal(result.afterVisitor.identity.name, 'Pip');
+  assert.equal(result.afterDisabled.identity.name, 'Pip');
+  assert.equal(result.profileCalls, 1);
+  assert.equal(result.afterDisabled.identity.instructions, 'I am a curious cartographer.');
+  for (const input of result.speech.slice(1)) {
+    assert.match(input.messages[0].content, /WASD moves/);
+    assert.match(input.messages[0].content, /Generate face requires an available image model/);
+    assert.match(input.messages[0].content, /separate objective controls/);
+    assert.doesNotMatch(input.messages[0].content, /Resident response format/);
+  }
+  assert.equal(result.events.filter(event => event.type === 'request').length, 3);
+  assert.equal(result.events.filter(event => event.type === 'result').length, 3);
+});
+
+test('profile proposals cannot overwrite concurrent owner edits and retain the spoken answer', async t => {
+  const page = await fixture(t);
+  await page.evaluate(async () => {
+    const created = await host.spawn({ name: 'Guide', selfModifiable: true });
+    window.profileAgentId = created.agentId; window.waitProfile = true; window.fixtureProfilePatch = { name: 'Stale' };
+    window.profileSend = host.send({ key: `local:${created.agentId}`, text: 'Consider a new name.' });
+  });
+  await page.waitForFunction(() => typeof finishProfile === 'function');
+  const result = await page.evaluate(async () => {
+    const head = await agents.get(profileAgentId);
+    await agents.update(profileAgentId, { name: 'Owner chose this' }, { expectedRevision: head.revision });
+    finishProfile(); await profileSend;
+    return { head: await agents.get(profileAgentId), answer: view.messages.at(-1).text };
+  });
+  assert.equal(result.head.identity.name, 'Owner chose this');
+  assert.match(result.answer, /Fixture response/);
+  assert.match(result.answer, /Profile not updated/);
+});
+
+test('profile context failure preserves completed speech and does not pause the guide', async t => {
+  const page = await fixture(t);
+  const result = await page.evaluate(async () => {
+    const head = await host.spawn({ name: 'Guide', selfModifiable: true }); window.profileError = true;
+    await host.send({ key: `local:${head.agentId}`, text: 'Tell me about yourself.' });
+    return { answer: view.messages.at(-1).text, head: await agents.get(head.agentId) };
+  });
+  assert.match(result.answer, /Fixture response/); assert.match(result.answer, /Profile not updated: Profile context/);
+  assert.equal(result.head.status, 'completed'); assert.equal(result.head.identity.name, 'Guide');
+});
+
+test('a roster refresh failure cannot hide successful profile persistence or completed speech', async t => {
+  const page = await fixture(t);
+  await page.evaluate(async () => {
+    const head = await host.spawn({ name: 'Guide', selfModifiable: true }); window.profileAgentId = head.agentId;
+    window.waitProfile = true; window.fixtureProfilePatch = { name: 'Saved name' };
+    window.profileSend = host.send({ key: `local:${head.agentId}`, text: 'Choose a new name.' });
+  });
+  await page.waitForFunction(() => typeof finishProfile === 'function');
+  const result = await page.evaluate(async () => {
+    const original = agents.list.bind(agents); agents.list = async () => { throw new Error('Roster fixture unavailable'); };
+    finishProfile(); await profileSend; agents.list = original;
+    return { answer: view.messages.at(-1).text, head: await agents.get(profileAgentId) };
+  });
+  assert.match(result.answer, /Fixture response/); assert.match(result.answer, /Profile updated: name/);
+  assert.equal(result.head.identity.name, 'Saved name'); assert.equal(result.head.status, 'completed');
+});
+
+test('cold standing-goal discovery does not consume the separate inference deadline', async t => {
+  const page = await fixture(t);
+  await page.evaluate(async () => {
+    await host.dispose(); window.defaultGuide = true; window.embodiedFixture = true;
+    window.socialOptions = { tickMs: 100, dwellMs: 0, humanQuietMs: 0 };
+    window.fixtureAnswer = JSON.stringify({ decision: 'speak', text: 'Welcome after cold discovery.', intent: null });
+    // Scale only the old host-wide 45s timer: the earlier code aborts while
+    // discovery is pending. All scene, IDB and real host code remains in use.
+    window.originalTimeout = window.setTimeout.bind(window);
+    window.setTimeout = (callback, ms, ...args) => originalTimeout(callback, ms === 45000 ? 25 : ms, ...args);
+    window.waitPreflight = true; await start();
+  });
+  await page.waitForFunction(() => typeof finishPreflight === 'function');
+  await page.waitForTimeout(100);
+  await page.evaluate(() => { window.setTimeout = originalTimeout; window.waitPreflight = false; finishPreflight(); });
+  await page.waitForFunction(() => host.getStatus().bodies[0]?.standingStatus === 'spoken', null, { timeout: 5000 });
+  assert.equal(await page.evaluate(() => calls.filter(item => Array.isArray(item) && item[0] === 'public-message').length), 1);
 });

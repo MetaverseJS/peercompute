@@ -33,6 +33,10 @@
 .cube-native-dialog summary { cursor: pointer; padding: 8px 0; }
 .cube-native-spawn { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
 .cube-native-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.cube-native-standing-goal { border-block: 1px solid #4aa8bb55; margin-block: 0 !important; }
+.cube-native-standing-fields { display: flex; flex-direction: column; gap: 8px; padding-bottom: 8px; }
+.cube-native-standing-fields textarea, .cube-native-standing-fields select { width: 100%; min-width: 0; box-sizing: border-box; }
+.cube-native-standing-fields .cube-native-check, .cube-native-standing-fields p { margin-block: 4px; }
 .cube-native-check { display: flex; gap: 8px; align-items: center; margin-block: 10px; }
 .cube-native-check input { width: 18px; height: 18px; min-height: 18px; flex: 0 0 auto; padding: 0; accent-color: #88d8ee; }
 body:has(.cube-native-expanded) #mobile-controls, body:has(.cube-native-dialog[open]) #mobile-controls { display: none !important; visibility: hidden; pointer-events: none; }

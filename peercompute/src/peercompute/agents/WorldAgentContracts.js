@@ -23,6 +23,19 @@ export function normalizeWorldPosition(value) {
   return [...value];
 }
 
+/** Local automation preferences; never included in a public body or clone. */
+export function normalizeStandingSocialGoal(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)
+      || Object.keys(value).some(key => !['id', 'enabled', 'objective', 'target'].includes(key))
+      || !/^[A-Za-z0-9._:-]{1,80}$/.test(value.id ?? '') || typeof value.enabled !== 'boolean'
+      || !['owner', 'new-players'].includes(value.target)
+      || typeof value.objective !== 'string' || value.objective.includes('\0')
+      || utf8.encode(value.objective).length > 2048 || (value.enabled && !value.objective.trim())) {
+    throw new TypeError('Invalid standing social goal');
+  }
+  return { id: value.id, enabled: value.enabled, objective: value.objective.trim(), target: value.target };
+}
+
 export function normalizeAgentEmbodiments(input) {
   if (!Array.isArray(input) || input.length > WORLD_AGENT_LIMITS.bindings) throw new Error('Too many agent world bindings');
   const worlds = new Set();
@@ -33,6 +46,7 @@ export function normalizeAgentEmbodiments(input) {
     if (!/^#[a-f0-9]{6}$/i.test(binding.color ?? '') || typeof binding.shared !== 'boolean') throw new Error('Invalid agent body settings');
     if (binding.respondToWorldChat !== undefined && typeof binding.respondToWorldChat !== 'boolean') throw new Error('Invalid world chat preference');
     if (binding.initiateConversations !== undefined && typeof binding.initiateConversations !== 'boolean') throw new Error('Invalid conversation initiative preference');
+    if (binding.selfModifiable !== undefined && typeof binding.selfModifiable !== 'boolean') throw new Error('Invalid self-modification preference');
     if (binding.allowCloning !== undefined && typeof binding.allowCloning !== 'boolean') throw new Error('Invalid resident cloning preference');
     if (binding.shareMemories !== undefined && typeof binding.shareMemories !== 'boolean') throw new Error('Invalid resident memory-sharing preference');
     if (binding.sharePrivateMemories !== undefined && typeof binding.sharePrivateMemories !== 'boolean') throw new Error('Invalid resident private-memory-sharing preference');
@@ -42,6 +56,8 @@ export function normalizeAgentEmbodiments(input) {
       allowCloning: binding.allowCloning ?? false, shareMemories: binding.shareMemories ?? false,
       sharePrivateMemories: binding.sharePrivateMemories ?? false,
       ...(binding.movement === undefined ? {} : { movement: binding.movement }) };
+    if (binding.standingGoal !== undefined) result.standingGoal = normalizeStandingSocialGoal(binding.standingGoal);
+    if (binding.selfModifiable !== undefined) result.selfModifiable = binding.selfModifiable;
     if (binding.appearancePrompt !== undefined) {
       if (typeof binding.appearancePrompt !== 'string' || binding.appearancePrompt.includes('\0')
           || utf8.encode(binding.appearancePrompt).length > 2048) throw new Error('Invalid appearance prompt');

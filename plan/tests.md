@@ -4798,3 +4798,33 @@ across two real peers, with varied names and prompts. Match the exact reply and
 its author, distinguish delivery from answer, retain progress without duplicate
 sends after reload, and cover departure, timeout, cancellation and privacy. These
 are proposed criteria, not tests executed or features implemented in this turn.
+
+
+### Personal guide / standing welcome acceptance
+
+- `node --test peercompute/tests/unit/agentDefaultResident.test.js peercompute/tests/unit/worldStandingGoalStore.test.js demos/tests/world-standing-goal.test.js demos/tests/world-self-profile.test.js demos/tests/cubechat-guide.test.js`: concurrent provisioning, saved removal, strict IDB transitions, unknown-send suppression, budgets, model-only proposals and input allowlists.
+- `node --test demos/tests/world-agent-host.test.js demos/tests/cubechat-native-ui.test.js`: actual IndexedDB/Web Locks and native controls with explicitly simulated inference. Preserve private/public scopes, clone permissions, owner edits/tasks, draft focus and cleanup. Check no-model waiting, rotating peer IDs without regreeting, owner-only self modification, opt-out and concurrent-edit rejection.
+- `CUBE_GUIDE_GO=1 CUBE_GUIDE_ORIGIN=https://host:5196 node demos/tests/cubechat-welcome-browser.mjs`: owned private production room, two headless profiles, actual peer inference, automatic guide introduction and co-creation, persistence/removal, live SecretWorkshop connections, desktop/mobile screenshots and console capture. Never use synthetic model responses as actual-model evidence. Do not alter user browsers/models or deploy Pages.
+
+- Final component matrix:195/195PASS (`final-tests-corrected.tap`); the first194/195
+  run exposed an obsolete assertion that no taskInstructions existed, now correctly
+  checking immutable facts and absence of the legacy action JSON. Presentation-only
+  confirmation labels then pass8focused host cases (`final-profile-labels.tap`).
+- Retention:85/85targeted/adjacent tests (`retention-adjacent.tap`), four regressions
+  fail on original code. Protect active direct/relay inference while allowing idle
+  and maintenance-only retirement; actual private Noise service included.
+- Native8/build4: actual Nano welcomes/remote receipt and name/appearance CAS pass;
+  bundled requested personality missing. Native9: room delivery/capacity failures.
+- `CUBE_GUIDE_CASE=local-profile CUBE_GUIDE_PREFERENCE_MODE=focused` with an explicit
+  owned cache/profile: actual26/26-layer Qwen0.8 passes goals/name/appearance saves,
+  visitor/no rewrite, opt-out, WASD/Q-E knowledge, reload/rotated ID and removal.
+  Failed personality-field criteria remain; welcome is disabled for this independent
+  scope and cannot establish enabled-welcome browser reload suppression. The latter
+  is covered by real IDB host/runner fixtures, not claimed actual-model browser proof.
+- Local mapping11 changes only a generic field-mapping sentence in captured input,
+  executes once without effects, and returns unchanged profile. Reject this proposal;
+  no output repair, hidden retries, downloads or model substitution.
+- Build5 differs from actual-model build4 only in friendly profile confirmation
+  labels. Cube/Earth builds pass outside docs. Exact promoted5176 desktop/mobile,
+  loaded-script bytes and authenticated SecretWorkshop smoke is recorded externally.
+  All earlier native failures remain; there is no blanket all-model quality claim.

@@ -2201,3 +2201,26 @@ CubeChat goal-directed social errands combine the qualified movement objectives
 with existing targeted resident conversations and scoped memory. Add typed
 conversation outcomes, reply correlation and grounded reporting, preserving
 ownership/budgets/reload rules. See demos/cubechat/plan.md; no runtime changes.
+
+
+### November 10 — personal CubeChat guide and standing welcome goal
+
+Implementation authorized. Each player gets one durable guide per room, preserved
+across reloads and editable/removable through Residents. A model-generated welcome
+introduces CubeChat to its own player; durable encounter records suppress repeats.
+Use existing model routing and wait without downloading weights when unavailable.
+The guide asks its owner about personality and appearance, and may save validated
+name/instructions/profile-goal/appearance edits after private owner conversations.
+Owner-controlled permissions and local-only policy remain outside those proposals.
+Existing physical objective controls remain available for tasks. This is a bounded
+standing encounter slice; ask/wait/return social errands and online learning remain
+separate future capabilities. Internal preview qualification only; no Pages/push.
+
+Personal-guide implementation now has195passing component checks and85network
+retention checks. Actual model tests prove both shared welcomes (Nano), saved
+name/goals/appearance, private owner authority, opt-out, reload and removal
+(cached Qwen). Immutable world knowledge survives personality replacement.
+Internal CubeChat only. Full native acceptance remains open for reliable requested
+personality-field edits; small-model omissions and intermittent room transport
+failures are recorded, not converted into passing results. No prompt tweak from
+the failed mapping experiment was adopted. Owners can inspect/edit saved fields.

@@ -59,6 +59,11 @@ export class AgentRuntime {
     this.#open(); const head = await this.store.create(copy(input));
     this.#emit({ type: 'changed', agentId: head.agentId, head }); return head;
   }
+  async ensureDefault(key, input, options) {
+    this.#open(); const result = await this.store.ensureDefault(key, copy(input), options);
+    if (result.created) this.#emit({ type: 'changed', agentId: result.head.agentId, head: result.head });
+    return result;
+  }
   async update(id, input, { expectedRevision, signal } = {}) {
     this.#open(); this.#assertSaved(id);
     if (this.entries.has(id)) throw failure('Wait for this agent task to finish before editing', 'ERR_AGENT_BUSY');

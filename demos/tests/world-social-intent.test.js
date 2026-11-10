@@ -27,3 +27,15 @@ test('ephemeral decisions use managed routing and public episodes without saved 
   await assert.rejects(generateWorldSocialDecision({ inference, head, target, signal: controller.signal }), { name: 'AbortError' });
   assert.equal(calls.length, 2);
 });
+
+test('standing task has a distinct goal-focused prompt and correlates its real request with the ledger', async () => {
+  let captured;
+  const candidate = { key: 'local:model', manifestCid: 'model', runtime: 'wllama', local: true, available: true, task: 'text-generation' };
+  const result = await generateWorldSocialDecision({ inference: { generate: async (_, input) => {
+    captured = input; return { text: '{"decision":"speak","text":"Welcome to the shared world.","intent":null}' };
+  } }, candidate, head: { identity: { name: 'Guide' }, context: { summary: 'private owner secret' } }, target,
+  standingGoal: { objective: 'Welcome this person and explain the controls.' }, worldContext: '{"public":"nearby"}', requestId: 'ledger-request' });
+  assert.equal(result.decision, 'speak'); assert.equal(captured.requestId, 'ledger-request');
+  assert.match(captured.prompt, /^Carry out this standing social goal/); assert.match(captured.prompt, /explain the controls/);
+  assert.doesNotMatch(JSON.stringify(captured), /private owner secret/);
+});
