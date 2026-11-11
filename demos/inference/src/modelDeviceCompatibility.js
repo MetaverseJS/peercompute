@@ -7,14 +7,16 @@ import { GGUF_MODEL_CATALOG } from '../../../peercompute/src/peercompute/artifac
 import { DIFFUSION_MODEL_CATALOG } from '../../../peercompute/src/peercompute/artifacts/diffusionModelCatalog.js';
 import { SPEECH_MODEL_CATALOG } from '../../../peercompute/src/peercompute/inference/speech/speechCatalog.js';
 import { SPEECH_LIMITS } from '../../../peercompute/src/peercompute/inference/speech/runtimeDefinition.js';
+import { MESH_MODEL_CATALOG } from '../../../peercompute/src/peercompute/artifacts/meshModelCatalog.js';
+import { MESH_RESOURCE_POLICY } from '../../../peercompute/src/peercompute/inference/mesh/runtimeDefinition.js';
 
 const GiB = 1024 ** 3;
 const catalogs = [...Object.values(MODEL_CATALOG), ...Object.values(GGUF_MODEL_CATALOG),
-  ...Object.values(DIFFUSION_MODEL_CATALOG), ...Object.values(SPEECH_MODEL_CATALOG)];
+  ...Object.values(DIFFUSION_MODEL_CATALOG), ...Object.values(SPEECH_MODEL_CATALOG), ...Object.values(MESH_MODEL_CATALOG)];
 const limitNames = ['maxBufferSize', 'maxStorageBufferBindingSize', 'maxComputeWorkgroupStorageSize',
   'maxComputeInvocationsPerWorkgroup', 'maxComputeWorkgroupSizeX', 'maxComputeWorkgroupSizeY',
   'maxComputeWorkgroupSizeZ', 'maxComputeWorkgroupsPerDimension'];
-const runtimes = new Set(['transformers.js', 'llama.cpp', 'onnx-diffusion', 'transformers-speech']);
+const runtimes = new Set(['transformers.js', 'llama.cpp', 'onnx-diffusion', 'transformers-speech', 'onnx-mesh']);
 export const VOICE_MODEL_LOAD_HINT = 'Load this speech model from Browse models, or use Enable voice in a world-agent window.';
 
 /** Resolve a catalog identity without choosing the first same-revision variant. */
@@ -82,6 +84,8 @@ export function modelMemoryEstimate(entryOrManifest) {
     return { cpuBytes: SPEECH_LIMITS.residentBytes, gpuBytes: SPEECH_LIMITS.residentBytes };
   }
   if (model.runtime === 'onnx-diffusion') return { cpuBytes: 8 * GiB, gpuBytes: 8 * GiB };
+  if (model.runtime === 'onnx-mesh') return { cpuBytes: MESH_RESOURCE_POLICY.minimumCpuBytes,
+    gpuBytes: MESH_RESOURCE_POLICY.minimumGpuBytes };
   if (model.runtime === 'llama.cpp') {
     if (totalBytes === null) return { cpuBytes: 0, gpuBytes: 0 };
     const large = totalBytes > 4 * GiB;
@@ -178,7 +182,8 @@ function runtimeProblem({ model, files, totalBytes, trusted, descriptorOnly }) {
   // sizes and SHA-256 closure; no generic architecture or package expansion.
   if (model.runtime === 'transformers-speech') return null;
   const maximum = model.runtime === 'llama.cpp' ? 16 * GiB
-    : model.runtime === 'onnx-diffusion' ? 3 * GiB : modelResourcePolicy(model).maxModelBytes;
+    : model.runtime === 'onnx-diffusion' ? 3 * GiB
+      : model.runtime === 'onnx-mesh' ? MESH_RESOURCE_POLICY.maxModelBytes : modelResourcePolicy(model).maxModelBytes;
   if (!descriptorOnly && totalBytes !== null && totalBytes > maximum) return ['package_too_large',
     `Model package is ${(totalBytes / GiB).toFixed(2)} GiB; this runtime supports up to ${Number((maximum / GiB).toFixed(2))} GiB.`];
   if (model.runtime === 'transformers.js') {
@@ -208,6 +213,8 @@ function runtimeProblem({ model, files, totalBytes, trusted, descriptorOnly }) {
   } else {
     if (!trusted || (model.runtimeVersion !== trusted.model.runtimeVersion && !(model.runtime === 'llama.cpp' && trusted.model.runtimeVersion === undefined && model.runtimeVersion === '3.8.1')))
       return ['catalog_unsupported', 'This package is not in the approved local runtime catalog'];
+    if (model.runtime === 'onnx-mesh' && !sameValue(model, trusted.model))
+      return ['catalog_unsupported', '3D model profile differs from the qualified runtime catalog'];
     for (const key of model.runtime === 'onnx-diffusion'
       ? ['architecture', 'task', 'format', 'dtype', 'pipeline', 'width', 'height', 'steps', 'padTokenId', 'weightQuantization', 'modalities', 'outputModalities', 'requiredFeatures']
       : ['architecture', 'task', 'format', 'dtype']) {

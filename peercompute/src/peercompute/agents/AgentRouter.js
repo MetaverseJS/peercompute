@@ -2,7 +2,7 @@ import { MODEL_POLICY } from '../inference/modelManifest.js';
 import { routeInferenceTask } from '../inference/InferenceRouter.js';
 import { styleLanguagePrompt } from '../inference/promptStyle.js';
 
-export const AGENT_TASKS = Object.freeze(['text-generation', 'image-text-to-text', 'text-to-image']);
+export const AGENT_TASKS = Object.freeze(['text-generation', 'image-text-to-text', 'text-to-image', 'image-to-3d']);
 export const AGENT_ROUTER_KIND = 'baseline';
 const bytes = (value) => new TextEncoder().encode(value).byteLength;
 
@@ -49,8 +49,12 @@ function projectContextHistory(worldContext, projection, messages) {
 export function normalizeAgentTask(input = {}) {
   const task = input.task ?? (input.image ? 'image-text-to-text' : 'text-generation');
   if (!AGENT_TASKS.includes(task)) throw new Error('This agent task is not supported');
+  if (task === 'image-to-3d') {
+    if (input.audio != null || input.messages != null || input.seed !== undefined) throw new Error('Mesh generation accepts one image and optional descriptive prompt');
+    input = { ...input, prompt: input.prompt ?? 'Generate a 3D object from this image.' };
+  }
   if (typeof input.prompt !== 'string' || !input.prompt.trim()
-      || bytes(input.prompt) > (task === 'text-to-image' ? 4096 : MODEL_POLICY.maxPromptBytes)) {
+      || bytes(input.prompt) > (['text-to-image', 'image-to-3d'].includes(task) ? 4096 : MODEL_POLICY.maxPromptBytes)) {
     throw new Error('Enter a nonempty prompt within the task byte budget');
   }
   const maxNewTokens = input.maxNewTokens ?? 256;
@@ -60,13 +64,13 @@ export function normalizeAgentTask(input = {}) {
   let image;
   if (input.image != null) {
     const value = input.image;
-    if (task !== 'image-text-to-text' || !Number.isSafeInteger(value.width) || !Number.isSafeInteger(value.height)
+    if (!['image-text-to-text', 'image-to-3d'].includes(task) || !Number.isSafeInteger(value.width) || !Number.isSafeInteger(value.height)
         || value.width < 1 || value.height < 1 || value.width > 1024 || value.height > 1024 || value.width * value.height > MODEL_POLICY.maxImagePixels
         || value.channels !== 4 || !(value.data instanceof Uint8Array || value.data instanceof Uint8ClampedArray)
         || value.data.byteLength !== value.width * value.height * 4) throw new Error('Agent images require bounded RGBA pixels');
     image = { width: value.width, height: value.height, channels: 4, data: new Uint8Array(value.data) };
   }
-  if (task === 'image-text-to-text' && !image) throw new Error('This task requires an image');
+  if (['image-text-to-text', 'image-to-3d'].includes(task) && !image) throw new Error('This task requires an image');
   if (input.seed !== undefined && (!Number.isSafeInteger(input.seed) || input.seed < 0 || input.seed > 0xffffffff)) {
     throw new Error('Image seed must be an unsigned 32-bit integer');
   }
@@ -114,6 +118,7 @@ export function routeAgentTask({ task, inferenceMode = 'local-only', candidates 
 /** Byte-bounded context; the managed worker applies actual tokenizer/image limits. */
 export function packAgentContext(head, input, events = []) {
   const { contextHistory, ...inferenceInput } = input;
+  if (input.task === 'image-to-3d') return { task: input.task, image: input.image };
   if (input.task === 'text-to-image') return { ...inferenceInput, messages: [{ role: 'user', content: input.prompt }] };
   const parts = [head.identity?.name && `Your agent name is ${head.identity.name}.`, head.identity?.instructions, head.context?.summary && `Saved context:\n${head.context.summary}`,
     head.goals?.length && `Goals:\n${head.goals.join('\n')}`, input.taskInstructions].filter(Boolean);
@@ -130,8 +135,8 @@ export function packAgentContext(head, input, events = []) {
     // Unscoped private-console history stays private. A world visitor cannot
     // choose another visitor's channel; the authenticated host derives it.
     if (event.conversationId !== input.conversationId) continue;
-    if (event.type === 'request' && event.task !== 'text-to-image' && typeof event.text === 'string') requests.set(event.operationId, event);
-    if (event.type === 'result' && event.task !== 'text-to-image' && typeof event.text === 'string') {
+    if (event.type === 'request' && !['text-to-image', 'image-to-3d'].includes(event.task) && typeof event.text === 'string') requests.set(event.operationId, event);
+    if (event.type === 'result' && !['text-to-image', 'image-to-3d'].includes(event.task) && typeof event.text === 'string') {
       const request = requests.get(event.operationId);
       if (request) {
         // Text follow-ups continue the latest successful visual exchange.

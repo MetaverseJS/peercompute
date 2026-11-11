@@ -1,5 +1,6 @@
 import { AGENT_TASKS, normalizeAgentTask, packAgentContext, routeAgentTask } from './AgentRouter.js';
 import { normalizeAgentRecord } from './AgentContracts.js';
+import { validateGeneratedMesh, normalizeGeneratedMeshDescriptor } from '../inference/GeneratedMeshArtifact.js';
 
 const copy = (value) => structuredClone(value);
 const abortError = (reason = 'Agent task cancelled') => new DOMException(String(reason?.message ?? reason), 'AbortError');
@@ -202,6 +203,10 @@ export class AgentRuntime {
             if (!result.image) throw new Error('Image generation returned no image');
             result.image = normalizeAgentTask({ task: 'image-text-to-text', prompt: 'Validate generated pixels', image: result.image }).image;
           } else if (result.image != null) throw new Error('Text generation returned an unexpected image');
+          if (input.task === 'image-to-3d') {
+            if (!result.mesh) throw new Error('Mesh generation returned no mesh');
+            result.mesh = validateGeneratedMesh(result.mesh);
+          } else if (result.mesh != null) throw new Error('Inference returned an unexpected mesh');
           const actualRoute = { ...entry.route, ...(result.peerId ? { peerId: String(result.peerId).slice(0, 128) } : {}) };
           const imageId = result.image ? crypto.randomUUID() : null;
           saved = await this.#save(id, saved, { head: { ...saved, status: 'completed' },
@@ -209,6 +214,9 @@ export class AgentRuntime {
             event: { type: 'result', operationId: requestId, task: input.task, text: result.text, route: actualRoute,
               ...(input.conversationId !== undefined ? { conversationId: input.conversationId } : {}),
               finishReason: result.finishReason ?? 'unknown',
+              // Binary output is retained by the application's artifact owner,
+              // never copied into the agent journal or presented as a stored CID.
+              ...(result.mesh ? { generatedMesh: normalizeGeneratedMeshDescriptor(result.mesh) } : {}),
               ...(imageId ? { attachmentIds: [imageId], imageAttachmentId: imageId } : {}) },
             ...(imageId ? { attachments: [{ id: imageId, ...result.image }] } : {}) });
           this.#activity(id, { status: 'completed', requestId, route: actualRoute });

@@ -66,6 +66,22 @@ export { DataState } from './stateManager/DataState.js';
 export { ArtifactStore, ARTIFACT_IMPORT_PROFILE, ARTIFACT_MANIFEST_SCHEMA } from './artifacts/ArtifactStore.js';
 export { MODEL_ARTIFACT_CATALOG, modelArtifactFileUrl } from './artifacts/modelArtifactCatalog.js';
 export { GGUF_MODEL_CATALOG, ggufModelFileUrl } from './artifacts/ggufModelCatalog.js';
+export { MESH_MODEL_CATALOG, meshModelFileUrl } from './artifacts/meshModelCatalog.js';
+export {
+  MODEL_COMPOSITION_SCHEMA,
+  MODEL_COMPOSITION_LIMITS,
+  modelManifestCid,
+  createModelComposition,
+  splitModelComposition
+} from './inference/modelComposition.js';
+export {
+  GENERATED_MESH_LIMITS,
+  encodeGeneratedMesh,
+  normalizeGeneratedMeshDescriptor,
+  validateGeneratedMesh,
+  retainGeneratedMesh,
+  readGeneratedMesh
+} from './inference/GeneratedMeshArtifact.js';
 export { ModelInferenceService } from './inference/ModelInferenceService.js';
 export { AgentRecordStore } from './agents/AgentRecordStore.js';
 export { AgentRuntime } from './agents/AgentRuntime.js';

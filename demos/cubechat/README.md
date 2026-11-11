@@ -221,6 +221,61 @@ physics boxes use conservative axis-aligned bounds.
 Actual browser-peer delivery and visuals are separate preview acceptance gates;
 see `plan/log.md` for results and limitations.
 
+## Generated objects
+
+Ask a resident you own in its private chat to create something, for example
+“Generate a small red chair and place it beside you.” Its language model makes a
+separate structured action proposal after replying. Only an explicit request in
+the owner's conversation can start generation; visitors, room chat and autonomous
+resident conversations cannot spend your host's generation capacity this way.
+A conversational promise alone does not create an object. Chat reports whether
+the object was actually saved and placed, or why the operation failed.
+
+Use **Models** to load the required models, or allow network-assisted inference
+and use compatible peers already hosting them:
+
+- A text model handles the conversation and action proposal.
+- A text-to-image model creates a reference image from the object's description.
+- **TripoSR (Q8)** turns that image into a colored 3D mesh in a managed WebGPU
+  worker. Its pipeline uses image input; it is not directly text conditioned.
+
+The router selects providers separately for each step, preferring a capable local
+model. Local-only residents require every needed model on this device. This flow
+does not automatically download missing models. With network-assisted inference,
+the selected providers receive the relevant prompt or reference image over
+encrypted peer streams. TripoSR requires hardware WebGPU but does not require
+`shader-f16`; the other selected models retain their own requirements.
+
+The reusable `WorldGeneratedObjects.generate({ agentId, action, image, ... })`
+API also accepts bounded RGBA source pixels, skipping text-to-image generation.
+The current CubeChat composer uses generated reference images; it does not yet
+provide a source-image upload control for this action. A single isolated subject
+on a plain white background is the intended reference input. Shape and color
+quality depend on the reference and model; reconstruction is not exact.
+
+Successful output is a validated, self-contained GLB placed on the ground beside
+the resident. Geometry and placement are retained together under an artifact CID
+in local storage. Reloading the same browser origin restores them without running
+inference again. Connected room peers discover placement descriptors, fetch and
+verify the mesh through PeerCompute's artifact network, and display it in their
+scene. Room display is shared even though the initiating conversation is private;
+peers can retrieve the generated artifact. Availability depends on hosts serving
+the saved bytes, rather than permanent external IPFS pinning.
+
+This first slice creates cosmetic, static objects: no collision bodies, rigging,
+animation, avatar replacement or terrain editing. It admits one generation at a
+time per host, up to 32 owned objects per room, and meshes no larger than 16 MiB,
+100,000 vertices or 150,000 triangles. The renderer rejects external resources and
+unsupported GLB features before loading. General Hugging Face 3D pipelines and
+Hunyuan3D-2.1 remain follow-up work; only the pinned TripoSR pipeline is admitted.
+
+`WorldObjectAction`, `WorldGeneratedObjects`, `WorldGeneratedObjectNetwork` and
+`WorldGeneratedObjectPresenter` separate agent authority, model routing, artifact
+retention and room discovery from `CubeGeneratedObjectLayer`. Core
+`GeneratedMeshArtifact` helpers provide the reusable encoding, validation and
+storage boundary. Design and acceptance details live in
+[the generated-object plan](../../plan/demos/inference/generated-world-objects.md).
+
 ## Multiplayer Rooms
 Use the Settings menu to create or join public/private rooms. Private rooms derive their room ID from a password hash (no raw password is shared).
 

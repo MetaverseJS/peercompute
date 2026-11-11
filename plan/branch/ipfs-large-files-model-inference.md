@@ -1613,3 +1613,14 @@ the managed native worker. Local active/zero/restored and actual source-off peer
 acceptance pass. Next authorized slice is actual browser 3D generation and
 CubeChat agent object placement; Hunyuan3D-2.1 remains a target, not a claimed
 current browser capability. No Pages publication or Git push authorized.
+
+November10–11 3D implementation: pinned TripoSRQ8 executes in a fixed managed
+ONNX native WebGPU worker withoutshader-f16, producing bounded coloredGLB.
+Inferencev5 transports validated mesh bytes; older text/media clients remain
+supported. Reusable owner-authorized world object tools route text through an
+image generator or accept sourcepixels, retain exactCIDs and publish bounded
+room placements. CubeChat renders staticcosmetic objects. Actualmanagedlocal,
+actualpeer generation/cancel/recovery/source-offreload and twofullCubepage
+CID/render/reload checks pass. Temporary viewer retention, cancellation cleanup and focused final
+regressions pass; inference/CubeChat/Earth builds and internal preview promotion
+are complete. No Hunyuan/rigging/avatar claim; noPages/push.

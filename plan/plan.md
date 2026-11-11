@@ -20,8 +20,13 @@ then implement 3D generation and world placement tools for CubeChat agents.
 Gemma local/peer media acceptance has passed. LoRA composition, managed mounting,
 storage and UI are implemented; actual GPU comparison, source-off retained reload
 and encrypted peer acceptance passed. See [model adapters](demos/inference/model-adapters.md).
-Browser-native TripoSR and Hunyuan mini exports are being qualified for the first
-3D slice; Hunyuan3D-2.1 remains the requested longer-term target. No GitHub Pages
+Browser-native TripoSR Q8 now executes in a managed WebGPU worker, locally and
+over encrypted peer inference. Two full CubeChat pages displayed the same
+generated chair CID and restored it after reload. The reusable owner-authorized
+object tool, bounded GLB artifacts and room renderer are implemented; temporary
+peer-cache cleanup and retained owner reload also pass. The three affected demo builds and internal inference preview checks pass. See
+[generated objects](demos/inference/generated-world-objects.md).
+Hunyuan3D-2.1 remains the requested longer-term target. No GitHub Pages
 deployment or push is included.
 
 Future CubeChat/Homunculus TODO: support Hunyuan3D-2.1 generation, CID-shared 3D

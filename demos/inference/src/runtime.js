@@ -6,6 +6,7 @@ import { MODEL_CATALOG as INFERENCE_CATALOG, modelFileUrl } from '../../../peerc
 import { MODEL_ARTIFACT_CATALOG, modelArtifactFileUrl } from '../../../peercompute/src/peercompute/artifacts/modelArtifactCatalog.js';
 import { GGUF_MODEL_CATALOG, ggufModelFileUrl } from '../../../peercompute/src/peercompute/artifacts/ggufModelCatalog.js';
 import { DIFFUSION_MODEL_CATALOG, diffusionModelFileUrl } from '../../../peercompute/src/peercompute/artifacts/diffusionModelCatalog.js';
+import { MESH_MODEL_CATALOG, meshModelFileUrl } from '../../../peercompute/src/peercompute/artifacts/meshModelCatalog.js';
 import { artifactCID, decodeArtifactManifest, normalizeArtifactManifest, ARTIFACT_MANIFEST_MAXIMUM_BYTES } from '../../../peercompute/src/peercompute/artifacts/ArtifactManifest.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { collectModelDeviceCapabilities, evaluateModelCompatibility, modelMemoryEstimate } from './modelDeviceCompatibility.js';
@@ -29,8 +30,10 @@ import factoryUrl from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.mjs?url'
 import ggufWasmUrl from '@wllama/wllama/esm/wasm/wllama.wasm?url';
 import diffusionWasmUrl from 'peercompute-diffusion-ort/ort-wasm-simd-threaded.jsep.wasm?url';
 import diffusionFactoryUrl from 'peercompute-diffusion-ort/ort-wasm-simd-threaded.jsep.mjs?url';
+import meshWasmUrl from 'peercompute-diffusion-ort/ort-wasm-simd-threaded.asyncify.wasm?url';
+import meshFactoryUrl from 'peercompute-diffusion-ort/ort-wasm-simd-threaded.asyncify.mjs?url';
 
-export const MODEL_CATALOG = Object.freeze({ ...INFERENCE_CATALOG, ...MODEL_ARTIFACT_CATALOG, ...GGUF_MODEL_CATALOG, ...DIFFUSION_MODEL_CATALOG, ...SPEECH_MODEL_CATALOG });
+export const MODEL_CATALOG = Object.freeze({ ...INFERENCE_CATALOG, ...MODEL_ARTIFACT_CATALOG, ...GGUF_MODEL_CATALOG, ...DIFFUSION_MODEL_CATALOG, ...SPEECH_MODEL_CATALOG, ...MESH_MODEL_CATALOG });
 
 export function trustedRuntimeAssets(runtimeBaseUrl) {
   if (runtimeBaseUrl) {
@@ -47,6 +50,10 @@ export function trustedGgufRuntimeAssets() {
 
 export function trustedDiffusionRuntimeAssets() {
   return { mjs: new URL(diffusionFactoryUrl, location.href).href, wasm: new URL(diffusionWasmUrl, location.href).href };
+}
+
+export function trustedMeshRuntimeAssets() {
+  return { mjs: new URL(meshFactoryUrl, location.href).href, wasm: new URL(meshWasmUrl, location.href).href };
 }
 
 export async function checkGgufCapabilities() {
@@ -134,7 +141,8 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
           : kind === 'transformers.js' ? service : null;
         if (!available(candidate) || (kind === 'llama.cpp' && runtimeOptions.ggufGpuLayers !== undefined)) {
           const assets = kind === 'llama.cpp' ? trustedGgufRuntimeAssets()
-            : kind === 'onnx-diffusion' ? trustedDiffusionRuntimeAssets() : trustedRuntimeAssets(runtimeBaseUrl);
+            : kind === 'onnx-diffusion' ? trustedDiffusionRuntimeAssets()
+              : kind === 'onnx-mesh' ? trustedMeshRuntimeAssets() : trustedRuntimeAssets(runtimeBaseUrl);
           candidate = await compute.createModelInferenceService({ artifactStore: store, runtime: kind,
             runtimeAssets: assets, resourceEstimate: modelMemoryEstimate, collectGpuEvidence, admissionOptions,
             ...(kind === 'llama.cpp' ? { runtimeOptions: { ...ggufRuntimeOptions,
@@ -294,6 +302,7 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
       const sourceUrl = INFERENCE_CATALOG[modelId] ? modelFileUrl
         : GGUF_MODEL_CATALOG[modelId] ? ggufModelFileUrl
           : DIFFUSION_MODEL_CATALOG[modelId] ? diffusionModelFileUrl
+            : MESH_MODEL_CATALOG[modelId] ? meshModelFileUrl
             : SPEECH_MODEL_CATALOG[modelId] ? (id, path) => speechModelFileUrl(SPEECH_MODEL_CATALOG[id], SPEECH_MODEL_CATALOG[id].files.find((file) => file.path === path)) : modelArtifactFileUrl;
       const manifest = { schema: 'peercompute.artifact.manifest.v1', name: entry.name,
         files: entry.files, model: entry.model, provenance: { ...entry.provenance, license: entry.license } };
@@ -326,7 +335,7 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
       const manifest = await store.getManifest(cid, { signal: options.signal });
       const isGguf = manifest.model?.runtime === 'llama.cpp';
       const isDiffusion = manifest.model?.runtime === 'onnx-diffusion';
-      if (!isGguf && !isDiffusion && !['transformers.js', 'transformers-speech'].includes(manifest.model?.runtime)) {
+      if (!isGguf && !isDiffusion && !['transformers.js', 'transformers-speech', 'onnx-mesh'].includes(manifest.model?.runtime)) {
         throw new Error('This package can be stored and hosted, but its model runtime is unavailable in this browser demo');
       }
       if (isGguf) {
@@ -345,6 +354,20 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
       await networkConnection.requireArtifacts(options);
       return store.ensureLocal(cid, { ...options, fetchBlock: (blockCid, readOptions) =>
         networkConnection.manager.fetchArtifactBlock(blockCid, { ...readOptions, artifactCid: cid }) });
+    },
+    async withArtifactRetention(callback, { signal } = {}) {
+      if (typeof callback !== 'function') throw new TypeError('Artifact retention requires a callback');
+      // Establish transport before holding the GC read lock. Do not enter the
+      // model mutation queue here: a queued deletion may need its write lock.
+      await networkConnection.requireArtifacts({ signal });
+      signal?.throwIfAborted();
+      return store.withRetention((scoped) => callback(Object.freeze({ ...scoped,
+        ensure: (cid, options = {}) => scoped.ensureLocal(cid, { ...options, pin: false,
+          signal: options.signal && signal ? AbortSignal.any([options.signal, signal]) : options.signal ?? signal,
+          fetchBlock: (blockCid, readOptions) => networkConnection.manager.fetchArtifactBlock(blockCid,
+            { ...readOptions, artifactCid: cid }),
+        }),
+      })), { signal });
     },
     async publish(cid) {
       await networkConnection.requireArtifacts();

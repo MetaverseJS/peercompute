@@ -1,5 +1,6 @@
 import { routeAgentTask } from '../../../peercompute/src/peercompute/agents/AgentRouter.js';
 import { validateWorldIntent } from './WorldIntent.js';
+import { normalizeWorldObjectAction, WORLD_OBJECT_ACTION_INSTRUCTIONS } from './WorldObjectAction.js';
 
 const bytes = value => new TextEncoder().encode(value).length;
 const failure = () => Object.assign(new Error('The model did not return a valid physical intention'),
@@ -26,7 +27,7 @@ export const WORLD_PHYSICAL_OBSERVATIONS_MARKER = '\n\nCurrent world observation
 
 /** References belong to one observation. Never persist them as body identities
  * or resolve a new response against an earlier conversation's lookup table. */
-export function projectWorldIntentRequest(message, observed, { allowTask = false } = {}) {
+export function projectWorldIntentRequest(message, observed, { allowTask = false, allowObject = false } = {}) {
   if (typeof message !== 'string' || !message.trim() || message.includes('\0') || bytes(message) > 16384
       || !observed?.self || !Array.isArray(observed.participants) || observed.participants.length > 24
       || !Number.isFinite(observed.observedAt)) throw failure();
@@ -62,6 +63,10 @@ export function projectWorldIntentRequest(message, observed, { allowTask = false
         const trimmed = text.trim(), fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
         const decision = JSON.parse(fenced ? fenced[1] : trimmed);
         if (!decision || Array.isArray(decision) || Object.keys(decision).length !== 1) throw failure();
+        if (allowObject === true && decision.object) {
+          if (now < originalObservation.observedAt || now - originalObservation.observedAt > 120000) throw failure();
+          return { object: normalizeWorldObjectAction(decision.object) };
+        }
         if (allowTask === true && decision.task === true) {
           if (now < originalObservation.observedAt || now - originalObservation.observedAt > 120000) throw failure();
           return { task: true };
@@ -83,15 +88,16 @@ export function projectWorldIntentRequest(message, observed, { allowTask = false
 /** Uses the same managed local/peer routing policy as the conversational agent.
  * Actual authority, target presence and motion revision are checked again by the
  * caller immediately before the physical adapter receives this proposal. */
-export async function generateWorldIntentDecision({ inference, head, message, observed, signal, allowTask = false } = {}) {
+export async function generateWorldIntentDecision({ inference, head, message, observed, signal, allowTask = false, allowObject = false } = {}) {
   signal?.throwIfAborted();
-  const projection = projectWorldIntentRequest(message, observed, { allowTask });
+  const projection = projectWorldIntentRequest(message, observed, { allowTask, allowObject });
   const candidates = await inference.listCandidates({ mode: head.policy.inferenceMode,
     task: 'text-generation', signal, refresh: true });
   signal?.throwIfAborted();
   const candidate = routeAgentTask({ task: 'text-generation', inferenceMode: head.policy.inferenceMode, candidates }).candidate;
   const output = await inference.generate(candidate, { requestId: crypto.randomUUID(), task: 'text-generation', prompt: projection.prompt,
-    messages: [{ role: 'system', content: (allowTask ? WORLD_CHAT_TASK_INSTRUCTIONS : WORLD_PHYSICAL_INTENT_INSTRUCTIONS) + WORLD_PHYSICAL_OBSERVATIONS_MARKER + projection.worldContext },
+    messages: [{ role: 'system', content: (allowTask ? WORLD_CHAT_TASK_INSTRUCTIONS : WORLD_PHYSICAL_INTENT_INSTRUCTIONS)
+      + (allowObject ? ' ' + WORLD_OBJECT_ACTION_INSTRUCTIONS : '') + WORLD_PHYSICAL_OBSERVATIONS_MARKER + projection.worldContext },
       { role: 'user', content: projection.prompt }], maxNewTokens: 512 }, { signal });
   signal?.throwIfAborted();
   return projection.resolve(output?.text);

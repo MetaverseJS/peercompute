@@ -5,8 +5,9 @@
 Requested November 10, 2026; planning only, not implemented or runtime-qualified.
 Later that day the user authorized implementation after Gemma testing and general
 LoRA support, specifically allowing agents to generate and place models in the
-world. Runtime choice is pending clarification; keep current capabilities marked
-unimplemented until actual generation and shared placement are qualified.
+world. A browser TripoSR first slice is now being implemented after actual GPU
+qualification; see [generated objects](generated-world-objects.md). Keep shared
+placement marked unfinished until its actual world acceptance passes.
 Add [Tencent Hunyuan3D-2.1](https://huggingface.co/tencent/Hunyuan3D-2.1)
 as a target for CubeChat's reusable Homunculus appearance/body pipeline:
 

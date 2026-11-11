@@ -55,12 +55,14 @@ Safetensors diffusion LoRAs require a different backend. See the
 | wllama / llama.cpp GGUF | Text: quantized Qwen and standard GGUF packages; pinned Gemma4 companion package adds image/audio input |
 | ONNX diffusion | Image generation: pinned Stable Diffusion Turbo and DreamShaper 8 LCM exports |
 | Managed speech workers | Recognition with Moonshine Tiny; synthesis with Supertonic |
+| Managed ONNX mesh worker | Image-to-3D: pinned TripoSR Q8; used by CubeChat resident object tools |
 
 Exact files and revisions live in the [ONNX catalog](../../peercompute/src/peercompute/inference/modelCatalog.js),
 [additional ONNX catalog](../../peercompute/src/peercompute/inference/additionalModelCatalog.js),
 [GGUF catalog](../../peercompute/src/peercompute/artifacts/ggufModelCatalog.js),
 [diffusion catalog](../../peercompute/src/peercompute/artifacts/diffusionModelCatalog.js)
-and [speech catalog](../../peercompute/src/peercompute/inference/speech/speechCatalog.js).
+[speech catalog](../../peercompute/src/peercompute/inference/speech/speechCatalog.js)
+and [3D catalog](../../peercompute/src/peercompute/artifacts/meshModelCatalog.js).
 Discovery rejects unsupported architectures, split/custom-codec GGUF packages
 and arbitrary diffusion pipelines. Anonymous Hub access does not load gated or
 private packages. Catalog inclusion is not a guarantee of model quality, device
@@ -100,6 +102,16 @@ package. Gemma produces text; voice replies still require a speech-synthesis mod
 
 [Qwen Image 2.1 with LoRA support](../../plan/demos/inference/qwen-image21-lora.md)
 is a separate planned image backend, not an available catalog model.
+
+To host 3D generation, choose **TripoSR · image to 3D (Q8)** in Models and load
+its approximately 462 MiB package. It uses WebGPU without requiring `shader-f16`.
+The 4 GiB RAM / 3 GiB GPU figures are planning budgets, not measurements of free
+device memory. A loaded host accepts `image-to-3d` requests from CubeChat residents
+over the same inference network. It is a tool provider, not a conversational
+model: ask your CubeChat resident to generate and place an object. Text requests
+also need a text model and an image generator. Output is static colored geometry;
+rigging, animated avatars and Hunyuan3D are later work. See
+[generated objects](../../plan/demos/inference/generated-world-objects.md).
 
 ## Chat, images and voice
 

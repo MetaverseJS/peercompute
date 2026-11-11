@@ -4,6 +4,7 @@ import { setImmediate as tick } from 'node:timers/promises';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { AgentRecordStore } from '../../src/peercompute/agents/AgentRecordStore.js';
 import { AgentRuntime } from '../../src/peercompute/agents/AgentRuntime.js';
+import { encodeGeneratedMesh } from '../../src/peercompute/inference/GeneratedMeshArtifact.js';
 
 const candidate = { key: 'local', manifestCid: 'model-cid', sessionId: 'session-1', local: true, available: true,
   runtime: 'transformers.js', name: 'Model', task: 'text-generation', modalities: ['text'], outputModalities: ['text'] };
@@ -24,6 +25,28 @@ async function fixture(t, options = {}) {
   const head = await runtime.create({ name: 'Ada', instructions: 'Be brief.', goals: ['Observe'], ...options.input });
   return { store, runtime, inference, calls, id: head.agentId, head };
 }
+
+test('agent mesh jobs route explicit image input, validate output and journal metadata without binary mesh', async (t) => {
+  const meshModel = { ...candidate, task: 'image-to-3d', modalities: ['image'], outputModalities: ['mesh'] };
+  const mesh = encodeGeneratedMesh({ positions: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]), indices: new Uint16Array([0, 1, 2]) });
+  const f = await fixture(t, { inference: { async listCandidates() { return [meshModel]; },
+    async generate(selected, input) {
+      assert.equal(selected.task, 'image-to-3d'); assert.equal(input.prompt, undefined);
+      assert.equal(input.messages, undefined); assert.equal(input.worldContext, undefined);
+      assert.deepEqual(input.image, image); return { text: '', mesh };
+    } } });
+  await f.runtime.resume(f.id);
+  const result = await f.runtime.run(f.id, { task: 'image-to-3d', prompt: 'Place the pictured chair', image,
+    worldContext: 'Private observations', taskInstructions: 'Private identity details' });
+  assert.equal(result.result.mesh.sha256, mesh.sha256);
+  const events = await f.runtime.events(f.id);
+  assert.equal(events.find((event) => event.type === 'request').text, 'Place the pictured chair');
+  assert.equal(events.at(-1).generatedMesh.sha256, mesh.sha256);
+  assert.equal(events.at(-1).generatedMesh.data, undefined);
+  assert.equal(events.at(-1).generatedMesh.artifactCid, undefined);
+  f.inference.generate = async () => ({ text: '', mesh: { ...mesh, data: new Uint8Array(mesh.byteLength) } });
+  await assert.rejects(f.runtime.run(f.id, { task: 'image-to-3d', image }), /GLB header/u);
+});
 
 test('private direct task checkpoints intent before dispatch and survives reopen with identity/history', async (t) => {
   const f = await fixture(t); const events = [];

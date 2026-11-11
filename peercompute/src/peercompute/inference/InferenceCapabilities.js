@@ -1,7 +1,7 @@
 /** Operations describe requested work; a model's primary task is not its full
  * capability set. Only advertise modalities admitted by its executable adapter. */
 export const INFERENCE_TASKS = Object.freeze(['text-generation', 'image-text-to-text', 'audio-text-to-text',
-  'text-to-image', 'automatic-speech-recognition', 'text-to-speech']);
+  'text-to-image', 'automatic-speech-recognition', 'text-to-speech', 'image-to-3d']);
 const conversationTasks = new Set(['text-generation', 'image-text-to-text', 'audio-text-to-text']);
 
 function modelSupportsTask(candidate, task) {
@@ -13,6 +13,7 @@ function modelSupportsTask(candidate, task) {
       && (task !== 'audio-text-to-text' || input.includes('audio'));
   }
   if (candidate.task !== task) return false;
+  if (task === 'image-to-3d') return input.includes('image') && output.includes('mesh');
   if (task === 'automatic-speech-recognition') return input.includes('audio') && output.includes('text');
   return input.includes('text') && output.includes(task === 'text-to-image' ? 'image' : 'audio');
 }

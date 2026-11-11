@@ -18,6 +18,7 @@ import { speechChunks } from '../../../peercompute/src/peercompute/inference/spe
 import { WorldEmbodimentLease } from './WorldEmbodimentLease.js';
 import { createWorldAppearance } from './WorldAppearance.js';
 import { createWorldAppearancePresenter } from './WorldAppearancePresenter.js';
+import { createWorldGeneratedObjects } from './WorldGeneratedObjects.js';
 import { createWorldChatResponder } from './WorldChatResponder.js';
 import { worldConversationContext, worldReplyPrompt, worldResidentName, worldPublicMessage } from './WorldConversationContext.js';
 import { routeAgentTask } from '../../../peercompute/src/peercompute/agents/AgentRouter.js';
@@ -39,7 +40,7 @@ export async function worldConversationId(worldId, requester) {
 /** Scene-owned bodies and conversations. Closing a window never owns the agent. */
 export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOptions = () => ({}), beforeOpen,
   exclusiveEmbodiments = false, panelOwnsWindow = false, getModelReturnFocus = () => document.activeElement,
-  publishWorldMessage, socialOptions = {}, goalOptions = {}, defaultResident, worldKnowledge = '',
+  publishWorldMessage, socialOptions = {}, goalOptions = {}, defaultResident, worldKnowledge = '', generatedObjectAdapter,
   runtimeFactory = defaultRuntime, speechFactory = defaultSpeech, audioFactory = defaultAudio,
   uiFactory = createWorldAgentUi, serviceFactory = (options) => new AgentConversationService(options),
   panelFactory = async (options) => (await import('../../inference/src/agentPanel.js')).mountInferencePanel(options) } = {}) {
@@ -50,7 +51,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
   let runtime, agents, network, worldManager, speech, audio, ui, selectedKey, disposed = false, closing, unsubscribe;
   let refreshing, networkStarting, modelStarting, networkTimer, navigationTimer, panel, panelOpening, panelClosing, panelShell, panelReturnFocus, embodimentLease;
   let operation, operationDone, voicePreparation, voicePreparationDone, recordingStart, voiceEnabled = false, recording = false;
-  let appearance, appearancePresenter, worldChat, experience, conversations, motor, memory, social, socialOperation, socialDone;
+  let appearance, appearancePresenter, generatedObjects, worldChat, experience, conversations, motor, memory, social, socialOperation, socialDone;
   let objectives, objectiveStore, unsubscribeObjectives;
   let standing, standingRunner, standingStore;
   const standingStates = new Map();
@@ -267,9 +268,28 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
       prompt: turn?.prompt ?? prompt, message: prompt, conversationId, worldContext: turn?.worldContext ?? context,
       taskInstructions: worldKnowledge,
       allowTask: !requesterPeerId && !!objectives,
+      allowObject: !requesterPeerId && !!generatedObjects,
       maxNewTokens: 512, signal, valid: current => !disposed && ownsObjective(agentId) && !!bindingOf(current)
         && (!requesterPeerId || bindingOf(current).shared) });
     if (!requesterPeerId && output.applied) await pauseResidentObjective(agentId);
+    if (output.object) {
+      try {
+        if (requesterPeerId || disposed || !ownsObjective(agentId)) throw new Error('Only the resident owner can request object generation');
+        const result = await generatedObjects.generate({ agentId, action: output.object.action,
+          expectedRevision: output.object.residentRevision, requestId: output.object.requestId, signal });
+        const receipt = `Placed ${result.placement.name} beside the resident. Object CID: ${result.artifactCid}.`;
+        output.text += `\n[Placed ${result.placement.name} beside the resident.]`;
+        try {
+          await memory?.append({ worldId, agentId, audience: 'private', conversationId, kind: 'action-outcome',
+            who: { peerId: descriptor.ownerPeerId || agents.store.hostId, agentId, name: descriptor.name },
+            where: result.placement.position, outcome: 'Generated object saved and displayed in the world.', text: receipt,
+            source: { kind: 'verified-action', eventId: output.object.requestId } });
+        } catch (error) { output.text += `\n[Object saved; memory update failed: ${String(error.message).slice(0, 160)}]`; }
+      } catch (error) {
+        signal?.throwIfAborted(); output.text += `\n[Object not placed: ${String(error.message).replaceAll('\0', '').slice(0, 240)}]`;
+      }
+      return { text: output.text, finishReason: output.finishReason };
+    }
     if (output.task) {
       try {
         await admitWorldChatTask({ proposal: output.task, message: prompt, agentId,
@@ -951,6 +971,12 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     }
     conversations = createWorldConversationTurns({ agents, experience, signal: lifetime.signal });
     appearancePresenter = createWorldAppearancePresenter({ appearance, adapter, getNetwork: () => network });
+    if (generatedObjectAdapter) {
+      generatedObjects = createWorldGeneratedObjects({ runtime, agents, adapter: generatedObjectAdapter, worldId,
+        ownerHostId: agents.store.hostId, getNetwork: worldNetwork, isOwner: ownsObjective,
+        onStatus: event => { if (!disposed) ui.setStatus(event.message); } });
+      await generatedObjects.ready;
+    }
     if (typeof publishWorldMessage === 'function') worldChat = createWorldChatResponder({
       getResidents: () => list().map(body => ({ ...body,
         respondToWorldChat: body.respondToWorldChat && !worldChatDisabled.has(body.key),
@@ -1083,6 +1109,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     void ensureModelNetwork(); void ensureNetwork();
     networkTimer = setInterval(() => {
       void ensureModelNetwork(); void ensureNetwork();
+      void generatedObjects?.syncNetwork();
       if (embodimentLease) void refreshLocal().catch(fail);
       else updateList();
     }, 5000);
@@ -1095,11 +1122,13 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     openConversation(key) { return select(key).catch(fail); },
     getStatus: () => ({ worldId, bodies: list(), selectedKey, voiceEnabled, recording, disposed, network: !!network,
       experience: experience?.getStatus(), motor: motor?.getStatus(), social: social?.getStatus(), standing: standing?.getStatus(), objectives: objectives?.getStatus(),
+      generatedObjects: generatedObjects?.getStatus(),
       exclusiveEmbodiments: !!embodimentLease, crossTabOwnership: embodimentLease?.supported ?? null }),
     // The scene owns these operations; exposed for embedding and acceptance
     // checks without invoking GPU work through a hidden global test harness.
     spawn, edit, clone, send, remove, resume, enableVoice, cancel, generateAppearance, setWorldChat, receiveWorldMessage,
     assignGoal, pauseGoal, resumeGoal, cancelGoal, getObjective,
+    get generatedObjects() { return generatedObjects; },
     get runtime() { return runtime; },
     async dispose() {
       if (closing) return closing;
@@ -1107,7 +1136,9 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
       closing = (async () => {
         await ready.catch(() => {}); await cancel(); await networkStarting; await modelStarting; await closePanel();
         await objectives?.dispose(); unsubscribeObjectives?.();
-        await social?.dispose(); await standing?.dispose(); await standingRunner?.dispose(); await worldChat?.dispose(); await appearancePresenter?.dispose(); await appearance?.dispose();
+        await social?.dispose(); await standing?.dispose(); await standingRunner?.dispose(); await worldChat?.dispose();
+        await generatedObjects?.dispose(); if (!generatedObjects) generatedObjectAdapter?.dispose();
+        await appearancePresenter?.dispose(); await appearance?.dispose();
         await network?.close(); network = null;
         await conversations?.dispose();
         adapter.setMotor?.(null); await experience?.dispose(); await motor?.dispose();

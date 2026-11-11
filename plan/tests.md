@@ -4973,3 +4973,42 @@ SecretWorkshopNoise and desktop/390px UI. Allownedbrowsers/candidateserver close
   `/home/cos/.cache/peercompute-gemma4-native-20261111/{run-2,peer-run-2}/report.json`.
 - Remaining 3D gate: real neural output, bounded validated embedded GLB, actual
   two-peer CubeChat placement/CID agreement, source-off retained reload and cancel.
+
+## November 10–11: managed 3D generation and CubeChat objects
+
+- Final core regression: **340/340 pass** covering ArtifactStore and temporary
+  retention, mesh geometry/catalog/engine/managed service, strictGLB artifacts,
+  model compatibility/library, LoRA, agent routing and v5/v4/v3/v2 inference.
+  Command and output: `core-regression-final.log` under
+  `/home/cos/.cache/peercompute-mesh-native-20261111/`.
+- World regression: **67/67 pass** including actual host owner/visitor behavior,
+  object proposals, retained placement, same-request idempotence, stale authority,
+  unavailable providers, publish/remove races and real encrypted room snapshots.
+  Separate presentation checks cover malformed remote assets, fair retries,
+  actual Three GLTFLoader disposal, temporary peer-cache GC and independent pins.
+- Actual managed hardware acceptance `acceptance.mjs`, run-6: real pinned Q8
+  weights via catalog importer/CID bridge;1,207GPUdispatches per chair; validated
+  590,056byteGLB/4,908triangles. Local+encryptedv5peer cancellation/recovery,
+  source-off browser restart, identicalmeshSHA and zero leases pass. Two known
+  ORT node-placement warnings are retained; no unexpected console errors.
+- Actual two full CubeChat apps `full-cube.mjs`: source image through remote
+  managed TripoSR, owner-retained placement, authenticated peer discovery and
+  Bitswap fetch, second-peer rendered sameCID/pose, owner reload without model
+  downloads/regeneration. Observer root remains unpinned/unretained and GC removes
+  it after disposal; owner root stays pinned. Zero page/console errors, failed
+  requests or HF requests. Visually inspected rendered chair. Evidence:
+  `/home/cos/.cache/peercompute-cube3d-native-20261111/report.json` and screenshots.
+- The all-model owner-chat→language→image→mesh chain is integration-tested with
+  controlled providers; a full real-model chain is not claimed by the image-input
+  browser run. No Hunyuan, rigging, avatar or arbitrary3Dexport qualification.
+- Final UI/import/management regression:145/145pass, including LoRA composer and
+  full actual panel lifecycle. Builds for inference, CubeChat and Earth pass
+  outside docs/. Internal5189/5176/5187index hashes match newbuilds; oldhashedassets
+  retained. TripoSR desktop/mobile catalog, taskfilter, exactrevision and462.4MiB
+  package, mobilecontainment and actualSecretWorkshopNoiseconnection pass with
+  zero page/console errors or unexpecteddownloads. Final scope does not publish
+  GitHubPages. Nativebrowser/peers closed with zeroowned modelresourceleases.
+- Corrected exact internal CubeChat5176 and Earth5187 browser checks also pass:
+  initialized actualapps, SecretWorkshopNoise, zero page/console errors and no
+  modeldownloads. The first Cube check used a nonexistent hook; preserved its
+  timeout report, corrected toworldAgents and reran both pages successfully.

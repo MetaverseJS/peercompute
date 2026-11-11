@@ -1,9 +1,11 @@
 import { MODEL_POLICY } from '../../inference/modelManifest.js';
 import { inferInferenceTask, supportsInferenceInput } from '../../inference/InferenceCapabilities.js';
-import { PEER_INFERENCE_PROTOCOL, PEER_INFERENCE_PROTOCOL_V3, PEER_INFERENCE_PROTOCOL_V2, PEER_INFERENCE_PROTOCOLS, isSpeechTask, PEER_INFERENCE_LIMITS as LIMITS, LEGACY_MAX_NEW_TOKENS, bytes, cid, integer,
-  encryptedConnection, localState, generation, resultData, diffusionProgress, channel } from './protocol.js';
+import { PEER_INFERENCE_PROTOCOL, PEER_INFERENCE_PROTOCOL_V4, PEER_INFERENCE_PROTOCOL_V3, PEER_INFERENCE_PROTOCOL_V2, PEER_INFERENCE_PROTOCOLS, isSpeechTask, supportsNativeMediaProtocol, PEER_INFERENCE_LIMITS as LIMITS, LEGACY_MAX_NEW_TOKENS, bytes, cid, integer,
+  encryptedConnection, localState, generation, resultData, diffusionProgress, meshProgress, channel } from './protocol.js';
 import { monitorResultControls, describeResultImage, writeResultImage, readResultImage } from './imageResult.js';
 import { describeAudio, writeInputAudio, readInputAudio, writeResultAudio, readResultAudio } from './audioFrames.js';
+import { validateGeneratedMesh, normalizeGeneratedMeshDescriptor } from '../../inference/GeneratedMeshArtifact.js';
+import { readResultMesh, writeResultMesh } from './meshResult.js';
 
 const failure = (message, code = 'ERR_PEER_INFERENCE') => Object.assign(new Error(message), { code });
 const asError = (error) => error instanceof Error ? error : failure(String(error ?? 'Peer inference failed'));
@@ -140,14 +142,14 @@ export class PeerInferenceService {
       const { state } = record; const local = peerId === this.peerId;
       for (const model of state.sharedModels) {
         if (!models.has(model.manifestCid)) models.set(model.manifestCid, { ...model, providers: [] });
-        else if (record.protocol === PEER_INFERENCE_PROTOCOL) Object.assign(models.get(model.manifestCid), model);
+        else if (supportsNativeMediaProtocol(record.protocol)) Object.assign(models.get(model.manifestCid), model);
         models.get(model.manifestCid).providers.push({ peerId, local });
       }
       for (const hosted of state.hostedModels ?? (state.hostedModel ? [{ ...state.hostedModel,
         busy: state.busy, idleForMs: state.idleForMs, queuedRequests: state.queuedRequests }] : [])) {
         const { maxNewTokens, busy, idleForMs, queuedRequests, queueCapacity, queueAvailable, ...model } = hosted;
         if (!hosts.has(model.manifestCid)) hosts.set(model.manifestCid, { ...model, hosts: [] });
-        else if (record.protocol === PEER_INFERENCE_PROTOCOL) Object.assign(hosts.get(model.manifestCid), model);
+        else if (supportsNativeMediaProtocol(record.protocol)) Object.assign(hosts.get(model.manifestCid), model);
         hosts.get(model.manifestCid).hosts.push({ peerId, local, busy, task: model.task,
           modalities: [...model.modalities], outputModalities: [...model.outputModalities],
           idleForMs: busy ? 0 : idleForMs, queuedRequests, queueCapacity, queueAvailable, maxNewTokens, protocol: record.protocol });
@@ -198,7 +200,7 @@ export class PeerInferenceService {
     promise.then(finish, finish);
     return promise;
   }
-  async _openStream(peerId, signal, { audio = false, nativeMedia = false, backgroundRecovery = false } = {}) {
+  async _openStream(peerId, signal, { audio = false, nativeMedia = false, mesh = false, backgroundRecovery = false } = {}) {
     const first = await this._connection(peerId, signal);
     const candidates = [...new Set([first, ...this._connections(peerId)])].slice(0, 4);
     const errors = [];
@@ -211,8 +213,8 @@ export class PeerInferenceService {
       const op = operation([this.controller.signal, signal], Math.min(2000, this.queryTimeoutMs / 2));
       let opening;
       try {
-        const protocols = nativeMedia ? PEER_INFERENCE_PROTOCOL : audio
-          ? [PEER_INFERENCE_PROTOCOL, PEER_INFERENCE_PROTOCOL_V3] : PEER_INFERENCE_PROTOCOLS;
+        const protocols = mesh ? PEER_INFERENCE_PROTOCOL : nativeMedia ? [PEER_INFERENCE_PROTOCOL, PEER_INFERENCE_PROTOCOL_V4] : audio
+          ? [PEER_INFERENCE_PROTOCOL, PEER_INFERENCE_PROTOCOL_V4, PEER_INFERENCE_PROTOCOL_V3] : PEER_INFERENCE_PROTOCOLS;
         opening = Promise.resolve(connection.newStream(protocols,
           { signal: op.signal, runOnLimitedConnection: true }));
         const stream = await withAbort(opening, op.signal);
@@ -344,7 +346,8 @@ export class PeerInferenceService {
       if (request.type !== 'generate') throw failure('Unknown inference request');
       const input = generation(request);
       if (protocol === PEER_INFERENCE_PROTOCOL_V2 && isSpeechTask(input.task)) throw failure('Speech requires inference protocol v3');
-      if (protocol !== PEER_INFERENCE_PROTOCOL && input.task === 'audio-text-to-text') throw failure('Native audio conversation requires inference protocol v4');
+      if (!supportsNativeMediaProtocol(protocol) && input.task === 'audio-text-to-text') throw failure('Native audio conversation requires inference protocol v4');
+      if (protocol !== PEER_INFERENCE_PROTOCOL && input.task === 'image-to-3d') throw failure('Mesh generation requires inference protocol v5');
       key = `${peerId}:${input.requestId}`;
       if (this.inbound.has(key) || this.inbound.size >= LIMITS.maximumInbound
           || [...this.inbound.values()].filter((entry) => entry.peerId === peerId).length >= LIMITS.maximumPerPeer) {
@@ -362,7 +365,7 @@ export class PeerInferenceService {
       const state = await this._state(op.signal, 1, input.manifestCid), hosted = selectedHost(state);
       if (!hosted) throw failure('Requested model is not hosted', 'ERR_INFERENCE_NOT_HOSTED');
       if (input.maxNewTokens > hosted.maxNewTokens) throw failure('Requested token limit exceeds hosted capacity', 'ERR_INFERENCE_TOKEN_LIMIT');
-      if (protocol !== PEER_INFERENCE_PROTOCOL && input.task !== undefined && input.task !== hosted.task) {
+      if (!supportsNativeMediaProtocol(protocol) && input.task !== undefined && input.task !== hosted.task) {
         throw failure('Requested task does not match hosted model');
       }
       input.task = inferInferenceTask(input, hosted.task);
@@ -412,10 +415,12 @@ export class PeerInferenceService {
       };
       let progressFrames = 0;
       const onProgress = (event) => {
-        if (event?.type !== 'diffusion-progress') return;
+        if (!['diffusion-progress', 'mesh-generation'].includes(event?.type)) return;
         op.signal.throwIfAborted();
-        if (input.task !== 'text-to-image' || ++progressFrames > 32) throw failure('Invalid image generation progress');
-        const progress = diffusionProgress(event);
+        const isMesh = event.type === 'mesh-generation';
+        if (input.task !== (isMesh ? 'image-to-3d' : 'text-to-image') || ++progressFrames > 32
+            || (isMesh && protocol !== PEER_INFERENCE_PROTOCOL)) throw failure('Invalid generation progress');
+        const progress = isMesh ? meshProgress(event) : diffusionProgress(event);
         written = written.then(() => io.write({ type: 'progress', requestId: input.requestId, progress }, op.signal));
         written.catch((error) => op.controller.abort(error));
       };
@@ -423,15 +428,19 @@ export class PeerInferenceService {
       const result = await withAbort(this.generateLocal({ ...input, requestId: `remote-${crypto.randomUUID()}`,
         signal: op.signal, onToken, onProgress }), op.signal);
       await written; op.signal.throwIfAborted();
-      if (Boolean(result?.image) !== (input.task === 'text-to-image') || Boolean(result?.audio) !== (input.task === 'text-to-speech')) throw failure('Inference output does not match hosted task');
+      if (Boolean(result?.image) !== (input.task === 'text-to-image') || Boolean(result?.audio) !== (input.task === 'text-to-speech')
+          || Boolean(result?.mesh) !== (input.task === 'image-to-3d')) throw failure('Inference output does not match hosted task');
+      const mesh = result.mesh ? validateGeneratedMesh(result.mesh) : null;
       const metadata = resultData({ ...result,
         ...(result.image ? { image: describeResultImage(result.image) } : {}),
+        ...(mesh ? { mesh: normalizeGeneratedMeshDescriptor(mesh) } : {}),
         ...(result.audio ? { audio: describeAudio(result.audio, result.sampleRate) } : {}) });
       if (bytes(metadata.text) > maximumOutputBytes) throw failure('Inference output exceeds its task byte budget');
       if (result.image) await writeResultImage(io, { image: result.image, metadata: metadata.image,
         requestId: input.requestId, controls, signal: op.signal });
       if (result.audio) await writeResultAudio(io, { samples: result.audio, metadata: metadata.audio,
         requestId: input.requestId, controls, signal: op.signal });
+      if (mesh) await writeResultMesh(io, { mesh, requestId: input.requestId, controls, signal: op.signal });
       await io.write({ type: 'done', requestId: input.requestId, result: metadata }, op.signal);
       await this._closeCompletedStream(stream, op.signal);
     } catch (cause) {
@@ -477,8 +486,9 @@ export class PeerInferenceService {
         && (!candidate.busy || (candidate.queuedRequests ?? 0) < (candidate.queueCapacity ?? MODEL_POLICY.maxQueued))
         && supportsInferenceInput({ ...model, ...candidate }, input)
         && (!isSpeechTask(input.task) || candidate.protocol !== PEER_INFERENCE_PROTOCOL_V2)
-        && (input.task !== 'audio-text-to-text' || candidate.protocol === PEER_INFERENCE_PROTOCOL)
-        && (!(input.task === 'image-text-to-text' && candidate.task !== 'image-text-to-text') || candidate.protocol === PEER_INFERENCE_PROTOCOL));
+        && (input.task !== 'audio-text-to-text' || supportsNativeMediaProtocol(candidate.protocol))
+        && (input.task !== 'image-to-3d' || candidate.protocol === PEER_INFERENCE_PROTOCOL)
+        && (!(input.task === 'image-text-to-text' && candidate.task !== 'image-text-to-text') || supportsNativeMediaProtocol(candidate.protocol)));
       candidates.sort((a, b) => Number(a.busy) - Number(b.busy) || (a.queuedRequests ?? 0) - (b.queuedRequests ?? 0)
         || (a.busy ? 0 : b.idleForMs - a.idleForMs) || a.peerId.localeCompare(b.peerId));
       let lastError = failure('No remote peer hosts the requested model', 'ERR_INFERENCE_NOT_HOSTED');
@@ -505,10 +515,10 @@ export class PeerInferenceService {
     try {
       const nativeMedia = input.task === 'audio-text-to-text'
         || (input.task === 'image-text-to-text' && modelTask !== 'image-text-to-text');
-      const opened = await this._openStream(peerId, signal, { audio: isSpeechTask(input.task), nativeMedia });
+      const opened = await this._openStream(peerId, signal, { audio: isSpeechTask(input.task), nativeMedia, mesh: input.task === 'image-to-3d' });
       const { connection } = opened; stream = opened.stream; release = opened.release;
       const io = channel(stream);
-      const header = { ...input, task: opened.protocol === PEER_INFERENCE_PROTOCOL ? input.task : modelTask,
+      const header = { ...input, task: supportsNativeMediaProtocol(opened.protocol) ? input.task : modelTask,
         image: input.image ? { width: input.image.width, height: input.image.height, channels: 4 } : undefined,
         audio: input.audio ? Object.fromEntries(Object.entries(input.audio).filter(([key]) => key !== 'samples')) : undefined };
       await io.write(this._envelope('generate', peerId, header), signal);
@@ -523,7 +533,7 @@ export class PeerInferenceService {
         offset = end;
       }
       if (input.audio) await writeInputAudio(io, { samples: input.audio.samples, requestId: input.requestId, signal });
-      let sequence = 0; let totalBytes = 0; let accepted = false; let image; let audio; let progressFrames = 0;
+      let sequence = 0; let totalBytes = 0; let accepted = false; let image; let audio; let mesh; let progressFrames = 0;
       for (;;) {
         const frame = await io.read(signal);
         if (frame.type === 'error') throw failure(String(frame.message).slice(0, 256), frame.code);
@@ -543,19 +553,26 @@ export class PeerInferenceService {
           if (totalBytes > (input.task === 'automatic-speech-recognition' ? 8192 : MODEL_POLICY.maxOutputBytes)) throw failure('Inference output exceeds its byte budget');
           await withAbort(options.onToken?.(frame.text, { ...frame, peerId }), signal);
         } else if (frame.type === 'progress') {
-          if (input.task !== 'text-to-image' || ++progressFrames > 32) throw failure('Invalid image generation progress');
-          await withAbort(options.onProgress?.({ ...diffusionProgress(frame.progress), requestId: input.requestId, peerId }), signal);
+          const isMesh = frame.progress?.type === 'mesh-generation';
+          if (input.task !== (isMesh ? 'image-to-3d' : 'text-to-image') || ++progressFrames > 32
+              || (isMesh && opened.protocol !== PEER_INFERENCE_PROTOCOL)) throw failure('Invalid generation progress');
+          const progress = isMesh ? meshProgress(frame.progress) : diffusionProgress(frame.progress);
+          await withAbort(options.onProgress?.({ ...progress, requestId: input.requestId, peerId }), signal);
         } else if (frame.type === 'result-image') {
           if (input.task !== 'text-to-image' || image) throw failure('Unexpected generated image');
           image = await readResultImage(io, { image: frame.image, requestId: input.requestId, signal });
         } else if (frame.type === 'result-audio') {
           if (input.task !== 'text-to-speech' || audio) throw failure('Unexpected generated audio');
           audio = await readResultAudio(io, { audio: frame.audio, requestId: input.requestId, signal });
+        } else if (frame.type === 'result-mesh') {
+          if (input.task !== 'image-to-3d' || mesh || opened.protocol !== PEER_INFERENCE_PROTOCOL) throw failure('Unexpected generated mesh');
+          mesh = await readResultMesh(io, { mesh: frame.mesh, requestId: input.requestId, signal });
         } else if (frame.type === 'done') {
           const result = resultData(frame.result);
           if (input.task === 'automatic-speech-recognition' && bytes(result.text) > 8192) throw failure('Speech transcript exceeds its byte budget');
           if (Boolean(result.image) !== (input.task === 'text-to-image') || Boolean(result.image) !== Boolean(image)
-              || Boolean(result.audio) !== (input.task === 'text-to-speech') || Boolean(result.audio) !== Boolean(audio)) {
+              || Boolean(result.audio) !== (input.task === 'text-to-speech') || Boolean(result.audio) !== Boolean(audio)
+              || Boolean(result.mesh) !== (input.task === 'image-to-3d') || Boolean(result.mesh) !== Boolean(mesh)) {
             throw failure('Inference output does not match requested task');
           }
           if (image) {
@@ -567,6 +584,10 @@ export class PeerInferenceService {
           if (audio) {
             if (Object.keys(audio.metadata).some((key) => audio.metadata[key] !== result.audio[key])) throw failure('Generated audio metadata changed during transfer');
             result.audio = audio.audio; result.sampleRate = audio.sampleRate;
+          }
+          if (mesh) {
+            if (JSON.stringify(normalizeGeneratedMeshDescriptor(mesh)) !== JSON.stringify(result.mesh)) throw failure('Generated mesh metadata changed during transfer');
+            result.mesh = mesh;
           }
           await this._closeCompletedStream(stream, signal); return { ...result, requestId: input.requestId, peerId, manifestCid: input.manifestCid,
             protocol: opened.protocol, connectionEncryption: connection.encryption, connectionAddress: connection.remoteAddr?.toString() };

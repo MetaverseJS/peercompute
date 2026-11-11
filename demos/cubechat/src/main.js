@@ -16,6 +16,7 @@ import {
 import { registerPeercomputeBotBridge } from '../../shared/peercomputeBotBridge.js';
 import { installWorldAgents } from '../../shared/agents/WorldAgentHost.js';
 import { CubeAgentLayer } from './agents/CubeAgentLayer.js';
+import { CubeGeneratedObjectLayer } from './renderer/CubeGeneratedObjectLayer.js';
 import { cubeGuidePreset, CUBECHAT_GUIDE_FACTS } from './agents/cubeGuide.js';
 import { cubeShell, createCubeSettingsUi } from './ui/CubeSettingsUi.js';
 import { createCubeWorldUi } from './ui/CubeWorldUi.js';
@@ -157,13 +158,17 @@ class CubeChat {
       })),
       onSelect: (key) => host?.openConversation(key)
     });
+    const generatedObjectLayer = new CubeGeneratedObjectLayer({ scene: this.scene, physics: this.physics,
+      getResidentPosition: agentId => layer.getPosition(`local:${agentId}`) });
     try {
       host = installWorldAgents({
         defaultResident: cubeGuidePreset(`cubechat:${this.currentRoom.roomId}`),
-        worldKnowledge: CUBECHAT_GUIDE_FACTS.join(' '),
+        worldKnowledge: CUBECHAT_GUIDE_FACTS.join(' ') + ' Your owner may ask you to create a 3D object beside your cube. '
+          + 'This requires available text-to-image and image-to-3D models. An object exists only after a verified placement receipt.',
         worldId: `cubechat:${this.currentRoom.roomId}`,
         worldLabel: 'CubeChat',
         adapter: layer,
+        generatedObjectAdapter: generatedObjectLayer,
         getRuntimeOptions: () => ({
           stateManager: this.network.node.getStateManager(),
           networkManager: this.network.node.getNetworkManager()
@@ -198,6 +203,7 @@ class CubeChat {
         this.logEvent(`Agents unavailable: ${error.message}`, 'error');
       });
     } catch (error) {
+      generatedObjectLayer.dispose();
       layer.dispose();
       this.logEvent(`Agents unavailable: ${error.message}`, 'error');
     }

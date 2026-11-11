@@ -409,12 +409,13 @@ export class ArtifactStore {
     }
   }
 
-  async _invalidateRoot(cid, error) {
+  async _invalidateRoot(cid, error, { retainPartial = true } = {}) {
     if (!damaged(error)) return;
     // Persist an observed integrity failure even if cancellation races it. This
     // bounded metadata write still owns the operation's GC lock; destroy waits.
     await this._writeRoot(cid, (previous) => !previous || previous.status === 'deleting' ? undefined : ({ ...previous, cid,
-      kind: previous.kind || 'file', status: 'partial', pinned: Boolean(previous.pinned), retain: true }));
+      kind: previous.kind || 'file', status: 'partial', pinned: Boolean(previous.pinned),
+      retain: Boolean(retainPartial || previous.retain) }));
   }
 
   async _checkRootIdentity(cid, root, signal) {
@@ -430,25 +431,26 @@ export class ArtifactStore {
     return bytes;
   }
 
-  async _withRootVerification(cid, signal, callback) {
+  async _withRootVerification(cid, signal, callback, retention) {
     return this._run(signal, async (activeSignal) => {
       const unlock = await acquireArtifactLock(`${this.lockName}:verify:${cid}`, 'exclusive', activeSignal, this.lockManager);
       try { return await callback(activeSignal); } finally { unlock(); }
-    });
+    }, undefined, retention);
   }
 
   /** A full audit, optionally fetching missing CID blocks. Omitting fetchBlock
    * is strictly local recovery. Cancellation never revokes an earlier complete
    * checkpoint; only a proven missing block or integrity error does so.
    */
-  async ensureLocal(input, { signal, fetchBlock, pin = true, kind, onProgress } = {}) {
+  async ensureLocal(input, { signal, fetchBlock, pin = true, kind, onProgress, [RETENTION]: retention } = {}) {
     const cid = artifactCID(input).toString();
     if (onProgress !== undefined && typeof onProgress !== 'function') throw new TypeError('Artifact progress must be a function.');
     return this._withRootVerification(cid, signal,
-      (activeSignal) => this._ensureLocal(cid, { signal: activeSignal, fetchBlock, pin, kind, onProgress }));
+      (activeSignal) => this._ensureLocal(cid, { signal: activeSignal, fetchBlock, pin, kind, onProgress,
+        retainPartial: !retention || pin !== false }), retention);
   }
 
-  async _ensureLocal(cid, { signal: activeSignal, fetchBlock, pin, kind, onProgress }) {
+  async _ensureLocal(cid, { signal: activeSignal, fetchBlock, pin, kind, onProgress, retainPartial = true }) {
     const previous = await this.backend.get('roots', cid);
     if (previous?.status === 'deleting') throw new Error('Artifact deletion is pending; finish deletion before importing this root.');
     let loaded = 0; let totalBytes = previous?.size || 0; let completedFiles = 0; let totalFiles = 1;
@@ -468,7 +470,7 @@ export class ArtifactStore {
     try {
       if (previous?.status !== 'complete') await this._writeRoot(cid, (current) => ({ ...current, cid,
         kind: kind || current?.kind || 'file', status: 'partial',
-        pinned: Boolean(current?.pinned), retain: true }), activeSignal);
+        pinned: Boolean(current?.pinned), retain: Boolean(retainPartial || current?.retain) }), activeSignal);
       // Network recovery needs a DAG download pass. Local verification streams
       // each file once; its range walker already verifies every CID block.
       if (fetchBlock) for await (const _ of this._walk([cid], { signal: activeSignal, fetchBlock, onMissing })) { /* Download missing blocks. */ }
@@ -481,7 +483,7 @@ export class ArtifactStore {
       }
       if (kind === 'manifest' && !manifest) throw new TypeError('Manifest must be a bounded canonical JSON raw block.');
       if (manifest) {
-        if (previous?.status !== 'complete') await this._writeRoot(cid, (current) => ({ ...current, kind: 'manifest', manifest, retain: true }), activeSignal);
+        if (previous?.status !== 'complete') await this._writeRoot(cid, (current) => ({ ...current, kind: 'manifest', manifest, retain: Boolean(retainPartial || current?.retain) }), activeSignal);
         totalBytes = manifest.files.reduce((sum, file) => sum + file.size, 0); totalFiles = manifest.files.length;
         if (!Number.isSafeInteger(totalBytes)) throw new RangeError('Artifact verification byte count exceeds safe bounds.');
         progress(true);
@@ -498,7 +500,7 @@ export class ArtifactStore {
       observedDamage = undefined; // A repaired closure is now durably complete.
       totalBytes = loaded; completedFiles = totalFiles; path = null; progress(true);
       return result;
-    } catch (error) { await this._invalidateRoot(cid, observedDamage || error); throw error; }
+    } catch (error) { await this._invalidateRoot(cid, observedDamage || error, { retainPartial }); throw error; }
   }
 
   async stat(input, { signal, [RETENTION]: retention } = {}) {
@@ -512,10 +514,12 @@ export class ArtifactStore {
       { maximumFileBytes: this.maximumFileBytes }), undefined, retention);
   }
 
-  async *openRead(input, { offset = 0, length, signal } = {}) {
+  async *openRead(input, { offset = 0, length, signal, [RETENTION]: retention } = {}) {
     integer(offset, 'offset', 0);
     if (length !== undefined) integer(length, 'length', 0);
-    const operation = await this._begin(signal);
+    if (retention && (retention.store !== this || !retention.held)) throw new Error('Artifact retention scope is no longer active.');
+    const activeSignal = retention ? AbortSignal.any([retention.signal, ...(signal ? [signal] : [])]) : signal;
+    const operation = await this._begin(activeSignal, retention ? 'none' : 'shared');
     try {
       const entry = await exporter(artifactCID(input).toString(), this._localBlocks(operation.signal));
       if (!['file', 'raw'].includes(entry.type)) throw new TypeError('Artifact root must identify a file.');
@@ -557,18 +561,20 @@ export class ArtifactStore {
     }, activeSignal));
   }
 
-  /** Keep a multi-file import alive until its manifest owns the file closure.
+  /** Keep imports or ephemeral reads alive without adding persistent pins.
    * Use the supplied scoped methods inside the callback, never the outer store's
-   * locking methods. Child roots remain unpinned; this leaves no persistent pin
-   * journal behind if an import is cancelled or the browser exits.
+   * locking methods. Scoped iterators are closed when the callback settles and
+   * cannot escape the GC lease. ensureLocal still serializes root verification.
    */
   async withRetention(callback, { signal } = {}) {
     if (typeof callback !== 'function') throw new TypeError('Artifact retention requires a callback.');
     const operation = await this._begin(signal);
-    const retention = { store: this, signal: operation.signal, held: true, accepting: true };
-    const pending = new Set();
+    const closing = new AbortController();
+    const retention = { store: this, signal: AbortSignal.any([operation.signal, closing.signal]), held: true, accepting: true };
+    const pending = new Set(), readers = new Set();
+    const inactive = () => new Error('Artifact retention scope is no longer active.');
     const scoped = {};
-    for (const method of ['stat', 'getManifest', 'importFile', 'importManifest']) {
+    for (const method of ['stat', 'getManifest', 'importFile', 'importManifest', 'ensureLocal']) {
       scoped[method] = (input, options = {}) => {
         if (!retention.accepting) return Promise.reject(new Error('Artifact retention scope is no longer active.'));
         if (pending.size >= 32) return Promise.reject(new Error('Artifact retention operation queue is full.'));
@@ -578,6 +584,43 @@ export class ArtifactStore {
         return task;
       };
     }
+    scoped.openRead = (input, options = {}) => {
+      if (!retention.accepting) throw inactive();
+      if (readers.size >= 32) throw new Error('Artifact retention reader queue is full.');
+      const controller = new AbortController();
+      const iterator = this.openRead(input, { ...options, signal: AbortSignal.any([
+        retention.signal, controller.signal, ...(options.signal ? [options.signal] : []),
+      ]), [RETENTION]: retention });
+      const reader = { ended: false, pending: null, closing: null, close: () => {
+        if (reader.closing) return reader.closing;
+        reader.ended = true; controller.abort(inactive());
+        // return() resumes a paused generator's finally, including when the
+        // consumer forgot to finish it. The abort also interrupts active reads.
+        reader.closing = Promise.resolve(iterator.return()).finally(() => readers.delete(reader));
+        reader.closing.catch(() => {});
+        return reader.closing;
+      } };
+      readers.add(reader);
+      return Object.freeze({
+        [Symbol.asyncIterator]() { return this; },
+        next() {
+          if (!retention.accepting) return Promise.reject(inactive());
+          if (reader.ended) return Promise.resolve({ value: undefined, done: true });
+          if (reader.pending) return Promise.reject(new Error('Concurrent reads from one retained iterator are not supported.'));
+          reader.pending = iterator.next().then(result => {
+            if (!retention.accepting) throw inactive();
+            if (result.done) { reader.ended = true; readers.delete(reader); }
+            return result;
+          });
+          const task = reader.pending;
+          task.finally(() => { if (reader.pending === task) reader.pending = null; }).catch(() => {});
+          return task;
+        },
+        async return(value) { await reader.close(); return { value, done: true }; },
+        async throw(error) { await reader.close(); throw error; },
+      });
+    };
+    const closeReaders = () => Promise.allSettled([...readers].map(reader => reader.close()));
     scoped.getStats = () => this.getStats();
     Object.freeze(scoped);
     try {
@@ -585,11 +628,14 @@ export class ArtifactStore {
         throwIfAborted(operation.signal); return callback(scoped);
       }), operation.signal);
       retention.accepting = false;
+      await closeReaders();
       await Promise.all([...pending]);
       throwIfAborted(operation.signal);
       return result;
     } finally {
       retention.accepting = false;
+      closing.abort(inactive());
+      await closeReaders();
       await Promise.allSettled([...pending]);
       retention.held = false; operation.finish();
     }

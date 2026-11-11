@@ -271,6 +271,7 @@ export function renderStoredModels(view, models, { selected = new Set(), onSelec
     const blocked = ['checking', 'unavailable'].includes(model.localAvailability?.status);
     if (model.task === 'automatic-speech-recognition') details.append(node('p', 'Speech recognition · used by Talk.', 'pc-inference-note'));
     if (model.task === 'text-to-speech') details.append(node('p', 'Speech synthesis · used by Speak replies.', 'pc-inference-note'));
+    if (model.task === 'image-to-3d') details.append(node('p', '3D generation · used by CubeChat residents to create objects.', 'pc-inference-note'));
     if (blocked) details.append(node('p', String(model.localAvailability.reason || 'This model is unavailable on this device.').slice(0, 512), 'pc-inference-note'));
     row.append(details);
     if (model.cleanupPending) details.append(node('p', 'Select this model and Delete selected to retry cleanup.', 'pc-inference-note'));

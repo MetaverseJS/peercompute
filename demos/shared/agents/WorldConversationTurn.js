@@ -1,4 +1,5 @@
 import { generateWorldIntentDecision } from './WorldIntentDecision.js';
+import { normalizeWorldObjectAction } from './WorldObjectAction.js';
 
 const aborted = reason => new DOMException(reason, 'AbortError');
 const changed = () => new Error('The resident or conversation changed before the action could start.');
@@ -64,9 +65,13 @@ export function createWorldConversationTurns({ agents, experience, signal: paren
       else delete observed.requesterId;
       const decisionSignal = AbortSignal.any([entry.signal, entry.decision.signal]);
       const decision = await decideIntent({ inference: agents.inference, head, message: entry.message,
-        observed, signal: decisionSignal, allowTask: entry.allowTask });
+        observed, signal: decisionSignal, allowTask: entry.allowTask, allowObject: entry.allowObject });
       await headFor(entry);
       decisionSignal.throwIfAborted();
+      if (entry.allowObject && decision?.object && Object.keys(decision).length === 1) {
+        return { ...result, object: { action: normalizeWorldObjectAction(decision.object), residentRevision: entry.revision,
+          requestId: crypto.randomUUID() } };
+      }
       if (entry.allowTask && decision?.task === true && Object.keys(decision).length === 1) {
         return { ...result, task: { objective: entry.message, residentRevision: entry.revision } };
       }
@@ -83,13 +88,14 @@ export function createWorldConversationTurns({ agents, experience, signal: paren
     }
   }
   function run({ key, agentId, turn, prompt, message = prompt, conversationId, worldContext, taskInstructions,
-    maxNewTokens = 512, signal, valid = () => true, allowTask = false } = {}) {
+    maxNewTokens = 512, signal, valid = () => true, allowTask = false, allowObject = false } = {}) {
     const combined = AbortSignal.any([lifetime.signal, ...(parentSignal ? [parentSignal] : []), ...(signal ? [signal] : [])]);
     combined.throwIfAborted();
     const previous = active.get(key);
     if (previous?.phase === 'speech') return Promise.reject(Object.assign(new Error('This resident is already replying.'), { code: 'ERR_AGENT_BUSY' }));
     previous?.decision.abort(aborted('A newer message superseded this pending action.'));
-    const entry = { key, agentId, turn, prompt, message, conversationId, worldContext, taskInstructions, maxNewTokens, valid, allowTask: allowTask === true,
+    const entry = { key, agentId, turn, prompt, message, conversationId, worldContext, taskInstructions, maxNewTokens, valid,
+      allowTask: allowTask === true, allowObject: allowObject === true,
       signal: combined, phase: 'speech', decision: new AbortController() };
     active.set(key, entry);
     entry.promise = execute(entry, previous).finally(() => {

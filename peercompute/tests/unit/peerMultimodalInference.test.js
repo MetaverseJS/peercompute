@@ -6,7 +6,7 @@ import { noise } from 'peercompute-artifact-noise';
 import { yamux } from '@libp2p/yamux';
 import { identify } from '@libp2p/identify';
 import { NetworkManager } from '../../src/peercompute/networkManager/NetworkManager.js';
-import { PEER_INFERENCE_PROTOCOL as V4, PEER_INFERENCE_PROTOCOL_V3 as V3, PEER_INFERENCE_PROTOCOL_V2 as V2,
+import { PEER_INFERENCE_PROTOCOL as CURRENT, PEER_INFERENCE_PROTOCOL_V4 as V4, PEER_INFERENCE_PROTOCOL_V3 as V3, PEER_INFERENCE_PROTOCOL_V2 as V2,
   channel, generation, localState } from '../../src/peercompute/networkManager/inference/protocol.js';
 import { describeAudio } from '../../src/peercompute/networkManager/inference/audioFrames.js';
 
@@ -72,7 +72,7 @@ test('real Noise peers preserve operation and each new prompt, image and audio o
   host.state = { ...empty(), sharedModels: [model], hostedModels: [model] };
   await requester.service.refresh();
   const first = await requester.service.generate(model.manifestCid, { task: 'image-text-to-text', prompt: 'First picture', image });
-  assert.equal(first.protocol, V4); assert.equal(first.text, 'First picture');
+  assert.equal(first.protocol, CURRENT); assert.equal(first.text, 'First picture');
   const nextImage = { ...image, data: new Uint8Array([0, 255, 0, 255, 255, 255, 0, 255]) };
   const nextAudio = Float32Array.from(pcm, (value) => -value);
   const result = await requester.service.generate(model.manifestCid, { task: 'audio-text-to-text',
@@ -91,6 +91,7 @@ test('a genuine v3-only host stays usable for text and legacy vision operations'
   const [requester, host] = await fixture(t);
   const vision = { ...model, task: 'image-text-to-text', modalities: ['text', 'image'] };
   host.state = { ...empty(), sharedModels: [vision], hostedModels: [vision], hostedModel: vision };
+  await host.node.unhandle(CURRENT);
   await host.node.unhandle(V4);
   const directory = await requester.service.refresh();
   assert.equal(directory.hosts[0].hosts[0].protocol, V3);
@@ -104,7 +105,9 @@ test('a genuine v3-only host stays usable for text and legacy vision operations'
 test('same-CID legacy host cannot hide a capable v4 host or receive its media', { timeout: 15000 }, async (t) => {
   const [requester, legacy, modern] = await fixture(t, 3);
   for (const host of [legacy, modern]) host.state = { ...empty(), sharedModels: [model], hostedModels: [{ ...model, idleForMs: host === legacy ? 1000 : 1 }], hostedModel: model };
+  await legacy.node.unhandle(CURRENT);
   await legacy.node.unhandle(V4);
+  await modern.node.unhandle(CURRENT); // Exercise a genuine v4 host, not the current version alias.
   await requester.service.refresh();
   const group = requester.service.listHosts()[0];
   assert.deepEqual(group.modalities, ['text', 'image', 'audio']);
@@ -122,6 +125,7 @@ test('standalone speech remains available over a genuine v3-only host', { timeou
   const asr = { ...model, task: 'automatic-speech-recognition', modalities: ['audio'] };
   host.state = { ...empty(), sharedModels: [asr], hostedModels: [asr] };
   host.run = async (input) => { host.received.push(input); return { text: 'Legacy transcript.' }; };
+  await host.node.unhandle(CURRENT);
   await host.node.unhandle(V4);
   await requester.service.refresh();
   const result = await requester.service.generate(model.manifestCid, { task: 'automatic-speech-recognition', audio: { samples: pcm, sampleRate: 16000 } });
@@ -133,7 +137,7 @@ test('combined-media and old-protocol requests reject unsupported host before up
   const [requester, host] = await fixture(t);
   host.state = { ...empty(), hostedModels: [{ ...model, modalities: ['text', 'audio'] }], hostedModel: model };
   const connection = requester.node.getConnections()[0];
-  for (const protocol of [V4, V3]) {
+  for (const protocol of [CURRENT, V4, V3]) {
     const signal = AbortSignal.timeout(3000), stream = await connection.newStream(protocol), io = channel(stream);
     await io.write(requester.service._envelope('generate', host.node.peerId.toString(), {
       requestId: `unsupported-${protocol.at(-5)}`, manifestCid: model.manifestCid, task: 'audio-text-to-text', prompt: 'Compare them.',
@@ -142,4 +146,19 @@ test('combined-media and old-protocol requests reject unsupported host before up
     assert.match(response.message, /media|protocol v4/); await stream.close({ signal });
   }
   assert.equal(host.received.length, 0);
+});
+
+test('genuine v4 native host preserves both vision and audio after v5 mesh introduction', { timeout: 15000 }, async (t) => {
+  const [requester, host] = await fixture(t);
+  host.state = { ...empty(), sharedModels: [model], hostedModels: [model] };
+  await host.node.unhandle(CURRENT);
+  const directory = await requester.service.refresh();
+  assert.equal(directory.hosts[0].hosts[0].protocol, V4);
+  assert.deepEqual(directory.hosts[0].modalities, ['text', 'image', 'audio']);
+  const visual = await requester.service.generate(model.manifestCid, { task: 'image-text-to-text', prompt: 'Actual v4 image', image });
+  assert.equal(visual.protocol, V4); assert.equal(visual.text, 'Actual v4 image');
+  const audio = await requester.service.generate(model.manifestCid, { task: 'audio-text-to-text', prompt: 'Actual v4 audio',
+    audio: { samples: pcm, sampleRate: 16000 } });
+  assert.equal(audio.protocol, V4); assert.equal(audio.text, 'Actual v4 audio');
+  assert.deepEqual(host.received[0].image.data, image.data); assert.deepEqual(host.received[1].audio.samples, pcm);
 });

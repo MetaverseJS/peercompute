@@ -20,7 +20,7 @@ function compareModelSizes(left, right) {
 function capabilities(model = {}) {
   const modalities = [...(model.modalities ?? ['text'])];
   const task = model.task ?? (modalities.includes('image') ? 'image-text-to-text' : 'text-generation');
-  return { task, modalities, outputModalities: [...(model.outputModalities ?? [task === 'text-to-image' ? 'image' : task === 'text-to-speech' ? 'audio' : 'text'])] };
+  return { task, modalities, outputModalities: [...(model.outputModalities ?? [task === 'image-to-3d' ? 'mesh' : task === 'text-to-image' ? 'image' : task === 'text-to-speech' ? 'audio' : 'text'])] };
 }
 const voiceManaged = (entry) => (entry?.model ?? entry)?.runtime === 'transformers-speech';
 
@@ -267,7 +267,7 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
           // The peer service projects this full catalog to each negotiated
           // protocol version; old peers cannot consume speech descriptors.
           const models = [...retained.values()].filter((model) => published.has(model.manifestCid) && !deleting.has(model.manifestCid)
-            && ['text-generation', 'image-text-to-text', 'text-to-image', 'automatic-speech-recognition', 'text-to-speech'].includes(model.task));
+            && ['text-generation', 'image-text-to-text', 'text-to-image', 'automatic-speech-recognition', 'text-to-speech', 'image-to-3d'].includes(model.task));
           if (local) models.sort((left, right) => Number(right.manifestCid === local.manifestCid) - Number(left.manifestCid === local.manifestCid));
           const legacy = resident();
           return { sharedModels: sharing ? models.slice(0, PEER_INFERENCE_LIMITS.maximumModels) : [],

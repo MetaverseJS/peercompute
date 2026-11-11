@@ -50,7 +50,7 @@ export function filterBrowserModels(models, filters, getCompatibility, { include
     const capabilities = { ...source.model, ...source, task,
       modalities: source.modalities ?? source.model?.modalities,
       outputModalities: source.outputModalities ?? source.model?.outputModalities
-        ?? [task === 'text-to-image' ? 'image' : task === 'text-to-speech' ? 'audio' : 'text'] };
+        ?? [task === 'image-to-3d' ? 'mesh' : task === 'text-to-image' ? 'image' : task === 'text-to-speech' ? 'audio' : 'text'] };
     if (filters.task !== 'all' && task !== filters.task && !supportsTask(capabilities, filters.task)
         && !(pending && task === 'unknown')) return false;
     if (filters.precision !== 'all' && precision !== filters.precision && !(pending && (!precision || precision === 'unknown'))) return false;

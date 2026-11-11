@@ -239,7 +239,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
         + (agentBlockReason(head) ? ` (${head.activity?.status || head.status || 'unavailable'})` : '');
       view.target.append(option);
     }
-    for (const target of targets.filter((entry) => !['automatic-speech-recognition', 'text-to-speech'].includes(entry.task))) {
+    for (const target of targets.filter((entry) => !['automatic-speech-recognition', 'text-to-speech', 'image-to-3d'].includes(entry.task))) {
       const option = document.createElement('option'); option.value = target.key;
       option.textContent = (target.local ? 'Local · ' : 'Peers · ') + String(target.name).slice(0, 140)
         + (target.task === 'text-to-image' ? ' · Image generation' : '')
@@ -773,8 +773,10 @@ export async function mountInferencePanel({ container = document.body, stateMana
           return;
         }
         const speech = ['automatic-speech-recognition', 'text-to-speech'].includes(target.task);
-        void selectChat(speech ? 'mixed' : key).then(() => view.prompt.focus()).catch(showError);
+        const mesh = target.task === 'image-to-3d';
+        void selectChat(speech || mesh ? 'mixed' : key).then(() => view.prompt.focus()).catch(showError);
         if (speech) setStatus('Mixed routing can use compatible peer speech models. Use Talk or Speak replies.', { quiet: true });
+        if (mesh) setStatus('This 3D model is available to CubeChat residents. Ask your resident to generate and place an object.', { quiet: true });
       },
       onSetup: showCompatibilityHelp,
     });
@@ -993,7 +995,10 @@ export async function mountInferencePanel({ container = document.body, stateMana
       const sharingIssue = !!runtime.getSharingErrors?.().length;
       setStatus(sharingIssue
         ? 'Model ready. Sharing is unavailable for some stored models; see Models → Stored models.'
-        : managementOnly ? 'Model ready. Return to the world to use it.' : 'Model ready. Send a message.', { quiet: !sharingIssue });
+        : managementOnly ? 'Model ready. Return to the world to use it.'
+          : (selected.model?.task ?? selected.task) === 'image-to-3d'
+            ? '3D model ready. CubeChat residents can use it to create objects; enable Host inference to serve other peers.'
+            : 'Model ready. Send a message.', { quiet: !sharingIssue });
     }, { modelName: selected.name });
   }
   view.unload.onclick = () => run(async () => {

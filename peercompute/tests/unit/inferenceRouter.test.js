@@ -85,3 +85,17 @@ test('a peer group cannot inherit media capabilities from a filtered local host'
   assert(!supportsTask(remoteOnly, 'image-text-to-text'));
   assert(!supportsTask({ ...group, hosts: [] }, 'text-generation'));
 });
+
+test('mesh generation is an explicit separate capability and never captures attached-image chat', () => {
+  const mesh = model('mesh', 'image-to-3d', true, { modalities: ['image'], outputModalities: ['mesh'] });
+  const remoteMesh = { ...mesh, local: false, key: 'peer:mesh' };
+  const vision = model('vision', 'image-text-to-text');
+  assert(supportsTask(mesh, 'image-to-3d'));
+  assert(!supportsTask(mesh, 'image-text-to-text')); assert(!supportsTask(vision, 'image-to-3d'));
+  assert.equal(inferInferenceTask({ image: {} }), 'image-text-to-text');
+  assert.equal(routeInferenceTask({ task: 'image-to-3d', mode: 'mixed', inputModalities: ['image'],
+    candidates: [remoteMesh, vision, mesh] }).candidate.local, true);
+  assert.equal(routeInferenceTask({ task: 'image-to-3d', mode: 'mixed',
+    candidates: [{ ...mesh, available: false }, remoteMesh] }).candidate.local, false);
+  assert.throws(() => routeInferenceTask({ task: 'image-to-3d', candidates: [vision] }), { code: 'ERR_INFERENCE_NO_MODEL' });
+});

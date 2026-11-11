@@ -4,14 +4,17 @@ import { MODEL_POLICY, validateSessionId } from '../../inference/modelManifest.j
 import { normalizeModelMessages, validateImageInput } from '../../inference/modelTask.js';
 import { INFERENCE_TASKS } from '../../inference/InferenceCapabilities.js';
 import { audioMetadata, describeAudio } from './audioFrames.js';
+import { normalizeGeneratedMeshDescriptor } from '../../inference/GeneratedMeshArtifact.js';
 
-// v4 separates conversational operations from a model's primary task, including
+// v5 adds bounded, validated static mesh results. v4 separates conversational operations from a model's primary task, including
 // native audio understanding. v3 retains multiple hosts and standalone speech;
 // v2 retains its original text/vision/image directory and single host.
-export const PEER_INFERENCE_PROTOCOL = '/peercompute/inference/4.0.0';
+export const PEER_INFERENCE_PROTOCOL = '/peercompute/inference/5.0.0';
+export const PEER_INFERENCE_PROTOCOL_V4 = '/peercompute/inference/4.0.0';
 export const PEER_INFERENCE_PROTOCOL_V3 = '/peercompute/inference/3.0.0';
 export const PEER_INFERENCE_PROTOCOL_V2 = '/peercompute/inference/2.0.0';
-export const PEER_INFERENCE_PROTOCOLS = Object.freeze([PEER_INFERENCE_PROTOCOL, PEER_INFERENCE_PROTOCOL_V3, PEER_INFERENCE_PROTOCOL_V2]);
+export const PEER_INFERENCE_PROTOCOLS = Object.freeze([PEER_INFERENCE_PROTOCOL, PEER_INFERENCE_PROTOCOL_V4, PEER_INFERENCE_PROTOCOL_V3, PEER_INFERENCE_PROTOCOL_V2]);
+export const supportsNativeMediaProtocol = (protocol) => [PEER_INFERENCE_PROTOCOL, PEER_INFERENCE_PROTOCOL_V4].includes(protocol);
 export const isSpeechTask = (task) => ['automatic-speech-recognition', 'text-to-speech'].includes(task);
 // Original v2 hosts omit this capability and reject requests above 256 tokens.
 export const LEGACY_MAX_NEW_TOKENS = 256;
@@ -42,13 +45,16 @@ export function descriptor(value) {
       || value.modalities.some((item) => !['text', 'image', 'audio', 'video'].includes(item))) throw new Error('Invalid model modalities');
   const task = value.task ?? (value.modalities.includes('image') ? 'image-text-to-text' : 'text-generation');
   if (!INFERENCE_TASKS.includes(task)) throw new Error('Invalid model task');
-  const outputModalities = task === 'text-to-image' ? ['image'] : task === 'text-to-speech' ? ['audio'] : ['text'];
+  const outputModalities = task === 'image-to-3d' ? ['mesh'] : task === 'text-to-image' ? ['image'] : task === 'text-to-speech' ? ['audio'] : ['text'];
   if (value.outputModalities !== undefined && (!Array.isArray(value.outputModalities)
       || value.outputModalities.length !== 1 || value.outputModalities[0] !== outputModalities[0])) {
     throw new Error('Model output modalities do not match its task');
   }
   if (task === 'text-to-image' && (value.modalities.length !== 1 || value.modalities[0] !== 'text')) {
     throw new Error('Image generation accepts text input only');
+  }
+  if (task === 'image-to-3d' && (value.modalities.length !== 1 || value.modalities[0] !== 'image')) {
+    throw new Error('Mesh generation accepts image input only');
   }
   if (isSpeechTask(task) && (value.modalities.length !== 1 || value.modalities[0] !== (task === 'text-to-speech' ? 'text' : 'audio'))) {
     throw new Error('Invalid speech model modalities');
@@ -63,6 +69,8 @@ export function descriptor(value) {
 }
 function legacyDescriptor(model, protocol) {
   if (protocol === PEER_INFERENCE_PROTOCOL || !model) return model;
+  if (model.task === 'image-to-3d') return null;
+  if (protocol === PEER_INFERENCE_PROTOCOL_V4) return model;
   if (protocol === PEER_INFERENCE_PROTOCOL_V2 && isSpeechTask(model.task)) return null;
   // Older adapters understand vision only under its dedicated primary task and
   // PCM only as ASR. Keep the same model visible for its compatible text usage.
@@ -96,6 +104,12 @@ export function localState(value, hostingEnabled = true, { defaultMaxNewTokens =
 }
 export function generation(value, { imageBytes = false } = {}) {
   validateSessionId(value.requestId);
+  if (value.task === 'image-to-3d') {
+    if (!value.image || ['prompt', 'messages', 'audio', 'seed', 'steps', 'width', 'height', 'maxNewTokens']
+      .some((key) => value[key] != null)) throw new Error('Mesh generation accepts image input only');
+    return { requestId: value.requestId, manifestCid: cid(value.manifestCid), task: value.task,
+      image: generationImage(value.image, imageBytes) };
+  }
   if (value.task === 'automatic-speech-recognition') {
     if (value.prompt != null || value.messages != null || value.image != null || !value.audio) throw new Error('ASR accepts audio only');
     const metadata = imageBytes ? describeAudio(value.audio.samples, value.audio.sampleRate, { input: true })
@@ -130,14 +144,16 @@ export function generation(value, { imageBytes = false } = {}) {
   if (result.task === 'text-to-image' && (value.image != null || result.messages.length !== 1
       || result.messages[0].role !== 'user')) throw new Error('Image generation needs one text prompt');
   if (value.image != null) {
-    const { width, height, channels } = value.image;
-    integer(width, MODEL_POLICY.maxImagePixels, 1); integer(height, MODEL_POLICY.maxImagePixels, 1);
-    if (channels !== 4 || width * height > MODEL_POLICY.maxImagePixels) throw new Error('Invalid inference image dimensions');
-    if (imageBytes) validateImageInput(value.image);
-    result.image = { width, height, channels: 4 };
-    if (imageBytes) result.image.data = new Uint8Array(value.image.data);
+    result.image = generationImage(value.image, imageBytes);
   }
   return result;
+}
+function generationImage(value, imageBytes) {
+  const { width, height, channels } = value;
+  integer(width, MODEL_POLICY.maxImagePixels, 1); integer(height, MODEL_POLICY.maxImagePixels, 1);
+  if (channels !== 4 || width * height > MODEL_POLICY.maxImagePixels) throw new Error('Invalid inference image dimensions');
+  if (imageBytes) validateImageInput(value);
+  return { width, height, channels: 4, ...(imageBytes ? { data: new Uint8Array(value.data) } : {}) };
 }
 export function resultImage(value, { imageBytes = false } = {}) {
   if (!value || typeof value !== 'object') throw new Error('Invalid result image');
@@ -148,7 +164,7 @@ export function resultImage(value, { imageBytes = false } = {}) {
   return { width, height, channels: 4, sha256: value.sha256, ...(imageBytes ? { data: value.data } : {}) };
 }
 export function resultData(value, options = {}) {
-  const text = value?.text ?? (value?.audio ? '' : undefined);
+  const text = value?.text ?? (value?.audio || value?.mesh ? '' : undefined);
   if (typeof text !== 'string' || bytes(text) > MODEL_POLICY.maxOutputBytes) throw new Error('Invalid inference result text');
   // Older v2 peers omit completion metadata. Missing evidence never means EOS.
   const finishReason = value.finishReason === undefined ? 'unknown' : value.finishReason;
@@ -163,6 +179,7 @@ export function resultData(value, options = {}) {
   }
   if (value.image != null) result.image = resultImage(value.image, options);
   if (value.audio != null) result.audio = audioMetadata(value.audio);
+  if (value.mesh != null) result.mesh = normalizeGeneratedMeshDescriptor(value.mesh);
   if (value.seed !== undefined) result.seed = integer(value.seed, 0xffffffff);
   if (value.steps !== undefined) result.steps = integer(value.steps, 8, 1);
   return result;
@@ -171,6 +188,11 @@ export function diffusionProgress(value) {
   if (!['text-encoder', 'denoise', 'decode'].includes(value.stage)) throw new Error('Invalid image generation stage');
   const steps = integer(value.steps, 8, 1);
   return { type: 'diffusion-progress', stage: value.stage, steps, step: integer(value.step, steps) };
+}
+export function meshProgress(value) {
+  if (!['image', 'shape', 'color', 'done'].includes(value?.stage)) throw new Error('Invalid mesh generation stage');
+  const total = integer(value.total, 262144, 1);
+  return { type: 'mesh-generation', stage: value.stage, total, loaded: integer(value.loaded, total) };
 }
 export function channel(stream) {
   const rpc = lpStream(stream, { maxDataLength: PEER_INFERENCE_LIMITS.frameBytes,

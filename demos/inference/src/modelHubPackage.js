@@ -6,6 +6,7 @@ import { normalizeArtifactManifest, artifactCID } from '../../../peercompute/src
 import { validateModelManifest } from '../../../peercompute/src/peercompute/inference/modelManifest.js';
 import { validateGgufManifest } from '../../../peercompute/src/peercompute/inference/gguf/runtimeDefinition.js';
 import { validateDiffusionManifest } from '../../../peercompute/src/peercompute/inference/diffusion/runtimeDefinition.js';
+import { validateMeshManifest } from '../../../peercompute/src/peercompute/inference/mesh/runtimeDefinition.js';
 import { huggingFaceFileUrl } from './huggingface/hubClient.js';
 
 /** Validate data-only Hub packages again at the acquisition boundary. This is
@@ -43,6 +44,7 @@ export function validateHubPackage(input) {
   if (model.runtime === 'transformers.js') validateModelManifest(normalized);
   else if (model.runtime === 'llama.cpp') validateGgufManifest(normalized);
   else if (model.runtime === 'onnx-diffusion') validateDiffusionManifest(normalized);
+  else if (model.runtime === 'onnx-mesh') validateMeshManifest(normalized);
   else throw new Error('This Hub package has no supported runtime');
   return { ...manifest, files: entry.files.map(({ path, size, sha256, gitBlobSha1 }) => ({ path, size,
     ...(sha256 ? { sha256 } : {}), ...(gitBlobSha1 ? { gitBlobSha1 } : {}) })) };
