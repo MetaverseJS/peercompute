@@ -2334,3 +2334,12 @@ native execution remains unverified because both independent download attempts
 were stopped during slow source delivery. Do not mark it browser-tested until
 load, changing/multiturn prompts, cancellation and offline reload pass. Qwen
 Image2.1/LoRA is a documented follow-up with no runnable entry yet.
+
+
+November 11 — complete demo release: all 15 production packages rebuilt, 23
+staging routes checked with 11 authenticated SecretWorkshop connections. Share
+identical asyncify WASM between Pages demos before Vite finalizes hashes and
+retain only the preceding active assets. The corrected site is 984,714,694 bytes;
+82 release/helper tests and browser WASM compilation pass. Public verification
+follows publication. Next authorized slice: owner-requested generated resident
+avatars on the existing body, preserving identity, memory and movement.

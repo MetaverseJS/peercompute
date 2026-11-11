@@ -1,3 +1,4 @@
+import { pagesSharedRuntimePlugin } from '../../scripts/pagesSharedRuntimePlugin.mjs';
 import { defineConfig } from 'vite';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -10,6 +11,7 @@ const docsRoot = path.resolve(__dirname, '../../docs');
 export default defineConfig(({ command }) => ({
   root: './',
   base: './',
+  plugins: [pagesSharedRuntimePlugin()],
   worker: { format: 'es' },
   build: {
     outDir: path.resolve(docsRoot, 'planetgen'),

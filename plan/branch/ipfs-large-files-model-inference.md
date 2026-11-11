@@ -1645,3 +1645,7 @@ User authorized the complete current Pages build/push. After validating and
 publishing that release, add resident self-avatar generation: owner requests
 such as “become a robot” or “design yourself a cool avatar” should produce a
 shared retained cosmetic body, preserving resident identity and behavior.
+
+Pages release correction: full builds now share the large asyncify runtimes and
+retain one prior active asset generation, with a mandatory decimal1GB size gate.
+The corrected site is984.7MB; standalone internal builds remain unchanged.

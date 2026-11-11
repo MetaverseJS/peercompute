@@ -1,3 +1,4 @@
+import { pagesSharedRuntimePlugin } from '../../scripts/pagesSharedRuntimePlugin.mjs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,6 +20,7 @@ export default defineConfig(({ command }) => ({
     CESIUM_BASE_URL: JSON.stringify('./cesium/')
   },
   plugins: [
+    pagesSharedRuntimePlugin(),
     viteStaticCopy({
       targets: [
         ...['Workers', 'ThirdParty', 'Assets', 'Widgets'].map((directory) => ({

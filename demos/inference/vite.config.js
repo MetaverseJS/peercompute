@@ -1,3 +1,4 @@
+import { pagesSharedRuntimePlugin } from '../../scripts/pagesSharedRuntimePlugin.mjs';
 import { defineConfig } from 'vite';
 import { fileURLToPath } from 'node:url';
 import { ensureDevHttpsCert } from '../../scripts/https.mjs';
@@ -9,7 +10,7 @@ export default defineConfig(({ command }) => ({
   worker: { format: 'es' },
   // Keep generated dependency code readable without changing identifiers or licenses.
   esbuild: { lineLimit: 120, legalComments: 'inline' },
-  plugins: [pagesIsolationPlugin({ appShell: {
+  plugins: [pagesSharedRuntimePlugin(), pagesIsolationPlugin({ appShell: {
     publicFiles: ['manifest.webmanifest', 'icons/peercompute.svg', 'icons/peercompute-192.png',
       'icons/peercompute-512.png', 'icons/peercompute-maskable-512.png'],
   } })],

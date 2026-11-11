@@ -1,3 +1,4 @@
+import { pagesSharedRuntimePlugin } from '../../scripts/pagesSharedRuntimePlugin.mjs';
 import { defineConfig } from 'vite';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -39,7 +40,7 @@ export default defineConfig(({ command }) => ({
   worker: { format: 'es' },
   // Keep generated dependency code readable without changing identifiers or licenses.
   esbuild: { lineLimit: 120, legalComments: 'inline' },
-  plugins: [mpmComputeTaskPlugin()],
+  plugins: [pagesSharedRuntimePlugin(), mpmComputeTaskPlugin()],
   build: {
     outDir: path.resolve(docsRoot, 'webgpuphys'),
     emptyOutDir: true,

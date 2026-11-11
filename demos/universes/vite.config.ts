@@ -1,3 +1,4 @@
+import { pagesSharedRuntimePlugin } from '../../scripts/pagesSharedRuntimePlugin.mjs';
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import { ensureDevHttpsCert } from '../../scripts/https.mjs';
@@ -21,7 +22,7 @@ export default defineConfig(({ mode, command }) => {
           allow: [__dirname, peercomputeRoot, path.resolve(__dirname, '../planetgen/src')]
         }
       },
-      plugins: [],
+      plugins: [pagesSharedRuntimePlugin()],
       define: {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
         'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)

@@ -1,3 +1,4 @@
+import { pagesSharedRuntimePlugin } from '../../scripts/pagesSharedRuntimePlugin.mjs';
 import { defineConfig } from 'vite';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -12,7 +13,7 @@ export default defineConfig(({ command }) => ({
   root: '.',
   base: './',
   worker: { format: 'es' },
-  plugins: [pagesIsolationPlugin()],
+  plugins: [pagesSharedRuntimePlugin(), pagesIsolationPlugin()],
   server: {
     port: 5176,
     https: command === 'serve' ? ensureDevHttpsCert() : undefined,

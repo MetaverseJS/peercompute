@@ -5070,3 +5070,29 @@ Toychest/MPMmobile control overlap and unqualified numerical diagnostics remain.
 Public commit/asset/browser verification follows deployment. Evidence outside
 repo: ~/.cache/peercompute-pages-release-20261111 and
 ~/.cache/peercompute-pages-release-audit-20261111.
+
+
+### Pages runtime pooling and bounded release retention
+
+Full `npm run build:all` now pools both ORT asyncify WASM versions under
+`docs/assets/runtime/` before Vite finalizes JavaScript hashes. Individual demo
+builds remain standalone. `scripts/pagesReleaseAssets.mjs` snapshots only the
+previous manifest's active hashed assets outside the repository, then restores
+missing previous assets after rebuilding. `docs/release-manifest.json` separates
+active and retained files; retained ancestors never become active on the next
+build. The final byte count, including the manifest, must be below1,000,000,000.
+
+Run `node --test demos/tests/pages-shared-runtime.test.js
+demos/tests/pages-release-assets.test.mjs` for actual Vite main/worker URL and
+hash behavior, immutable bytes, standalone mode, prior-generation retention,
+migration, collision/tampering rejection, safe paths, size checks and interrupted
+build recovery. Eleven cases pass. Combined release checks are82/82. The first
+migration uses the exact November10 build manifest and commit5f3b556a, excluding
+its514 already-retained historical files. Corrected full build is984,714,694bytes
+(2762active,289retained). Staged/public browser acceptance additionally fetches,
+checks SHA/MIME and compiles both pooled WASM assets in the actual browser.
+
+Known transition: the briefly published9e7f9b4c intermediate build is preserved in
+Git/evidence, but its new superseded URLs are not another retained generation.
+A tab on that intermediate build may need a refresh. Earlier5f3b556a active hashed
+URLs are retained byte-for-byte. Future builds use the tracked release manifest.

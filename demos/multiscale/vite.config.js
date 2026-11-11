@@ -1,3 +1,4 @@
+import { pagesSharedRuntimePlugin } from '../../scripts/pagesSharedRuntimePlugin.mjs';
 import { defineConfig } from 'vite';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -11,6 +12,7 @@ const demosSharedRoot = path.resolve(__dirname, '../shared');
 export default defineConfig(({ command }) => ({
   root: '.',
   base: './',
+  plugins: [pagesSharedRuntimePlugin()],
   worker: { format: 'es' },
   server: {
     port: 5185,

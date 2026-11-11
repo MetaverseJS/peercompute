@@ -1,3 +1,4 @@
+import { pagesSharedRuntimePlugin } from '../../scripts/pagesSharedRuntimePlugin.mjs';
 import { defineConfig } from 'vite';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -34,6 +35,7 @@ const writeChaosApiFallback = (res, req) => {
 export default defineConfig(({ command }) => ({
   root: '.',
   base: './',
+  plugins: [pagesSharedRuntimePlugin()],
   worker: { format: 'es' },
   server: {
     port: 5182,
