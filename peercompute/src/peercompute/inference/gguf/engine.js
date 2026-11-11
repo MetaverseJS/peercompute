@@ -116,13 +116,18 @@ export function parseBufferEvidence(line) {
 }
 
 /** Native Wllama engine, instantiated in the caller's existing managed worker. */
-export async function createGgufEngine({ wasmUrl, weights, projector, reader, signal, collectGpuEvidence = false,
+export async function createGgufEngine({ wasmUrl, weights, projector, adapters = [], reader, signal, collectGpuEvidence = false,
   onProgress, onLost, initialize = initializeWllamaModule } = {}) {
   const files = weights.map((file, index) => ({ ...file,
     name: `model-${String(index + 1).padStart(5, '0')}-of-${String(weights.length).padStart(5, '0')}.gguf` }));
   if (projector && weights.some((file) => file.path === projector.path)) throw new Error('GGUF projector must be separate from text shards');
   const projectorFile = projector ? { ...projector, name: 'mmproj.gguf' } : undefined;
-  const mountedFiles = projectorFile ? [...files, projectorFile] : files;
+  const adapterFiles = adapters.map((adapter, index) => ({ ...adapter.file, scale: adapter.scale,
+    name: `adapter-${index + 1}.gguf` }));
+  const mountedFiles = [...files, ...(projectorFile ? [projectorFile] : []), ...adapterFiles];
+  if (new Set(mountedFiles.map((file) => file.path)).size !== mountedFiles.length) {
+    throw new Error('GGUF base and companion files must have distinct paths');
+  }
   const evidence = { dispatches: 0, submissions: 0, device: null, offload: null, buffers: [], lost: false };
   let activeSignal = signal;
   let fatal;
@@ -198,7 +203,7 @@ export async function createGgufEngine({ wasmUrl, weights, projector, reader, si
   if (!started.success || !evidence.device) throw new Error('GGUF native hardware GPU backend did not initialize');
   throwIfAborted(signal);
   return {
-    files, projectorFile, action, evidence,
+    files, projectorFile, adapterFiles, action, evidence,
     async settleGpu() {
       try { await evidence.device.queue.onSubmittedWorkDone(); }
       catch (error) {

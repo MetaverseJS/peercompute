@@ -10,6 +10,7 @@ const same = (a, b) => a && b && typeof a === 'object' && typeof b === 'object'
 
 export function validateSpeechManifest(input) {
   const manifest = normalizeArtifactManifest(input);
+  if (manifest.model?.composition !== undefined) throw new Error('This speech runtime does not support model adapters');
   const trusted = Object.values(SPEECH_MODEL_CATALOG).find((entry) => same(entry.model, manifest.model));
   if (!trusted || manifest.files.length !== trusted.files.length) throw new Error('Speech package is outside the pinned catalog');
   for (const expected of trusted.files) {

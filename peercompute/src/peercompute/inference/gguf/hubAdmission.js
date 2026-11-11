@@ -37,7 +37,8 @@ class IncompleteHeader extends Error { constructor() { super('Truncated GGUF hea
 
 /** Parse metadata and the COMPLETE tensor directory; never interpret tensor data.
  * Token arrays are skipped in place rather than materialized. */
-export function parseGgufHeader(bytes, { size } = {}) {
+export function parseGgufHeader(bytes, { size, kind = 'model', includeTensorInfo = false } = {}) {
+  if (!['model', 'lora'].includes(kind) || typeof includeTensorInfo !== 'boolean') throw invalid('header inspection mode');
   if (!(bytes instanceof Uint8Array)) throw invalid('header bytes required');
   bound(size, GGUF_HUB_LIMITS.maximumBytes, 'file size', 24);
   if (bytes.length > GGUF_HUB_LIMITS.headerBytes || bytes.length > size) throw invalid('header byte budget exceeded');
@@ -91,40 +92,54 @@ export function parseGgufHeader(bytes, { size } = {}) {
   const version = u32(); if (![2, 3].includes(version)) throw invalid('version');
   const tensorCount = bound(u64(), GGUF_HUB_LIMITS.tensors, 'tensor count', 1);
   const metadataCount = bound(u64(), GGUF_HUB_LIMITS.metadata, 'metadata count', 1);
-  const metadata = new Map();
+  const metadata = new Map(), metadataTypes = new Map();
   for (let i = 0; i < metadataCount; i++) {
     const key = string(512);
     if (!key || metadata.has(key) || /[\u0000-\u001f\u007f]/u.test(key)) throw invalid('duplicate or invalid metadata key');
     if (/georefine|tensor_extra|tensor_data_layout/i.test(key)) throw invalid('custom tensor layout requires catalog review');
     const type = u32();
+    metadataTypes.set(key, type);
     const keep = ['general.architecture', 'general.type', 'general.file_type', 'general.alignment',
       'general.name', 'general.quantization_version', 'split.count', 'split.no', 'split.tensors.count',
-      'tokenizer.ggml.model', 'tokenizer.ggml.tokens'].includes(key);
+      'tokenizer.ggml.model', 'tokenizer.ggml.tokens', 'adapter.type', 'adapter.lora.alpha'].includes(key);
     metadata.set(key, value(type, keep));
   }
   const architecture = metadata.get('general.architecture');
   if (!GGUF_HUB_ARCHITECTURES.includes(architecture)) {
     throw invalid(`architecture ${identifier(architecture)} is not admitted by the pinned browser runtime`);
   }
-  if (metadata.has('general.type') && metadata.get('general.type') !== 'model') throw invalid('adapter or non-model GGUF');
+  if (kind === 'model') {
+    if (metadata.has('general.type') && metadata.get('general.type') !== 'model') throw invalid('adapter or non-model GGUF');
+  } else {
+    if (metadata.get('general.type') !== 'adapter' || metadata.get('adapter.type') !== 'lora') throw invalid('ordinary LoRA adapter required');
+    // Native llama.cpp reads alpha with gguf_get_val_f32: a finite F64 or integer
+    // is not interchangeable and can cause a native assertion.
+    const alpha = metadata.get('adapter.lora.alpha');
+    if (metadataTypes.get('adapter.lora.alpha') !== 6 || !Number.isFinite(alpha) || alpha < 0 || alpha > 65536) {
+      throw invalid('finite F32 LoRA alpha required');
+    }
+    if ([...metadata.keys()].some((key) => key.startsWith('adapter.') && !['adapter.type', 'adapter.lora.alpha'].includes(key))) {
+      throw invalid('nonstandard LoRA metadata requires a separate adapter profile');
+    }
+  }
   if (/georefine/i.test(metadata.get('general.name') ?? '')) throw invalid('custom GeoRefine model requires catalog review');
   if ((metadata.get('split.count') ?? 1) !== 1 || (metadata.get('split.no') ?? 0) !== 0
       || (metadata.get('split.tensors.count') ?? tensorCount) !== tensorCount) throw invalid('split GGUF requires complete shard admission');
   if (![undefined, 2].includes(metadata.get('general.quantization_version'))) throw invalid('quantization version');
   const fileType = metadata.get('general.file_type');
-  if (!FILE_TYPES.has(fileType)) throw invalid('file quantization type');
+  if (kind === 'model' ? !FILE_TYPES.has(fileType) : ![undefined, 0, 1].includes(fileType)) throw invalid('file quantization type');
   // Gemma4Unified uses the native Gemma4 tokenizer, not the older Gemma
   // SentencePiece path. Both are present in pinned llama.cpp 46ca246.
   const tokenizer = metadata.get('tokenizer.ggml.model');
   const supportedTokenizer = architecture === 'gemma4' ? tokenizer === 'gemma4' : ['llama', 'gpt2'].includes(tokenizer);
-  if (!supportedTokenizer
+  if (kind === 'model' && (!supportedTokenizer
       || metadata.get('tokenizer.ggml.tokens')?.element !== 8
-      || !metadata.get('tokenizer.ggml.tokens')?.count) {
+      || !metadata.get('tokenizer.ggml.tokens')?.count)) {
     throw invalid(`self-contained supported tokenizer required for ${architecture}; found ${identifier(tokenizer)}`);
   }
   const alignment = bound(metadata.get('general.alignment') ?? 32, 4096, 'alignment', 1);
   if (alignment & (alignment - 1)) throw invalid('alignment must be a power of two');
-  const names = new Set(), tensorTypes = new Set(), regions = [];
+  const names = new Set(), tensorTypes = new Set(), regions = [], tensorInfo = [], pairs = new Map();
   let maximumTensorBytes = 0;
   for (let i = 0; i < tensorCount; i++) {
     const name = string(512);
@@ -132,20 +147,39 @@ export function parseGgufHeader(bytes, { size } = {}) {
     names.add(name);
     const dimensions = bound(u32(), 4, 'tensor dimensions', 1);
     let elements = 1, row = 0;
+    const shape = [];
     for (let d = 0; d < dimensions; d++) {
       const dimension = bound(u64(), GGUF_HUB_LIMITS.maximumBytes, 'tensor dimension', 1);
       if (d === 0) row = dimension;
+      shape.push(dimension);
       elements *= dimension; bound(elements, Number.MAX_SAFE_INTEGER, 'tensor element count', 1);
     }
     const type = u32(), codec = TYPES.get(type);
     if (!codec || row % codec[1]) throw invalid('unsupported tensor codec or quantized row shape');
+    if (kind === 'lora') {
+      const match = /^(.+\.weight)\.lora_([ab])$/.exec(name);
+      if (!match || /\.lora_[ab]/.test(match[1]) || dimensions !== 2 || ![0, 1].includes(type)) {
+        throw invalid('LoRA requires only ordinary F16/F32 matrix pairs; replacement tensors are unsupported');
+      }
+      const pair = pairs.get(match[1]) ?? {};
+      pair[match[2]] = shape; pairs.set(match[1], pair);
+    }
     const tensorBytes = bound(elements / codec[1] * codec[2], size, 'tensor bytes', 1);
     const start = u64();
     if (start % alignment || start + tensorBytes > size) throw invalid('tensor offset exceeds file or alignment');
     regions.push({ start, end: start + tensorBytes }); tensorTypes.add(type);
+    if (includeTensorInfo) tensorInfo.push({ name, shape, type, offset: start, bytes: tensorBytes });
     maximumTensorBytes = Math.max(maximumTensorBytes, tensorBytes);
   }
-  if (!names.has('token_embd.weight') || !names.has('output_norm.weight')) throw invalid('text model tensor layout');
+  if (kind === 'model' && (!names.has('token_embd.weight') || !names.has('output_norm.weight'))) throw invalid('text model tensor layout');
+  if (kind === 'lora') {
+    for (const [name, pair] of pairs) {
+      if (!pair.a || !pair.b) throw invalid('LoRA tensor pair is incomplete');
+      const embedding = name === 'token_embd.weight';
+      const rank = embedding ? pair.a[0] : pair.a[1];
+      if (rank !== pair.b[0] || rank > 1024) throw invalid('LoRA tensor pair has inconsistent or unsupported rank');
+    }
+  }
   const headerBytes = offset, dataOffset = Math.ceil(offset / alignment) * alignment;
   regions.sort((a, b) => a.start - b.start);
   let end = 0;
@@ -153,13 +187,16 @@ export function parseGgufHeader(bytes, { size } = {}) {
     if (region.start < end || dataOffset + region.end > size) throw invalid('overlapping or truncated tensor data');
     end = region.end;
   }
-  return { schema: SCHEMA, version, architecture, fileType, dtype: FILE_TYPES.get(fileType),
+  return { schema: kind === 'model' ? SCHEMA : 'peercompute.gguf.lora-header.v1', version, architecture,
+    fileType: fileType ?? null, dtype: FILE_TYPES.get(fileType) ?? 'float',
     tensorCount, metadataCount, headerBytes, dataOffset, maximumTensorBytes,
-    tensorTypes: [...tensorTypes].sort((a, b) => a - b), headerSha256: hex(sha256(bytes.subarray(0, headerBytes))) };
+    tensorTypes: [...tensorTypes].sort((a, b) => a - b), headerSha256: hex(sha256(bytes.subarray(0, headerBytes))),
+    ...(kind === 'lora' ? { alpha: metadata.get('adapter.lora.alpha'), targetCount: pairs.size } : {}),
+    ...(includeTensorInfo ? { tensorInfo } : {}) };
 }
 
 /** At most 16MiB total reads, in <=1MiB ranges; no full weight download. */
-export async function inspectGgufHeader({ readRange, size, signal } = {}) {
+export async function inspectGgufHeader({ readRange, size, signal, kind = 'model', includeTensorInfo = false } = {}) {
   if (typeof readRange !== 'function') throw invalid('range reader required');
   bound(size, GGUF_HUB_LIMITS.maximumBytes, 'file size', 24);
   let prefix = new Uint8Array(0), target = Math.min(64 * 1024, size);
@@ -174,7 +211,7 @@ export async function inspectGgufHeader({ readRange, size, signal } = {}) {
       next.set(chunk, at); at += length;
     }
     prefix = next;
-    try { return parseGgufHeader(prefix, { size }); }
+    try { return parseGgufHeader(prefix, { size, kind, includeTensorInfo }); }
     catch (error) {
       if (error.code !== 'ERR_GGUF_HEADER_TRUNCATED') throw error;
       if (target === size) throw error;

@@ -12,6 +12,7 @@ import { collectModelDeviceCapabilities, evaluateModelCompatibility, modelMemory
 import { createModelMemoryBudgets } from './modelMemoryBudgets.js';
 import { importModelPackage } from './modelLibrary.js';
 import { trustedCatalogSource } from './modelCatalogSources.js';
+import { inspectLoraHub, createStoredLoraComposition } from './modelLora.js';
 import { createModelPreferences } from './modelPreferences.js';
 import { loadInferenceRelayConfig } from './relayConfig.js';
 import { createHuggingFaceClient, huggingFaceFileUrl } from './huggingface/hubClient.js';
@@ -167,6 +168,7 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
   const hubClient = createHuggingFaceClient();
   const runtime = {
     searchModelHub: (options) => hubClient.search(options),
+    inspectLoraHub: (reference, options = {}) => inspectLoraHub(reference, { ...options, client: hubClient }),
     inspectModelHub: (repository, options = {}) => inspectHuggingFaceModel(repository, { ...options, client: hubClient, catalog: MODEL_CATALOG }),
     findModelConversions: (repository, options = {}) => findHuggingFaceConversions(repository, { ...options, client: hubClient }),
     stateManager: state, computeManager: compute, store,
@@ -298,6 +300,9 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
       const trusted = trustedCatalogSource(manifest);
       return importModelPackage(store, manifest, trusted?.sourceUrl ?? ((path) => sourceUrl(modelId, path)),
         { ...options, ...(trusted ? { openSource: trusted.openSource } : {}) });
+    },
+    importLora(baseCid, options = {}) {
+      return createStoredLoraComposition(store, baseCid, { ...options, client: hubClient });
     },
     async importHub(entry, { reuseManifest, ...options } = {}) {
       const manifest = reuseVerifiedHubFiles(validateHubPackage(entry), reuseManifest);

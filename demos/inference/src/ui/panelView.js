@@ -172,9 +172,11 @@ export function createPanelView(container) {
   const storedRefresh = button('Refresh'), storedCancel = button('Stop loading'); storedCancel.hidden = true;
   const storedLoadSelected = button('Load selected'); storedLoadSelected.disabled = true;
   const storedDeleteSelected = button('Delete selected'); storedDeleteSelected.disabled = true; storedDeleteSelected.className = 'pc-delete-model';
+  const storedAddLora = button('Add LoRA'); storedAddLora.disabled = true;
+  storedAddLora.title = 'Select one stored GGUF model to add an adapter';
   const storedSelection = node('p', '0 models selected.', 'pc-inference-note'); storedSelection.setAttribute('aria-live', 'polite');
   const storedFooter = node('div', undefined, 'pc-stored-footer'), storedActions = node('div', undefined, 'pc-stored-footer-actions');
-  storedActions.append(storedLoadSelected, storedDeleteSelected, storedRefresh, storedCancel); storedFooter.append(storedSelection, storedActions);
+  storedActions.append(storedLoadSelected, storedDeleteSelected, storedAddLora, storedRefresh, storedCancel); storedFooter.append(storedSelection, storedActions);
   libraryBody.append(storedList); storedContent.append(storedFooter, storedStatus);
   const transcript = node('div', undefined, 'pc-inference-transcript');
   transcript.setAttribute('role', 'log'); transcript.setAttribute('aria-label', 'Conversation'); transcript.setAttribute('aria-live', 'polite');
@@ -210,7 +212,7 @@ export function createPanelView(container) {
   const networkInfo = createNetworkStatus({ container: panel }); navigationActions.prepend(networkInfo.trigger);
   container.append(panel);
   return { panel, browse, agents, networkInfo, discoveryStatus: networkInfo.status, modelsMenu, configure, chatConfigure, chatOptions, chatOptionsStatus: chatSettings.status, sharing, hosting, status, configuration,
-    configurationStatus: settings.status, storedContent, storedList, storedRefresh, storedCancel, storedLoadSelected, storedDeleteSelected, storedSelection, storedStatus, gpuLayers,
+    configurationStatus: settings.status, storedContent, storedList, storedRefresh, storedCancel, storedLoadSelected, storedDeleteSelected, storedAddLora, storedSelection, storedStatus, gpuLayers,
     leaveConfirmation: leaveWindow.element, leaveStatus: leaveWindow.status, stay, leave,
     back, menu, menuWindow, menuStatus: menuDialog.status, about, aboutButton, install,
     loading, loadingModel, loadingStatus: loadingWindow.status, loadingCancel,

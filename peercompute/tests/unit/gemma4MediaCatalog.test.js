@@ -29,9 +29,9 @@ test('media is a distinct package that reuses every existing decoder artifact by
   assert.deepEqual(admitted.weights.map(({ path, size, sha256 }) => ({ path, size, sha256 })), [text.files[0]]);
 });
 
-test('catalog qualifies ancestry, processor origin and unverified browser media execution', () => {
-  assert.equal(media.capabilities.executionStatus, 'candidate');
-  assert.match(media.capabilities.executionReason, /Unverified multimodal/);
+test('catalog separates recorded browser execution from incomplete publisher ancestry', () => {
+  assert.equal(media.capabilities.executionStatus, 'tested');
+  assert.match(media.capabilities.executionReason, /retained reload and encrypted peer inference/);
   assert.equal(media.provenance.sourceModel.conversionInputRevisionVerified, false);
   assert.match(media.provenance.outputModalities, /^Text only/);
   const derived = media.provenance.derivedArtifacts[0];

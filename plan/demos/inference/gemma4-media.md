@@ -1,5 +1,19 @@
 # Gemma4 native image/audio input
 
+November 10, 22:49 America/Anchorage: native acceptance **passed** on owned
+hardware Chrome/RTX5060Ti. The exact saved decoder plus derived companion answered
+text controls, distinguished red/blue images and transcribed an11second known
+speech sample. A source-blocked browser restart repeated all media. A separate
+GPU-disabled browser with no stored weights then repeated text/image/audio over
+encrypted inferencev4 via SecretWorkshop. First-token cancellation, subsequent
+text generation, host withdrawal and unload with zero active leases passed.
+Evidence: external `peercompute-gemma4-native-20261111/run-2/report.json` and
+`peer-run-2/report.json`. These results supersede the earlier unverified status
+and removal recommendation below; no native media failure was reproduced.
+The earlier observed peer was advertising the distinct text-only package.
+The original manifest provenance is preserved to avoid changing saved CIDs;
+current execution status lives in catalog capabilities and this evidence record.
+
 User authorization received November 10, 2026 at 17:45:48 America/Anchorage
 (first tool receipt). User subsequently started a model test; no competing GPU
 or full decoder downloads. Internal previews/local commits only, no Pages/push.
@@ -103,8 +117,8 @@ native flags, legacy defaults, per-host capability/queue selection, actual Noise
 peer media transfer, v3/v2 fallback, repeated changed inputs, and voice UI flows.
 Build and preview receipts are recorded in the root log.
 
-Actual Gemma GPU image/audio generation remains an explicit open gate while the
-user tests the existing model. Source and simulated-engine tests cannot close it.
+Actual Gemma GPU image/audio acceptance passed in the owned runs above.
+Source and simulated-engine tests alone cannot close this gate.
 The updated client independently queried the user's text-only Gemma peer over
 legacy inference v3: two arithmetic prompts returned distinct correct answers
 in about 1.6/1.0 seconds. That proves peer text delivery, not native media support.
@@ -119,8 +133,10 @@ MODEL_SUPPORT_PROFILE=/absolute/path/to/owned-profile \
 node demos/tests/model-support-browser.mjs
 ```
 
-The harness checks changing text, red versus blue images, known speech content,
-actual GPU dispatch, cancellation, unloading/resource release and source-blocked
-browser restart with all media repeated. It has not been executed for Gemma media
-in this slice. Follow with an actual two-browser model-hosted media request and
-confirm no source downloads when reopening the retained package.
+The reusable harness checks changing text, red versus blue images, known speech,
+GPU dispatch, cancellation, unloading and source-blocked restart. The recorded
+acceptance used equivalent external owned-browser harnesses with an exact local
+file source because repeated serial CDN transfers were slow. Normal importer
+SHA/CID verification and the actual managed native worker were retained. The
+second browser used actual peer streams, not a simulated transport. This is one
+GPU/browser qualification, not a guarantee for all hardware or media quality.

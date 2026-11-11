@@ -1,5 +1,11 @@
 # Qwen Image 2.1 and LoRA support
 
+November 10 update: user authorized broader reusable LoRA implementation after
+the active Gemma reproduction, followed by CubeChat agent 3D generation/placement.
+Use explicit base/adapter identities and runtime capabilities; initial GGUF
+load-time adapters can reuse native Wllama support. This does not establish that
+the separate Qwen Image 2.1 pipeline or its Safetensors adapter is executable.
+
 Status: requested follow-up; feasibility inspected November 10, 2026. No runnable
 Qwen Image entry or new backend has been added. Finish the active Gemma4 slice
 separately. Internal qualification first; no Pages publication is authorized.

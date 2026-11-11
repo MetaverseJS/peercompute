@@ -1596,3 +1596,20 @@ provider qualification, CID-backed mesh/material sharing, world preview/placemen
 then cosmetic avatars preserving existing body control. Rigging and physical
 morphology remain later work. See inhabited-agents.md; no implementation or release
 authorized by this note, and existing Gemma acceptance remains open.
+
+November 10 continuation supersedes the preceding note-only scope: after actual
+Gemma companion tests, implement reusable LoRA support and then a 3D generator
+integrated with CubeChat so agents can generate and place assets. Preserve
+managed execution, explicit compatible base/adapter metadata and CID-backed
+shared assets. Asked whether a native GPU generation peer is acceptable for
+Hunyuan3D; browser-only execution has not been promised. No Pages or push.
+
+
+November10–11 continuation: Gemma native companion and actual encrypted peer
+image/audio tests pass; original package identities preserved. General ordinary
+GGUF LoRA compositions now share retained base/adapter bytes, enforce exact
+header/target admission, expose Add LoRA from Stored models and execute through
+the managed native worker. Local active/zero/restored and actual source-off peer
+acceptance pass. Next authorized slice is actual browser 3D generation and
+CubeChat agent object placement; Hunyuan3D-2.1 remains a target, not a claimed
+current browser capability. No Pages publication or Git push authorized.

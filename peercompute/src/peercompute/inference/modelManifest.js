@@ -84,6 +84,7 @@ export function validateModelManifest(input) {
     throw new Error('Model manifest exceeds its metadata budget');
   }
   const manifest = JSON.parse(serialized);
+  if (manifest.model?.composition !== undefined) throw new Error('This ONNX runtime does not support model adapters');
   if (manifest.schema !== 'peercompute.artifact.manifest.v1'
       || !Array.isArray(manifest.files) || !manifest.files.length
       || manifest.files.length > MODEL_POLICY.maxFiles) throw new Error('Invalid model manifest files');

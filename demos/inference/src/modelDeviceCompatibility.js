@@ -1,4 +1,5 @@
 import { validateGgufHubModel } from '../../../peercompute/src/peercompute/inference/gguf/hubAdmission.js';
+import { validateGgufManifest } from '../../../peercompute/src/peercompute/inference/gguf/runtimeDefinition.js';
 import { MODEL_POLICY, MODEL_RUNTIME_VERSION, modelResourcePolicy } from '../../../peercompute/src/peercompute/inference/modelManifest.js';
 import { getModelCapability, ONNX_CAPABILITY_LIMITS } from '../../../peercompute/src/peercompute/inference/modelCapabilities.js';
 import { MODEL_CATALOG } from '../../../peercompute/src/peercompute/inference/modelCatalog.js';
@@ -47,12 +48,18 @@ function catalogFilesMatch(runtime, actualFiles, expectedFiles) {
 }
 
 function profile(entry) {
-  const input = entry?.model ?? entry ?? {};
-  const trusted = findModelCatalogEntry(entry);
+  let composed;
+  if (entry?.model?.composition !== undefined) {
+    if (entry.model.runtime !== 'llama.cpp') throw new Error('This runtime does not support model adapters');
+    composed = validateGgufManifest({ schema: 'peercompute.artifact.manifest.v1', model: entry.model, files: entry.files });
+  }
+  const base = composed?.baseManifest ?? entry;
+  const input = base?.model ?? base ?? {};
+  const trusted = findModelCatalogEntry(base);
   // Display-only peer descriptors may identify a catalog entry; their memory
   // claims and purported allocation requirements are never trusted.
   const model = entry?.model ? input : trusted?.model ?? input;
-  const files = entry?.files ?? trusted?.files;
+  const files = base?.files ?? trusted?.files;
   let totalBytes = null;
   if (files !== undefined) {
     if (!Array.isArray(files) || !files.length || files.length > MODEL_POLICY.maxFiles) throw new Error('Invalid model file list');
@@ -63,7 +70,8 @@ function profile(entry) {
       if (!Number.isSafeInteger(totalBytes)) throw new Error('Invalid model package size');
     }
   } else if (Number.isSafeInteger(entry?.totalBytes) && entry.totalBytes >= 0) totalBytes = entry.totalBytes;
-  return { model, files, trusted, totalBytes, descriptorOnly: !entry?.model && !trusted && files === undefined };
+  return { model, files, trusted, totalBytes: composed?.totalBytes ?? totalBytes,
+    descriptorOnly: !entry?.model && !trusted && files === undefined };
 }
 
 /** Configured resident reservations, deliberately not detected device memory. */

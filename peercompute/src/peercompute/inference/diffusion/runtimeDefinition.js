@@ -9,6 +9,7 @@ const GiB = 1024 ** 3;
 export function validateDiffusionManifest(input) {
   const manifest = normalizeArtifactManifest(input);
   const model = manifest.model;
+  if (model?.composition !== undefined) throw new Error('This diffusion runtime does not support model adapters');
   const trusted = Object.values(DIFFUSION_MODEL_CATALOG).find((entry) =>
     entry.model.repository === model?.repository && entry.model.revision === model?.revision
       && entry.model.pipeline === model?.pipeline);

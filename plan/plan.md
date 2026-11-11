@@ -14,6 +14,16 @@ The root node should exist on a domain secured with SSL enabling all executable 
 
 ## Project Goals:
 
+Current user-directed order (November 10): finish actual Gemma companion testing,
+then implement reusable LoRA support for qualified base/runtime combinations,
+then implement 3D generation and world placement tools for CubeChat agents.
+Gemma local/peer media acceptance has passed. LoRA composition, managed mounting,
+storage and UI are implemented; actual GPU comparison, source-off retained reload
+and encrypted peer acceptance passed. See [model adapters](demos/inference/model-adapters.md).
+Browser-native TripoSR and Hunyuan mini exports are being qualified for the first
+3D slice; Hunyuan3D-2.1 remains the requested longer-term target. No GitHub Pages
+deployment or push is included.
+
 Future CubeChat/Homunculus TODO: support Hunyuan3D-2.1 generation, CID-shared 3D
 objects displayed in the world, and optional player/resident avatars. Qualify
 generation runtime separately from browser rendering; start with cosmetic meshes
@@ -25,10 +35,11 @@ source ranges, and runs through the existing managed GGUF worker. Capability
 routing and inference v4 preserve native media operations while retaining v3/v2
 compatibility. Personal Talk can use native audio; agents/Global transcribe first.
 The user reports successful text execution and its exact package is visible on
-the peer network. CPU artifact parity and focused integration tests pass; actual
-Gemma image/audio GPU qualification remains open while the user is testing.
-Subsequently the user reports the custom companion approach does not work;
-evaluate complete published decoder/projector pairs before further conversion.
+the peer network. After their media failure report and GPU release, independent
+owned-browser tests passed actual local and peer text/image/audio, retained
+source-off restart, cancellation/recovery and unload. The observed failing peer
+had advertised the separate text-only package. Preserve both package identities;
+current evidence does not justify replacing the working companion implementation.
 See [implementation and acceptance](demos/inference/gemma4-media.md). No Pages/push.
 
 November8 README/audit publication complete: reviewed documentation commits are

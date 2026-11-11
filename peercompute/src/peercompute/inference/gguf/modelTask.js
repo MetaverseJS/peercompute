@@ -2,6 +2,7 @@ import { createGgufArtifactReader } from '../GgufArtifactReader.js';
 import { MODEL_POLICY, abortError, throwIfAborted, validateSessionId } from '../modelManifest.js';
 import { createGgufEngine, GGUF_NATIVE_READ_BYTES } from './engine.js';
 import { verifyGgufHubWeights } from './hubAdmission.js';
+import { verifyGgufLoraAdapters } from './loraAdmission.js';
 import { fitGgufContext, GGUF_MEASUREMENT_TOKEN_BUDGET } from './contextBudget.js';
 import { encodeGgufMedia, projectGgufMedia } from './mediaInput.js';
 import { GGUF_CONTEXT_LIMIT, GGUF_RUNTIME_VERSION, validateGgufCapabilities,
@@ -54,6 +55,7 @@ function status(entry) {
     gpuOffload: entry.engine?.evidence.offload ?? null, runtimeOptions: entry.options,
     effectiveContextTokens: entry.contextTokens ?? null,
     inputModalities: entry.inputModalities ?? ['text'],
+    loraAdapters: entry.loraAdapters ?? [],
     nativeBuffers: entry.engine?.evidence.buffers ?? [],
     wasmMemoryBytes: entry.engine?.memoryBytes() ?? 0, generatedRequests: entry.generatedRequests,
     artifactReads: entry.reader?.getStats() ?? null };
@@ -79,21 +81,31 @@ export function createGgufTaskRuntime({ loadEngine = createGgufEngine,
       throwIfAborted(context.signal);
       current.reader = createReader(data.artifactPort, { manifest: validated.manifest,
         signal: current.residency.signal, maxReadBytes: GGUF_NATIVE_READ_BYTES, maxReads: 1 });
-      await verifyGgufHubWeights(validated.manifest.model, validated.weights, current.reader, { signal: context.signal });
+      await verifyGgufHubWeights(validated.baseManifest.model, validated.weights, current.reader, { signal: context.signal });
+      if (validated.adapters.length) {
+        current.loraAdapters = await verifyGgufLoraAdapters(validated.baseManifest.model, validated.weights,
+          validated.adapters, current.reader, { signal: context.signal });
+      }
       throwIfAborted(context.signal);
       current.engine = await loadEngine({ wasmUrl: assets.wasm, weights: validated.weights, projector: validated.projector,
+        adapters: validated.adapters,
         reader: current.reader, signal: context.signal, collectGpuEvidence: data.collectGpuEvidence === true,
         onProgress: (event) => context.emitProgress?.({ ...event, sessionId }),
         onLost() { current.lost = true; current.active?.abort('GPU device lost'); },
       });
       throwIfAborted(context.signal);
       if (validated.mediaProfile && !current.engine.projectorFile) throw new Error('GGUF projector was not mounted');
+      if (validated.adapters.length && current.engine.adapterFiles?.length !== validated.adapters.length) {
+        throw new Error('GGUF adapters were not mounted');
+      }
       const response = await current.engine.action('load', {
         _name: 'load_req', model_paths: current.engine.files.map((file) => `models/${file.name}`),
         use_mmap: false, use_mlock: false, n_ctx_auto: false, ...options,
         n_ubatch: validated.mediaProfile?.batchTokens ?? Math.min(64, options.n_batch), n_parallel: 1, kv_unified: true,
         ...(validated.mediaProfile ? { mmproj_path: `models/${current.engine.projectorFile.name}`, mmproj_offload: true,
           image_min_tokens: validated.mediaProfile.imageMinTokens, image_max_tokens: validated.mediaProfile.imageMaxTokens } : {}),
+        ...(validated.adapters.length ? { lora_paths: current.engine.adapterFiles.map((file) => `models/${file.name}`),
+          lora_scales: validated.adapters.map((adapter) => adapter.scale) } : {}),
         log_level: 2, warmup: false, ctx_shift: false, cache_idle_slots: false,
         reasoning: false, jinja: true,
       }, context.signal);

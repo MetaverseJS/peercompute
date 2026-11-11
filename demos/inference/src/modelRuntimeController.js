@@ -43,7 +43,7 @@ function awaitLoadStep(promise, signal, timeoutMs) {
 /** UI policy over manager-owned storage, inference and private peer streams. */
 export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
   preferences = createModelPreferences({ storeName: runtime.store.lockName ?? runtime.store.name }) } = {}) {
-  const original = Object.fromEntries(['importCatalog', 'importPackage', 'importHub', 'ensure', 'load', 'connect', 'connectBackend', 'dispose']
+  const original = Object.fromEntries(['importCatalog', 'importPackage', 'importHub', 'importLora', 'ensure', 'load', 'connect', 'connectBackend', 'dispose']
     .filter((key) => typeof runtime[key] === 'function').map((key) => [key, runtime[key].bind(runtime)]));
   const owner = {};
   const retained = new Map();
@@ -403,7 +403,7 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
   for (const method of ['connect', 'connectBackend']) {
     runtime[method] = async (...args) => { assertOpen(); const result = await original[method](...args); await connectionReady(); return result; };
   }
-  for (const method of ['importCatalog', 'importPackage', 'importHub'].filter((key) => original[key])) {
+  for (const method of ['importCatalog', 'importPackage', 'importHub', 'importLora'].filter((key) => original[key])) {
     runtime[method] = (...args) => {
       const index = method === 'importPackage' ? 2 : 1;
       return mutate((signal) => {
@@ -578,6 +578,28 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
           record = await importModel('importHub', [entry, { ...options, signal, reuseManifest: saved?.[1] }], { deferSharing: true });
         }
         return activateRecord(record, options, signal);
+      }, options.signal);
+    },
+    createLoraModel(input, options = {}) {
+      assertOpen();
+      if (!original.importLora) throw new Error('Adapter composition is unavailable in this runtime');
+      const baseCid = artifactCID(input).toString();
+      const { load = true, ...settings } = options;
+      // Snapshot the inspected data before queuing a storage mutation.
+      const adapter = structuredClone(settings.adapter);
+      return acquire(async (signal) => {
+        if (deleting.has(baseCid)) throw new Error('This model is being deleted');
+        const record = await importModel('importLora', [baseCid, { ...settings, adapter, signal }], { deferSharing: load });
+        signal.throwIfAborted();
+        if (!load) return record;
+        assertChatLoadable(record.manifest ?? await runtime.store.getManifest(record.cid, { signal }));
+        signal.throwIfAborted();
+        // Import/pairing failures leave the running base untouched. Only after
+        // the composed package is saved do we release its old GPU residency.
+        if (resident(baseCid) && baseCid !== record.cid) await unloadModel(baseCid);
+        signal.throwIfAborted();
+        await activateRecord(record, settings, signal);
+        return record;
       }, options.signal);
     },
     loadStoredModel(input, options = {}) {

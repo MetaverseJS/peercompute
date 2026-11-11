@@ -6,6 +6,7 @@ import { bindChatImageInput } from './ui/chatImageInput.js';
 import { createGeneratedImageRenderer } from './ui/generatedImages.js';
 import { createModelBrowser } from './ui/modelBrowser.js';
 import { createModelManagementWindow } from './ui/modelManagementWindow.js';
+import { createLoraComposer } from './ui/loraComposer.js';
 import { createAgentConsole } from './agents/agentConsole.js';
 import { createAgentChatSession } from './agents/agentChatSession.js';
 import { supportsTask as modelSupportsTask, hasInferenceCapacity } from '../../../peercompute/src/peercompute/inference/InferenceRouter.js';
@@ -48,7 +49,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
   let storedRows = [], startupReading = true, imageInput, imageTransferPending = false, leaving = false;
   const selectedStored = new Set();
   let refreshTimer, sources = [], targets = [];
-  let desiredSourceKey, modelBrowser, managementWindow, hubSelection;
+  let desiredSourceKey, modelBrowser, managementWindow, hubSelection, loraComposer;
   let helpSource, helpVersion = 0;
   let progressTimer, progressLabel, progressKey, progressStarted;
   let loadingOperation;
@@ -184,6 +185,8 @@ export async function mountInferencePanel({ container = document.body, stateMana
     const loadableCount = runtime?.loadStoredModel ? selectedRows.filter(canLoadStoredModel).length : 0;
     view.storedLoadSelected.disabled = !!operation || !!storedController || !loadableCount;
     view.storedDeleteSelected.disabled = !!operation || !!storedController || !runtime?.deleteStoredModel || !selectedRows.length;
+    view.storedAddLora.disabled = !!operation || !!storedController || !runtime?.createLoraModel
+      || selectedRows.length !== 1 || selectedRows[0].runtime !== 'llama.cpp' || selectedRows[0].needsVerification;
     view.storedSelection.textContent = `${selectedRows.length} model${selectedRows.length === 1 ? '' : 's'} selected.`
       + (selectedRows.length !== loadableCount ? ` ${loadableCount} ready to load.` : '');
     view.storedCancel.hidden = !operation || !(loadingStoredModel || deletingStoredModels) || !!loadingOperation;
@@ -777,6 +780,29 @@ export async function mountInferencePanel({ container = document.body, stateMana
     });
     if (managementOnly) managementWindow = createModelManagementWindow({ browser: modelBrowser,
       onRequestClose: requestManagementClose });
+    if (runtime.inspectLoraHub && runtime.createLoraModel) loraComposer = createLoraComposer({ container: view.panel,
+      onInspect: (reference, options) => runtime.inspectLoraHub(reference, options),
+      async onApply({ baseManifestCid, signal, onProgress, ...options }) {
+        if (!alive() || operation) throw new Error('Another model operation is running');
+        let record, failure;
+        await run(async (activeSignal) => {
+          const combined = AbortSignal.any([signal, activeSignal]);
+          try {
+            record = await runtime.createLoraModel(baseManifestCid, { ...options, signal: combined,
+              ggufGpuLayers: Number(view.gpuLayers.value), onProgress(event) { onProgress?.(event); progress(event); } });
+            combined.throwIfAborted();
+            setStatus(`Saved ${options.name}${options.load ? ' and loaded it' : ''}.`, { quiet: true });
+          } catch (error) {
+            if (managementOnly && combined.aborted && error instanceof AggregateError) cancelledLoadCleanupError = error;
+            failure = error; throw error;
+          }
+          finally { await refreshStoredModels({ preserveStatus: true }); }
+        }, options.load && !managementOnly ? { modelName: options.name } : {});
+        if (failure) throw failure;
+        if (!record) throw new DOMException('Adapter operation cancelled', 'AbortError');
+        return record;
+      },
+    });
     for (const trigger of [view.browse, view.modelsMenu]) trigger.setAttribute('aria-controls', modelBrowser.element.id);
     modelBrowser.element.addEventListener('close', () => {
       if (!managementOnly && alive() && !view.panel.querySelector('dialog[open]')
@@ -852,6 +878,11 @@ export async function mountInferencePanel({ container = document.body, stateMana
   view.storedRefresh.onclick = () => { void refreshStoredModels(); };
   view.storedLoadSelected.onclick = () => { void loadStoredModels(storedRows.filter((model) => selectedStored.has(model.manifestCid))); };
   view.storedDeleteSelected.onclick = () => { void deleteStoredModels(storedRows.filter((model) => selectedStored.has(model.manifestCid))); };
+  view.storedAddLora.onclick = () => {
+    if (view.storedAddLora.disabled || !loraComposer) return;
+    const model = storedRows.find((entry) => selectedStored.has(entry.manifestCid));
+    if (model) loraComposer.open(model);
+  };
   view.back.onclick = (event) => {
     event.preventDefault();
     if (alive() && !view.leaveConfirmation.open) {
@@ -1346,7 +1377,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     clearInterval(progressTimer); progressTimer = null;
     if (disposed) return;
     if (disposingPromise) return disposingPromise;
-    closing = true; holdRecorder.dispose(); view.networkInfo.dispose(); view.chatOptions.close();
+    closing = true; loraComposer?.dispose(); holdRecorder.dispose(); view.networkInfo.dispose(); view.chatOptions.close();
     if (managementWindow) {
       modelBrowser.setBusy(true); modelBrowser.setFeedback('Closing Models… Waiting for cleanup.');
       for (const control of view.storedContent.querySelectorAll('button,input')) control.disabled = true;
@@ -1363,7 +1394,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
       await openingAgents; await agentsStarting?.catch(() => {}); await historyPromise; await agentConsole?.dispose();
       await voiceStarting; await voiceSession?.dispose();
       await globalChat?.close(); globalFeed?.dispose(); channels?.dispose();
-      await runtime.dispose(); disposed = true; modelBrowser?.dispose(); histories.clear(); attachment = null; view.panel.remove(); onClose?.();
+      await runtime.dispose(); disposed = true; loraComposer?.dispose(); modelBrowser?.dispose(); histories.clear(); attachment = null; view.panel.remove(); onClose?.();
     })();
     try { await disposingPromise; }
     catch (error) {

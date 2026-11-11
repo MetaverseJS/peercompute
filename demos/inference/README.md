@@ -42,6 +42,13 @@ supported catalog alternative; a storage-read failure does not trigger a downloa
 
 Runtime support depends on the export, not just its model name:
 
+For GGUF LoRAs, select one package in **Stored models**, then **Add LoRA**.
+Inspect an adapter repository or file URL and choose its strength. Saving creates
+a separate model that reuses the base's downloaded files; loading replaces that
+selected base in memory. Ordinary compatible GGUF matrix adapters are supported;
+Safetensors diffusion LoRAs require a different backend. See the
+[adapter contract and qualification](../../plan/demos/inference/model-adapters.md).
+
 | Runtime | Tasks and example candidates |
 | --- | --- |
 | Transformers.js / ONNX | Text and vision: small Qwen, SmolVLM and inspected supported conversions |
@@ -76,10 +83,12 @@ package reuses those saved decoder bytes and adds a 116.4 MiB companion with
 image/audio projections. It fetches about 99.9 MiB of pinned source tensor ranges
 and constructs the companion locally; it does not download the 22.3 GiB source
 checkpoint. A user confirmed the text package works in PeerCompute on November
-10, 2026; two independent peer text requests also returned correct answers. Independent local
-GPU qualification and actual image/audio execution remain open. Companion reconstruction matches the pinned upstream CPU
-converter byte for byte. See [the media plan](../../plan/demos/inference/gemma4-media.md)
-for evidence and remaining native tests.
+10, 2026. Independent hardware Chrome tests on an RTX 5060 Ti subsequently
+passed text, changing image inputs and speech transcription, both locally and
+over encrypted peer inference. Retained reload with downloads blocked,
+cancellation/recovery and resource release also passed. Companion reconstruction
+matches the pinned upstream CPU converter byte for byte. See
+[the media plan](../../plan/demos/inference/gemma4-media.md) for evidence and scope.
 
 To upgrade a saved Gemma text package, unload it, then choose the **vision + audio**
 entry in Browse models. Loading the new entry reuses complete verified decoder

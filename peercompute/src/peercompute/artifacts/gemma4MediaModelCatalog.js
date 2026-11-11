@@ -18,8 +18,8 @@ export const GEMMA4_MEDIA_MODEL_CATALOG = freeze({
   [id]: {
     ...text, id, name: 'Gemma 4 12B Uncensored (Q4_K_M, vision + audio)', files,
     description: 'Image and audio understanding with text replies. Reuses saved Gemma Q4_K_M decoder files and adds a small verified companion. Unload the text-only Gemma before loading this package to avoid keeping two 12B models in GPU memory.',
-    capabilities: { ...text.capabilities, executionStatus: 'candidate',
-      executionReason: 'Unverified multimodal candidate. Requires the managed llama.cpp Gemma4Unified media runtime, its pinned companion projector and normal device admission. Audio input produces text; speech synthesis uses a separate model.' },
+    capabilities: { ...text.capabilities, executionStatus: 'tested',
+      executionReason: 'Tested November 10, 2026 in hardware Chrome on an RTX 5060 Ti: text, changing images, speech transcription, retained reload and encrypted peer inference. Requires the pinned companion and normal device admission. Audio input produces text; speech synthesis uses a separate model.' },
     model: { ...text.model, modalities: ['text', 'image', 'audio'],
       ggufMedia: { profile: 'gemma4-unified-v1', projectorPath: GEMMA4_PROJECTOR_FILE.path } },
     provenance: { ...text.provenance,

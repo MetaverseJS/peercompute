@@ -5,12 +5,27 @@ import { validateGgufHubModel } from './hubAdmission.js';
 import { normalizeModelMessages, validateImageInput } from '../modelTask.js';
 import { validatePcm } from '../speech/runtimeDefinition.js';
 import { validateGgufMediaProfile } from './mediaInput.js';
+import { splitModelComposition } from '../modelComposition.js';
+import { validateGgufLoraAdapters } from './loraAdmission.js';
 
 export const GGUF_RUNTIME_VERSION = '3.8.1';
 export const GGUF_CONTEXT_LIMIT = 2048;
 const GiB = 1024 ** 3;
 
 export function validateGgufManifest(input) {
+  const composition = splitModelComposition(input);
+  const base = validateGgufBaseManifest(composition.baseManifest);
+  const adapters = composition.adapters.length
+    ? validateGgufLoraAdapters(base.manifest.model, base.weights, composition.adapters) : [];
+  const totalBytes = composition.manifest.files.reduce((sum, file) => sum + file.size, 0);
+  if (!Number.isSafeInteger(totalBytes) || totalBytes > base.resourcePolicy.maxModelBytes) {
+    throw new Error('GGUF composed package exceeds its byte budget');
+  }
+  return { ...base, manifest: composition.manifest, baseManifest: base.manifest, adapters,
+    totalBytes };
+}
+
+function validateGgufBaseManifest(input) {
   const manifest = normalizeArtifactManifest(input);
   const model = manifest.model;
   const mediaProfile = validateGgufMediaProfile(model);

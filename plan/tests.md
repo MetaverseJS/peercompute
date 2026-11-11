@@ -13,6 +13,16 @@
 
 ### Gemma4 media acceptance — November10
 
+- November10 22:49AKST native acceptancePASS: exact decoder/companion imported
+  with normalSHA/CID checks; managed ChromeWebGPU worker answered5/2, red/blue
+  and knownJFKspeech. Source-off ownedbrowserrestart repeatedmedia. Independent
+  noGPU/no-weight client repeatedtext/red/blue/audio on exactownedhost via
+  encrypted inferencev4/SecretWorkshop. First-tokencancel, subsequenttext5,
+  directorywithdrawal andzeroactiveleasesafterunloadPASS. Externalreceipt
+  `peercompute-gemma4-native-20261111/peer-run-2/report.json`. Two earlier
+  harnessAPI/pollingerrors were preserved and corrected, not counted asnative
+  model failures. Currentdisplaycapabilitytested; immutablemanifestunchanged.
+
 - November10 follow-up live peer check: v4 text Gemma returned two correct
   arithmetic answers (~1.1s each); an image request failed at capability routing
   because that host advertises text only. Native companion load/vision/audio
@@ -4943,3 +4953,23 @@ SecretWorkshopNoise and desktop/390px UI. Allownedbrowsers/candidateserver close
 - Qwen Image2.1 LoRA evidence is bounded metadata only. Its new plan defines
   separate base-runtime, tensor-mapping/scaling, storage and peer-image gates;
   no Qwen image execution or quality claim.
+
+
+## November 10–11: GGUF LoRA composition acceptance
+
+- `node --test peercompute/tests/unit/ggufLora.test.js`: canonical original-base
+  identity, target/rank/dimension checks, corrupted/stale headers, strength-specific
+  identities, shared bytes and runtime admission boundaries.
+- `node --test demos/inference/tests/*.test.js`: actual ArtifactStore imports,
+  reuse/hash/cancellation, mobile composer and full inference/CubeChat-management
+  lifecycle with injected runtime. UI tests do not establish native execution.
+- External `lora-acceptance.mjs` local then `LORA_MODE=peers`: actual managed
+  Qwen2.5+GGUF adapter GPU execution, zero/active/restored comparisons, changed
+  outputs, retained source-off restart, encrypted SecretWorkshop composed-CID
+  inference, cancellation/recovery, host withdrawal and zero leases. Both pass.
+  Evidence: `/home/cos/.cache/peercompute-lora-native-20261111/`. Fixture training
+  provenance/license and model quality are not claimed by this execution test.
+- Actual Gemma native/local-peer qualification passed independently; evidence
+  `/home/cos/.cache/peercompute-gemma4-native-20261111/{run-2,peer-run-2}/report.json`.
+- Remaining 3D gate: real neural output, bounded validated embedded GLB, actual
+  two-peer CubeChat placement/CID agreement, source-off retained reload and cancel.
