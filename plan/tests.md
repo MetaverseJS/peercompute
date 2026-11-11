@@ -4878,3 +4878,27 @@ SecretWorkshopNoise and desktop/390px UI. Allownedbrowsers/candidateserver close
 - Exact upstream GGUF header and complete tensor directory pass the production parser: qwen35, Q4_K_M, 427 tensors, 10,964,088 header bytes, F32/Q4_K/Q6_K tensors. This is bounded file inspection, not a full-weight integrity or execution test.
 - Inference, CubeChat and Earth production builds pass outside docs/. Internal preview smoke checks the catalog result, pinned details, desktop/mobile layout and exact served entry files.
 - Successful execution of this exact Q4 file is **user-reported**, confirmed November 10; device/browser details were not supplied. No independent inference run is claimed. Evidence: `/home/cos/.cache/peercompute-mimo-20261110/`.
+
+
+### November 10 — Gemma4 candidate and Qwen image feasibility
+
+- Combined GGUF catalog/runtime/header, Gemma4 catalog, model capability/device
+  and model-browser suites: **113/113 pass**. Gemma4 fixtures bind architecture
+  to its native tokenizer, reject mismatches and substituted headers, preserve
+  text-only scope and pinned package identities. Actual15,822,379-byte publisher
+  header passes the production parser; this is not full-weight verification.
+- Inference, CubeChat and Earth builds pass outside docs/. Internal preview smoke
+  verifies all three exact TLS entry hashes, Gemma catalog details, desktop/mobile
+  layout and authenticated SecretWorkshop Noise. No UI-check model downloads or
+  page/console errors. Screenshot inspection confirms390px detail containment.
+- Native qualification remains **unverified**: isolated attempts were stopped
+  during the slow7.38GB download, before model load. No inference, cancellation,
+  unload or source-off reload pass is claimed. The owned test profile is retained
+  outside Git; no test browser/server remains. A future run should use
+  MODEL_SUPPORT_REPO=TrevorJS/gemma-4-12B-it-uncensored-GGUF,
+  MODEL_SUPPORT_VARIANT=gemma-4-12B-it-uncensored-Q4_K_M.gguf and
+  demos/tests/model-support-browser.mjs with a persistent owned profile. The
+  harness now accommodates large transfers and tests changing/multiturn prompts.
+- Qwen Image2.1 LoRA evidence is bounded metadata only. Its new plan defines
+  separate base-runtime, tensor-mapping/scaling, storage and peer-image gates;
+  no Qwen image execution or quality claim.

@@ -81,7 +81,7 @@ async function launch(origin) {
 }
 async function generate(prompt, maxNewTokens = 32) {
   return bounded(page.evaluate(async ({ prompt, maxNewTokens }) => inferencePanel.runtime.generate('local', {
-    messages: [{ role: 'user', content: prompt }], maxNewTokens,
+    messages: Array.isArray(prompt) ? prompt : [{ role: 'user', content: prompt }], maxNewTokens,
   }), { prompt, maxNewTokens }), 300000, 'Generation');
 }
 try {
@@ -102,7 +102,9 @@ try {
     let result = await inferencePanel.runtime.inspectModelHub(repository);
     if (selectedVariant) result = await inferencePanel.runtime.inspectModelHub(
       `https://huggingface.co/${repository}/tree/${result.revision}`, { selectedVariant });
-    const variant = result.variants.find((item) => selectedVariant ? item.filePath === selectedVariant : item.dtype === dtype);
+    const variant = result.variants.find((item) => selectedVariant
+      ? item.filePath === selectedVariant || item.files?.some((file) => file.path === selectedVariant)
+      : item.dtype === dtype);
     if (!variant?.loadable) throw new Error(variant?.reason || 'Requested package is absent');
     window.supportPackage = variant.package;
     return { revision: result.revision, totalBytes: variant.totalBytes, model: variant.model,
@@ -119,20 +121,21 @@ try {
     window.supportProgress = [];
     await runtime.acquireHubModel(window.supportPackage, { onProgress: (event) => {
       if (event.type === 'model-load' || event.phase || event.stage) {
-        const item = { type: event.type, phase: event.phase, stage: event.stage, file: event.file ?? event.path, status: event.status, loaded: event.loaded, total: event.total };
+        const item = { type: event.type, phase: event.phase, stage: event.stage, file: event.file ?? event.path, status: event.status, loaded: event.loaded, total: event.total, totalBytes: event.totalBytes };
         window.supportProgress.push(item);
         if (window.supportProgress.length > 100) window.supportProgress.shift();
         const key = [item.type, item.phase, item.stage, item.file, item.status].join(':');
         const changed = key !== window.supportProgressKey;
         const byteProgress = item.status?.startsWith('progress');
-        if (changed && (!byteProgress || Date.now() - (window.supportProgressAt ?? 0) > 5000)) {
+        const interval = Date.now() - (window.supportProgressAt ?? 0) > 5000;
+        if ((changed && (!byteProgress || interval)) || (item.stage === 'import' && interval)) {
           console.log('SUPPORT_PROGRESS ' + JSON.stringify(item)); window.supportProgressAt = Date.now();
         }
         window.supportProgressKey = key;
       }
     } });
     return runtime.service.getStatus();
-  }), 900000, 'Import and managed worker load');
+  }), report.inspection.totalBytes > 4 * 1024 ** 3 ? 3600000 : 900000, 'Import and managed worker load');
   assert.equal(report.load.status, 'ready'); assert(report.load.evidence.workerId);
   assert.equal(report.load.evidence.adapter.isFallbackAdapter, false);
   report.progress = await page.evaluate(() => window.supportProgress);
@@ -141,8 +144,15 @@ try {
   assert(report.first.text.trim()); assert(report.first.gpuDispatches > 0 && report.first.gpuSubmissions > 0);
   report.second = await generate('Reply with one short sentence about the ocean.');
   assert(report.second.text.trim()); assert(report.second.gpuDispatches > 0);
+  assert.notEqual(report.second.text, report.first.text, 'Different prompts must not reuse the previous answer');
   report.repeat = await generate('Reply with one short sentence about a garden.');
   assert.equal(report.repeat.text, report.first.text, 'A fresh request must reset model state and reproduce deterministic output');
+  report.multiTurn = await generate([
+    { role: 'system', content: 'Answer the latest user question briefly.' },
+    { role: 'user', content: 'What is one plus one?' }, { role: 'assistant', content: '2' },
+    { role: 'user', content: 'What is two plus three? Reply using the numeral.' },
+  ], 32);
+  assert.match(report.multiTurn.text, /(?:^|\s)5(?:[.\s]|$)/, 'System and multi-turn template must preserve the latest request');
   console.log(JSON.stringify({ phase, repository, first: report.first.text, second: report.second.text }));
   phase = 'cancel';
   report.cancel = await bounded(page.evaluate(async () => {

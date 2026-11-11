@@ -67,6 +67,17 @@ a user test, not an independently reproduced hardware qualification. The pinned
 package includes the MIT-declared model card and supports text only through the
 managed GGUF runtime. Normal device checks still apply.
 
+The catalog also includes **Gemma 4 12B Uncensored (Q4_K_M)** from
+[TrevorJS](https://huggingface.co/TrevorJS/gemma-4-12B-it-uncensored-GGUF), a
+publisher-described abliterated variant with 6.87 GiB of weights. Its Gemma4
+architecture and tokenizer are admitted by the managed GGUF runtime. This package
+is text-only; image/audio capabilities of its upstream base are not exposed.
+It remains an execution candidate pending the full browser qualification recorded
+in [the model-browser plan](../../plan/demos/inference/model-browser.md).
+
+[Qwen Image 2.1 with LoRA support](../../plan/demos/inference/qwen-image21-lora.md)
+is a separate planned image backend, not an available catalog model.
+
 ## Chat, images and voice
 
 **Personal** is the default tab. It has its own draft and conversation history

@@ -257,3 +257,38 @@ search and the shared model browser in world demos. The user confirmed successfu
 PeerCompute execution; record that attribution separately from independently
 reproduced execution. Preserve MIT card metadata, text-only capabilities and
 normal shader-f16/JSPI/memory64/isolation/device checks. No default model change.
+
+
+### November 10 — Gemma4Unified 12B admission and next compatibility steps
+
+User selected an abliterated Gemma 4 12B variant as the next execution target.
+TrevorJS/gemma-4-12B-it-uncensored-GGUF Q4_K_M is pinned to
+d878d412b001a720b9a62eaac432d00aac9d1b4f (6.875GiB weights). Its actual bounded
+header uses gemma4 architecture plus gemma4 tokenizer,667tensors and standard
+F32/Q4_K/Q6_K codecs. The existing pinned backend contains Gemma4Unified support;
+application admission adds this architecture/tokenizer pair explicitly. Current
+adapter remains text-only with2048context, shader-f16 and shared memory64/JSPI.
+Native qualification is tracked in log.md; do not equate catalog admission with
+successful execution or expose upstream image/audio capabilities.
+
+Next proposed discovery improvements, separately scoped:
+1. Browser-export-first ranking and exact rejection categories/actions, including
+   source checkpoints without runnable exports and missing/unsupported layouts.
+2. Mixed per-module ONNX dtypes: production manifests already support them, while
+   discovery currently asks every vision module to have the same suffix.
+3. Exact requested GGUF file inspection beyond the first32variants, plus
+   pagination and complete-package ordering.
+4. Qualify additional engine-backed architecture/tokenizer pairs individually;
+   split GGUF and additional tensor codecs need separate package work.
+
+
+Requested image follow-up: [Qwen Image2.1 + LoRA](qwen-image21-lora.md). Discovery
+should identify adapters and required base pipelines; current SD/LCM admission
+cannot execute this architecture. No runnable entry is exposed prematurely.
+
+
+Gemma4 validation status:113combined checks and three consumer builds pass;
+internal desktop/mobile catalog and authenticated backend checks pass. Full
+weights did not finish downloading in the independent native trial, so catalog
+status remains candidate/unverified. Existing user models were never unloaded
+by automation. Native load/generation/lifecycle qualification stays open.

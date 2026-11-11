@@ -14,10 +14,10 @@ const str = (value) => { const b = Buffer.from(value); return Buffer.concat([u64
 const field = (key, type, value) => Buffer.concat([str(key), u32(type), type === 8 ? str(value) : type === 4 ? u32(value) : value]);
 
 function fixture({ architecture = 'llama', name = 'Example standard model', type = 12,
-  secondOffset = 576, version = 3, extra = [], missing = [], dataOffset = null } = {}) {
+  tokenizer = 'llama', secondOffset = 576, version = 3, extra = [], missing = [], dataOffset = null } = {}) {
   const metadata = [field('general.architecture', 8, architecture), field('general.name', 8, name),
     field('general.type', 8, 'model'), field('general.file_type', 4, 15),
-    field('general.quantization_version', 4, 2), field('tokenizer.ggml.model', 8, 'llama'),
+    field('general.quantization_version', 4, 2), field('tokenizer.ggml.model', 8, tokenizer),
     field('tokenizer.ggml.tokens', 9, Buffer.concat([u32(8), u64(3), str('<s>'), str('</s>'), str('hello')]))];
   const tensors = [
     { name: 'token_embd.weight', shape: [256, 4], type, offset: 0 },
@@ -72,6 +72,28 @@ test('additional dense engine families share registry admission without admittin
     assert.equal(validateGgufManifest(manifest(p)).manifest.model.architecture, architecture);
   }
   assert.throws(() => profile(fixture({ architecture: 'nemotron_h_moe' })), /architecture/);
+});
+
+test('Gemma4 binds its native tokenizer to text-only admission and verified header bytes', async () => {
+  const f = fixture({ architecture: 'gemma4', tokenizer: 'gemma4' });
+  const p = profile(f), admitted = validateGgufManifest(manifest(p));
+  assert.equal(admitted.manifest.model.architecture, 'gemma4');
+  assert.equal(admitted.manifest.model.task, 'text-generation');
+  assert.deepEqual(admitted.manifest.model.modalities, ['text']);
+  await verifyGgufHubWeights(p.model, p.weights, { read: (path, offset, length) => ranged(f)(offset, length) });
+  for (const tokenizer of ['llama', 'gpt2', 'unknown']) {
+    assert.throws(() => profile(fixture({ architecture: 'gemma4', tokenizer })), /tokenizer required for gemma4/);
+  }
+  assert.throws(() => profile(fixture({ tokenizer: 'gemma4' })), /tokenizer required for llama/);
+  const substituted = fixture({ architecture: 'gemma4', tokenizer: 'gemma4', name: 'Different header' });
+  await assert.rejects(verifyGgufHubWeights(p.model, p.weights,
+    { read: (path, offset, length) => ranged(substituted)(offset, length) }), /stored header/);
+});
+
+test('architecture rejection identifies the unsupported family without echoing arbitrary metadata', () => {
+  assert.throws(() => profile(fixture({ architecture: 'future_model' })), /architecture future_model is not admitted/);
+  assert.throws(() => profile(fixture({ architecture: 'untrusted\nmetadata' })),
+    (error) => error.message.includes('architecture (missing or invalid)') && !error.message.includes('\n'));
 });
 
 test('bounded probe grows metadata prefixes without rereading bytes or downloading tensor payloads', async () => {

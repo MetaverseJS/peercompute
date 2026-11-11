@@ -1566,3 +1566,17 @@ November 10: user requested the exact MiMo V2.6 Distill Qwen 9B Abliterated
 Q4_K_M file in the tested-model list and confirmed it runs in PeerCompute.
 Add it to the shared curated catalog with immutable provenance and explicitly
 user-reported validation. No new runtime, default model, Pages release or push.
+
+
+November10 user steering: try a Gemma4 12B variant, preferably abliterated.
+Use pinned TrevorJS Q4_K_M and existing managed llama.cpp runtime; explicit
+Gemma4 architecture/tokenizer admission, normal integrity/resource checks,
+text-only scope and honest native qualification. Internal previews/local commit
+only; no Pages or push. Broader model-search/ONNX discovery changes are proposed
+follow-ups, not automatically included in this compatibility target.
+
+
+November10 additional target: chfm/NSFW-LORA-Qwen-Image-2.1. Record a distinct
+base-pipeline/LoRA integration slice after Gemma qualification. Evaluate pinned
+Rust/Burn WebGPU engine, stream verified artifacts, validate fused MLP target
+mapping/scaling and qualify local+peer outputs. See Qwen image integration plan.

@@ -28,6 +28,7 @@ const FILE_TYPES = new Map([[0, 'f32'], [1, 'f16'], [2, 'q4_0'], [3, 'q4_1'], [7
 const decode = new TextDecoder('utf-8', { fatal: true });
 const hex = (value) => Array.from(value, (byte) => byte.toString(16).padStart(2, '0')).join('');
 const invalid = (message) => new Error(`Unsupported GGUF Hub package: ${message}`);
+const identifier = (value) => typeof value === 'string' && /^[a-z0-9_]{1,64}$/.test(value) ? value : '(missing or invalid)';
 function bound(value, maximum, label, minimum = 0) {
   if (!Number.isSafeInteger(value) || value < minimum || value > maximum) throw invalid(`invalid ${label}`);
   return value;
@@ -102,7 +103,9 @@ export function parseGgufHeader(bytes, { size } = {}) {
     metadata.set(key, value(type, keep));
   }
   const architecture = metadata.get('general.architecture');
-  if (!GGUF_HUB_ARCHITECTURES.includes(architecture)) throw invalid('architecture');
+  if (!GGUF_HUB_ARCHITECTURES.includes(architecture)) {
+    throw invalid(`architecture ${identifier(architecture)} is not admitted by the pinned browser runtime`);
+  }
   if (metadata.has('general.type') && metadata.get('general.type') !== 'model') throw invalid('adapter or non-model GGUF');
   if (/georefine/i.test(metadata.get('general.name') ?? '')) throw invalid('custom GeoRefine model requires catalog review');
   if ((metadata.get('split.count') ?? 1) !== 1 || (metadata.get('split.no') ?? 0) !== 0
@@ -110,9 +113,15 @@ export function parseGgufHeader(bytes, { size } = {}) {
   if (![undefined, 2].includes(metadata.get('general.quantization_version'))) throw invalid('quantization version');
   const fileType = metadata.get('general.file_type');
   if (!FILE_TYPES.has(fileType)) throw invalid('file quantization type');
-  if (!['llama', 'gpt2'].includes(metadata.get('tokenizer.ggml.model'))
+  // Gemma4Unified uses the native Gemma4 tokenizer, not the older Gemma
+  // SentencePiece path. Both are present in pinned llama.cpp 46ca246.
+  const tokenizer = metadata.get('tokenizer.ggml.model');
+  const supportedTokenizer = architecture === 'gemma4' ? tokenizer === 'gemma4' : ['llama', 'gpt2'].includes(tokenizer);
+  if (!supportedTokenizer
       || metadata.get('tokenizer.ggml.tokens')?.element !== 8
-      || !metadata.get('tokenizer.ggml.tokens')?.count) throw invalid('self-contained supported tokenizer required');
+      || !metadata.get('tokenizer.ggml.tokens')?.count) {
+    throw invalid(`self-contained supported tokenizer required for ${architecture}; found ${identifier(tokenizer)}`);
+  }
   const alignment = bound(metadata.get('general.alignment') ?? 32, 4096, 'alignment', 1);
   if (alignment & (alignment - 1)) throw invalid('alignment must be a power of two');
   const names = new Set(), tensorTypes = new Set(), regions = [];

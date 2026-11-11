@@ -2256,3 +2256,34 @@ user confirmed this exact file works in PeerCompute; execution provenance is
 explicitly user-reported, with normal device admission retained. Catalog/runtime
 and model-browser checks pass (103 tests); inference, CubeChat and Earth builds
 pass. Internal previews only; no GitHub Pages build/deploy or push.
+
+
+### November 10 — Gemma 4 12B compatibility target
+
+Add and qualify one pinned abliterated Q4_K_M Gemma4Unified text package through
+the existing managed llama.cpp WebGPU worker. Pinned backend already contains
+its native architecture, tokenizer and chat template handling; application
+admission needs explicit Gemma4 architecture/tokenizer support. Metadata and
+source inspection are not a successful inference claim. Preserve the exact
+revision/digest, bounded header check and normal device admission. Actual load,
+request isolation, cancellation and source-off retained reload are the acceptance
+gates. No Pages publication or push.
+
+Broader discovery follow-up: rank browser exports ahead of training checkpoints,
+provide specific package/architecture/layout rejection reasons and conversion
+suggestions, then resolve supported mixed-precision ONNX modules. Preserve exact
+variant selection beyond the first32GGUF files. These remain proposed work.
+
+
+Next image-backend target: Qwen Image2.1 plus the requested chfm LoRA. This requires
+a separate staged WebGPU diffusion adapter, verified base/LoRA composition and
+artifact-backed streamed weights. It is not a standalone small-model catalog
+addition. See [integration plan](demos/inference/qwen-image21-lora.md).
+
+
+Gemma4 candidate is now available on internal previews:113component checks,
+three consumer builds and exact TLS/catalog/SecretWorkshop checks pass. Full
+native execution remains unverified because both independent download attempts
+were stopped during slow source delivery. Do not mark it browser-tested until
+load, changing/multiturn prompts, cancellation and offline reload pass. Qwen
+Image2.1/LoRA is a documented follow-up with no runnable entry yet.

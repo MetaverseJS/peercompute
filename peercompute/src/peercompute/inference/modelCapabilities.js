@@ -9,7 +9,7 @@ const legacyText = ['qwen2', 'qwen3', 'llama'];
 const extraText = ['phi', 'phi3', 'gemma', 'gemma2', 'gemma3_text', 'mistral', 'granite',
   'starcoder2', 'smollm3', 'olmo', 'olmo2', 'nemotron_h'];
 const vision = ['idefics3', 'smolvlm', 'qwen3_5'];
-const gguf = ['llama', 'qwen2', 'qwen3', 'qwen35', 'gemma', 'gemma2', 'gemma3', 'phi3',
+const gguf = ['llama', 'qwen2', 'qwen3', 'qwen35', 'gemma', 'gemma2', 'gemma3', 'gemma4', 'phi3',
   'phi2', 'granite', 'starcoder2', 'olmo', 'olmo2', 'stablelm', 'nemotron', 'smollm3'];
 const registry = Object.freeze([
   ...[...legacyText, ...extraText, ...vision].map((architecture) => {
