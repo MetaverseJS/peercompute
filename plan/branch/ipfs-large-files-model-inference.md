@@ -1560,3 +1560,9 @@ peer-model/WebGPU out-and-back/wall and moving-owner proof.266focusedtests pass.
 Keep fullnative reload/cancel qualification open after GPUpreflightblockedreruns;
 keep small-model/network failures separate from verified movement and persistence.
 No Pages or push; localcommit only.
+
+
+November 10: user requested the exact MiMo V2.6 Distill Qwen 9B Abliterated
+Q4_K_M file in the tested-model list and confirmed it runs in PeerCompute.
+Add it to the shared curated catalog with immutable provenance and explicitly
+user-reported validation. No new runtime, default model, Pages release or push.

@@ -59,6 +59,14 @@ and arbitrary diffusion pipelines. Anonymous Hub access does not load gated or
 private packages. Catalog inclusion is not a guarantee of model quality, device
 fit or successful execution of every publisher export.
 
+The catalog includes **MiMo V2.6 Distill Qwen 9B Abliterated (Q4_K_M)** from
+[BoldingBuilds](https://huggingface.co/BoldingBuilds/Abliterated-MiMo-V2.6-Distill-Qwen-9B-GGUF),
+using `MiMo-V2.6-Distill-Qwen-9B-Abliterated-Q4_K_M.gguf` (5.24 GiB).
+It was reported working in PeerCompute by a user on November 10, 2026; this is
+a user test, not an independently reproduced hardware qualification. The pinned
+package includes the MIT-declared model card and supports text only through the
+managed GGUF runtime. Normal device checks still apply.
+
 ## Chat, images and voice
 
 **Personal** is the default tab. It has its own draft and conversation history

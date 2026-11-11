@@ -4870,3 +4870,11 @@ refused only554MiB freeGPU, beforebrowser/modelwork. These are notpassingfullcas
 results. Near-localcases expose weak-modelplanning; near-peercases failednetwork
 discovery. Keepfailedreports. Internal5176smoke passes79scriptbytechecks, normalTLS,
 SecretWorkshopNoise and desktop/390px UI. Allownedbrowsers/candidateserver close.
+
+
+### November 10 — MiMo Q4 catalog admission
+
+- `node --test peercompute/tests/unit/ggufCatalog.test.js peercompute/tests/unit/ggufRuntime.test.js peercompute/tests/unit/ggufHubAdmission.test.js peercompute/tests/unit/qwen9bCatalog.test.js peercompute/tests/unit/modelDeviceCompatibility.test.js demos/tests/model-browser.test.js`: **103/103 pass**. The added case exercises trusted manifest admission and rejects wrong weight size, digest, filename and quantization. Existing legacy manifest identity checks pass.
+- Exact upstream GGUF header and complete tensor directory pass the production parser: qwen35, Q4_K_M, 427 tensors, 10,964,088 header bytes, F32/Q4_K/Q6_K tensors. This is bounded file inspection, not a full-weight integrity or execution test.
+- Inference, CubeChat and Earth production builds pass outside docs/. Internal preview smoke checks the catalog result, pinned details, desktop/mobile layout and exact served entry files.
+- Successful execution of this exact Q4 file is **user-reported**, confirmed November 10; device/browser details were not supplied. No independent inference run is claimed. Evidence: `/home/cos/.cache/peercompute-mimo-20261110/`.

@@ -246,3 +246,14 @@ library and other dialogs retain internal scrolling; shared embedded world
 panels are unchanged. Verify root height and composer bounds across viewport
 resizes, focus and modal close as well as the existing internal scroll checks.
 Native phone keyboard/address-bar behavior still requires device confirmation.
+
+
+### November 10 — user-tested MiMo Q4 catalog entry
+
+Add BoldingBuilds/Abliterated-MiMo-V2.6-Distill-Qwen-9B-GGUF at revision
+`036d46331b5ef633654ff516e73973e81c8eca79`, selecting only
+`MiMo-V2.6-Distill-Qwen-9B-Abliterated-Q4_K_M.gguf`. It appears in Catalog
+search and the shared model browser in world demos. The user confirmed successful
+PeerCompute execution; record that attribution separately from independently
+reproduced execution. Preserve MIT card metadata, text-only capabilities and
+normal shader-f16/JSPI/memory64/isolation/device checks. No default model change.

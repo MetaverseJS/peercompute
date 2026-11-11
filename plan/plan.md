@@ -2248,3 +2248,11 @@ Noise pass. Reload persistence/no replay/Resume acknowledgement is verified;
 remaining return-after-reload and live cancel gates stay open because the GPU
 filled before rerun. Small-model plan quality and intermittent remote discovery
 are recorded limitations. No Pages build/deploy/push.
+
+
+November 10 — MiMo V2.6 Distill Qwen 9B Abliterated Q4_K_M added to the shared
+GGUF catalog with a pinned revision, exact weight digest and MIT model card. The
+user confirmed this exact file works in PeerCompute; execution provenance is
+explicitly user-reported, with normal device admission retained. Catalog/runtime
+and model-browser checks pass (103 tests); inference, CubeChat and Earth builds
+pass. Internal previews only; no GitHub Pages build/deploy or push.

@@ -51,6 +51,23 @@ test('GGUF admission distinguishes same-revision precisions and rejects relabell
   assert.throws(() => validateGgufManifest(renamed), /digests/);
 });
 
+test('MiMo Q4 catalog import reaches GGUF admission and rejects another quantization or altered weights', () => {
+  const entry = GGUF_MODEL_CATALOG['mimo-v2.6-distill-qwen-9b-abliterated-q4-k-m-gguf'];
+  const source = manifest(entry);
+  assert.equal(validateGgufManifest(source).weights[0].path,
+    'MiMo-V2.6-Distill-Qwen-9B-Abliterated-Q4_K_M.gguf');
+  for (const [field, value] of [['sha256', '0'.repeat(64)], ['size', 5629105281],
+    ['path', 'MiMo-V2.6-Distill-Qwen-9B-Abliterated-Q8_0.gguf']]) {
+    const altered = structuredClone(source); altered.files[0][field] = value;
+    assert.throws(() => validateGgufManifest(altered), /digests/);
+  }
+  const otherQuant = structuredClone(source); otherQuant.model.dtype = 'q8_0';
+  assert.throws(() => validateGgufManifest(otherQuant), /trusted/);
+  assert.deepEqual(entry.model.modalities, ['text']);
+  assert.equal(entry.license.spdx, 'MIT');
+  assert.equal(entry.totalBytes, entry.files.reduce((sum, file) => sum + file.size, 0));
+});
+
 test('GGUF assets and native options reject arbitrary URLs, CPU-only fallback and child threads', () => {
   assert.deepEqual(validateGgufRuntimeAssets({ wasm: '/runtime/wllama.wasm' }, origin),
     { wasm: 'https://peercompute.test/runtime/wllama.wasm' });
