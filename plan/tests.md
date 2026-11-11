@@ -5056,3 +5056,17 @@ SecretWorkshopNoise and desktop/390px UI. Allownedbrowsers/candidateserver close
   downloads. Mobile466.8MiB catalog entry, task filter and viewport containment
   are checked; full original license texts stay in retained provenance while
   the model detail view displays a concise notice.
+
+
+## November11 complete Pages release
+
+Node24 full15demo build passes; preserve765previoushashedassets and verify23HTML
+hashes unchanged by retention. Release/ports/isolation/MPM/RoadVector71cases and
+resident-objective172cases pass. Staged23routes pass (19general,4nativephysics);
+separate4reducedsoftwarephysics desktop/mobile captures pass. Eleven routes
+authenticate to SecretWorkshop. Owned contexts/privateCube room use persisted
+paused local-only guide; no model downloads or user inference requests. Existing
+Toychest/MPMmobile control overlap and unqualified numerical diagnostics remain.
+Public commit/asset/browser verification follows deployment. Evidence outside
+repo: ~/.cache/peercompute-pages-release-20261111 and
+~/.cache/peercompute-pages-release-audit-20261111.

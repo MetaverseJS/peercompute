@@ -14,6 +14,12 @@ The root node should exist on a domain secured with SSL enabling all executable 
 
 ## Project Goals:
 
+November11 release: full15demo build,71release/172resident tests and23staged
+routes pass. Publishing current source to GitHub Pages, then add owner-requested
+and resident-designed generated3D avatars
+(e.g. become a car or robot). Preserve identity, memories, movement and shared
+chat; reuse managed image/mesh providers and retained CID artifacts.
+
 November11 live authoring chain passes: an owner chat routes through real peer
 Qwen0.8 speech/action decisions, DreamShaper and managed U2NetP+TripoSR to a
 retained 3D chair displayed by both CubeChat peers and restored after reload.

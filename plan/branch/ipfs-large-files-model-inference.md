@@ -1637,3 +1637,11 @@ updates/localcommits remain authorized, Pages/push remain excluded.
   packages trusted for cutouts without a duplicate catalog entry. Preserve source
   and licenses; no color-key fallback. Generated geometry remains coarse/static.
   Internal preview refresh only; no GitHub Pages or push.
+
+
+## November11 release and generated avatar follow-up
+
+User authorized the complete current Pages build/push. After validating and
+publishing that release, add resident self-avatar generation: owner requests
+such as “become a robot” or “design yourself a cool avatar” should produce a
+shared retained cosmetic body, preserving resident identity and behavior.
