@@ -585,3 +585,32 @@ test('motor ticks avoid public terrain queries, preserve visibility admission an
   assert(result.publicReads > 0); assert.equal(result.afterRemoval, 12); assert.equal(result.unseenRejected, true);
   assert.equal(result.roamGroundReads, 0);
 });
+
+test('generated avatars keep the same physics body, motion, picking and identity; reset restores the latest portrait', async t => {
+  const page = await fixture(t);
+  const result = await page.evaluate(async () => {
+    const { encodeGeneratedMesh } = await import('/peercompute/src/peercompute/inference/GeneratedMeshArtifact.js');
+    const artifactCid = 'bafkreihd7nlvbwjkdustvo23a7jo44x6lc26n7pob5bsqtyutvwen26spe';
+    const avatar = { kind: 'generated-mesh', artifactCid };
+    layer.upsert({ ...base, avatar }); const entry = layer.entries.get(base.key), body = entry.body, root = entry.mesh;
+    const mesh = encodeGeneratedMesh({ positions: new Float32Array([-1,0,-1, 1,0,-1, 0,1,1]), indices: new Uint32Array([0,1,2]) });
+    const prepared = await layer.prepareAvatar(mesh); prepared.commit(base.key, { avatar });
+    entry.mesh.updateWorldMatrix(true, true);
+    const active = entry.avatarView, box = new THREE.Box3().setFromObject(active.group);
+    const renderedCid = active.avatar.artifactCid, taggedCid = active.group.userData.residentAvatar.artifactCid;
+    layer.setAppearance(base.key, { width: 1, height: 1, channels: 4, data: new Uint8Array([255,0,0,255]) });
+    const hidden = !entry.baseMaterial.visible && !entry.faceMaterial.visible && !entry.outline.visible;
+    const {x,y} = project([0,3,0]), picked = layer.pick(x,y);
+    let disposed = 0; active.group.traverse(item => item.geometry?.addEventListener('dispose', () => disposed++));
+    layer.setMovement(base.key, 'stationary'); layer.place(entry, [8,3,2]); layer.upsert({ ...base, avatar, name: 'Robot' });
+    const same = entry.body === body && entry.mesh === root && physics.world.bodies.length === 2 && layer.entries.size === 1;
+    layer.clearAvatar(base.key); layer.clearAvatar(base.key);
+    return { same, hidden, picked, renderedCid, taggedCid, minY: box.min.y, extent: box.getSize(new THREE.Vector3()).toArray(), disposed,
+      position: entry.mesh.position.toArray(), restored: entry.baseMaterial.visible && entry.faceMaterial.visible && entry.outline.visible };
+  });
+  assert.equal(result.same, true); assert.equal(result.hidden, true); assert.equal(result.picked, 'local:agent-1');
+  assert.equal(result.renderedCid, 'bafkreihd7nlvbwjkdustvo23a7jo44x6lc26n7pob5bsqtyutvwen26spe');
+  assert.equal(result.taggedCid, result.renderedCid);
+  assert.equal(result.minY, 0); assert.equal(Math.max(...result.extent), 6); assert.equal(result.disposed, 1);
+  assert.deepEqual(result.position, [8,3,2]); assert.equal(result.restored, true);
+});

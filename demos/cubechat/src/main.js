@@ -164,11 +164,13 @@ class CubeChat {
       host = installWorldAgents({
         defaultResident: cubeGuidePreset(`cubechat:${this.currentRoom.roomId}`),
         worldKnowledge: CUBECHAT_GUIDE_FACTS.join(' ') + ' Your owner may ask you to create a 3D object beside your cube. '
+          + 'Your owner may also ask you to become a robot/car or design your own avatar, or return to your original cube. '
           + 'This requires available text-to-image and image-to-3D models. An object exists only after a verified placement receipt.',
         worldId: `cubechat:${this.currentRoom.roomId}`,
         worldLabel: 'CubeChat',
         adapter: layer,
         generatedObjectAdapter: generatedObjectLayer,
+        residentAvatarAdapter: { prepare: (mesh, options) => layer.prepareAvatar(mesh, options), remove: key => layer.clearAvatar(key) },
         getRuntimeOptions: () => ({
           stateManager: this.network.node.getStateManager(),
           networkManager: this.network.node.getNetworkManager()

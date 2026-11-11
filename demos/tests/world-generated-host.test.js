@@ -15,7 +15,7 @@ const css = registerHooks({ load(url, context, next) { return url.endsWith('.css
 const { installWorldAgents } = await import('../shared/agents/WorldAgentHost.js');
 css.deregister();
 
-async function fixture(t) {
+async function fixture(t, { avatar = false } = {}) {
   const db = new IDBFactory(), records = new AgentRecordStore({ name: crypto.randomUUID(), indexedDBImpl: db, keyRange: IDBKeyRange,
     lockManager: { request: async (_name, _options, callback) => callback({}) } }); await records.open();
   const store = new ArtifactStore({ persistent: false }); await store.open();
@@ -30,12 +30,13 @@ async function fixture(t) {
       if (input.task === 'image-to-3d') return state.mesh(input, options);
       if (input.task === 'text-to-image') return { image: imageFixture() };
       if (input.messages?.[0]?.content.includes('Choose optional physical action')) {
-        return { text: JSON.stringify(state.action ? { object: state.action } : { intent: null }) };
+        return { text: JSON.stringify(state.action ? { [avatar ? 'avatar' : 'object']: state.action } : { intent: null }) };
       }
       return { text: 'I will try to make that.', finishReason: 'stop' };
     }, cancel: async () => {} } });
   let networkOptions;
   const host = installWorldAgents({ worldId, worldLabel: 'CubeChat', generatedObjectAdapter: objects,
+    ...(avatar ? { residentAvatarAdapter: sceneAdapter() } : {}),
     runtimeFactory: async () => ({ store, networkReady: true, networkManager: { peerId: 'owner' }, artifactReady: false,
       getAgentController: async () => agents,
       stateManager: { getWorldMemoryStore: () => memory, createWorldMemoryStore: () => memory },
@@ -82,4 +83,20 @@ test('normal chat Cancel interrupts object generation without pausing the reside
   await tick(); assert.equal(cancelled, false); drain.resolve(); await cancel;
   await assert.rejects(pending, { name: 'AbortError' }); assert.equal(f.objects.visible.size, 0);
   const head = await f.agents.get(f.head.agentId); assert.notEqual(head.status, 'paused'); assert.equal(Boolean(head.recoveryRequired), false);
+});
+
+test('owner private chat changes the existing resident avatar and records a verified outcome; visitors cannot do so', async t => {
+  const f = await fixture(t, { avatar: true }), key = `local:${f.head.agentId}`;
+  f.state.action = { name: 'Robot', prompt: 'An isolated copper robot' };
+  const reply = await f.host.send({ key, text: 'Become a robot' });
+  assert.match(reply.text, /Avatar saved: Robot/);
+  const saved = await f.agents.get(f.head.agentId); assert(saved.embodiments[0].avatar);
+  assert.equal(f.objects.visible.size, 0); assert.equal(f.host.getStatus().bodies.length, 1);
+  assert.equal(f.host.getStatus().residentAvatars.rendered, 1);
+  const count = f.calls.length;
+  await f.networkOptions.respond({ agentId: f.head.agentId, prompt: 'Become a car', requesterPeerId: 'visitor' });
+  assert(f.calls.slice(count).every(input => input.task === 'text-generation'));
+  assert.deepEqual((await f.agents.get(f.head.agentId)).embodiments[0].avatar, saved.embodiments[0].avatar);
+  f.state.action = { reset: true }; const reset = await f.host.send({ key, text: 'Go back to your original cube' });
+  assert.match(reset.text, /Avatar saved: original cube/); assert.equal(f.host.getStatus().residentAvatars.rendered, 0);
 });

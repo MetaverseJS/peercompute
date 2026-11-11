@@ -1649,3 +1649,17 @@ shared retained cosmetic body, preserving resident identity and behavior.
 Pages release correction: full builds now share the large asyncify runtimes and
 retain one prior active asset generation, with a mandatory decimal1GB size gate.
 The corrected site is984.7MB; standalone internal builds remain unchanged.
+
+
+November 11: published the complete current demo set at35bec9c5 with bounded
+Pages asset retention/shared immutable WASM. The next authorized feature is
+owner-directed generated CubeChat resident avatars, including creative designs,
+CID-backed persistence/sharing, reset and independently retained clones. Keep
+the existing actor, motor and memory. New avatar work is internal-preview-only
+until separately authorized for publication.
+
+Avatar slice implemented and qualified on internal CubeChat5176: actual peer
+generation, existing neural movement, retained shared geometry, independent
+clones and reset lifecycle. 200 focused regressions plus the 39-case diagnostic
+rerun pass. Native chat-reset provider failure remains recorded separately from
+the passing typed reset. No further Pages deployment or remote push in this slice.

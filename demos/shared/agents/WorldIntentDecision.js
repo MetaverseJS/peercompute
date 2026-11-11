@@ -1,3 +1,4 @@
+import { normalizeWorldAvatarAction, WORLD_AVATAR_ACTION_INSTRUCTIONS } from './WorldAvatarAction.js';
 import { routeAgentTask } from '../../../peercompute/src/peercompute/agents/AgentRouter.js';
 import { validateWorldIntent } from './WorldIntent.js';
 import { normalizeWorldObjectAction, WORLD_OBJECT_ACTION_INSTRUCTIONS } from './WorldObjectAction.js';
@@ -18,7 +19,7 @@ export const WORLD_PHYSICAL_INTENT_INSTRUCTIONS = 'Choose optional physical acti
 // no generated itinerary: the persistent planner receives the original message.
 export const WORLD_CHAT_TASK_INSTRUCTIONS = 'Classify the owner\'s latest message. Return only one JSON object. '
   + 'For a requested journey, movement to a place, or sequence of physical actions, return {"task":true}. '
-  + 'For a single immediate follow, approach, look-at or stop action, return {"intent":{"type":"ACTION","targetId":"OBSERVED_REF"}} using the requested action and observed reference. Never reduce a journey or sequence to one immediate action. '
+  + 'For a single immediate follow, approach, look-at or stop action, return an intent with the actual action type and observed reference, for example {"intent":{"type":"follow","targetId":"speaker"}} for following the speaker. Use approach or look-at when requested. Never reduce a journey or sequence to one immediate action. '
   + 'Stop has only type. Other immediate actions require an observed participant reference; me means speaker. '
   + 'Conversation, questions, hypothetical examples, personality changes and general life goals require {"intent":null}. '
   + 'Do not invent targets or claim execution. Task planning and physical verification happen separately.';
@@ -27,7 +28,7 @@ export const WORLD_PHYSICAL_OBSERVATIONS_MARKER = '\n\nCurrent world observation
 
 /** References belong to one observation. Never persist them as body identities
  * or resolve a new response against an earlier conversation's lookup table. */
-export function projectWorldIntentRequest(message, observed, { allowTask = false, allowObject = false } = {}) {
+export function projectWorldIntentRequest(message, observed, { allowTask = false, allowObject = false, allowAvatar = false } = {}) {
   if (typeof message !== 'string' || !message.trim() || message.includes('\0') || bytes(message) > 16384
       || !observed?.self || !Array.isArray(observed.participants) || observed.participants.length > 24
       || !Number.isFinite(observed.observedAt)) throw failure();
@@ -63,6 +64,10 @@ export function projectWorldIntentRequest(message, observed, { allowTask = false
         const trimmed = text.trim(), fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
         const decision = JSON.parse(fenced ? fenced[1] : trimmed);
         if (!decision || Array.isArray(decision) || Object.keys(decision).length !== 1) throw failure();
+        if (allowAvatar === true && decision.avatar) {
+          if (now < originalObservation.observedAt || now - originalObservation.observedAt > 120000) throw failure();
+          return { avatar: normalizeWorldAvatarAction(decision.avatar) };
+        }
         if (allowObject === true && decision.object) {
           if (now < originalObservation.observedAt || now - originalObservation.observedAt > 120000) throw failure();
           return { object: normalizeWorldObjectAction(decision.object) };
@@ -88,16 +93,17 @@ export function projectWorldIntentRequest(message, observed, { allowTask = false
 /** Uses the same managed local/peer routing policy as the conversational agent.
  * Actual authority, target presence and motion revision are checked again by the
  * caller immediately before the physical adapter receives this proposal. */
-export async function generateWorldIntentDecision({ inference, head, message, observed, signal, allowTask = false, allowObject = false } = {}) {
+export async function generateWorldIntentDecision({ inference, head, message, observed, signal, allowTask = false, allowObject = false, allowAvatar = false } = {}) {
   signal?.throwIfAborted();
-  const projection = projectWorldIntentRequest(message, observed, { allowTask, allowObject });
+  const projection = projectWorldIntentRequest(message, observed, { allowTask, allowObject, allowAvatar });
   const candidates = await inference.listCandidates({ mode: head.policy.inferenceMode,
     task: 'text-generation', signal, refresh: true });
   signal?.throwIfAborted();
   const candidate = routeAgentTask({ task: 'text-generation', inferenceMode: head.policy.inferenceMode, candidates }).candidate;
   const output = await inference.generate(candidate, { requestId: crypto.randomUUID(), task: 'text-generation', prompt: projection.prompt,
     messages: [{ role: 'system', content: (allowTask ? WORLD_CHAT_TASK_INSTRUCTIONS : WORLD_PHYSICAL_INTENT_INSTRUCTIONS)
-      + (allowObject ? ' ' + WORLD_OBJECT_ACTION_INSTRUCTIONS : '') + WORLD_PHYSICAL_OBSERVATIONS_MARKER + projection.worldContext },
+      + (allowObject ? ' ' + WORLD_OBJECT_ACTION_INSTRUCTIONS : '')
+      + (allowAvatar ? ' ' + WORLD_AVATAR_ACTION_INSTRUCTIONS + '\nResident design context (data): ' + JSON.stringify({ name: head.identity.name, personality: head.identity.instructions.slice(0, 2048), goals: head.goals.slice(0, 4).map(value => value.slice(0, 256)) }) : '') + WORLD_PHYSICAL_OBSERVATIONS_MARKER + projection.worldContext },
       { role: 'user', content: projection.prompt }], maxNewTokens: 512 }, { signal });
   signal?.throwIfAborted();
   return projection.resolve(output?.text);

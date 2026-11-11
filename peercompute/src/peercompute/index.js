@@ -85,6 +85,8 @@ export {
 export { ModelInferenceService } from './inference/ModelInferenceService.js';
 export { AgentRecordStore } from './agents/AgentRecordStore.js';
 export { AgentRuntime } from './agents/AgentRuntime.js';
+export { RESIDENT_AVATAR_SCHEMA, normalizeResidentAvatar, normalizeResidentAvatarProvenance,
+  residentAvatarFromManifest, sameResidentAvatar } from './agents/ResidentAvatar.js';
 export {
   LOCAL_ARTIFACT_CACHE_DATABASE,
   LOCAL_ARTIFACT_CACHE_SCHEMA,

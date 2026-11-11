@@ -1,6 +1,8 @@
+import { normalizeResidentAvatar } from './ResidentAvatar.js';
 import { agentIdentifier, AGENT_LIMITS } from './AgentContracts.js';
 import { normalizeAgentFace, normalizeWorldPosition, worldAgentText } from './WorldAgentContracts.js';
 
+export const RESIDENT_AVATAR_PROFILE_SCHEMA = 'peercompute.resident-profile.v2';
 export const RESIDENT_PROFILE_SCHEMA = 'peercompute.resident-profile.v1';
 // The retained store is at most 4 MiB; allow bounded identity/template overhead.
 export const RESIDENT_PROFILE_MAX_BYTES = 4.5 * 1024 * 1024;
@@ -42,11 +44,12 @@ function sharedMemory(input, sourceAgentId, worldId, includePrivate) {
 /** An explicit clone template; never an agent export or authority transfer. */
 export function normalizeResidentProfile(input, { worldId, includePrivate = false } = {}) {
   if (typeof includePrivate !== 'boolean') throw new TypeError('Invalid private resident memory permission');
-  if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(key => !fields.has(key))
-      || input.schema !== RESIDENT_PROFILE_SCHEMA || !/^#[a-f0-9]{6}$/i.test(input.color ?? '')) throw new TypeError('Invalid resident profile');
+  if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(key => !fields.has(key) && !(input.schema === RESIDENT_AVATAR_PROFILE_SCHEMA && key === 'avatar'))
+      || ![RESIDENT_PROFILE_SCHEMA, RESIDENT_AVATAR_PROFILE_SCHEMA].includes(input.schema) || !/^#[a-f0-9]{6}$/i.test(input.color ?? '')) throw new TypeError('Invalid resident profile');
   if (!Array.isArray(input.goals) || input.goals.length > 16) throw new TypeError('Invalid resident profile goals');
   if (input.face && Object.keys(input.face).some(key => !['sha256', 'width', 'height', 'channels'].includes(key))) throw new TypeError('Private face fields are not transferable');
-  const profile = { schema: RESIDENT_PROFILE_SCHEMA, sourceAgentId: agentIdentifier(input.sourceAgentId),
+  const profile = { schema: input.schema,
+    ...(input.avatar ? { avatar: normalizeResidentAvatar(input.avatar) } : {}), sourceAgentId: agentIdentifier(input.sourceAgentId),
     name: worldAgentText(input.name, 240, 'profile name'), instructions: prose(input.instructions, 16 * 1024, 'instructions'),
     goals: input.goals.map(goal => prose(goal, 4096, 'goal')), appearancePrompt: prose(input.appearancePrompt ?? '', 2048, 'appearance'),
     color: input.color, ...(input.face ? { face: normalizeAgentFace(input.face) } : {}) };
@@ -77,9 +80,16 @@ export function createResidentProfile(head, worldId, { memories = [] } = {}) {
         who: memory.who, where: memory.where, outcome: memory.outcome, text: memory.text, source: memory.source };
     });
   }
-  return normalizeResidentProfile({ schema: RESIDENT_PROFILE_SCHEMA, sourceAgentId: head.agentId,
+  return normalizeResidentProfile({ schema: binding.avatar ? RESIDENT_AVATAR_PROFILE_SCHEMA : RESIDENT_PROFILE_SCHEMA,
+    ...(binding.avatar ? { avatar: binding.avatar } : {}), sourceAgentId: head.agentId,
     name: head.identity.name, instructions: head.identity.instructions, goals: head.goals,
     appearancePrompt: binding.appearancePrompt ?? '', color: binding.color,
     ...(binding.face ? { face: normalizeAgentFace(binding.face) } : {}), ...(shared ? { memories: shared } : {}) },
   { worldId, includePrivate: binding.shareMemories === true && binding.sharePrivateMemories === true });
+}
+
+/** Old clone peers receive their original schema without a mesh reference. */
+export function legacyResidentProfile(input) {
+  const { avatar, ...profile } = input;
+  return { ...profile, schema: RESIDENT_PROFILE_SCHEMA };
 }

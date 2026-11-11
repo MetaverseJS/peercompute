@@ -1,3 +1,5 @@
+import { prepareGeneratedMeshView } from '../../../shared/world/GeneratedMeshView.js';
+import { normalizeResidentAvatar, sameResidentAvatar } from '../../../../peercompute/src/peercompute/agents/ResidentAvatar.js';
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { WorldResidentMotion } from '../../../shared/agents/WorldResidentMotion.js';
@@ -40,6 +42,7 @@ function normalizeDescriptor(value) {
   if (value.movement !== undefined && !['roam', 'stationary', 'follow'].includes(value.movement)) throw new TypeError('Invalid resident movement preference');
   return { key, agentId, ownerPeerId, name, color: value.color, status: value.status, local: value.local,
     position: normalizeCubeAgentPosition(value.position), caption: value.caption ?? '', shared: value.shared === true,
+    ...(value.avatar ? { avatar: normalizeResidentAvatar(value.avatar) } : {}),
     ...(value.movement !== undefined ? { movement: value.movement } : {}) };
 }
 
@@ -354,6 +357,7 @@ export class CubeAgentLayer {
     if (!previous || previous.name !== descriptor.name || previous.status !== descriptor.status) {
       const label = textSprite(`${descriptor.name}${descriptor.status === 'idle' ? '' : ` · ${descriptor.status}`}`);
       disposeSprite(entry.label); entry.label = label; entry.mesh.add(label);
+      if (entry.avatarView) label.position.y = entry.avatarView.height * 6 / entry.avatarView.extent - 1.5;
     }
     if (!previous || previous.caption !== descriptor.caption) {
       clearTimeout(entry.captionTimer); entry.captionTimer = null;
@@ -396,12 +400,39 @@ export class CubeAgentLayer {
       texture.needsUpdate = true;
       material = new THREE.MeshBasicMaterial({ map: texture });
     }
+    if (material && entry.avatarView) material.visible = false;
     const previous = entry.faceMaterial; entry.faceMaterial = material;
     entry.mesh.material = material
       ? [entry.baseMaterial, entry.baseMaterial, entry.baseMaterial, entry.baseMaterial, material, entry.baseMaterial]
       : entry.baseMaterial;
     previous?.map?.dispose(); previous?.dispose();
     return true;
+  }
+
+  async prepareAvatar(mesh, { signal } = {}) {
+    if (this.closed) throw new Error('Resident renderer closed');
+    const view = await prepareGeneratedMeshView(mesh, { signal });
+    let committed = false;
+    return { dispose: view.dispose, commit: (key, descriptor) => {
+      const entry = this.entries.get(key);
+      if (this.closed || view.released || committed || !entry
+          || !sameResidentAvatar(entry.descriptor.avatar, descriptor.avatar)) throw new Error('Resident avatar changed before display');
+      this.clearAvatar(key);
+      view.group.scale.setScalar(6 / view.extent); view.group.position.y = -HALF_SIZE;
+      view.avatar = normalizeResidentAvatar(descriptor.avatar);
+      view.group.userData.residentAvatar = view.avatar;
+      entry.mesh.add(view.group); entry.avatarView = view;
+      entry.baseMaterial.visible = false; if (entry.faceMaterial) entry.faceMaterial.visible = false;
+      entry.outline.visible = false; entry.label.position.y = view.height * 6 / view.extent - 1.5;
+      committed = true;
+    } };
+  }
+
+  clearAvatar(key) {
+    const entry = this.entries.get(key); if (!entry) return;
+    entry.avatarView?.group.removeFromParent(); entry.avatarView?.dispose(); entry.avatarView = null;
+    entry.baseMaterial.visible = true; if (entry.faceMaterial) entry.faceMaterial.visible = true;
+    entry.outline.visible = true; if (entry.label) entry.label.position.y = 4.5;
   }
 
   pick(clientX, clientY) {
@@ -453,6 +484,7 @@ export class CubeAgentLayer {
   remove(key) {
     const entry = this.entries.get(key);
     if (!entry) return false;
+    this.clearAvatar(key);
     this.motor.clear(key); clearTimeout(entry.captionTimer); this.captions.remove(key); disposeSprite(entry.label);
     entry.mesh.removeFromParent(); entry.faceMaterial?.map?.dispose(); entry.faceMaterial?.dispose();
     entry.baseMaterial.dispose(); entry.outline.material.dispose();

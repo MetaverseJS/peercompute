@@ -637,3 +637,26 @@ pass. No Pages or remote push. Semantic correctness
 of arbitrary plans remains a model-quality question. Each movement leg is bounded
 to160worldunits and six milestones; sampled ground is not a complete world map.
 Earlier guide/profile and network qualifications retain their recorded limitations.
+
+
+### Generated resident avatars — November 11
+
+Owner-private chat may request a car, robot or resident-designed appearance, or
+reset to the original cube. A separate typed action reuses managed text-to-image
+and image-to-3D execution. The retained GLB reference is part of the resident's
+world binding and bounded public directory; render it on the existing body.
+The same identity, motor, Cannon body, voice and conversation remain.
+
+Validate cancellation/supersession, failed-save recovery, remote temporary cache,
+private sharing, immutable clone wrappers, old-profile fallback, same-body picking
+and real two-peer generation/reload. No rigging, animation or vehicle handling
+is implied. New work is internal-preview-only after the authorized Pages release.
+
+Acceptance: 200 focused regressions pass; 39 renderer/lifecycle cases pass again
+after adding actual rendered-CID diagnostics. Real peer MiMo → DreamShaper →
+TripoSR generated a robot and a resident-chosen crystal body. Existing neural
+follow, exact-CID two-peer display, independent clone retention and source-off
+reload pass. Native chat reset hit a remote GGUF session failure; direct typed
+reset, peer replication and clone survival were independently verified. Preserve
+that distinction. Internal HTTPS5176 desktop/mobile, exact assets and authenticated
+SecretWorkshop connection pass. Avatars have not been published to Pages.

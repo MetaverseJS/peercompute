@@ -8,7 +8,7 @@ import { plaintext } from '@libp2p/plaintext';
 import { yamux } from '@libp2p/yamux';
 import { identify } from '@libp2p/identify';
 import { multiaddr } from '@multiformats/multiaddr';
-import { AgentConversationService, AGENT_CONVERSATION_PROTOCOL, AGENT_PROFILE_PROTOCOL } from '../../src/peercompute/agents/AgentConversationService.js';
+import { AgentConversationService, AGENT_CONVERSATION_PROTOCOL, AGENT_PROFILE_PROTOCOL, AGENT_AVATAR_PROFILE_PROTOCOL } from '../../src/peercompute/agents/AgentConversationService.js';
 import { createResidentProfile, RESIDENT_PROFILE_MAX_BYTES } from '../../src/peercompute/agents/ResidentProfile.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
@@ -434,7 +434,7 @@ test('profiles cannot cross plaintext connections and no legacy execution fallba
   await assert.rejects(client.service.requestProfile(owner.node.peerId.toString(), { agentId: 'ada' }), { code: 'ERR_PEER_CONNECTION_DEADLINE' });
   assert.equal(owner.received.length, 0);
   const [modern, legacy] = await fixture(t); profilePeers(modern, legacy); legacy.agents = [{ ...body(), cloneable: true }];
-  await legacy.node.unhandle(AGENT_PROFILE_PROTOCOL);
+  await legacy.node.unhandle(AGENT_PROFILE_PROTOCOL); await legacy.node.unhandle(AGENT_AVATAR_PROFILE_PROTOCOL);
   await assert.rejects(modern.service.requestProfile(legacy.node.peerId.toString(), { agentId: 'ada' }), { code: 'ERR_AGENT_UNREACHABLE' });
   assert.equal(legacy.received.length, 0);
 });
@@ -537,7 +537,7 @@ test('malformed credit, cancelled credit wait and profile deadline terminate wit
 
 test('v2 receiver rejects oversized declarations, malformed chunks and corrupted profile digests', { timeout: 15000 }, async t => {
   const [client, owner] = await fixture(t); profilePeers(client, owner);
-  await owner.node.unhandle(AGENT_PROFILE_PROTOCOL);
+  await owner.node.unhandle(AGENT_PROFILE_PROTOCOL); await owner.node.unhandle(AGENT_AVATAR_PROFILE_PROTOCOL);
   const profile = createResidentProfile(profileHead(), 'earthgrid:global'), payload = new TextEncoder().encode(JSON.stringify(profile));
   for (const fault of ['oversize', 'chunk', 'digest']) {
     await owner.node.handle(AGENT_PROFILE_PROTOCOL, async (stream) => {
@@ -562,7 +562,7 @@ test('v2 receiver rejects oversized declarations, malformed chunks and corrupted
 
 test('v2 profile transfers never downgrade to a legacy eight-memory profile endpoint', { timeout: 15000 }, async t => {
   const [client, owner] = await fixture(t); profilePeers(client, owner);
-  await owner.node.unhandle(AGENT_PROFILE_PROTOCOL); let legacyCalls = 0;
+  await owner.node.unhandle(AGENT_PROFILE_PROTOCOL); await owner.node.unhandle(AGENT_AVATAR_PROFILE_PROTOCOL); let legacyCalls = 0;
   await owner.node.handle('/peercompute/world-agent-profiles/1.0.0', stream => { legacyCalls++; stream.abort(new Error('Legacy must not run')); });
   await assert.rejects(client.service.requestProfile(owner.node.peerId.toString(), { agentId: 'ada' }), { code: 'ERR_AGENT_UNREACHABLE' });
   assert.equal(legacyCalls, 0);
@@ -614,4 +614,19 @@ test('actual encrypted profile roundtrip retains identities near the core 64 KiB
   source.goals = Array.from({ length: 10 }, (_, i) => String(i).padEnd(4096, 'g'));
   const expected = createResidentProfile(source, 'earthgrid:global'); owner.getProfile = () => expected;
   assert.deepEqual(await client.service.requestProfile(owner.node.peerId.toString(), { agentId: 'ada' }), expected);
+});
+
+test('avatar profile v3 and real v2 fallback preserve clone permission without sending new fields to old clients', { timeout: 15000 }, async t => {
+  const { CID } = await import('multiformats/cid'); const { sha256: digest } = await import('multiformats/hashes/sha2');
+  const [client, owner] = await fixture(t); profilePeers(client, owner);
+  owner.agents = [{ ...body(), cloneable: true }];
+  const head = profileHead(); head.embodiments[0].avatar = { kind: 'generated-mesh', artifactCid: CID.createV1(0x55, await digest.digest(new Uint8Array([3]))).toString() };
+  owner.getProfile = () => createResidentProfile(head, 'earthgrid:global');
+  const modern = await client.service.requestProfile(owner.node.peerId.toString(), { agentId: 'ada' });
+  assert.deepEqual(modern.avatar, head.embodiments[0].avatar); assert.equal(modern.schema, 'peercompute.resident-profile.v2');
+  await owner.node.unhandle(AGENT_AVATAR_PROFILE_PROTOCOL);
+  const old = await client.service.requestProfile(owner.node.peerId.toString(), { agentId: 'ada' });
+  assert.equal(old.avatar, undefined); assert.equal(old.schema, 'peercompute.resident-profile.v1'); assert.equal(old.name, head.identity.name);
+  owner.agents[0].cloneable = false;
+  await assert.rejects(client.service.requestProfile(owner.node.peerId.toString(), { agentId: 'ada' }), { code: 'ERR_AGENT_NOT_SHARED' });
 });

@@ -400,3 +400,30 @@ Reusable components are `AgentRecordStore.ensureDefault`,
 only supplies its guide preset, scene observations and native controls. This
 extends the Humunculus identity/memory/skill architecture; it does not train
 weights or implement unrestricted autonomous social errands.
+
+
+### Generated resident avatars
+
+In a private conversation with your own resident, try “Become a robot”, “Change
+your avatar into a car”, or “Choose a cool avatar for yourself and generate it.”
+The resident chooses a design, then uses an available image-generation model and
+an image-to-3D model such as TripoSR. Local-only residents require local models;
+other residents can use compatible peer-hosted models. This does not download
+missing models automatically.
+
+The generated shape replaces the visual on the same resident body. Identity,
+memories, chat, voice and learned movement continue. Its verified GLB is retained
+on the device and shared by CID with room peers when the resident is shared.
+“Return to your original cube” resets the appearance. A failed or cancelled
+generation leaves the previous appearance in place. A failed IndexedDB commit
+keeps the staged mesh for the normal Resume/save recovery path.
+
+Cloning an opted-in resident copies its avatar into an independently retained
+artifact; source resets do not remove the clone's copy. Older clone clients
+receive the original personality/face profile and retain their cube fallback.
+Avatars are coarse static geometry within the existing cube collision bounds;
+a car shape does not add driving physics, and limbs are not animated.
+
+Shared implementation: `WorldMeshGeneration`, `WorldResidentAvatars`,
+`WorldResidentAvatarPresenter`, `ResidentAvatar`, and `GeneratedMeshView`. World
+adapters own rendering; the agent record owns the durable appearance reference.

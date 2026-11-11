@@ -1,8 +1,8 @@
-import { routeAgentTask } from '../../../peercompute/src/peercompute/agents/AgentRouter.js';
+import { generateWorldMesh } from './WorldMeshGeneration.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { validateImageInput } from '../../../peercompute/src/peercompute/inference/modelTask.js';
-import { retainGeneratedMesh, validateGeneratedMesh } from '../../../peercompute/src/peercompute/inference/GeneratedMeshArtifact.js';
+import { retainGeneratedMesh } from '../../../peercompute/src/peercompute/inference/GeneratedMeshArtifact.js';
 import { createWorldGeneratedObjectPresenter } from './WorldGeneratedObjectPresenter.js';
 import { WorldGeneratedObjectNetwork } from './WorldGeneratedObjectNetwork.js';
 import { WORLD_OBJECT_SCHEMA, WORLD_OBJECT_LIMITS, normalizeWorldObjectAction, normalizeWorldObjectPlacement,
@@ -45,16 +45,6 @@ export function createWorldGeneratedObjects({ runtime, agents, adapter, worldId,
         || !head.embodiments?.some(binding => binding.worldId === worldId)) throw new Error('Resident ownership or settings changed before object placement');
     return head;
   }
-  async function candidate(task, head, signal) {
-    const candidates = await agents.inference.listCandidates({ task, mode: head.policy.inferenceMode, signal });
-    signal.throwIfAborted();
-    try { return routeAgentTask({ task, inferenceMode: head.policy.inferenceMode, candidates }).candidate; }
-    catch (error) {
-      if (error.code !== 'ERR_AGENT_NO_MODEL') throw error;
-      throw new Error(task === 'image-to-3d' ? 'No 3D generation model is available. Load or connect to an image-to-3D model first.'
-        : 'A text-to-image model is needed to create the reference image. Load one locally or connect to a host.');
-    }
-  }
   function generate({ agentId, action, image: sourceImage, requestId = crypto.randomUUID(), expectedRevision, signal: callerSignal } = {}) {
     const proposal = normalizeWorldObjectAction(action);
     const reference = sourceImage ? { ...validateImageInput(sourceImage), data: sourceImage.data.slice() } : null;
@@ -78,20 +68,9 @@ export function createWorldGeneratedObjects({ runtime, agents, adapter, worldId,
       }
       if (local.size >= WORLD_OBJECT_LIMITS.perOwner) throw new Error('This host has reached 32 generated objects in this room');
       const head = await authority(agentId, expectedRevision, signal);
-      const meshCandidate = await candidate('image-to-3d', head, signal);
-      const imageCandidate = reference ? null : await candidate('text-to-image', head, signal);
-      await authority(agentId, expectedRevision, signal);
-      if (!reference) emit({ agentId, status: 'image', message: `Creating a reference image for ${proposal.name}…` });
-      const image = reference ? { image: reference } : await agents.inference.generate(imageCandidate,
-        { requestId: crypto.randomUUID(), task: 'text-to-image',
-          prompt: `${proposal.prompt}. Single isolated object, plain white background, no text.` }, { signal });
-      signal.throwIfAborted(); if (!image?.image) throw new Error('The image model returned no reference image');
-      await authority(agentId, expectedRevision, signal);
-      emit({ agentId, status: 'mesh', message: `Generating 3D shape for ${proposal.name}…` });
-      const output = await agents.inference.generate(meshCandidate,
-        { requestId: crypto.randomUUID(), task: 'image-to-3d', image: image.image }, { signal });
-      signal.throwIfAborted(); const mesh = validateGeneratedMesh(output?.mesh);
-      await authority(agentId, expectedRevision, signal);
+      const mesh = await generateWorldMesh({ inference: agents.inference, head, description: proposal.prompt,
+        name: proposal.name, image: reference, signal, assertCurrent: () => authority(agentId, expectedRevision, signal),
+        onEvent: event => emit({ agentId, ...event }) });
       const placement = normalizeWorldObjectPlacement({ schema: WORLD_OBJECT_SCHEMA, worldId, ownerHostId, agentId,
         objectId: requestId, requestId, requestHash: fingerprint, name: proposal.name,
         position: adapter.getPlacement(agentId, proposal.size), size: proposal.size });

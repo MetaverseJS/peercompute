@@ -1,3 +1,4 @@
+import { normalizeResidentAvatar } from './ResidentAvatar.js';
 const utf8 = new TextEncoder();
 export const WORLD_AGENT_LIMITS = Object.freeze({ bindings: 8, agents: 16, promptBytes: 16 * 1024, replyBytes: 64 * 1024 });
 
@@ -69,6 +70,7 @@ export function normalizeAgentEmbodiments(input) {
       if (!/^[A-Za-z0-9._:-]+$/.test(attachmentId)) throw new Error('Invalid face attachment');
       result.face = { ...normalizeAgentFace(binding.face), attachmentId };
     }
+    if (binding.avatar !== undefined) result.avatar = normalizeResidentAvatar(binding.avatar);
     return result;
   });
 }
@@ -90,5 +92,6 @@ export function normalizePublicAgent(value) {
     ...(value.sharesMemories === undefined ? {} : { sharesMemories: value.sharesMemories }),
     ...(value.sharesPrivateMemories === undefined ? {} : { sharesPrivateMemories:
       value.cloneable === true && value.sharesMemories === true && value.sharesPrivateMemories }),
+    ...(value.avatar ? { avatar: normalizeResidentAvatar(value.avatar) } : {}),
     ...(value.face ? { face: normalizeAgentFace(value.face) } : {}) };
 }

@@ -5096,3 +5096,31 @@ Known transition: the briefly published9e7f9b4c intermediate build is preserved 
 Git/evidence, but its new superseded URLs are not another retained generation.
 A tab on that intermediate build may need a refresh. Earlier5f3b556a active hashed
 URLs are retained byte-for-byte. Future builds use the tracked release manifest.
+
+
+### Generated resident avatar acceptance — November 11
+
+- Validate strict CID/provenance/GLB bounds before remote transfer or rendering.
+- Exercise actual AgentRuntime + IndexedDB commits, cancellation/supersession,
+  failed-save/Resume recovery, replacement/reset retention and private sharing.
+- Verify one physics body/root keeps movement, picking, labels and current face
+  fallback; reject late visual replacements and dispose resources once.
+- Exercise real encrypted profile v3 transfer and v2 fallback, permission
+  revocation, separately pinned clone wrappers and source-reset independence.
+- Run `node --test demos/tests/world-resident-avatar.test.js` plus generated
+  object, world conversation, Cube renderer, profile/network and host regressions.
+- Native acceptance uses owned private-room browsers and actual available text,
+  image and 3D peer providers. Preserve failed outputs. Check peer render, retained
+  reload without generation, actual neural movement, cloning and reset. No local
+  user model unloading, replacement inference or mock geometry as native proof.
+
+Results: 200 focused regressions pass, followed by 39 renderer/lifecycle cases
+after actual-rendered-CID diagnostics. CubeChat, Earth and inference builds pass.
+Native robot and creative redesign, same-body neural follow, peer display and
+retained reload pass. Remote cloning uses an independent retained manifest.
+Native chat reset failed at the peer GGUF provider; direct typed reset subsequently
+passed in both browsers and the cloned avatar survived reload. The earlier clone
+transfer failure and false-positive harness check are preserved, not counted as
+passes. Final internal preview passes exact TLS/index/assets, desktop/390px layout,
+authenticated SecretWorkshop and zero browser errors or weight downloads.
+Evidence: /home/cos/.cache/peercompute-resident-avatar-20261111/.

@@ -2343,3 +2343,14 @@ retain only the preceding active assets. The corrected site is 984,714,694 bytes
 82 release/helper tests and browser WASM compilation pass. Public verification
 follows publication. Next authorized slice: owner-requested generated resident
 avatars on the existing body, preserving identity, memory and movement.
+
+November 11 publication complete at35bec9c5:119exact public file hashes,23live
+startup routes,11authenticatedSecretWorkshop routes and60visual captures checked.
+Now implementing generated resident avatars: owner chat chooses a design, managed
+image and mesh providers generate it, then a retained CID binds to the existing
+resident body. Preserve movement, identity, memories and chat. Reset, peer display
+and independently retained clones are included. Actual peer-generated robot and
+resident-chosen design, neural follow, exact-CID peer display, retained reload,
+cloning and typed reset pass on the internal preview. A native chat-reset trial
+hit a peer language-model session failure; reset lifecycle was then qualified
+separately. Cosmetic static geometry only; no new vehicle physics or rigs.
