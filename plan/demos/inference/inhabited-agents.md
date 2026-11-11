@@ -1,5 +1,42 @@
 # Conversational inhabitants in CubeChat and EarthGrid
 
+## Future TODO: generated 3D objects and avatars
+
+Requested November 10, 2026; planning only, not implemented or runtime-qualified.
+Add [Tencent Hunyuan3D-2.1](https://huggingface.co/tencent/Hunyuan3D-2.1)
+as a target for CubeChat's reusable Homunculus appearance/body pipeline:
+
+- [ ] Generate a mesh from an uploaded image or a reference image produced from
+  the user's/resident's appearance description; add optional PBR texturing.
+  Route generation to a capable local or peer provider with progress/cancel.
+- [ ] Package geometry and materials as a bounded glTF/GLB artifact; retain it
+  by CID in the artifact store and share it over the PeerCompute/IPFS network.
+- [ ] Preview and place the generated object directly in CubeChat, with other
+  players fetching the same artifact and seeing its authoritative world pose.
+- [ ] Offer an explicit “Use as avatar” action for players and owned residents.
+  Initially replace the visual mesh while preserving the existing body, motor,
+  collisions, identity, nameplate and chat target. Keep the cube as a fallback.
+- [ ] Later qualify rigging, animation/retargeting and physical body changes;
+  a generated mesh alone does not supply a controllable articulated character.
+
+Runtime investigation is a prerequisite. The [upstream implementation](https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1)
+uses Python/PyTorch with CUDA installation instructions and custom rendering
+components; it reports 10 GB VRAM for shape, 21 GB for texture, and 29 GB combined.
+These are upstream requirements, not browser measurements. Evaluate a native GPU
+peer adapter first and investigate WebGPU conversion separately; neither exists
+in the current model router. Check the pinned model/code license before packaging.
+Extend reusable generation routing, artifact loading and world presentation rather
+than putting model-specific execution into CubeChat UI. This builds on the
+[Homunculus body design](../humunculus/humunculus.html#body).
+
+Acceptance when implemented: two peers see the same generated object/avatar;
+reload restores its CID without regeneration; replacement preserves movement,
+collision and conversation; cancellation/provider loss and invalid or oversized
+assets leave the previous body intact. Measure actual generation memory/time
+and mobile rendering cost separately. No implementation or deploy in this note.
+
+## Existing implementation
+
 November 6, 2026. Conversational inhabitant slice implemented and qualified on
 `feature/ipfs-artifacts-webgpu`. This corrects the previous integration: a shared
 model console alone does not make an agent inhabit a world.

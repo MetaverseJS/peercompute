@@ -1,5 +1,16 @@
 ## PeerCompute Test Strategy
 
+### Planned Hunyuan3D / CubeChat assets acceptance — November 10
+
+- Future tests only: pinned generation adapter, resource measurements, progress,
+  cancellation and provider failure; glTF/GLB byte/geometry/texture limits.
+- Two peers render the same CID-backed object/avatar, retained files survive
+  reload, and missing/corrupt assets fall back without losing the prior body.
+- Avatar replacement preserves authoritative movement, collision, ownership,
+  identity, nameplate and chat selection. Check desktop/mobile rendering cost.
+- See [planned slice](demos/inference/inhabited-agents.md#future-todo-generated-3d-objects-and-avatars).
+  No generation, browser compatibility or avatar tests have run for this candidate.
+
 ### Gemma4 media acceptance — November10
 
 - Unit/transport: run `node --test peercompute/tests/unit/gguf*.test.js peercompute/tests/unit/gemma4*.test.js peercompute/tests/unit/inferenceRouter.test.js peercompute/tests/unit/peerInference*.test.js peercompute/tests/unit/peerMultimodalInference.test.js peercompute/tests/unit/modelConsoleRuntime.test.js demos/tests/voice-session.test.js demos/tests/prompt-style.test.js demos/tests/model-derived-import.test.js`.

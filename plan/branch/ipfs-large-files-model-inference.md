@@ -1588,3 +1588,11 @@ v4 peer inference with old-peer compatibility. Native text success is user-repor
 and the exact package was observed online. User is currently running a GPU model;
 no competing model load or full decoder download. CPU/static/transport/UI evidence
 does not close native media execution. See plan/demos/inference/gemma4-media.md.
+
+November 10 additional planning request: support tencent/Hunyuan3D-2.1 for
+generating 3D objects shown directly in CubeChat, potentially as player/resident
+avatars. Record this as a future Homunculus body/appearance slice: generation
+provider qualification, CID-backed mesh/material sharing, world preview/placement,
+then cosmetic avatars preserving existing body control. Rigging and physical
+morphology remain later work. See inhabited-agents.md; no implementation or release
+authorized by this note, and existing Gemma acceptance remains open.

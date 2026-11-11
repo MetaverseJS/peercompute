@@ -14,6 +14,11 @@ The root node should exist on a domain secured with SSL enabling all executable 
 
 ## Project Goals:
 
+Future CubeChat/Homunculus TODO: support Hunyuan3D-2.1 generation, CID-shared 3D
+objects displayed in the world, and optional player/resident avatars. Qualify
+generation runtime separately from browser rendering; start with cosmetic meshes
+on existing bodies. See [scope and acceptance](demos/inference/inhabited-agents.md#future-todo-generated-3d-objects-and-avatars).
+
 November10 Gemma4 native media slice: add a separate pinned image/audio package
 that reuses the saved Q4 decoder, derives a small verified companion from exact
 source ranges, and runs through the existing managed GGUF worker. Capability
