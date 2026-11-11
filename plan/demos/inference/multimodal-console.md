@@ -462,3 +462,17 @@ public prompt/result publication for that conversation; incoming Global events
 remain bound to their own feed even while Personal is selected. Initial Personal
 model context must never be reused by a later Global turn. This supersedes the
 previous default-Global paragraph; peer transport and media behavior are unchanged.
+# November10: native Gemma4 image/audio inputs
+
+The shared router now distinguishes an operation from a model's primary task.
+An admitted text-primary package may handle image or audio conversation; a host
+must support every input modality in the request. Native audio uses the separate
+`audio-text-to-text` operation. Standalone ASR/TTS keep their strict contracts.
+Inference v4 preserves requested operations and per-host capabilities, with v3/v2
+fallback for existing tasks. One group cannot borrow another host's capabilities.
+
+Reusable VoiceSession capture returns owned PCM independently of transcription.
+Personal direct-model chat can send PCM and the current question to a native
+audio model. Agents and Global transcribe first; an audio-understanding model
+can provide transcription when ASR has no capacity. Global publishes no raw mic
+audio. Actual Gemma media GPU qualification stays open; see [the media plan](gemma4-media.md).

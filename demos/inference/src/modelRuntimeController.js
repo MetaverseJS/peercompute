@@ -6,6 +6,7 @@ import { validateHubPackage, matchesHubPackage, verifyStoredHubPackage } from '.
 import { createModelPreferences, DEFAULT_MODEL_ID } from './modelPreferences.js';
 import { MODEL_POLICY } from '../../../peercompute/src/peercompute/inference/modelManifest.js';
 import { routeInferenceTask } from '../../../peercompute/src/peercompute/inference/InferenceRouter.js';
+import { inferInferenceTask, supportsInferenceInput } from '../../../peercompute/src/peercompute/inference/InferenceCapabilities.js';
 import { snapshotGenerationInput } from '../../../peercompute/src/peercompute/inference/GenerationInput.js';
 
 function compareModelSizes(left, right) {
@@ -231,7 +232,7 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
   async function generateLocal(options, cid) {
     const model = resident(cid);
     if (!model) throw new Error('Import a model before using local inference');
-    if (options.image && !model.modalities.includes('image')) throw new Error('This model accepts text only');
+    if (!supportsInferenceInput(model, options)) throw new Error('This model cannot handle the requested input');
     if (options.sessionId && options.sessionId !== model.sessionId) throw new Error('The selected local model session changed before dispatch');
     const service = serviceFor(model.manifestCid);
     const state = localStates.get(model.manifestCid) ?? { active: 0, lastIdleAt: now() };
@@ -242,7 +243,7 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
     const request = { manifestCid: model.manifestCid, abort, service };
     localGenerations.add(request);
     try {
-      request.promise = Promise.resolve(service.generate({ ...options, task: model.task, signal }));
+      request.promise = Promise.resolve(service.generate({ ...options, task: inferInferenceTask(options, model.task), signal }));
       return await request.promise;
     } finally { localGenerations.delete(request); if (--localRequests === 0) lastIdleAt = now(); if (--state.active === 0) state.lastIdleAt = now(); }
   }
@@ -455,7 +456,7 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
         modelId: entry.id, ...capabilities(entry.model), runtime: entry.model.runtime, totalBytes: entry.totalBytes,
         description: entry.description ?? '', repository: entry.repository ?? entry.model.repository,
         revision: entry.revision ?? entry.model.revision, license: entry.license, model: entry.model, files: entry.files,
-        dtype: entry.model.dtype, catalog: true,
+        dtype: entry.model.dtype, capabilities: entry.capabilities, catalog: true,
         localAvailability: localAvailability(entry),
         ...(() => { const saved = [...retained.values()].find((item) => item.modelId === entry.id);
           if (saved) return { stored: true, manifestCid: saved.manifestCid };
@@ -710,6 +711,7 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
     async generate(target = 'mixed', options = {}) {
       assertOpen();
       options = snapshotGenerationInput(options);
+      const inputModalities = [...(options.image ? ['image'] : []), ...(options.audio ? ['audio'] : [])];
       const requestId = options.requestId ?? crypto.randomUUID();
       if (requests.has(requestId)) throw new Error('Duplicate inference request ID');
       const abort = new AbortController();
@@ -731,8 +733,8 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
           candidates = runtime.listInferenceTargets();
           let ready = false;
           if (automatic !== 'local') {
-            try { routeInferenceTask({ task: options.task ?? (options.audio ? 'automatic-speech-recognition' : options.image ? 'image-text-to-text' : 'text-generation'),
-              mode: automatic, candidates }); ready = true; }
+            try { routeInferenceTask({ task: inferInferenceTask(options),
+              mode: automatic, candidates, inputModalities }); ready = true; }
             catch (error) { if (error.code !== 'ERR_INFERENCE_NO_MODEL') throw error; }
           }
           if (automatic !== 'local' && !ready) candidates = await refreshCandidates();
@@ -751,10 +753,9 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
           if (!candidates.length) throw new Error('The selected model is no longer available');
         }
         signal.throwIfAborted();
-        const task = options.task ?? (options.audio ? 'automatic-speech-recognition' : options.image ? 'image-text-to-text'
-          : automatic ? 'text-generation' : candidates[0]?.task ?? 'text-generation');
+        const task = inferInferenceTask(options, automatic ? 'text-generation' : candidates[0]?.task);
         if (!automatic && options.image && !candidates[0]?.modalities.includes('image')) throw new Error('This model accepts text only');
-        const { candidate, route } = routeInferenceTask({ task, mode: automatic ?? (candidates[0]?.local ? 'local' : 'peers'), candidates });
+        const { candidate, route } = routeInferenceTask({ task, mode: automatic ?? (candidates[0]?.local ? 'local' : 'peers'), candidates, inputModalities });
         if (options.image && !candidate.modalities.includes('image')) throw new Error('This model accepts text only');
         request.remote = !candidate.local; request.service = candidate.local ? serviceFor(candidate.manifestCid) : null;
         const notifyProgress = options.onProgress;
@@ -764,9 +765,9 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
         };
         onProgress({ type: 'routing', requestId });
         signal.throwIfAborted();
-        const input = { ...options, requestId, signal, onProgress };
+        const input = { ...options, task, requestId, signal, onProgress };
         const result = candidate.local ? await generateLocal(input, candidate.manifestCid)
-          : await peerService.generate(candidate.manifestCid, { ...input, task: candidate.task });
+          : await peerService.generate(candidate.manifestCid, input);
         return { ...result, route: { ...route, ...(result.peerId ? { peerId: result.peerId } : {}) } };
       } finally { requests.delete(requestId); }
     },

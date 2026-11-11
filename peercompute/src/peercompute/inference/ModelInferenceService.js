@@ -124,6 +124,11 @@ export class ModelInferenceService {
           ? await this.artifactStore.getManifest(manifestCid, { signal: operation.controller.signal }) : manifest;
         const validated = this.runtimeDefinition.validateManifest(source);
         entry.manifest = validated.manifest;
+        // A trusted adapter may refine its defaults for a validated package;
+        // untrusted manifest fields never directly become runtime options.
+        entry.runtimeOptions = validated.mediaProfile
+          ? this.runtimeDefinition.validateRuntimeOptions?.(this.runtimeOptions, validated.mediaProfile) ?? this.runtimeOptions
+          : this.runtimeOptions;
         await verifyResidentConfig(this.artifactStore, entry.manifest, operation.controller.signal);
         const estimate = typeof this.resourceEstimate === 'function'
           ? await this.resourceEstimate(entry.manifest, validated) : this.resourceEstimate;
@@ -151,7 +156,7 @@ export class ModelInferenceService {
         const result = await this.computeManager.submitTask({
           id: `${sessionId}-load`, module: this.moduleUrl, exportName: 'handleModelTask',
           data: { command: 'load', sessionId, manifestCid, manifest: entry.manifest,
-            artifactPort: port2, runtimeAssets: this.runtimeAssets, runtimeOptions: this.runtimeOptions,
+            artifactPort: port2, runtimeAssets: this.runtimeAssets, runtimeOptions: entry.runtimeOptions,
             collectGpuEvidence: this.collectGpuEvidence },
           affinityKey: entry.affinityKey, requireWorker: true, transferables: [port2],
           signal: operation.controller.signal, onProgress,
@@ -192,7 +197,7 @@ export class ModelInferenceService {
   }
 
   generate({ requestId = crypto.randomUUID(), sessionId = this.session?.sessionId,
-    messages, prompt, image, audio, maxNewTokens = MODEL_POLICY.maxNewTokens, seed, steps, width, height,
+    task, messages, prompt, image, audio, maxNewTokens = MODEL_POLICY.maxNewTokens, seed, steps, width, height,
     signal, onProgress, onToken } = {}) {
     if (this.closed || this.session?.status !== 'ready' || sessionId !== this.session.sessionId) {
       return Promise.reject(new Error('Requested model is not ready'));
@@ -204,7 +209,7 @@ export class ModelInferenceService {
       validateSessionId(requestId);
       if (audio != null && !this.runtimeDefinition.acceptsAudio) throw new Error('This runtime does not accept audio input');
       if (this.runtimeDefinition.normalizeGenerationInput) {
-        normalized = this.runtimeDefinition.normalizeGenerationInput({ messages, prompt, image, audio, maxNewTokens,
+        normalized = this.runtimeDefinition.normalizeGenerationInput({ task, messages, prompt, image, audio, maxNewTokens,
           seed, steps, width, height }, this.session.manifest);
       } else {
         validateImageInput(image);

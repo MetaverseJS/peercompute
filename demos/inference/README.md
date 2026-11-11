@@ -45,7 +45,7 @@ Runtime support depends on the export, not just its model name:
 | Runtime | Tasks and example candidates |
 | --- | --- |
 | Transformers.js / ONNX | Text and vision: small Qwen, SmolVLM and inspected supported conversions |
-| wllama / llama.cpp GGUF | Text: quantized Qwen and supported standard GGUF packages |
+| wllama / llama.cpp GGUF | Text: quantized Qwen and standard GGUF packages; pinned Gemma4 companion package adds image/audio input |
 | ONNX diffusion | Image generation: pinned Stable Diffusion Turbo and DreamShaper 8 LCM exports |
 | Managed speech workers | Recognition with Moonshine Tiny; synthesis with Supertonic |
 
@@ -71,9 +71,23 @@ The catalog also includes **Gemma 4 12B Uncensored (Q4_K_M)** from
 [TrevorJS](https://huggingface.co/TrevorJS/gemma-4-12B-it-uncensored-GGUF), a
 publisher-described abliterated variant with 6.87 GiB of weights. Its Gemma4
 architecture and tokenizer are admitted by the managed GGUF runtime. This package
-is text-only; image/audio capabilities of its upstream base are not exposed.
-It remains an execution candidate pending the full browser qualification recorded
-in [the model-browser plan](../../plan/demos/inference/model-browser.md).
+is text-only. The separate **Gemma 4 12B Uncensored (Q4_K_M, vision + audio)**
+package reuses those saved decoder bytes and adds a 116.4 MiB companion with
+image/audio projections. It fetches about 99.9 MiB of pinned source tensor ranges
+and constructs the companion locally; it does not download the 22.3 GiB source
+checkpoint. A user confirmed the text package works in PeerCompute on November
+10, 2026; two independent peer text requests also returned correct answers. Independent local
+GPU qualification and actual image/audio execution remain open. Companion reconstruction matches the pinned upstream CPU
+converter byte for byte. See [the media plan](../../plan/demos/inference/gemma4-media.md)
+for evidence and remaining native tests.
+
+To upgrade a saved Gemma text package, unload it, then choose the **vision + audio**
+entry in Browse models. Loading the new entry reuses complete verified decoder
+files. The two packages remain separate stored entries sharing the same decoder;
+deleting one does not delete files retained by the other. Image/audio support is
+advertised only after the native worker confirms both modalities at load time.
+The **Image understanding** and **Audio understanding** filters include this
+package. Gemma produces text; voice replies still require a speech-synthesis model.
 
 [Qwen Image 2.1 with LoRA support](../../plan/demos/inference/qwen-image21-lora.md)
 is a separate planned image backend, not an available catalog model.
@@ -115,13 +129,24 @@ Generated previews are shared in Global and stay out of the public feed in
 Personal. The ear glyph enables
 **Speak replies**. These two output modes are mutually exclusive.
 
-Hold **Talk** to record, then release to transcribe and send. Keyboard users hold
+Hold **Talk** to record, then release to send. Personal direct-model chat sends
+the recording to a capable audio-understanding model when one is available;
+text in Message becomes the question about the recording. Otherwise it transcribes
+first, then sends the text. Agent conversations and Global always use transcription;
+raw microphone audio is not published in Global. A native audio model can provide
+that transcription when no speech-recognition provider has capacity. Keyboard users hold
 Space or Enter on the Talk button. Load speech models through Models, or use
 peers hosting those tasks; voice controls do not download them automatically.
 Recording is limited to 20 seconds. Releasing before startup finishes, losing
 focus or cancelling discards capture. If first-use setup is cancelled, allow
 microphone access if prompted and try another hold. **Stop** cancels the active
 turn and releases owned microphone/playback resources.
+
+Gemma image input uses a bounded 280-token image profile; audio is mono 16 kHz.
+Media consumes the same context budget as text. Old turns can be omitted, and a
+request that still exceeds the native context gets an explicit budget error.
+Native media input requires an updated peer host; older hosts remain available
+for their supported text, vision or speech tasks.
 
 Text generation is bounded to 1,024 output tokens within a 2,048-token context;
 length limits and omitted older context are reported. **Config → Clear

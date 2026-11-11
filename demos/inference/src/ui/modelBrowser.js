@@ -66,7 +66,7 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
     return input;
   }
   select('source', 'Source', [['all', 'All sources'], ['catalog', 'Catalog'], ['stored', 'Stored on this device'], ['peers', 'Peer files'], ['hub', 'Hugging Face search']]);
-  select('task', 'Task', [['all', 'All tasks'], ['text-generation', 'Text and code'], ['image-text-to-text', 'Image understanding'], ['text-to-image', 'Image generation'], ['automatic-speech-recognition', 'Speech recognition'], ['text-to-speech', 'Speech synthesis']]);
+  select('task', 'Task', [['all', 'All tasks'], ['text-generation', 'Text and code'], ['image-text-to-text', 'Image understanding'], ['audio-text-to-text', 'Audio understanding'], ['text-to-image', 'Image generation'], ['automatic-speech-recognition', 'Speech recognition'], ['text-to-speech', 'Speech synthesis']]);
   select('size', 'Package size', [['all', 'Any size'], [String(500 * 1024 ** 2), 'Up to 500 MiB'], [String(1024 ** 3), 'Up to 1 GiB'],
     [String(4 * 1024 ** 3), 'Up to 4 GiB'], [String(8 * 1024 ** 3), 'Up to 8 GiB'], ['large', '8 GiB and larger'], ['unknown', 'Unknown size']]);
   select('precision', 'Precision', [['all', 'All precisions']]);
@@ -331,6 +331,8 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
     const facts = node('dl', undefined, 'pc-browser-facts');
     const addFact = (name, value) => facts.append(node('dt', name), node('dd', value));
     addFact('Task', source.browserSummary && !source.task ? 'Inspect to determine' : modelTask(source));
+    const inputModalities = source.modalities ?? source.model?.modalities;
+    if (Array.isArray(inputModalities)) addFact('Inputs', inputModalities.join(', '));
     addFact('Package', modelBytes(source.totalBytes));
     addFact('Precision', modelPrecision(source) || 'Unknown');
     addFact('License', typeof source.license === 'string' ? source.license : source.license?.spdx ?? source.license?.join?.(', ') ?? 'Not supplied');
@@ -339,6 +341,11 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
     addFact('Estimated RAM', modelBytes(compat.cpuBytes > 0 ? compat.cpuBytes : undefined));
     addFact('Estimated GPU memory', modelBytes(compat.gpuBytes > 0 ? compat.gpuBytes : undefined)); body.append(facts);
     if (typeof source.license?.notice === 'string') body.append(node('p', source.license.notice.slice(0, 1000), 'pc-browser-note'));
+    const execution = source.capabilities ?? source.package?.capabilities;
+    if (typeof execution?.executionReason === 'string') {
+      body.append(node('p', execution.executionReason.slice(0, 1200),
+        execution.executionStatus === 'candidate' ? 'pc-browser-warning' : 'pc-browser-note'));
+    }
     body.append(node('p', source.browserSummary ? 'Search metadata is not a verified runnable package. Inspect its variants before loading.'
       : source.loadable === false ? source.reason || 'This package is not supported by the current runtimes.'
         : compat.reason || (compat.status === 'available' ? 'Required device features are available.' : 'Memory fit is unverified; this browser cannot report free GPU memory.'),

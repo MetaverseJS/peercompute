@@ -162,6 +162,30 @@ test('mixed routes to a busy local queue before peers, while local-only never re
   await f.runtime.dispose();
 });
 
+test('native media operations survive local and peer routing without becoming the primary text task', async () => {
+  const requests = [], native = { ...model, runtime: 'llama.cpp', task: 'text-generation', modalities: ['text', 'image', 'audio'] };
+  const f = fixture({ retained: true, modelInfo: native, hooks: {
+    localGenerate(input) { requests.push({ local: true, input }); return { text: 'Local recording understood.' }; },
+    remoteGenerate(input) { requests.push({ local: false, input }); return { text: 'Peer recording understood.' }; },
+  } });
+  try {
+    await f.controller.initialize(); await f.runtime.loadStoredModel(cid);
+    const audio = { samples: new Float32Array(1600).fill(0.25), sampleRate: 16000 };
+    const image = { width: 1, height: 1, channels: 4, data: new Uint8Array([1, 2, 3, 255]) };
+    await f.runtime.generate('mixed', { prompt: 'What is said?', audio });
+    assert.equal(requests[0].input.task, 'audio-text-to-text'); assert.equal(requests[0].input.audio.samples[0], 0.25);
+    f.peer.hosts = [{ ...descriptor, ...native, hosts: [{ peerId: 'native', busy: false, ...native }] }];
+    await f.runtime.generate(`peer:${cid}`, { task: 'audio-text-to-text', prompt: 'Compare these.', image, audio });
+    assert.equal(requests[1].local, false); assert.equal(requests[1].input.task, 'audio-text-to-text');
+    assert.equal(requests[1].input.image.data[0], 1); assert.equal(requests[1].input.audio.samples.length, 1600);
+    await f.runtime.generate(`peer:${cid}`, { task: 'image-text-to-text', prompt: 'Describe this.', image });
+    assert.equal(requests[2].input.task, 'image-text-to-text');
+    f.peer.hosts[0].hosts[0].modalities = ['text', 'audio'];
+    await assert.rejects(f.runtime.generate(`peer:${cid}`, { task: 'audio-text-to-text', prompt: 'Compare.', audio, image }), /No compatible/);
+    assert.equal(requests.length, 3, 'a group-level claim cannot send images to an audio-only host');
+  } finally { await f.runtime.dispose(); }
+});
+
 test('automatic peer routing excludes models whose every advertised host queue is full', async () => {
   const f = fixture({ multi: true }); await f.controller.initialize();
   f.peer.hosts = [

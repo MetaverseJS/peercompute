@@ -14,6 +14,16 @@ The root node should exist on a domain secured with SSL enabling all executable 
 
 ## Project Goals:
 
+November10 Gemma4 native media slice: add a separate pinned image/audio package
+that reuses the saved Q4 decoder, derives a small verified companion from exact
+source ranges, and runs through the existing managed GGUF worker. Capability
+routing and inference v4 preserve native media operations while retaining v3/v2
+compatibility. Personal Talk can use native audio; agents/Global transcribe first.
+The user reports successful text execution and its exact package is visible on
+the peer network. CPU artifact parity and focused integration tests pass; actual
+Gemma image/audio GPU qualification remains open while the user is testing.
+See [implementation and acceptance](demos/inference/gemma4-media.md). No Pages/push.
+
 November8 README/audit publication complete: reviewed documentation commits are
 on origin/main as c640b991 and b844a376, with17release-documentation checks passing
 and exact reviewed-content verification. Generated Pages assets are unchanged;

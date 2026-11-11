@@ -1,9 +1,23 @@
 import { initializeWllamaModule } from '@wllama/wllama/peercompute-engine.js';
 import { glueSerialize, glueDeserialize } from '@wllama/wllama/peercompute-glue.js';
 import { throwIfAborted } from '../modelManifest.js';
+import { GGUF_MEDIA_PROFILE } from './mediaInput.js';
 
 export const GGUF_NATIVE_READ_BYTES = 4 * 1024 ** 2;
-const MAX_MESSAGE_BYTES = 1024 * 1024;
+const MAX_RESPONSE_BYTES = 1024 * 1024;
+function serializeRequest(name, body) {
+  if (name === 'completion') {
+    if (typeof body?.data_json !== 'string' || new TextEncoder().encode(body.data_json).length > MAX_RESPONSE_BYTES
+        || !Array.isArray(body.files) || body.files.length > GGUF_MEDIA_PROFILE.maximumFiles
+        || body.files.some((file) => !(file instanceof Uint8Array))) throw new Error('Invalid GGUF native media request');
+    const rawBytes = body.files.reduce((sum, file) => sum + file.byteLength, 0);
+    if (rawBytes > GGUF_MEDIA_PROFILE.requestBytes) throw new Error('GGUF native media exceeds its byte budget');
+  }
+  const encoded = glueSerialize(body);
+  const maximum = name === 'completion' ? GGUF_MEDIA_PROFILE.requestBytes : MAX_RESPONSE_BYTES;
+  if (encoded.byteLength > maximum) throw new Error('GGUF native message exceeds its byte budget');
+  return encoded;
+}
 
 /** Copies bounded CID ranges into the native tensor buffer without a whole-file Blob. */
 export function createNativeFileReader({ files, reader, getMemory, getSignal = () => undefined }) {
@@ -102,10 +116,13 @@ export function parseBufferEvidence(line) {
 }
 
 /** Native Wllama engine, instantiated in the caller's existing managed worker. */
-export async function createGgufEngine({ wasmUrl, weights, reader, signal, collectGpuEvidence = false,
+export async function createGgufEngine({ wasmUrl, weights, projector, reader, signal, collectGpuEvidence = false,
   onProgress, onLost, initialize = initializeWllamaModule } = {}) {
   const files = weights.map((file, index) => ({ ...file,
     name: `model-${String(index + 1).padStart(5, '0')}-of-${String(weights.length).padStart(5, '0')}.gguf` }));
+  if (projector && weights.some((file) => file.path === projector.path)) throw new Error('GGUF projector must be separate from text shards');
+  const projectorFile = projector ? { ...projector, name: 'mmproj.gguf' } : undefined;
+  const mountedFiles = projectorFile ? [...files, projectorFile] : files;
   const evidence = { dispatches: 0, submissions: 0, device: null, offload: null, buffers: [], lost: false };
   let activeSignal = signal;
   let fatal;
@@ -141,12 +158,12 @@ export async function createGgufEngine({ wasmUrl, weights, reader, signal, colle
       } catch (error) { device.destroy(); fail(error.message); }
     },
   };
-  const read = createNativeFileReader({ files, reader, getMemory: () => module.wasmMemory.buffer,
+  const read = createNativeFileReader({ files: mountedFiles, reader, getMemory: () => module.wasmMemory.buffer,
     getSignal: () => activeSignal });
   initialize(module, read);
   await ready;
   throwIfAborted(signal);
-  mountVirtualFiles(module, files);
+  mountVirtualFiles(module, mountedFiles);
   const start = module.cwrap('wllama_start', 'string', [], { async: true });
   const malloc = module.cwrap('wllama_malloc', 'bigint', ['bigint', 'number']);
   const invoke = module.cwrap('wllama_action', 'bigint', ['string', 'bigint'], { async: true });
@@ -156,10 +173,10 @@ export async function createGgufEngine({ wasmUrl, weights, reader, signal, colle
     if (fatal) throw fatal;
     if (evidence.lost) throw new Error('GPU device lost; GGUF session is unavailable');
     throwIfAborted(operationSignal);
+    // Reject invalid caller input before quarantining an otherwise healthy session.
+    const encoded = serializeRequest(name, body);
     busy = true; activeSignal = operationSignal;
     try {
-      const encoded = glueSerialize(body);
-      if (encoded.byteLength > MAX_MESSAGE_BYTES) throw new Error('GGUF native message exceeds its byte budget');
       const input = Number(malloc(BigInt(encoded.byteLength), 0));
       const memory = new Uint8Array(module.wasmMemory.buffer);
       if (!Number.isSafeInteger(input) || input <= 0 || input + encoded.length > memory.length) throw new Error('Invalid GGUF input pointer');
@@ -168,7 +185,7 @@ export async function createGgufEngine({ wasmUrl, weights, reader, signal, colle
       if (fatal) throw fatal;
       const resultMemory = module.wasmMemory.buffer;
       const length = new DataView(resultMemory).getUint32(input, true);
-      if (!Number.isSafeInteger(output) || output <= 0 || length > MAX_MESSAGE_BYTES
+      if (!Number.isSafeInteger(output) || output <= 0 || length > MAX_RESPONSE_BYTES
           || output + length > resultMemory.byteLength) throw new Error('Invalid GGUF output buffer');
       return glueDeserialize(new Uint8Array(resultMemory, output, length).slice());
     } catch (error) {
@@ -181,7 +198,7 @@ export async function createGgufEngine({ wasmUrl, weights, reader, signal, colle
   if (!started.success || !evidence.device) throw new Error('GGUF native hardware GPU backend did not initialize');
   throwIfAborted(signal);
   return {
-    files, action, evidence,
+    files, projectorFile, action, evidence,
     async settleGpu() {
       try { await evidence.device.queue.onSubmittedWorkDone(); }
       catch (error) {

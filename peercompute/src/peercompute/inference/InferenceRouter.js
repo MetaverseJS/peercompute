@@ -1,33 +1,28 @@
 import { MODEL_POLICY } from './modelManifest.js';
-
-export const INFERENCE_TASKS = Object.freeze(['text-generation', 'image-text-to-text', 'text-to-image',
-  'automatic-speech-recognition', 'text-to-speech']);
-
-/** Capabilities describe executable adapters, never names or model-card claims. */
-export function supportsTask(candidate, task) {
-  const input = candidate?.modalities, output = candidate?.outputModalities;
-  if (!Array.isArray(input) || !Array.isArray(output) || !INFERENCE_TASKS.includes(task)) return false;
-  if (candidate.task !== task && !(task === 'text-generation' && candidate.task === 'image-text-to-text')) return false;
-  if (task === 'automatic-speech-recognition') return input.includes('audio') && output.includes('text');
-  if (!input.includes('text')) return false;
-  if (task === 'image-text-to-text' && !input.includes('image')) return false;
-  return output.includes(task === 'text-to-image' ? 'image' : task === 'text-to-speech' ? 'audio' : 'text');
-}
+import { INFERENCE_TASKS, supportsTask } from './InferenceCapabilities.js';
+export { INFERENCE_TASKS, supportsTask, inferInferenceTask, supportsInferenceInput } from './InferenceCapabilities.js';
 
 /** Scheduling readiness shared by the composer and the execution router. */
-export function hasInferenceCapacity(candidate) {
+export function hasInferenceCapacity(candidate, task, inputModalities = []) {
   if (candidate?.available !== true || candidate.queueAvailable === false) return false;
+  if (task && Array.isArray(candidate.hosts) && candidate.hosts.length) {
+    return candidate.hosts.some((host) => supportsTask({ ...candidate, ...host }, task)
+      && inputModalities.every((modality) => (host.modalities ?? candidate.modalities)?.includes(modality))
+      && hasInferenceCapacity({ ...host, available: true }));
+  }
   const queued = candidate.queuedRequests ?? 0, capacity = candidate.queueCapacity ?? MODEL_POLICY.maxQueued;
   return Number.isSafeInteger(queued) && queued >= 0 && Number.isSafeInteger(capacity) && capacity >= 0
     && (!candidate.busy || queued < capacity);
 }
 
-export function routeInferenceTask({ task, mode = 'local', candidates = [] } = {}) {
-  if (!INFERENCE_TASKS.includes(task) || !['mixed', 'local', 'peers'].includes(mode) || !Array.isArray(candidates)) {
+export function routeInferenceTask({ task, mode = 'local', candidates = [], inputModalities = [] } = {}) {
+  if (!INFERENCE_TASKS.includes(task) || !['mixed', 'local', 'peers'].includes(mode) || !Array.isArray(candidates)
+      || !Array.isArray(inputModalities) || inputModalities.some((value) => !['text', 'image', 'audio'].includes(value))) {
     throw new Error('Invalid inference routing policy');
   }
   const eligible = candidates.filter((candidate) => {
-    if (!hasInferenceCapacity(candidate) || !supportsTask(candidate, task)
+    if (!hasInferenceCapacity(candidate, task, inputModalities) || !supportsTask(candidate, task)
+        || inputModalities.some((value) => !candidate.modalities.includes(value))
         || typeof candidate.manifestCid !== 'string' || !candidate.manifestCid
         || typeof candidate.key !== 'string' || !candidate.key || typeof candidate.runtime !== 'string'
         || ![true, false].includes(candidate.local)

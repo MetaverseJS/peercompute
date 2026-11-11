@@ -2,6 +2,9 @@ import { normalizeArtifactManifest } from '../../artifacts/ArtifactManifest.js';
 import { GGUF_MODEL_CATALOG } from '../../artifacts/ggufModelCatalog.js';
 import { MODEL_POLICY } from '../modelManifest.js';
 import { validateGgufHubModel } from './hubAdmission.js';
+import { normalizeModelMessages, validateImageInput } from '../modelTask.js';
+import { validatePcm } from '../speech/runtimeDefinition.js';
+import { validateGgufMediaProfile } from './mediaInput.js';
 
 export const GGUF_RUNTIME_VERSION = '3.8.1';
 export const GGUF_CONTEXT_LIMIT = 2048;
@@ -10,12 +13,14 @@ const GiB = 1024 ** 3;
 export function validateGgufManifest(input) {
   const manifest = normalizeArtifactManifest(input);
   const model = manifest.model;
+  const mediaProfile = validateGgufMediaProfile(model);
   const candidates = Object.values(GGUF_MODEL_CATALOG).filter((entry) =>
     entry.model.runtime === 'llama.cpp' && entry.repository === model?.repository
       && entry.revision === model?.revision && entry.model.architecture === model?.architecture
-      && entry.model.task === model?.task && entry.model.dtype === model?.dtype);
+      && entry.model.task === model?.task && entry.model.dtype === model?.dtype
+      && JSON.stringify(entry.model.ggufMedia ?? null) === JSON.stringify(model?.ggufMedia ?? null));
   const trusted = candidates.length === 1 ? candidates[0] : undefined;
-  if (!trusted && model?.gguf) {
+  if (!trusted && model?.gguf && !mediaProfile) {
     const profile = validateGgufHubModel(model, { files: manifest.files });
     // A discovery profile must not override the immutable identity of a file
     // already pinned by the application catalog.
@@ -34,17 +39,27 @@ export function validateGgufManifest(input) {
       || (trusted.model.runtimeVersion !== undefined && model.runtimeVersion !== trusted.model.runtimeVersion)
       || model.dtype !== trusted.model.dtype
       || model.format !== 'GGUF'
-      || model.task !== 'text-generation') throw new Error('GGUF model revision is not in the trusted runtime catalog');
-  const weights = manifest.files.filter((file) => file.path.endsWith('.gguf'));
+      || model.task !== 'text-generation'
+      || (model.modalities !== undefined && JSON.stringify(model.modalities) !== JSON.stringify(trusted.model.modalities))) {
+    throw new Error('GGUF model revision is not in the trusted runtime catalog');
+  }
+  const allWeights = manifest.files.filter((file) => file.path.endsWith('.gguf'));
   const expected = trusted.files.filter((file) => file.path.endsWith('.gguf'));
-  if (!weights.length || weights.length !== expected.length || weights.some((file) =>
+  if (!allWeights.length || allWeights.length !== expected.length || allWeights.some((file) =>
     !expected.some((item) => item.path === file.path && item.size === file.size && item.sha256 === file.sha256))) {
     throw new Error('GGUF weights do not match the pinned catalog digests');
   }
+  if (mediaProfile && (manifest.files.length !== trusted.files.length || trusted.files.some((expectedFile) =>
+    !manifest.files.some((file) => file.path === expectedFile.path && file.size === expectedFile.size && file.sha256 === expectedFile.sha256)))) {
+    throw new Error('GGUF multimodal file closure differs from the pinned catalog');
+  }
+  const projector = mediaProfile ? allWeights.find((file) => file.path === model.ggufMedia.projectorPath) : undefined;
+  const weights = allWeights.filter((file) => file !== projector);
+  if (mediaProfile && (!projector || weights.length !== 1)) throw new Error('GGUF multimodal package requires its pinned projector and text weights');
   const totalBytes = manifest.files.reduce((sum, file) => sum + file.size, 0);
   if (!Number.isSafeInteger(totalBytes) || totalBytes > 16 * GiB) throw new Error('GGUF package exceeds its byte budget');
   const large = weights.reduce((sum, file) => sum + file.size, 0) > 4 * GiB;
-  return { manifest, weights, totalBytes, resourcePolicy: {
+  return { manifest, weights, projector, mediaProfile, totalBytes, resourcePolicy: {
     maxModelBytes: 16 * GiB, minimumCpuBytes: large ? 8 * GiB : 2 * GiB,
     minimumGpuBytes: large ? 16 * GiB : 2 * GiB,
   } };
@@ -63,17 +78,37 @@ export function validateGgufRuntimeAssets(assets, baseUrl = globalThis.location?
   return { wasm: wasm.href };
 }
 
-export function validateGgufRuntimeOptions(options = {}) {
+export function validateGgufRuntimeOptions(options = {}, mediaProfile = null) {
   if (!options || typeof options !== 'object' || Array.isArray(options)
       || Object.keys(options).some((key) => !['n_ctx', 'n_batch', 'n_gpu_layers', 'n_threads'].includes(key))) {
     throw new Error('Unknown GGUF runtime option');
   }
-  const result = { n_ctx: GGUF_CONTEXT_LIMIT, n_batch: 64, n_gpu_layers: 99999, n_threads: 1, ...options };
+  const result = { n_ctx: GGUF_CONTEXT_LIMIT, n_batch: mediaProfile ? mediaProfile.batchTokens : 64,
+    n_gpu_layers: 99999, n_threads: 1, ...options };
+  // Shared services begin with the text profile. Refine its legacy default only
+  // after the exact model manifest has selected the trusted media profile.
+  if (mediaProfile && result.n_batch === 64) result.n_batch = mediaProfile.batchTokens;
   if (!Number.isInteger(result.n_ctx) || result.n_ctx < 64 || result.n_ctx > GGUF_CONTEXT_LIMIT
-      || !Number.isInteger(result.n_batch) || result.n_batch < 1 || result.n_batch > 128
+      || !Number.isInteger(result.n_batch) || result.n_batch < 1 || result.n_batch > (mediaProfile ? mediaProfile.batchTokens : 128)
+      || (mediaProfile && (result.n_batch !== mediaProfile.batchTokens || result.n_ctx !== mediaProfile.contextTokens))
       || !Number.isInteger(result.n_gpu_layers) || result.n_gpu_layers < 1 || result.n_gpu_layers > 99999
       || result.n_threads !== 1) throw new Error('GGUF options exceed the managed GPU runtime bounds');
   return Object.freeze(result);
+}
+
+export function normalizeGgufGenerationInput(input, manifest) {
+  const { mediaProfile } = validateGgufManifest(manifest);
+  const image = validateImageInput(input.image);
+  const audio = input.audio == null ? null : validatePcm(input.audio.samples, input.audio.sampleRate);
+  if ((image || audio) && !mediaProfile) throw new Error('This GGUF adapter currently accepts text only');
+  const maxNewTokens = input.maxNewTokens ?? MODEL_POLICY.maxNewTokens;
+  if (!Number.isInteger(maxNewTokens) || maxNewTokens < 1 || maxNewTokens > MODEL_POLICY.maxNewTokens) {
+    throw new Error('GGUF output exceeds its token budget');
+  }
+  const messages = normalizeModelMessages(audio && input.messages == null && input.prompt == null
+    ? { prompt: 'Transcribe this audio.' } : input);
+  if ((image || audio) && !messages.some((message) => message.role === 'user')) throw new Error('GGUF media needs a current user message');
+  return { messages, ...(image ? { image } : {}), ...(audio ? { audio } : {}), maxNewTokens };
 }
 
 export async function validateGgufCapabilities({ scope = globalThis, gpu = scope.navigator?.gpu } = {}) {
@@ -95,6 +130,7 @@ export const ggufRuntimeDefinition = Object.freeze({
   id: 'llama.cpp', moduleUrl: 'peercompute:gguf-inference',
   validateManifest: validateGgufManifest, validateRuntimeAssets: validateGgufRuntimeAssets,
   validateRuntimeOptions: validateGgufRuntimeOptions,
+  acceptsAudio: true, normalizeGenerationInput: normalizeGgufGenerationInput,
   retainArtifactBridge: true, terminateOnUnload: true,
   validateGenerationInput({ image, maxNewTokens }) {
     if (image) throw new Error('This GGUF adapter currently accepts text only');

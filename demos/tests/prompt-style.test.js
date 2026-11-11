@@ -5,7 +5,7 @@ import { normalizeAgentTask, packAgentContext } from '../../peercompute/src/peer
 import { MODEL_POLICY } from '../../peercompute/src/peercompute/inference/modelManifest.js';
 
 test('concision applies only to opted-in language tasks', () => {
-  for (const task of ['text-generation', 'image-text-to-text']) {
+  for (const task of ['text-generation', 'image-text-to-text', 'audio-text-to-text']) {
     assert.equal(styleLanguagePrompt('Hello', { task, concise: true }), 'Hello\n\nBe concise.');
     assert.equal(styleLanguagePrompt('Hello', { task, concise: false }), 'Hello');
   }

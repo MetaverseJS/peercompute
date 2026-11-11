@@ -1,4 +1,5 @@
-const TASKS = new Set(['text-generation', 'image-text-to-text', 'text-to-image', 'automatic-speech-recognition', 'text-to-speech']);
+import { INFERENCE_TASKS, supportsTask } from '../../../../peercompute/src/peercompute/inference/InferenceCapabilities.js';
+const TASKS = new Set(INFERENCE_TASKS);
 export const knownBytes = (value) => Number.isSafeInteger(value) && value >= 0;
 export function modelBytes(value) {
   if (!knownBytes(value)) return 'Unknown size';
@@ -46,7 +47,12 @@ export function filterBrowserModels(models, filters, getCompatibility, { include
     const origin = source.browserOrigin ?? (source.source === 'stored' ? 'stored' : source.source === 'peers' ? 'peers' : 'catalog');
     if (filters.source !== 'all' && origin !== filters.source && !(filters.source === 'stored' && source.stored === true)) return false;
     const task = modelTask(source), precision = modelPrecision(source);
-    if (filters.task !== 'all' && task !== filters.task && !(pending && task === 'unknown')) return false;
+    const capabilities = { ...source.model, ...source, task,
+      modalities: source.modalities ?? source.model?.modalities,
+      outputModalities: source.outputModalities ?? source.model?.outputModalities
+        ?? [task === 'text-to-image' ? 'image' : task === 'text-to-speech' ? 'audio' : 'text'] };
+    if (filters.task !== 'all' && task !== filters.task && !supportsTask(capabilities, filters.task)
+        && !(pending && task === 'unknown')) return false;
     if (filters.precision !== 'all' && precision !== filters.precision && !(pending && (!precision || precision === 'unknown'))) return false;
     // Hub search owns relevance (including description search). Local sources use AND terms.
     if (origin !== 'hub') {

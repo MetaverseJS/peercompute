@@ -3,6 +3,7 @@ import { QWEN_9B_MODEL_CATALOG } from './qwen9bModelCatalog.js';
 import { TSOTCHKE_MODEL_CATALOG } from './tsotchkeModelCatalog.js';
 import { MIMO_MODEL_CATALOG } from './mimoModelCatalog.js';
 import { GEMMA4_MODEL_CATALOG } from './gemma4ModelCatalog.js';
+import { GEMMA4_MEDIA_MODEL_CATALOG } from './gemma4MediaModelCatalog.js';
 
 // Immutable inputs, not a claim that a browser or a model has passed execution.
 // Preserve the existing 27B manifest metadata/CID when adding its runtime option.
@@ -127,6 +128,7 @@ export const GGUF_MODEL_CATALOG = Object.freeze({
   ...QWEN_9B_MODEL_CATALOG,
   ...MIMO_MODEL_CATALOG,
   ...GEMMA4_MODEL_CATALOG,
+  ...GEMMA4_MEDIA_MODEL_CATALOG,
   ...TSOTCHKE_MODEL_CATALOG,
   ...Object.fromEntries(Object.entries(MODEL_ARTIFACT_CATALOG).map(([id, entry]) => [id, {
     ...entry, status: 'execution-candidate', capabilities,
@@ -137,6 +139,9 @@ export function ggufModelFileUrl(modelId, path) {
   const entry = GGUF_MODEL_CATALOG[modelId];
   const file = entry?.files.find((file) => file.path === path);
   if (!file) throw new Error('Unknown catalog GGUF model file.');
+  if (entry.model.ggufMedia?.projectorPath === path) {
+    throw new Error('This catalog companion is derived locally from pinned source ranges; it has no direct file URL.');
+  }
   const source = file.source ?? { repository: entry.repository, revision: entry.revision, path };
   return `https://huggingface.co/${source.repository}/resolve/${source.revision}/${source.path.split('/').map(encodeURIComponent).join('/')}`;
 }

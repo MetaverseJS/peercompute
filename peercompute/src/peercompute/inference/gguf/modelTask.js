@@ -1,11 +1,11 @@
 import { createGgufArtifactReader } from '../GgufArtifactReader.js';
-import { normalizeModelMessages } from '../modelTask.js';
 import { MODEL_POLICY, abortError, throwIfAborted, validateSessionId } from '../modelManifest.js';
 import { createGgufEngine, GGUF_NATIVE_READ_BYTES } from './engine.js';
 import { verifyGgufHubWeights } from './hubAdmission.js';
 import { fitGgufContext, GGUF_MEASUREMENT_TOKEN_BUDGET } from './contextBudget.js';
-import { GGUF_CONTEXT_LIMIT, GGUF_RUNTIME_VERSION, ggufRuntimeDefinition, validateGgufCapabilities,
-  validateGgufManifest, validateGgufRuntimeAssets, validateGgufRuntimeOptions } from './runtimeDefinition.js';
+import { encodeGgufMedia, projectGgufMedia } from './mediaInput.js';
+import { GGUF_CONTEXT_LIMIT, GGUF_RUNTIME_VERSION, validateGgufCapabilities,
+  normalizeGgufGenerationInput, validateGgufManifest, validateGgufRuntimeAssets, validateGgufRuntimeOptions } from './runtimeDefinition.js';
 
 const byteLength = (text) => new TextEncoder().encode(text).byteLength;
 function resultChunks(response) {
@@ -53,6 +53,7 @@ function status(entry) {
     gpuDispatches: entry.engine?.evidence.dispatches ?? 0, gpuSubmissions: entry.engine?.evidence.submissions ?? 0,
     gpuOffload: entry.engine?.evidence.offload ?? null, runtimeOptions: entry.options,
     effectiveContextTokens: entry.contextTokens ?? null,
+    inputModalities: entry.inputModalities ?? ['text'],
     nativeBuffers: entry.engine?.evidence.buffers ?? [],
     wasmMemoryBytes: entry.engine?.memoryBytes() ?? 0, generatedRequests: entry.generatedRequests,
     artifactReads: entry.reader?.getStats() ?? null };
@@ -66,11 +67,11 @@ export function createGgufTaskRuntime({ loadEngine = createGgufEngine,
     if (entry) throw new Error('GGUF worker already has a resident model');
     const validated = validateGgufManifest(data.manifest);
     const assets = validateGgufRuntimeAssets(data.runtimeAssets, baseUrl);
-    const options = validateGgufRuntimeOptions(data.runtimeOptions);
+    const options = validateGgufRuntimeOptions(data.runtimeOptions, validated.mediaProfile);
     const sessionId = validateSessionId(data.sessionId);
     throwIfAborted(context.signal);
     const current = { sessionId, manifestCid: data.manifestCid, workerId: context.workerId ?? null,
-      manifest: validated.manifest, status: 'loading', options, generatedRequests: 0,
+      manifest: validated.manifest, mediaProfile: validated.mediaProfile, status: 'loading', options, generatedRequests: 0,
       residency: new AbortController(), lost: false };
     entry = current;
     try {
@@ -80,16 +81,19 @@ export function createGgufTaskRuntime({ loadEngine = createGgufEngine,
         signal: current.residency.signal, maxReadBytes: GGUF_NATIVE_READ_BYTES, maxReads: 1 });
       await verifyGgufHubWeights(validated.manifest.model, validated.weights, current.reader, { signal: context.signal });
       throwIfAborted(context.signal);
-      current.engine = await loadEngine({ wasmUrl: assets.wasm, weights: validated.weights,
+      current.engine = await loadEngine({ wasmUrl: assets.wasm, weights: validated.weights, projector: validated.projector,
         reader: current.reader, signal: context.signal, collectGpuEvidence: data.collectGpuEvidence === true,
         onProgress: (event) => context.emitProgress?.({ ...event, sessionId }),
         onLost() { current.lost = true; current.active?.abort('GPU device lost'); },
       });
       throwIfAborted(context.signal);
+      if (validated.mediaProfile && !current.engine.projectorFile) throw new Error('GGUF projector was not mounted');
       const response = await current.engine.action('load', {
         _name: 'load_req', model_paths: current.engine.files.map((file) => `models/${file.name}`),
         use_mmap: false, use_mlock: false, n_ctx_auto: false, ...options,
-        n_ubatch: Math.min(64, options.n_batch), n_parallel: 1, kv_unified: true,
+        n_ubatch: validated.mediaProfile?.batchTokens ?? Math.min(64, options.n_batch), n_parallel: 1, kv_unified: true,
+        ...(validated.mediaProfile ? { mmproj_path: `models/${current.engine.projectorFile.name}`, mmproj_offload: true,
+          image_min_tokens: validated.mediaProfile.imageMinTokens, image_max_tokens: validated.mediaProfile.imageMaxTokens } : {}),
         log_level: 2, warmup: false, ctx_shift: false, cache_idle_slots: false,
         reasoning: false, jinja: true,
       }, context.signal);
@@ -100,6 +104,15 @@ export function createGgufTaskRuntime({ loadEngine = createGgufEngine,
         throw new Error('GGUF native model returned an invalid context capacity');
       }
       current.contextTokens = response.n_ctx;
+      if (validated.mediaProfile) {
+        if (response.has_image_input !== true || response.has_audio_input !== true
+            || response.n_batch !== validated.mediaProfile.batchTokens || response.n_ubatch !== validated.mediaProfile.batchTokens
+            || typeof response.media_marker !== 'string' || !/^<[^\s<>]{1,126}>$/.test(response.media_marker)) {
+          throw new Error('GGUF native runtime did not confirm the required image/audio projector and batch profile');
+        }
+        current.mediaMarker = response.media_marker;
+        current.inputModalities = ['text', 'image', 'audio'];
+      }
       const offload = current.engine.evidence.offload;
       if (!offload || offload.gpuLayers < 1 || offload.gpuLayers !== Math.min(options.n_gpu_layers, offload.totalLayers)) {
         throw new Error('GGUF did not honor the explicitly configured GPU layer offload');
@@ -127,9 +140,12 @@ export function createGgufTaskRuntime({ loadEngine = createGgufEngine,
     }
     if (current.status !== 'ready') throw new Error('GGUF model session is busy');
     const requestId = validateSessionId(data.requestId);
-    const maxNewTokens = data.maxNewTokens ?? MODEL_POLICY.maxNewTokens;
-    ggufRuntimeDefinition.validateGenerationInput({ ...data, maxNewTokens });
-    const messages = normalizeModelMessages(data);
+    const normalized = normalizeGgufGenerationInput(data, current.manifest);
+    const { messages, maxNewTokens } = normalized;
+    throwIfAborted(context.signal);
+    const mediaFiles = encodeGgufMedia(normalized);
+    throwIfAborted(context.signal);
+    projectGgufMedia(messages, mediaFiles, current.mediaMarker);
     const controller = new AbortController();
     const abort = () => controller.abort(context.signal?.reason);
     context.signal?.addEventListener('abort', abort, { once: true });
@@ -143,10 +159,11 @@ export function createGgufTaskRuntime({ loadEngine = createGgufEngine,
       let text = '', inputTokens = null, outputTokens = null, finishReason = 'unknown', measuredBytes = 0;
       try {
         throwIfAborted(controller.signal);
+        const nativeInput = projectGgufMedia(projected, mediaFiles, current.mediaMarker);
         const started = await current.engine.action('completion', { _name: 'cmpl_req', is_chat: true,
-          data_json: JSON.stringify({ messages: projected, stream: !measureOnly,
+          data_json: JSON.stringify({ messages: nativeInput.messages, stream: !measureOnly,
             max_tokens: measureOnly ? GGUF_MEASUREMENT_TOKEN_BUDGET : maxNewTokens,
-            temperature: 0, cache_prompt: false, chat_template_kwargs: { enable_thinking: false } }), files: [],
+            temperature: 0, cache_prompt: false, chat_template_kwargs: { enable_thinking: false } }), files: nativeInput.files,
         }, controller.signal);
         if (!started.success || !Number.isSafeInteger(started.req_id) || started.req_id < 0) throw new Error('GGUF failed to start generation');
         nativeRequest = started.req_id;

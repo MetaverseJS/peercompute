@@ -54,7 +54,7 @@ async function pressTalk(page) {
 }
 const releaseTalk = (page) => page.mouse.up();
 
-async function fixture(t, { width = 390, height = 844 } = {}) {
+async function fixture(t, { width = 390, height = 844, nativeAudio = false, enableGlobalChat = false, asrAvailable = true } = {}) {
   const context = await browser.newContext({ viewport: { width, height } }), page = await context.newPage();
   const errors = [], external = []; page.setDefaultTimeout(5000);
   page.on('pageerror', (error) => errors.push(error.message));
@@ -67,14 +67,16 @@ async function fixture(t, { width = 390, height = 844 } = {}) {
     await context.close(); assert.deepEqual(errors, []); assert.deepEqual(external, []);
   });
   await page.goto(origin + '/__console_voice');
-  await page.evaluate(async () => {
+  await page.evaluate(async ({ nativeAudio, enableGlobalChat, asrAvailable }) => {
     const { mountInferencePanel } = await import('/demos/inference/src/agentPanel.js');
+    const { supportsTask } = await import('/peercompute/src/peercompute/inference/InferenceCapabilities.js');
     window.calls = []; window.control = {}; window.captureActive = false;
     const descriptors = [
       ['chat', 'Fixture reasoning', 'image-text-to-text', ['text', 'image'], ['text']],
-      ['asr', 'Fixture recognition', 'automatic-speech-recognition', ['audio'], ['text']],
+      ...(asrAvailable ? [['asr', 'Fixture recognition', 'automatic-speech-recognition', ['audio'], ['text']]] : []),
       ['tts', 'Fixture speech', 'text-to-speech', ['text'], ['audio']],
       ['image', 'Fixture image', 'text-to-image', ['text'], ['image']],
+      ...(nativeAudio ? [['gemma', 'Fixture native media', 'text-generation', ['text', 'image', 'audio'], ['text']]] : []),
     ].map(([cid, name, task, modalities, outputModalities]) => ({ key: `local:${cid}`, manifestCid: cid, name, task, modalities, outputModalities, local: true, available: true }));
     async function hold(phase, signal) {
       if (control.hold !== phase) return;
@@ -93,10 +95,11 @@ async function fixture(t, { width = 390, height = 844 } = {}) {
       async listStoredModels() { return []; },
       async generate(target, input) {
         const task = input.task;
-        calls.push({ type: 'execute', target, task, requestId: input.requestId, prompt: input.prompt, audio: input.audio?.samples?.length });
+        calls.push({ type: 'execute', target, task, requestId: input.requestId, prompt: input.prompt,
+          messages: input.messages, image: input.image?.data?.length, audio: input.audio?.samples?.length });
         await hold(task, input.signal); input.signal.throwIfAborted();
         if (control.missing === task) throw new Error('No compatible model is loaded for ' + task);
-        const descriptor = descriptors.find((entry) => entry.task === task || (task === 'text-generation' && entry.manifestCid === 'chat'));
+        const descriptor = descriptors.find((entry) => supportsTask(entry, task));
         const route = { local: !target.startsWith('peer:'), target: descriptor.key, manifestCid: descriptor.manifestCid,
           modelName: descriptor.name, task };
         input.onProgress?.({ type: 'routing', route });
@@ -108,6 +111,10 @@ async function fixture(t, { width = 390, height = 844 } = {}) {
       async cancel(requestId) { calls.push({ type: 'cancel-request', requestId }); }, async dispose() { calls.push({ type: 'dispose-runtime' }); },
     };
     window.panel = await mountInferencePanel({ container: document.querySelector('#app'), runtimeFactory: async () => runtime,
+      enableGlobalChat, globalChatFactory: ({ onEvent }) => ({
+        publish(input) { calls.push({ type: 'public', input }); onEvent({ ...input, peerId: 'fixture-peer' }); },
+        async refresh() {}, async close() {},
+      }),
       audioFactory: async () => {
         calls.push({ type: 'create-audio' });
         if (control.hold === 'audio-init') await new Promise((resolve) => { window.releaseAudio = resolve; });
@@ -120,9 +127,52 @@ async function fixture(t, { width = 390, height = 844 } = {}) {
           async stopPlayback() { calls.push({ type: 'play-stop' }); }, async dispose() { calls.push({ type: 'dispose-audio' }); },
         };
       } });
-  });
+  }, { nativeAudio, enableGlobalChat, asrAvailable });
   return page;
 }
+
+test('personal Talk sends PCM plus the current question directly to a native audio model', async (t) => {
+  const page = await fixture(t, { nativeAudio: true });
+  await page.getByPlaceholder('Message…', { exact: true }).fill('What emotion does this speaker convey?');
+  await pressTalk(page);
+  await page.waitForFunction(() => window.captureActive);
+  await releaseTalk(page);
+  await page.waitForFunction(() => window.calls.some((call) => call.task === 'audio-text-to-text'));
+  await page.getByRole('log').getByText('Controlled reasoning reply.', { exact: true }).waitFor();
+  const requests = await page.evaluate(() => calls.filter((call) => call.type === 'execute'));
+  assert.equal(requests.length, 1); assert.equal(requests[0].audio, 1600);
+  assert.equal(requests[0].task, 'audio-text-to-text'); assert.equal(requests[0].target, 'mixed');
+  assert.equal(requests[0].messages.at(-1).content, 'What emotion does this speaker convey?\n\nBe concise.');
+  assert.match(await page.getByRole('log').textContent(), /Voice message \(0.1 seconds\)/);
+  assert.equal(await page.evaluate(() => captureActive), false);
+});
+
+test('native audio responses are not replayed as text-only context on the next question', async (t) => {
+  const page = await fixture(t, { nativeAudio: true });
+  await pressTalk(page); await page.waitForFunction(() => window.captureActive); await releaseTalk(page);
+  await page.getByRole('log').getByText('Controlled reasoning reply.', { exact: true }).waitFor();
+  await page.getByPlaceholder('Message…', { exact: true }).fill('An unrelated written question.');
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  await page.waitForFunction(() => calls.filter((call) => call.type === 'execute').length === 2);
+  const request = await page.evaluate(() => calls.filter((call) => call.type === 'execute').at(-1));
+  assert.equal(request.audio, undefined); assert.equal(request.task, 'text-generation');
+  assert.equal(request.messages.length, 1); assert.match(request.messages[0].content, /unrelated written question/);
+});
+
+test('Global transcribes with native audio when needed and publishes no microphone samples', async (t) => {
+  const page = await fixture(t, { nativeAudio: true, enableGlobalChat: true, asrAvailable: false });
+  await page.getByRole('tab', { name: 'Global', exact: true }).click();
+  await pressTalk(page); await page.waitForFunction(() => window.captureActive); await releaseTalk(page);
+  await page.waitForFunction(() => calls.some((call) => call.type === 'public' && call.input.phase === 'result'));
+  const { requests, published } = await page.evaluate(() => ({
+    requests: calls.filter((call) => call.type === 'execute'), published: calls.filter((call) => call.type === 'public'),
+  }));
+  assert.deepEqual(requests.map((request) => request.task), ['audio-text-to-text', 'text-generation']);
+  assert.match(requests[0].prompt, /Transcribe/); assert.equal(requests[0].audio, 1600);
+  assert.equal(requests[1].audio, undefined);
+  assert.equal(published[0].input.text, 'Controlled reasoning reply.');
+  assert(published.every((event) => event.input.audio === undefined));
+});
 
 test('console defaults Mixed with explicit image and speech opt-ins and no microphone or loads', async (t) => {
   const page = await fixture(t);

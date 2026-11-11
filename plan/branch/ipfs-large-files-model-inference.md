@@ -1580,3 +1580,11 @@ November10 additional target: chfm/NSFW-LORA-Qwen-Image-2.1. Record a distinct
 base-pipeline/LoRA integration slice after Gemma qualification. Evaluate pinned
 Rust/Burn WebGPU engine, stream verified artifacts, validate fused MLP target
 mapping/scaling and qualify local+peer outputs. See Qwen image integration plan.
+
+November10 authorization extends Gemma4 to image/audio input. Preserve the text
+package and normal device/integrity checks; add exact-source projection artifacts,
+native media attestation/preprocessing, capability-aware operations and negotiated
+v4 peer inference with old-peer compatibility. Native text success is user-reported
+and the exact package was observed online. User is currently running a GPU model;
+no competing model load or full decoder download. CPU/static/transport/UI evidence
+does not close native media execution. See plan/demos/inference/gemma4-media.md.

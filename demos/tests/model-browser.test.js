@@ -7,6 +7,17 @@ import { chromium } from 'playwright';
 import { filterBrowserModels, repositoryQuery, safeModelUrl, matchingPeerTargets } from '../inference/src/ui/modelBrowserData.js';
 import { conversionCandidate } from '../inference/src/ui/modelBrowserConversions.js';
 
+test('multimodal conversation packages match image and audio capability filters', () => {
+  const gemma = { key: 'hf:gemma-media', name: 'Gemma media', model: {
+    task: 'text-generation', modalities: ['text', 'image', 'audio'] }, totalBytes: 100 };
+  const filters = { query: '', source: 'all', task: 'image-text-to-text', precision: 'all',
+    size: 'all', compatibility: 'all', sort: 'smallest' };
+  assert.equal(filterBrowserModels([gemma], filters).length, 1);
+  assert.equal(filterBrowserModels([gemma], { ...filters, task: 'audio-text-to-text' }).length, 1);
+  assert.equal(filterBrowserModels([gemma], { ...filters, task: 'text-to-speech' }).length, 0);
+  assert.equal(filterBrowserModels([{ ...gemma, model: { ...gemma.model, modalities: ['text'] } }], filters).length, 0);
+});
+
 let server, browser, origin;
 before(async () => {
   const repo = fileURLToPath(new URL('../../', import.meta.url));

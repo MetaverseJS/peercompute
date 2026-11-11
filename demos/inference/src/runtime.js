@@ -11,6 +11,7 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { collectModelDeviceCapabilities, evaluateModelCompatibility, modelMemoryEstimate } from './modelDeviceCompatibility.js';
 import { createModelMemoryBudgets } from './modelMemoryBudgets.js';
 import { importModelPackage } from './modelLibrary.js';
+import { trustedCatalogSource } from './modelCatalogSources.js';
 import { createModelPreferences } from './modelPreferences.js';
 import { loadInferenceRelayConfig } from './relayConfig.js';
 import { createHuggingFaceClient, huggingFaceFileUrl } from './huggingface/hubClient.js';
@@ -292,16 +293,20 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
         : GGUF_MODEL_CATALOG[modelId] ? ggufModelFileUrl
           : DIFFUSION_MODEL_CATALOG[modelId] ? diffusionModelFileUrl
             : SPEECH_MODEL_CATALOG[modelId] ? (id, path) => speechModelFileUrl(SPEECH_MODEL_CATALOG[id], SPEECH_MODEL_CATALOG[id].files.find((file) => file.path === path)) : modelArtifactFileUrl;
-      return importModelPackage(store, { schema: 'peercompute.artifact.manifest.v1', name: entry.name,
-        files: entry.files, model: entry.model, provenance: { ...entry.provenance, license: entry.license } },
-      (path) => sourceUrl(modelId, path), options);
+      const manifest = { schema: 'peercompute.artifact.manifest.v1', name: entry.name,
+        files: entry.files, model: entry.model, provenance: { ...entry.provenance, license: entry.license } };
+      const trusted = trustedCatalogSource(manifest);
+      return importModelPackage(store, manifest, trusted?.sourceUrl ?? ((path) => sourceUrl(modelId, path)),
+        { ...options, ...(trusted ? { openSource: trusted.openSource } : {}) });
     },
     async importHub(entry, { reuseManifest, ...options } = {}) {
       const manifest = reuseVerifiedHubFiles(validateHubPackage(entry), reuseManifest);
       const availability = runtime.getModelCompatibility(entry);
       if (['checking', 'unavailable'].includes(availability.status)) throw new Error(availability.reason);
+      const trusted = trustedCatalogSource(manifest);
       return importModelPackage(store, manifest,
-        (path) => huggingFaceFileUrl(entry.repository, entry.revision, path), options);
+        trusted?.sourceUrl ?? ((path) => huggingFaceFileUrl(entry.repository, entry.revision, path)),
+        { ...options, ...(trusted ? { openSource: trusted.openSource } : {}) });
     },
     async importPackage(manifest, sourceBaseUrl, { expectedCid, ...options } = {}) {
       manifest = normalizeArtifactManifest(manifest);

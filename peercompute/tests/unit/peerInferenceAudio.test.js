@@ -9,7 +9,7 @@ import { identify } from '@libp2p/identify';
 import { CID } from 'multiformats/cid';
 import { sha256 } from 'multiformats/hashes/sha2';
 import { NetworkManager } from '../../src/peercompute/networkManager/NetworkManager.js';
-import { PEER_INFERENCE_PROTOCOL as V3, PEER_INFERENCE_PROTOCOL_V2 as V2, channel, descriptor, generation,
+import { PEER_INFERENCE_PROTOCOL as CURRENT, PEER_INFERENCE_PROTOCOL_V3 as LEGACY_V3, PEER_INFERENCE_PROTOCOL_V2 as V2, channel, descriptor, generation,
   localState } from '../../src/peercompute/networkManager/inference/protocol.js';
 import { AUDIO_LIMITS, describeAudio, audioMetadata } from '../../src/peercompute/networkManager/inference/audioFrames.js';
 
@@ -77,17 +77,18 @@ test('one real Noise peer advertises multiple independent models and transfers A
   assert.equal(directory.hosts.find((entry) => entry.task === textModel.task).hosts[0].busy, true);
   assert.equal(directory.hosts.find((entry) => entry.task === asrModel.task).hosts[0].busy, false);
   const asr = await requester.service.generate(asrModel.manifestCid, { task: asrModel.task, audio: { samples: pcm, sampleRate: 16000 } });
-  assert.equal(asr.text, 'The fixture is audible.'); assert.equal(asr.protocol, V3); assert.equal(asr.connectionEncryption, '/noise');
+  assert.equal(asr.text, 'The fixture is audible.'); assert.equal(asr.protocol, CURRENT); assert.equal(asr.connectionEncryption, '/noise');
   const tts = await requester.service.generate(ttsModel.manifestCid, { task: ttsModel.task, prompt: 'Speak this fixture.' });
   assert.deepEqual(tts.audio, pcm); assert.equal(tts.sampleRate, 24000); assert.equal(tts.peerId, host.node.peerId.toString());
   assert.equal(host.received.length, 2); assert.equal(requester.service.outbound.size, 0);
   assert.equal(pcm.length * 4 > AUDIO_LIMITS.chunkBytes, true, 'Transfer spans multiple credited frames');
 });
 
-test('v3 client negotiates a genuine v2-only stream and v2 requestors see only legacy compatible hosting', { timeout: 15000 }, async (t) => {
+test('v4 client negotiates a genuine v2-only stream and v2 requestors see only legacy compatible hosting', { timeout: 15000 }, async (t) => {
   const [requester, host] = await fixture(t);
   host.state = { ...empty(), sharedModels: models, hostedModel: textModel, hostedModels: models };
-  await host.node.unhandle(V3);
+  await host.node.unhandle(CURRENT);
+  await host.node.unhandle(LEGACY_V3);
   const directory = await requester.service.refresh();
   assert.equal(directory.hosts.length, 1); assert.equal(directory.models.length, 1);
   assert.equal(directory.hosts[0].hosts[0].protocol, V2);
@@ -115,7 +116,7 @@ test('incorrect audio digest and non-finite PCM never reach the host callback', 
   host.state = { ...empty(), hostedModels: [asrModel] };
   const data = new Float32Array(1600), good = describeAudio(data, 16000, { input: true });
   for (const invalidSample of [false, true]) {
-    const signal = AbortSignal.timeout(3000), stream = await requester.node.getConnections()[0].newStream(V3), io = channel(stream);
+    const signal = AbortSignal.timeout(3000), stream = await requester.node.getConnections()[0].newStream(CURRENT), io = channel(stream);
     const metadata = invalidSample ? good : { ...good, sha256: '0'.repeat(64) };
     await io.write(requester.service._envelope('generate', host.node.peerId.toString(), {
       requestId: `invalid-${invalidSample}`, manifestCid: asrModel.manifestCid, task: asrModel.task, audio: metadata }), signal);
@@ -132,7 +133,7 @@ test('unloading one CID cancels its paused audio upload without disabling other 
   const [requester, host] = await fixture(t);
   host.state = { ...empty(), hostedModels: [asrModel, ttsModel] };
   host.run = async (input) => { host.received.push(input); return { audio: pcm, sampleRate: 24000 }; };
-  const signal = AbortSignal.timeout(3000), stream = await requester.node.getConnections()[0].newStream(V3), io = channel(stream);
+  const signal = AbortSignal.timeout(3000), stream = await requester.node.getConnections()[0].newStream(CURRENT), io = channel(stream);
   await io.write(requester.service._envelope('generate', host.node.peerId.toString(), { requestId: 'paused-upload',
     manifestCid: asrModel.manifestCid, task: asrModel.task, audio: describeAudio(pcm, 16000, { input: true }) }), signal);
   assert.equal((await io.read(signal)).type, 'upload');
@@ -172,9 +173,9 @@ test('corrupted synthesized PCM fails after commitment without running another p
   first.state = { ...empty(), hostedModels: [{ ...ttsModel, idleForMs: 100 }] };
   other.state = { ...empty(), hostedModels: [ttsModel] };
   await requester.service.refresh();
-  await first.node.unhandle(V3);
+  await first.node.unhandle(CURRENT);
   let executions = 0;
-  await first.node.handle(V3, (stream) => {
+  await first.node.handle(CURRENT, (stream) => {
     void (async () => {
       const io = channel(stream), signal = AbortSignal.timeout(3000);
       try {

@@ -88,16 +88,17 @@ export async function mountInferencePanel({ container = document.body, stateMana
     if (['mixed', 'local-only'].includes(key)) return { key, automatic: true, task,
       name: key === 'mixed' ? 'Mixed' : 'Local only', local: key === 'local-only',
       available: targets.some((target) => (key === 'mixed' || target.local) && supportsTask(target, task)),
-      modalities: task === 'image-text-to-text' ? ['text', 'image'] : ['text'],
+      modalities: task === 'image-text-to-text' ? ['text', 'image'] : task === 'audio-text-to-text' ? ['text', 'audio'] : ['text'],
       outputModalities: task === 'text-to-image' ? ['image'] : ['text'] };
     return targets.find((target) => target.key === key);
   };
   // Image capability survives temporary queue saturation; sending uses the
   // same admission rules as execution, including a selected agent's locality.
-  const hasCapacity = (target, task) => {
+  const hasCapacity = (target, task, inputModalities = []) => {
     if (!supportsTask(target, task)) return false;
     return (target.automatic ? targets : [target]).some((model) => (!target.local || model.local)
-      && supportsTask(model, task) && hasInferenceCapacity(model));
+      && supportsTask(model, task) && inputModalities.every((modality) => model.modalities?.includes(modality))
+      && hasInferenceCapacity(model, task, inputModalities));
   };
   const invalidateActions = () => { actions?.invalidate?.(); view.proposed.replaceChildren(); };
   function setStatus(message, { quiet = false } = {}) {
@@ -426,6 +427,12 @@ export async function mountInferencePanel({ container = document.body, stateMana
       if (Number.isSafeInteger(event.loaded) && Number.isSafeInteger(event.totalBytes) && event.loaded >= 0 && event.totalBytes > 0)
         label += ` · ${formatModelBytes(event.loaded)} / ${formatModelBytes(event.totalBytes)}`;
       if (event.retryAttempt) label += ` · Connection interrupted; retry ${event.retryAttempt}/${event.maxRetries} in ${Math.ceil(event.retryDelayMs / 1000)}s`;
+      if (event.preparation) {
+        const { stage, sourceLoaded, sourceTotalBytes } = event.preparation;
+        label = `${stage === 'projector-download' ? 'Fetching' : 'Preparing'} Gemma image/audio companion`;
+        if (Number.isSafeInteger(sourceLoaded) && Number.isSafeInteger(sourceTotalBytes) && sourceTotalBytes > 0)
+          label += ` · ${formatModelBytes(sourceLoaded)} / ${formatModelBytes(sourceTotalBytes)}`;
+      }
     } else if (event.type === 'model-load') label = 'Loading model: ' + (event.stage || event.status || 'initializing GPU')
       + (event.file ? ' · ' + event.file : '');
     else label = {
@@ -1065,16 +1072,23 @@ export async function mountInferencePanel({ container = document.body, stateMana
     const label = routeLabel(event.route ?? (event.type === 'routing' || event.type === 'route' ? event : null));
     if (label) setStatus(`${voiceState.status === 'transcribing' ? 'Speech recognition' : 'Speech'} · ${label}`);
   }
-  async function submit(signal, { text = view.prompt.value.trim(), preserveDraft = false, origin } = {}) {
+  async function submit(signal, { text = view.prompt.value.trim(), preserveDraft = false, origin, audio } = {}) {
       origin ??= { channel: channels?.active ?? 'personal', name: channels?.getName() ?? 'Guest' };
       const publicTurn = origin.channel === 'global' ? { turnId: crypto.randomUUID(), name: origin.name, part: 0 } : null;
-      const target = selectedTarget(), targetKey = target?.key ?? view.target.value;
+      // Global chat publishes a transcript. Raw microphone input remains private
+      // to the selected inference route; it never rides along with public events.
+      if (audio && publicTurn) throw new Error('Transcribe recordings before sending them to Global chat.');
+      const task = audio ? 'audio-text-to-text' : requestTask();
+      const target = selectedTarget(task), targetKey = target?.key ?? view.target.value;
       const agentId = target?.agentId;
-      const task = requestTask(), createsImage = task === 'text-to-image', selectedImage = attachment;
+      const createsImage = task === 'text-to-image', selectedImage = attachment;
+      if (audio && agentId) throw new Error('Transcribe recordings before sending them to an agent.');
       if (createsImage && selectedImage) throw new Error('Remove the attached image or uncheck Generate image.');
       if (!supportsTask(target, task)) throw new Error('No compatible model is available. Load one in Models or choose another target.');
-      if (!hasCapacity(target, task)) throw new Error('Compatible models have no available queue capacity. Wait for capacity or choose another target.');
-      if (selectedImage && !target.modalities?.includes('image')) throw new Error('This model accepts text only. Remove the image or choose an image model.');
+      if (!hasCapacity(target, task, [...(audio ? ['audio'] : []), ...(selectedImage ? ['image'] : [])])) {
+        throw new Error('Compatible models have no available queue capacity. Wait for capacity or choose another target.');
+      }
+      if (selectedImage && !target.automatic && !target.modalities?.includes('image')) throw new Error('This model accepts text only. Remove the image or choose an image model.');
       invalidateActions();
       if (publicTurn && agentId) throw new Error('Saved agents belong to Personal chat.');
       if (agentId) {
@@ -1087,11 +1101,13 @@ export async function mountInferencePanel({ container = document.body, stateMana
       // Requests carry one image. Replaying an earlier image's text-only answer
       // can make a small VLM describe that image instead of the current pixels.
       // Keep the visible transcript; replace model context only after success.
-      const history = selectedImage || agentId ? [] : histories.get(targetKey) ?? [], message = text || 'Describe this image.';
+      const history = selectedImage || audio || agentId ? [] : histories.get(targetKey) ?? [];
+      const message = text || (audio ? 'Listen to the recording and respond to the speaker.' : 'Describe this image.');
       const messages = createsImage ? undefined : [...(contextText || instructions ? [{ role: 'system', content: contextText + '\n' + instructions }] : []),
         ...history.slice(-6), { role: 'user', content: styleLanguagePrompt(message, { task, concise: view.beConcise.checked }) }];
       if (publicTurn) globalChat.publish({ ...publicTurn, phase: 'prompt', text: message, image: selectedImage?.image });
-      else appendMessage(view, 'user', text, { image: selectedImage?.preview });
+      else appendMessage(view, 'user', audio ? `${text ? text + '\n' : ''}Voice message (${(audio.samples.length / audio.sampleRate).toFixed(1)} seconds)` : text,
+        { image: selectedImage?.preview });
       const reply = publicTurn ? document.createElement('p')
         : appendMessage(view, 'assistant', '', { targetName: target.automatic ? 'Choosing model…' : target.name });
       let modelName = target.name;
@@ -1118,7 +1134,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
         const result = agentId ? await agentChat.run(agentId, { signal, task, prompt: message, concise: view.beConcise.checked,
           ...(selectedImage ? { image: selectedImage.image } : {}), maxNewTokens: 1024, ...callbacks })
           : await runtime.generate(targetKey, { requestId, signal, task,
-            ...(createsImage ? { prompt: text } : { messages, image: selectedImage?.image, maxNewTokens: 1024 }), ...callbacks });
+            ...(createsImage ? { prompt: text } : { messages, image: selectedImage?.image, ...(audio ? { audio } : {}), maxNewTokens: 1024 }), ...callbacks });
         if (signal.aborted) throw new DOMException('Generation cancelled', 'AbortError');
         showRoute(result.route);
         if (createsImage) {
@@ -1127,11 +1143,15 @@ export async function mountInferencePanel({ container = document.body, stateMana
         } else {
           if (typeof result.text !== 'string') throw new Error('Model returned an invalid text response');
           reply.textContent = result.text;
-          if (!agentId) {
+          if (!agentId && !audio) {
             history.push({ role: 'user', content: message }, { role: 'assistant', content: result.text });
             while (history.length > 6 || encoder.encode(JSON.stringify(history)).byteLength > 24 * 1024) history.splice(0, 2);
             histories.delete(targetKey); histories.set(targetKey, history);
             if (histories.size > 8) histories.delete(histories.keys().next().value);
+          } else if (audio) {
+            // Raw audio is not retained as conversational context. Avoid a later
+            // answer appearing grounded in a recording the worker no longer has.
+            histories.delete(targetKey);
           }
         }
         if (publicTurn) globalChat.publish({ ...publicTurn, phase: 'result', modelName,
@@ -1191,17 +1211,32 @@ export async function mountInferencePanel({ container = document.body, stateMana
         const key = view.target.value || 'mixed'; voiceAgentId = agentIdFor(key);
         const target = voiceAgentId ? await (await getAgentChat()).speechTarget(voiceAgentId, { signal }) : key;
         const session = await getVoiceSession(signal);
+        const nativeTarget = selectedTarget('audio-text-to-text');
+        const directAudio = origin.channel === 'personal' && !voiceAgentId && !view.generateImage.checked
+          && hasCapacity(nativeTarget, 'audio-text-to-text', ['audio', ...(attachment ? ['image'] : [])]);
+        const speechModels = targets.filter((model) => targetAvailable(model)
+          && (!(target === 'local' || target === 'local-only' || target.startsWith('local:')) || model.local));
+        const transcriptionTask = !speechModels.some((model) => modelSupportsTask(model, 'automatic-speech-recognition')
+          && hasInferenceCapacity(model, 'automatic-speech-recognition'))
+          && speechModels.some((model) => modelSupportsTask(model, 'audio-text-to-text') && hasInferenceCapacity(model, 'audio-text-to-text'))
+          ? 'audio-text-to-text' : 'automatic-speech-recognition';
         let phase, result;
         try {
-          result = await session.record({ target, signal, onProgress: voiceProgress,
+          const captureOptions = { target, signal, onProgress: voiceProgress,
             onState: (state) => { if (state.status !== 'idle') phase = state.status;
-              if (state.recording) hold.captureReady = true; showVoiceState(state, signal); } });
+              if (state.recording) hold.captureReady = true; showVoiceState(state, signal); } };
+          result = directAudio ? await session.capture(captureOptions)
+            : await session.record({ ...captureOptions, transcriptionTask });
         } catch (error) {
           signal.throwIfAborted();
           if (phase === 'transcribing') throw new Error(`${error.message}. Load a speech-recognition model in Models or use a compatible peer.`, { cause: error });
           throw error;
         }
         signal.throwIfAborted();
+        if (directAudio) {
+          await submit(signal, { audio: result, preserveDraft: true, origin });
+          return;
+        }
         if (!result.text?.trim()) throw new Error('No speech recognized. Try again or type a message.');
         await submit(signal, { text: result.text.trim(), preserveDraft: true, origin });
       }).finally(() => {

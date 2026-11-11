@@ -48,7 +48,8 @@ async function completedFileCandidates(store, files, signal) {
 }
 
 /** Hold package retention across files, including gaps between individual writes. */
-export async function importModelPackage(store, entry, sourceUrl, { signal, onProgress, fetchImpl = fetch } = {}) {
+export async function importModelPackage(store, entry, sourceUrl, { signal, onProgress, fetchImpl = fetch,
+  openSource = downloadModelFile } = {}) {
   try {
     const candidates = await completedFileCandidates(store, entry.files, signal);
     return await store.withRetention(async (scopedStore) => {
@@ -68,7 +69,7 @@ export async function importModelPackage(store, entry, sourceUrl, { signal, onPr
         if (!reused) {
           const git = file.gitBlobSha1 ? sha1.create().update(new TextEncoder().encode(`blob ${file.size}\0`)) : null;
           async function* verifiedSource() {
-            for await (const bytes of downloadModelFile(file, sourceUrl, { signal, fetchImpl, onRetry: report })) {
+            for await (const bytes of openSource(file, sourceUrl, { signal, fetchImpl, onRetry: report })) {
               signal?.throwIfAborted();
               git?.update(bytes); loaded += bytes.byteLength;
               yield bytes;

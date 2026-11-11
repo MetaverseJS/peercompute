@@ -1,5 +1,30 @@
 ## PeerCompute Test Strategy
 
+### Gemma4 media acceptance — November10
+
+- Unit/transport: run `node --test peercompute/tests/unit/gguf*.test.js peercompute/tests/unit/gemma4*.test.js peercompute/tests/unit/inferenceRouter.test.js peercompute/tests/unit/peerInference*.test.js peercompute/tests/unit/peerMultimodalInference.test.js peercompute/tests/unit/modelConsoleRuntime.test.js demos/tests/voice-session.test.js demos/tests/prompt-style.test.js demos/tests/model-derived-import.test.js`.
+  Cover exact source/derived digests, decoder reuse, failed import isolation,
+  independent projector mounting, native flags, media ordering on context retries,
+  owned input buffers, v4/v3/v2 negotiation, actual Noise transport, complete-input
+  per-host capability and queue checks, cancellation and legacy speech.
+- Browser fixtures: `node --test demos/tests/console-voice.test.js demos/tests/model-browser.test.js demos/tests/global-chat-session.test.js demos/tests/global-chat-ui.test.js`.
+  Verify direct microphone-to-native-model path, Global transcription without
+  publishing PCM, text/image regressions, phone layout and task filters.
+  Fixtures use owned browsers with GPU disabled.
+- Artifact reference: `scripts/derive-gemma4-projector.mjs` reconstructs from
+  pinned source ranges; compare against an independent pinned llama.cpp CPU
+  conversion. Preserve source-range checks and entire output SHA. Full65536-value
+  BF16 conversion parity was checked against CPU Torch; no model weights in Git.
+- Build inference/CubeChat/Earth to external cache, verify exact internal HTTPS
+  bytes and model detail screenshots, inspect console/network and SecretWorkshop
+  authentication. Preserve assets needed by active sessions. No Pages release.
+- Native acceptance remains separate: see the Gemma media plan and
+  `MODEL_SUPPORT_MEDIA=1` harness mode. Check two distinct known images, known
+  speech, actual managed WebGPU dispatch, context limits, cancel/unload and
+  source-disabled reload; follow with two-browser actual-model media inference.
+  Do not run competing GPU loads while the user is testing. Record native tests
+  as unrun until a complete execution receipt exists.
+
 ### Peer vision discovery and execution — November 7, 2026
 
 - `npm run test:peer-inference` includes connection-recovery ownership tests.

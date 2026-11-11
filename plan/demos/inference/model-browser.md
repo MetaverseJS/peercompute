@@ -287,8 +287,17 @@ should identify adapters and required base pipelines; current SD/LCM admission
 cannot execute this architecture. No runnable entry is exposed prematurely.
 
 
-Gemma4 validation status:113combined checks and three consumer builds pass;
+Initial Gemma4 validation status:113combined checks and three consumer builds pass;
 internal desktop/mobile catalog and authenticated backend checks pass. Full
 weights did not finish downloading in the independent native trial, so catalog
 status remains candidate/unverified. Existing user models were never unloaded
 by automation. Native load/generation/lifecycle qualification stays open.
+
+November10 follow-up: the user confirmed this exact text package is running;
+an owned no-GPU browser observed one available host for the pinned Trevor package.
+Record user-reported execution separately from independent local qualification.
+The new [Gemma media package](gemma4-media.md) adds an exact-source companion while
+preserving the saved text model identity and reusing completed decoder files.
+Filter image/audio understanding by admitted modalities rather than primary task
+alone; show input modalities and candidate qualification notes in model details.
+The media package remains explicitly unverified until real native acceptance.

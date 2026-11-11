@@ -45,6 +45,41 @@ test('explicit capture, stop and ASR use bounded owned PCM and an independent re
   assert.equal(f.calls.at(-1),'capture-clean');await f.session.dispose();
 });
 
+test('capture-only releases the microphone without invoking any model', async () => {
+  const f = fixture();
+  const recording = f.session.capture({ onState: f.onState });
+  await tick(); f.session.stop();
+  const pcm = await recording;
+  assert.equal(pcm.sampleRate, 16000); assert.equal(pcm.samples.length, 1600);
+  assert.deepEqual(f.states, ['requesting-microphone', 'recording', 'idle']);
+  assert.deepEqual(f.requests, []); assert.equal(f.calls.at(-1), 'capture-clean');
+  await f.session.dispose();
+});
+
+test('native transcription preserves local policy and supplies an explicit transcription prompt', async () => {
+  const f = fixture(), requests = [];
+  const session = createVoiceSession({ audio: f.audio, execute: async (target, input) => {
+    requests.push({ target, input }); return { text: 'A clear recording.' };
+  } });
+  const pending = session.record({ target: 'local:gemma', transcriptionTask: 'audio-text-to-text' });
+  await tick(); session.stop();
+  assert.equal((await pending).text, 'A clear recording.');
+  assert.equal(requests[0].target, 'local-only');
+  assert.equal(requests[0].input.task, 'audio-text-to-text');
+  assert.match(requests[0].input.prompt, /Transcribe.*only the transcription/);
+  assert.equal(requests[0].input.audio.samples.length, 1600);
+  await assert.rejects(session.record({ transcriptionTask: 'text-generation' }), /Unsupported/);
+  await session.dispose(); await f.session.dispose();
+});
+
+test('capture-only cancellation prevents a late microphone handoff', async () => {
+  const f = fixture({ holdPermission: true }), controller = new AbortController();
+  const recording = f.session.capture({ signal: controller.signal }); recording.catch(() => {});
+  await tick(); controller.abort(); await assert.rejects(recording, { name: 'AbortError' });
+  assert.equal(f.session.getState().active, false); assert.deepEqual(f.requests, []);
+  assert.equal(f.calls.at(-1), 'capture-clean'); await f.session.dispose();
+});
+
 test('microphone time limit completes recording and an immediate stop is retained during permission',async()=>{
   const early=fixture();const earlyRecording=early.session.record();assert.equal(early.session.stop(),true);
   await earlyRecording;await early.session.dispose();

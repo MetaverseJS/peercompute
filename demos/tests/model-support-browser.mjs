@@ -15,7 +15,14 @@ const repository = process.env.MODEL_SUPPORT_REPO || 'onnx-community/OpenReasoni
 const dtype = process.env.MODEL_SUPPORT_DTYPE || 'q4';
 const selectedVariant = process.env.MODEL_SUPPORT_VARIANT;
 const source = process.env.MODEL_SUPPORT_SOURCE;
+const media = process.env.MODEL_SUPPORT_MEDIA === '1';
+const audioFixturePath = process.env.MODEL_SUPPORT_AUDIO_WAV;
+const expectedAudioText = process.env.MODEL_SUPPORT_AUDIO_EXPECTED;
+if (media && (!audioFixturePath || !expectedAudioText)) {
+  throw new Error('Media qualification requires MODEL_SUPPORT_AUDIO_WAV (mono PCM16 16kHz) and MODEL_SUPPORT_AUDIO_EXPECTED');
+}
 const report = { startedAt: new Date().toISOString(), repository, dtype, selectedVariant, source,
+  media,
   pageErrors: [], consoleErrors: [], requests: [], progress: [], screenshots: [] };
 await mkdir(evidence, { recursive: true }); await mkdir(dataRoot, { recursive: true });
 const persistent = process.env.MODEL_SUPPORT_PROFILE;
@@ -84,6 +91,47 @@ async function generate(prompt, maxNewTokens = 32) {
     messages: Array.isArray(prompt) ? prompt : [{ role: 'user', content: prompt }], maxNewTokens,
   }), { prompt, maxNewTokens }), 300000, 'Generation');
 }
+async function qualifyMedia() {
+  const images = [];
+  for (const [color, rgba] of [['red', [255, 0, 0, 255]], ['blue', [0, 0, 255, 255]]]) {
+    const result = await bounded(page.evaluate(async (rgba) => {
+      const data = new Uint8Array(192 * 192 * 4);
+      for (let offset = 0; offset < data.length; offset += 4) data.set(rgba, offset);
+      return inferencePanel.runtime.generate('local', { task: 'image-text-to-text',
+        prompt: 'What is the single solid color in this image? Reply with only the color.',
+        image: { width: 192, height: 192, channels: 4, data }, maxNewTokens: 32 });
+    }, rgba), 300000, 'Native vision');
+    assert.match(result.text.toLowerCase(), new RegExp(`\\b${color}\\b`));
+    assert(result.gpuDispatches > 0); images.push({ color, result });
+  }
+  assert.notEqual(images[0].result.text, images[1].result.text, 'Changed pixels must reach the model');
+  const wav = await readFile(audioFixturePath);
+  assert.equal(wav.toString('ascii', 0, 4), 'RIFF'); assert.equal(wav.toString('ascii', 8, 12), 'WAVE');
+  let format, samples;
+  for (let at = 12; at + 8 <= wav.length;) {
+    const length = wav.readUInt32LE(at + 4), start = at + 8;
+    assert(start + length <= wav.length, 'WAV chunk is truncated');
+    const tag = wav.toString('ascii', at, at + 4);
+    if (tag === 'fmt ') {
+      assert(length >= 16); format = { encoding: wav.readUInt16LE(start), channels: wav.readUInt16LE(start + 2),
+        sampleRate: wav.readUInt32LE(start + 4), bits: wav.readUInt16LE(start + 14) };
+    }
+    if (tag === 'data') {
+      assert.equal(length % 2, 0); samples = Array.from({ length: length / 2 }, (_, i) => wav.readInt16LE(start + i * 2) / 32768);
+    }
+    at = start + length + length % 2;
+  }
+  assert.deepEqual(format, { encoding: 1, channels: 1, sampleRate: 16000, bits: 16 });
+  assert(samples?.length >= 1600 && samples.length <= 320000, 'Use a 0.1–20 second audio fixture');
+  const audio = await bounded(page.evaluate(async (samples) => inferencePanel.runtime.generate('local', {
+    task: 'audio-text-to-text', prompt: 'Transcribe this recording. Return only the spoken words.',
+    audio: { samples: new Float32Array(samples), sampleRate: 16000 }, maxNewTokens: 128,
+  }), samples), 300000, 'Native audio');
+  const normalized = (text) => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  assert(normalized(audio.text).includes(normalized(expectedAudioText)), 'Audio output must contain the known spoken fixture');
+  assert(audio.gpuDispatches > 0);
+  return { images, audio, expectedAudioText };
+}
 try {
   server = await createServer({ configFile: path.join(repo, 'demos/inference/vite.config.js'), logLevel: 'error',
     server: { port: Number(process.env.MODEL_SUPPORT_PORT || 0), strictPort: true, host: '127.0.0.1', hmr: false }, plugins: [{ name: 'model-support-acceptance', configureServer(vite) {
@@ -98,18 +146,18 @@ try {
     report.conversions = await bounded(page.evaluate((source) => inferencePanel.runtime.findModelConversions(source), source), 120000, 'Conversion lookup');
     assert(report.conversions.items.some((item) => item.repository === repository), 'Source model must discover the selected conversion');
   }
-  report.inspection = await bounded(page.evaluate(async ({ repository, dtype, selectedVariant }) => {
+  report.inspection = await bounded(page.evaluate(async ({ repository, dtype, selectedVariant, media }) => {
     let result = await inferencePanel.runtime.inspectModelHub(repository);
     if (selectedVariant) result = await inferencePanel.runtime.inspectModelHub(
       `https://huggingface.co/${repository}/tree/${result.revision}`, { selectedVariant });
-    const variant = result.variants.find((item) => selectedVariant
-      ? item.filePath === selectedVariant || item.files?.some((file) => file.path === selectedVariant)
-      : item.dtype === dtype);
+    const variant = result.variants.find((item) => (!media || item.model?.ggufMedia)
+      && (selectedVariant ? item.filePath === selectedVariant || item.files?.some((file) => file.path === selectedVariant)
+        : item.dtype === dtype));
     if (!variant?.loadable) throw new Error(variant?.reason || 'Requested package is absent');
     window.supportPackage = variant.package;
     return { revision: result.revision, totalBytes: variant.totalBytes, model: variant.model,
       compatibility: inferencePanel.runtime.getModelCompatibility(variant.package) };
-  }, { repository, dtype, selectedVariant }), 120000, 'Inspection');
+  }, { repository, dtype, selectedVariant, media }), 120000, 'Inspection');
   assert.notEqual(report.inspection.compatibility.status, 'unavailable', JSON.stringify(report.inspection.compatibility));
   const weightRequests = report.requests.filter((request) => /\.(onnx|gguf)(?:_data(?:_\d+)?)?$/.test(new URL(request.url).pathname));
   assert(weightRequests.every((request) => selectedVariant && request.range
@@ -154,6 +202,7 @@ try {
   ], 32);
   assert.match(report.multiTurn.text, /(?:^|\s)5(?:[.\s]|$)/, 'System and multi-turn template must preserve the latest request');
   console.log(JSON.stringify({ phase, repository, first: report.first.text, second: report.second.text }));
+  if (media) { phase = 'media'; report.nativeMedia = await qualifyMedia(); }
   phase = 'cancel';
   report.cancel = await bounded(page.evaluate(async () => {
     const runtime = inferencePanel.runtime, requestId = 'support-cancel';
@@ -184,6 +233,7 @@ try {
   assert.equal(report.restart.manifestCid, manifestCid);
   report.restartGeneration = await generate('Say hello.', 8); assert(report.restartGeneration.text.trim());
   assert(report.restartGeneration.gpuDispatches > 0);
+  if (media) report.restartMedia = await qualifyMedia();
   assert(!report.requests.some((request) => request.phase === phase), 'Stored reload must use no external sources');
   await screenshot('source-off-restart'); assert.deepEqual(report.pageErrors, []);
   report.passed = true;

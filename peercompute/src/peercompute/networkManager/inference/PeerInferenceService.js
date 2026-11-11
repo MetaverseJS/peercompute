@@ -1,5 +1,6 @@
 import { MODEL_POLICY } from '../../inference/modelManifest.js';
-import { PEER_INFERENCE_PROTOCOL, PEER_INFERENCE_PROTOCOL_V2, isSpeechTask, PEER_INFERENCE_LIMITS as LIMITS, LEGACY_MAX_NEW_TOKENS, bytes, cid, integer,
+import { inferInferenceTask, supportsInferenceInput } from '../../inference/InferenceCapabilities.js';
+import { PEER_INFERENCE_PROTOCOL, PEER_INFERENCE_PROTOCOL_V3, PEER_INFERENCE_PROTOCOL_V2, PEER_INFERENCE_PROTOCOLS, isSpeechTask, PEER_INFERENCE_LIMITS as LIMITS, LEGACY_MAX_NEW_TOKENS, bytes, cid, integer,
   encryptedConnection, localState, generation, resultData, diffusionProgress, channel } from './protocol.js';
 import { monitorResultControls, describeResultImage, writeResultImage, readResultImage } from './imageResult.js';
 import { describeAudio, writeInputAudio, readInputAudio, writeResultAudio, readResultAudio } from './audioFrames.js';
@@ -66,7 +67,7 @@ export class PeerInferenceService {
   get peerId() { return this.manager.libp2p.peerId.toString(); }
   get scope() { const { gameId, roomId, topologyId } = this.manager.config; return { gameId, roomId, topologyId }; }
   async start() {
-    for (const protocol of [PEER_INFERENCE_PROTOCOL, PEER_INFERENCE_PROTOCOL_V2]) await this.manager.libp2p.handle(protocol, (stream, connection) => {
+    for (const protocol of PEER_INFERENCE_PROTOCOLS) await this.manager.libp2p.handle(protocol, (stream, connection) => {
       if (this.closed || this.operations.size >= 40 || !encryptedConnection(connection)) {
         stream.abort(failure('Encrypted peer inference connection required')); return;
       }
@@ -139,13 +140,16 @@ export class PeerInferenceService {
       const { state } = record; const local = peerId === this.peerId;
       for (const model of state.sharedModels) {
         if (!models.has(model.manifestCid)) models.set(model.manifestCid, { ...model, providers: [] });
+        else if (record.protocol === PEER_INFERENCE_PROTOCOL) Object.assign(models.get(model.manifestCid), model);
         models.get(model.manifestCid).providers.push({ peerId, local });
       }
       for (const hosted of state.hostedModels ?? (state.hostedModel ? [{ ...state.hostedModel,
         busy: state.busy, idleForMs: state.idleForMs, queuedRequests: state.queuedRequests }] : [])) {
         const { maxNewTokens, busy, idleForMs, queuedRequests, queueCapacity, queueAvailable, ...model } = hosted;
         if (!hosts.has(model.manifestCid)) hosts.set(model.manifestCid, { ...model, hosts: [] });
-        hosts.get(model.manifestCid).hosts.push({ peerId, local, busy,
+        else if (record.protocol === PEER_INFERENCE_PROTOCOL) Object.assign(hosts.get(model.manifestCid), model);
+        hosts.get(model.manifestCid).hosts.push({ peerId, local, busy, task: model.task,
+          modalities: [...model.modalities], outputModalities: [...model.outputModalities],
           idleForMs: busy ? 0 : idleForMs, queuedRequests, queueCapacity, queueAvailable, maxNewTokens, protocol: record.protocol });
       }
     }
@@ -194,7 +198,7 @@ export class PeerInferenceService {
     promise.then(finish, finish);
     return promise;
   }
-  async _openStream(peerId, signal, { audio = false, backgroundRecovery = false } = {}) {
+  async _openStream(peerId, signal, { audio = false, nativeMedia = false, backgroundRecovery = false } = {}) {
     const first = await this._connection(peerId, signal);
     const candidates = [...new Set([first, ...this._connections(peerId)])].slice(0, 4);
     const errors = [];
@@ -207,7 +211,9 @@ export class PeerInferenceService {
       const op = operation([this.controller.signal, signal], Math.min(2000, this.queryTimeoutMs / 2));
       let opening;
       try {
-        opening = Promise.resolve(connection.newStream(audio ? PEER_INFERENCE_PROTOCOL : [PEER_INFERENCE_PROTOCOL, PEER_INFERENCE_PROTOCOL_V2],
+        const protocols = nativeMedia ? PEER_INFERENCE_PROTOCOL : audio
+          ? [PEER_INFERENCE_PROTOCOL, PEER_INFERENCE_PROTOCOL_V3] : PEER_INFERENCE_PROTOCOLS;
+        opening = Promise.resolve(connection.newStream(protocols,
           { signal: op.signal, runOnLimitedConnection: true }));
         const stream = await withAbort(opening, op.signal);
         op.signal.throwIfAborted();
@@ -331,13 +337,14 @@ export class PeerInferenceService {
       this._checkEnvelope(request, peerId);
       if (request.type === 'query') {
         const state = await this._state(op.signal);
-        await io.write(this._envelope('directory', peerId, { state: protocol === PEER_INFERENCE_PROTOCOL_V2
+        await io.write(this._envelope('directory', peerId, { state: protocol !== PEER_INFERENCE_PROTOCOL
           ? localState(state, this.hostingEnabled, { protocol }) : state }), op.signal);
         await this._closeCompletedStream(stream, op.signal); return;
       }
       if (request.type !== 'generate') throw failure('Unknown inference request');
       const input = generation(request);
       if (protocol === PEER_INFERENCE_PROTOCOL_V2 && isSpeechTask(input.task)) throw failure('Speech requires inference protocol v3');
+      if (protocol !== PEER_INFERENCE_PROTOCOL && input.task === 'audio-text-to-text') throw failure('Native audio conversation requires inference protocol v4');
       key = `${peerId}:${input.requestId}`;
       if (this.inbound.has(key) || this.inbound.size >= LIMITS.maximumInbound
           || [...this.inbound.values()].filter((entry) => entry.peerId === peerId).length >= LIMITS.maximumPerPeer) {
@@ -346,17 +353,22 @@ export class PeerInferenceService {
       // Reserve before awaiting application state: concurrent uploads cannot
       // all pass a stale capacity check while the callback is suspended.
       this.inbound.set(key, { peerId, manifestCid: input.manifestCid, controller: op.controller, finished });
-      const selectedHost = (state) => protocol === PEER_INFERENCE_PROTOCOL_V2
-        ? (state.hostedModel?.manifestCid === input.manifestCid ? state.hostedModel : null)
-        : state.hostedModels.find((host) => host.manifestCid === input.manifestCid);
+      const selectedHost = (state) => {
+        const visible = protocol === PEER_INFERENCE_PROTOCOL ? state : localState(state, this.hostingEnabled, { protocol });
+        return protocol === PEER_INFERENCE_PROTOCOL_V2
+          ? (visible.hostedModel?.manifestCid === input.manifestCid ? visible.hostedModel : null)
+          : visible.hostedModels.find((host) => host.manifestCid === input.manifestCid);
+      };
       const state = await this._state(op.signal, 1, input.manifestCid), hosted = selectedHost(state);
       if (!hosted) throw failure('Requested model is not hosted', 'ERR_INFERENCE_NOT_HOSTED');
       if (input.maxNewTokens > hosted.maxNewTokens) throw failure('Requested token limit exceeds hosted capacity', 'ERR_INFERENCE_TOKEN_LIMIT');
-      if (input.task !== undefined && input.task !== hosted.task) throw failure('Requested task does not match hosted model');
-      input.task = hosted.task;
+      if (protocol !== PEER_INFERENCE_PROTOCOL && input.task !== undefined && input.task !== hosted.task) {
+        throw failure('Requested task does not match hosted model');
+      }
+      input.task = inferInferenceTask(input, hosted.task);
+      if (!supportsInferenceInput(hosted, input)) throw failure('Requested task or media does not match hosted model');
       if (hosted.queueAvailable === false || (hosted.busy && hosted.queuedRequests >= hosted.queueCapacity)) throw failure('Hosted model queue is full', 'ERR_INFERENCE_BUSY');
       generation(input); // Validate task-dependent input before admitting an upload.
-      if (input.image && !hosted.modalities.includes('image')) throw failure('Hosted model does not accept images');
       await io.write({ type: 'upload', requestId: input.requestId }, op.signal);
       if (input.image) {
         input.image.data = new Uint8Array(input.image.width * input.image.height * 4);
@@ -372,6 +384,7 @@ export class PeerInferenceService {
       if (input.audio) input.audio = await readInputAudio(io, { audio: input.audio, requestId: input.requestId, signal: op.signal });
       const current = selectedHost(await this._state(op.signal, 1, input.manifestCid));
       if (!current || current.task !== hosted.task) throw failure('Inference host changed during upload');
+      if (!supportsInferenceInput(current, input)) throw failure('Inference host media capabilities changed during upload');
       if (input.maxNewTokens > current.maxNewTokens) throw failure('Requested token limit exceeds hosted capacity', 'ERR_INFERENCE_TOKEN_LIMIT');
       if (current.queueAvailable === false || (current.busy && current.queuedRequests >= current.queueCapacity)) throw failure('Hosted model queue is full', 'ERR_INFERENCE_BUSY');
       await io.write({ type: 'accepted', requestId: input.requestId, queued: current.busy }, op.signal);
@@ -441,7 +454,9 @@ export class PeerInferenceService {
 
   async generate(manifestCid, options = {}) {
     if (this.closed) throw failure('Peer inference service is stopped');
-    const input = generation({ ...options, requestId: options.requestId ?? crypto.randomUUID(), manifestCid }, { imageBytes: true });
+    const input = generation({ ...options, ...(options.task === undefined && (options.image != null || options.audio != null)
+      ? { task: inferInferenceTask(options) } : {}),
+      requestId: options.requestId ?? crypto.randomUUID(), manifestCid }, { imageBytes: true });
     if (this.outbound.has(input.requestId) || this.outbound.size >= LIMITS.maximumOutbound) throw failure('Outgoing inference queue is full');
     const op = operation([this.controller.signal, options.signal], this.requestTimeoutMs);
     const entry = { controller: op.controller, peerId: null };
@@ -454,13 +469,16 @@ export class PeerInferenceService {
       }
       const model = this.listHosts().find((group) => group.manifestCid === input.manifestCid);
       if (model) {
-        if (input.task !== undefined && input.task !== model.task) throw failure('Requested task does not match discovered model');
-        input.task = model.task;
+        input.task = inferInferenceTask(input, model.task);
+        if (!supportsInferenceInput(model, input)) throw failure('Requested task or media does not match discovered model');
         generation(input); // Pixel bytes were already validated and copied at admission.
       }
       candidates = candidates.filter((candidate) => candidate.queueAvailable !== false
         && (!candidate.busy || (candidate.queuedRequests ?? 0) < (candidate.queueCapacity ?? MODEL_POLICY.maxQueued))
-        && (!isSpeechTask(input.task) || candidate.protocol === PEER_INFERENCE_PROTOCOL));
+        && supportsInferenceInput({ ...model, ...candidate }, input)
+        && (!isSpeechTask(input.task) || candidate.protocol !== PEER_INFERENCE_PROTOCOL_V2)
+        && (input.task !== 'audio-text-to-text' || candidate.protocol === PEER_INFERENCE_PROTOCOL)
+        && (!(input.task === 'image-text-to-text' && candidate.task !== 'image-text-to-text') || candidate.protocol === PEER_INFERENCE_PROTOCOL));
       candidates.sort((a, b) => Number(a.busy) - Number(b.busy) || (a.queuedRequests ?? 0) - (b.queuedRequests ?? 0)
         || (a.busy ? 0 : b.idleForMs - a.idleForMs) || a.peerId.localeCompare(b.peerId));
       let lastError = failure('No remote peer hosts the requested model', 'ERR_INFERENCE_NOT_HOSTED');
@@ -471,7 +489,7 @@ export class PeerInferenceService {
         options.onProgress?.({ type: 'routing', requestId: input.requestId, ...route, route, busy: candidate.busy });
         const candidateInput = { ...input, ...(input.maxNewTokens === undefined ? {} : {
           maxNewTokens: Math.min(input.maxNewTokens, candidate.maxNewTokens ?? LEGACY_MAX_NEW_TOKENS) }) };
-        try { return await this._generateAt(candidate.peerId, candidateInput, options, op.signal); }
+        try { return await this._generateAt(candidate.peerId, candidateInput, options, op.signal, candidate.task ?? model.task); }
         catch (error) { lastError = error; if (error.committed || op.signal.aborted) throw error; }
       }
       throw lastError;
@@ -480,15 +498,18 @@ export class PeerInferenceService {
     try { return await task; }
     finally { this.operations.delete(task); this.outbound.delete(input.requestId); op.dispose(); }
   }
-  async _generateAt(peerId, input, options, signal) {
+  async _generateAt(peerId, input, options, signal, modelTask = input.task) {
     let stream, release; let committed = false;
     const abort = () => stream?.abort(aborted(signal));
     signal.addEventListener('abort', abort, { once: true });
     try {
-      const opened = await this._openStream(peerId, signal, { audio: isSpeechTask(input.task) });
+      const nativeMedia = input.task === 'audio-text-to-text'
+        || (input.task === 'image-text-to-text' && modelTask !== 'image-text-to-text');
+      const opened = await this._openStream(peerId, signal, { audio: isSpeechTask(input.task), nativeMedia });
       const { connection } = opened; stream = opened.stream; release = opened.release;
       const io = channel(stream);
-      const header = { ...input, image: input.image ? { width: input.image.width, height: input.image.height, channels: 4 } : undefined,
+      const header = { ...input, task: opened.protocol === PEER_INFERENCE_PROTOCOL ? input.task : modelTask,
+        image: input.image ? { width: input.image.width, height: input.image.height, channels: 4 } : undefined,
         audio: input.audio ? Object.fromEntries(Object.entries(input.audio).filter(([key]) => key !== 'samples')) : undefined };
       await io.write(this._envelope('generate', peerId, header), signal);
       const ready = await io.read(signal);
@@ -566,7 +587,7 @@ export class PeerInferenceService {
     this.closed = true;
     this.controller.abort(failure('Peer inference service stopped', 'ERR_INFERENCE_STOPPED'));
     this.stopping = (async () => {
-      try { await this.manager.libp2p.unhandle([PEER_INFERENCE_PROTOCOL, PEER_INFERENCE_PROTOCOL_V2]); }
+      try { await this.manager.libp2p.unhandle(PEER_INFERENCE_PROTOCOLS); }
       finally {
         this.manager.libp2p.removeEventListener('peer:disconnect', this.disconnectListener);
         await Promise.allSettled([...this.operations]);

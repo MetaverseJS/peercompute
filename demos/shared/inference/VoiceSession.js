@@ -46,8 +46,7 @@ export function createVoiceSession({ audio, execute } = {}) {
     if (!current || current.kind !== 'record' || !['idle', 'requesting-microphone', 'recording'].includes(status)) return false;
     current.stopRequested = true; current.stop?.(); return true;
   }
-  async function record(options = {}) {
-    const target = voiceTarget(options.target);
+  async function capture(options = {}, consume = (pcm) => pcm) {
     return run(options, async (operation) => {
       const { signal } = operation;
       let removeAbort;
@@ -68,14 +67,7 @@ export function createVoiceSession({ audio, execute } = {}) {
         if (operation.stopRequested) operation.stop();
         await stopped; signal.throwIfAborted();
         const pcm = await audio.stopRecording(); signal.throwIfAborted();
-        update('transcribing', options.onState);
-        const result = await execute(target, { task: 'automatic-speech-recognition', audio: pcm,
-          requestId: crypto.randomUUID(), signal, onProgress: options.onProgress });
-        signal.throwIfAborted();
-        if (typeof result?.text !== 'string' || !result.text.trim()) {
-          throw new Error('No speech recognized. Try again or type a message.');
-        }
-        return result;
+        return await consume(pcm, signal);
       } finally {
         removeAbort?.();
         // A granted microphone or a cancelled permission prompt cannot outlive
@@ -83,6 +75,27 @@ export function createVoiceSession({ audio, execute } = {}) {
         await audio.cancelRecording();
       }
     }, 'record');
+  }
+  async function record(options = {}) {
+    const target = voiceTarget(options.target);
+    // Native audio-understanding models can supply a transcription when the
+    // caller needs text (for an agent or public chat). They remain distinct from
+    // ASR adapters: a prompt is necessary, and only text is returned to the caller.
+    const task = options.transcriptionTask ?? 'automatic-speech-recognition';
+    if (!['automatic-speech-recognition', 'audio-text-to-text'].includes(task)) {
+      throw new Error('Unsupported transcription task');
+    }
+    return capture(options, async (pcm, signal) => {
+      update('transcribing', options.onState);
+      const result = await execute(target, { task, audio: pcm,
+        ...(task === 'audio-text-to-text' ? { prompt: 'Transcribe the speech in this recording exactly. Return only the transcription.' } : {}),
+        requestId: crypto.randomUUID(), signal, onProgress: options.onProgress });
+      signal.throwIfAborted();
+      if (typeof result?.text !== 'string' || !result.text.trim()) {
+        throw new Error('No speech recognized. Try again or type a message.');
+      }
+      return result;
+    });
   }
   async function speak(text, options = {}) {
     const target = voiceTarget(options.target);
@@ -126,5 +139,5 @@ export function createVoiceSession({ audio, execute } = {}) {
     closing = pending.catch((error) => { closing = null; throw error; });
     return closing;
   }
-  return { record, stop, speak, cancel, dispose, getState };
+  return { record, capture: (options) => capture(options), stop, speak, cancel, dispose, getState };
 }

@@ -14,6 +14,8 @@ import { ARTIFACT_MANIFEST_SCHEMA, normalizeArtifactManifest } from '../peercomp
 import { MODEL_CATALOG, modelFileUrl as inferenceModelFileUrl } from '../peercompute/src/peercompute/inference/modelCatalog.js';
 import { MODEL_ARTIFACT_CATALOG, modelArtifactFileUrl } from '../peercompute/src/peercompute/artifacts/modelArtifactCatalog.js';
 import { GGUF_MODEL_CATALOG, ggufModelFileUrl } from '../peercompute/src/peercompute/artifacts/ggufModelCatalog.js';
+import { createGemma4ProjectorSource } from '../peercompute/src/peercompute/artifacts/gemma4ProjectorSource.js';
+import { isTrustedGemma4ProjectorFile } from '../peercompute/src/peercompute/artifacts/gemma4ProjectorRecipe.js';
 import { DIFFUSION_MODEL_CATALOG, diffusionModelFileUrl } from '../peercompute/src/peercompute/artifacts/diffusionModelCatalog.js';
 
 export const IMPORT_MODEL_CATALOG = Object.freeze({ ...MODEL_CATALOG, ...GGUF_MODEL_CATALOG, ...MODEL_ARTIFACT_CATALOG, ...DIFFUSION_MODEL_CATALOG });
@@ -87,7 +89,9 @@ async function writeAll(handle, bytes) {
   }
 }
 
-async function downloadFile(model, file, destination, { signal, progress, fetchImpl = streamResponse, guardDisk } = {}) {
+export async function downloadFile(model, file, destination, { signal, progress, fetchImpl = streamResponse, guardDisk } = {}) {
+  const approved = IMPORT_MODEL_CATALOG[model?.id];
+  const derived = approved?.model.ggufMedia?.projectorPath === file.path && isTrustedGemma4ProjectorFile(file);
   try {
     const verified = await digestFile(destination, file, signal);
     emit(progress, { stage: 'cached', model: model.id, path: file.path, bytes: verified.size });
@@ -95,14 +99,17 @@ async function downloadFile(model, file, destination, { signal, progress, fetchI
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
   await mkdir(dirname(destination), { recursive: true, mode: 0o700 });
   const temporary = `${destination}.part-${randomUUID()}`;
-  const url = modelFileUrl(model.id, file.path);
+  const url = derived ? null : modelFileUrl(model.id, file.path);
   for (let attempt = 0; attempt < 3; attempt++) {
     let handle;
     try {
       abort(signal);
       await guardDisk?.();
       emit(progress, { stage: 'download', model: model.id, path: file.path, expectedBytes: file.size, attempt: attempt + 1 });
-      const response = await fetchImpl(url, { signal, headers: { 'Accept-Encoding': 'identity' } });
+      const response = derived ? { ok: true, headers: { get: (name) => name === 'content-length' ? String(file.size) : null },
+        body: createGemma4ProjectorSource({ signal, fetchImpl: fetchImpl === streamResponse ? globalThis.fetch : fetchImpl,
+          onProgress: (event) => emit(progress, { ...event, model: model.id, path: file.path }) }) }
+        : await fetchImpl(url, { signal, headers: { 'Accept-Encoding': 'identity' } });
       if (!response.ok || !response.body) { await cancelBody(response.body); throw new Error(`HF download failed with HTTP ${response.status} for ${file.path}`); }
       const length = response.headers.get('content-length');
       if (length !== null && Number(length) !== file.size) {

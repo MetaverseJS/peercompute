@@ -63,9 +63,10 @@ test('Gemma4 candidate uses its actual architecture and remains text-only despit
   assert.deepEqual(entry.model.modalities, ['text']);
   assert.deepEqual(entry.model.requiredFeatures, ['shader-f16']);
   assert.equal(entry.status, 'execution-candidate');
-  assert.equal(entry.capabilities.executionStatus, 'candidate');
+  assert.equal(entry.capabilities.executionStatus, 'user-reported');
+  assert.match(entry.capabilities.executionReason, /Independent local GPU qualification remains pending/);
   assert.equal(entry.capabilities.requiresCapabilityCheck, true);
-  assert.match(entry.capabilities.executionReason, /Unverified/);
+  assert.match(entry.capabilities.executionReason, /User reported successful PeerCompute text inference/);
   assert.match(entry.provenance.vision, /text-only/);
   assert.match(entry.provenance.publisherEvaluation, /does not establish Q4_K_M browser/);
   assert.throws(() => ggufRuntimeDefinition.validateGenerationInput({ image: {}, maxNewTokens: 1 }), /text only/);
