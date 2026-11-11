@@ -13,6 +13,11 @@
 
 ### Gemma4 media acceptance — November10
 
+- November10 follow-up live peer check: v4 text Gemma returned two correct
+  arithmetic answers (~1.1s each); an image request failed at capability routing
+  because that host advertises text only. Native companion load/vision/audio
+  remain untested. Own peer decoder transfer was deliberately interrupted while
+  waiting for GPU availability; preserve that distinction in test reports.
 - Unit/transport: run `node --test peercompute/tests/unit/gguf*.test.js peercompute/tests/unit/gemma4*.test.js peercompute/tests/unit/inferenceRouter.test.js peercompute/tests/unit/peerInference*.test.js peercompute/tests/unit/peerMultimodalInference.test.js peercompute/tests/unit/modelConsoleRuntime.test.js demos/tests/voice-session.test.js demos/tests/prompt-style.test.js demos/tests/model-derived-import.test.js`.
   Cover exact source/derived digests, decoder reuse, failed import isolation,
   independent projector mounting, native flags, media ordering on context retries,

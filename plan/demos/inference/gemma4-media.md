@@ -4,6 +4,37 @@ User authorization received November 10, 2026 at 17:45:48 America/Anchorage
 (first tool receipt). User subsequently started a model test; no competing GPU
 or full decoder downloads. Internal previews/local commits only, no Pages/push.
 
+November 10 follow-up: the user reports the derived-companion version does not
+work and is considering removing it. Failure stage/root cause is not established.
+Prefer evaluating complete publisher-supplied packages before more custom
+conversion: [Unsloth 12B](https://huggingface.co/unsloth/gemma-4-12b-it-GGUF)
+publishes an F16 companion; [Zaakirio's abliterated 12B](https://huggingface.co/zaakirio/gemma-4-12b-it-uncensored-GGUF)
+publishes a BF16 companion and reports native llama.cpp image/audio tests. Neither
+has passed PeerCompute browser media qualification. Recommended cleanup replaces
+the custom derivation/catalog entry while retaining generic worker media mounting,
+routing and transport. This is a recommendation, not an applied rollback.
+
+### Live peer check after the reported failure
+
+November 10, 20:40–20:47 America/Anchorage: an owned no-GPU browser joined the
+internal 5189 preview and found only the original text Gemma package, now over
+inference v4. Two text requests returned correct answers in about 1.1 seconds;
+an image request was rejected by capability routing with “This model accepts
+text only.” This is not a reproduction of companion loading or media execution.
+An owned persistent peer began copying the retained decoder by CID; this was
+deliberately stopped while incomplete, preserving its partial cache. Only about
+6.5 GiB GPU memory was free; the user has been asked to unload the active model.
+Do not start a competing full-model load or interpret elapsed time as an answer.
+
+Abstraction review: independent artifact mounting, PNG/WAV encoding and peer
+transport are reusable. The derived recipe, accepted filename, exact catalog
+closure, one-decoder restriction and media/batch/context profile are Gemma-specific.
+A generic companion role still needs explicit, validated per-runtime profiles.
+The current native API requires a decoder; no projector-only test is exposed.
+Next qualification needs a complete owned decoder and available GPU capacity,
+then real image/audio requests and sanitized native failure diagnostics. Existing
+simulated-engine tests cannot substitute for that check.
+
 ## Architecture
 
 ```mermaid

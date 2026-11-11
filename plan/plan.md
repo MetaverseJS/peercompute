@@ -27,6 +27,8 @@ compatibility. Personal Talk can use native audio; agents/Global transcribe firs
 The user reports successful text execution and its exact package is visible on
 the peer network. CPU artifact parity and focused integration tests pass; actual
 Gemma image/audio GPU qualification remains open while the user is testing.
+Subsequently the user reports the custom companion approach does not work;
+evaluate complete published decoder/projector pairs before further conversion.
 See [implementation and acceptance](demos/inference/gemma4-media.md). No Pages/push.
 
 November8 README/audit publication complete: reviewed documentation commits are
