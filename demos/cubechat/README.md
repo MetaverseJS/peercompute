@@ -250,8 +250,12 @@ The reusable `WorldGeneratedObjects.generate({ agentId, action, image, ... })`
 API also accepts bounded RGBA source pixels, skipping text-to-image generation.
 The current CubeChat composer uses generated reference images; it does not yet
 provide a source-image upload control for this action. A single isolated subject
-on a plain white background is the intended reference input. Shape and color
-quality depend on the reference and model; reconstruction is not exact.
+on a plain background is the intended reference input. The current TripoSR
+package includes a small U2NetP model that removes the background in its managed
+worker before reconstruction. Usable transparent cutouts bypass this step.
+Older stored TripoSR packages require a cutout; load the current catalog package
+for generated opaque images. Segmentation, shape and color quality depend on the
+reference and models; reconstruction is not exact.
 
 Successful output is a validated, self-contained GLB placed on the ground beside
 the resident. Geometry and placement are retained together under an artifact CID

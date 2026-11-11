@@ -5012,3 +5012,47 @@ SecretWorkshopNoise and desktop/390px UI. Allownedbrowsers/candidateserver close
   initialized actualapps, SecretWorkshopNoise, zero page/console errors and no
   modeldownloads. The first Cube check used a nonexistent hook; preserved its
   timeout report, corrected toworldAgents and reran both pages successfully.
+
+## November 11: complete resident authoring and learned foreground preparation
+
+- Reproduced a stale paused body after resume with a delayed real AgentRuntime
+  list; the original refresh failed. The new refresh drain passes 4 regressions
+  for the stale snapshot, genuine owner movement, storage error recovery and
+  disposal. Combined command (18/18):
+  `node --test demos/tests/world-agent-refresh.test.js demos/tests/world-generated-host.test.js demos/tests/world-conversation-turn.test.js`.
+- Existing host suite (46/46): `node --test demos/tests/world-agent-host.test.js`.
+  World/object/presentation suite (55/55):
+  `node --test demos/tests/cubechat-agents.test.js demos/tests/world-generated-action.test.js demos/tests/world-generated-host.test.js demos/tests/world-generated-objects.test.js demos/tests/world-generated-network.test.js demos/tests/world-generated-presentation.test.js demos/tests/world-conversation-context.test.js`.
+- Updated mesh/library/import regression (63/63):
+  `node --test peercompute/tests/unit/meshImagePreparation.test.js peercompute/tests/unit/meshGeometry.test.js peercompute/tests/unit/meshEngine.test.js peercompute/tests/unit/meshCatalog.test.js peercompute/tests/unit/meshModelService.test.js peercompute/tests/unit/generatedMeshArtifact.test.js peercompute/tests/unit/peerInferenceMesh.test.js peercompute/tests/unit/modelLibraryRuntime.test.js peercompute/tests/unit/modelCatalog.test.js`.
+  Covers immutable RGBA, learned mask bounds, alpha bypass, three-session cleanup,
+  cancellation/recovery, native loss, package integrity, peer wire and artifacts.
+- Legacy/current Stored Models admission (22/22):
+  `node --test demos/tests/model-mesh-compatibility.test.js peercompute/tests/unit/modelDeviceCompatibility.test.js`.
+  Exact old packages remain trusted; malformed closures fail; catalog selection
+  stays current-only. Final metadata-only concise license display preserves full
+  component notices; catalog suite rerun 3/3. Suite counts overlap.
+- Actual `full-chain.mjs` run3: ordinary owner chat → real peer Qwen0.8 speech
+  and independent JSON → DreamShaper opaque image → managed U2NetP+TripoSR →
+  two full CubeChat renderers with same retained CID → owner reload without
+  generation/HF → unpinned viewer GC. Isolated chair visually accepted, coarse
+  geometry explicitly retained as a limitation. No replaced inference stages.
+  883820-byte GLB,7356 triangles,SHA277a963c5b9b66361f7ef7e43deea2fc5e90b770f5897def6b58ea83f186ae16.
+  Zero page/console errors, failed/HF requests and cleanup errors in both worlds.
+- Actual `retained-mesh.mjs`: same origin/profile, current package loaded only
+  from IndexedDB with model-source and HF requests blocked; cancellation after
+  first density batch returns AbortError and leaves model ready. Recovery
+  generates the exact same GLB SHA with1693 GPU dispatches, foregroundRequests2,
+  generatedRequests1. No FP16 on the mesh device; zero active leases after unload,
+  owned browser/server closed. Two expected ORT node-placement warnings retained.
+- Evidence lives under `/home/cos/.cache/peercompute-cube3d-chain-20261111/`.
+  Run1 failure (refresh), run2 technical pass/visual failure (background slab),
+  and run3 complete pass are preserved. Independent small U2NetP native probe
+  on original/grayscale image lives under `peercompute-u2netp-probe-20261112`
+  (actual run date November11); not a substitute for managed acceptance.
+- Three production builds (inference/CubeChat/Earth) pass externally; no docs/
+  assets changed. Internal5189/5176/5187 index hashes and headless checks verify
+  actual SecretWorkshop Noise connections, zero page/console errors or model
+  downloads. Mobile466.8MiB catalog entry, task filter and viewport containment
+  are checked; full original license texts stay in retained provenance while
+  the model detail view displays a concise notice.

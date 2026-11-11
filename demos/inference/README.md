@@ -104,12 +104,16 @@ package. Gemma produces text; voice replies still require a speech-synthesis mod
 is a separate planned image backend, not an available catalog model.
 
 To host 3D generation, choose **TripoSR · image to 3D (Q8)** in Models and load
-its approximately 462 MiB package. It uses WebGPU without requiring `shader-f16`.
+its approximately 467 MiB package. It uses WebGPU without requiring `shader-f16`.
 The 4 GiB RAM / 3 GiB GPU figures are planning budgets, not measurements of free
 device memory. A loaded host accepts `image-to-3d` requests from CubeChat residents
 over the same inference network. It is a tool provider, not a conversational
 model: ask your CubeChat resident to generate and place an object. Text requests
-also need a text model and an image generator. Output is static colored geometry;
+also need a text model and an image generator. The package includes a small
+U2NetP foreground model, run in the same managed worker, to remove opaque image
+backgrounds before reconstruction. Existing transparent cutouts are preserved.
+Older stored TripoSR packages still accept cutouts; load the current catalog
+package to use automatic background removal. Output is static colored geometry;
 rigging, animated avatars and Hunyuan3D are later work. See
 [generated objects](../../plan/demos/inference/generated-world-objects.md).
 

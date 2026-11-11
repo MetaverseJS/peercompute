@@ -4,6 +4,7 @@ import { encodeGeneratedMesh } from '../GeneratedMeshArtifact.js';
 import { MESH_RUNTIME_VERSION, validateMeshManifest, normalizeMeshInput } from './runtimeDefinition.js';
 import { TRIPOSR, prepareTripoImage, tripoGridPoints, sampleTriplane, extractTripoSurface,
   orientTripoMesh, tripoColorsToLinear, requireFinite } from './geometry.js';
+import { FOREGROUND_SIZE, hasForegroundAlpha, prepareForegroundInput, applyForegroundMask } from './imagePreparation.js';
 
 const nextTurn = () => new Promise(resolve => setTimeout(resolve, 0));
 const readSize = 4 * 1024 ** 2;
@@ -43,10 +44,11 @@ function measureDevice(device, evidence) {
  * workers, remote scripts, Python services, or model-driven code are created. */
 export async function createMeshEngine({ manifest, runtimeAssets, artifactPort, signal, onProgress,
   gpu = globalThis.navigator?.gpu, loadOrt = () => import('peercompute-diffusion-ort/webgpu'),
-  createReader = createGgufArtifactReader, prepareImage = prepareTripoImage, readModelFile = readFile }) {
+  createReader = createGgufArtifactReader, prepareImage = prepareTripoImage, readModelFile = readFile,
+  prepareForeground = prepareForegroundInput, applyMask = applyForegroundMask }) {
   const { manifest: admitted } = validateMeshManifest(manifest);
   const evidence = { gpuDispatches: 0, gpuSubmissions: 0, generatedRequests: 0 };
-  let device, reader, ort, encoder, decoder, busy = false, disposed = false, lost = false;
+  let device, reader, ort, encoder, decoder, foreground, busy = false, disposed = false, lost = false;
   const markLost = cause => {
     if (disposed) return;
     lost = true;
@@ -67,7 +69,7 @@ export async function createMeshEngine({ manifest, runtimeAssets, artifactPort, 
     }
     if (errors.length || lost) {
       const cause = errors.find(item => item.filter === 'out-of-memory')?.error ?? errors[0]?.error ?? evidence.gpuFailure;
-      markLost(cause); releaseOutputs(result?.density || result?.triplane ? result : null);
+      markLost(cause); releaseOutputs(result);
       const error = new Error(`Model session lost: 3D ${stage}: ${evidence.gpuFailure}`, { cause });
       error.code = 'ERR_MESH_GPU'; throw error;
     }
@@ -82,10 +84,10 @@ export async function createMeshEngine({ manifest, runtimeAssets, artifactPort, 
     if (disposed) return;
     disposed = true; reader?.close(); reader = null;
     let failure;
-    for (const session of [encoder, decoder]) {
+    for (const session of [encoder, decoder, foreground]) {
       try { await session?.release(); } catch (error) { failure ??= error; }
     }
-    encoder = decoder = null;
+    encoder = decoder = foreground = null;
     device?.removeEventListener('uncapturederror', uncaptured); device?.destroy();
     if (failure) { lost = true; evidence.gpuFailure ??= String(failure.message ?? failure); throw failure; }
   }
@@ -117,10 +119,17 @@ export async function createMeshEngine({ manifest, runtimeAssets, artifactPort, 
     graph = external = null; throwIfAborted(signal);
     const decoderBytes = await bytes('decoder.onnx');
     await runGpu('decoder load', async () => { decoder = await ort.InferenceSession.create(decoderBytes, sessionOptions); });
+    throwIfAborted(signal);
+    if (admitted.model.backgroundRemoval === 'u2netp') {
+      const foregroundBytes = await bytes('u2netp.onnx');
+      await runGpu('foreground load', async () => { foreground = await ort.InferenceSession.create(foregroundBytes, sessionOptions); });
+    }
     evidence.artifactReads = reader.getStats(); reader.close(); reader = null;
     throwIfAborted(signal);
     if (encoder.inputNames.join() !== 'image' || encoder.outputNames.join() !== 'triplane'
-        || decoder.inputNames.join() !== 'features' || decoder.outputNames.join() !== 'density,color') {
+        || decoder.inputNames.join() !== 'features' || decoder.outputNames.join() !== 'density,color'
+        || (foreground && (foreground.inputNames.join() !== 'input.1'
+          || foreground.outputNames.join() !== '1959,1960,1961,1962,1963,1964,1965'))) {
       throw new Error('3D graph interfaces differ from the pinned pipeline');
     }
   } catch (error) { try { await dispose(); } catch {} throw error; }
@@ -138,7 +147,21 @@ export async function createMeshEngine({ manifest, runtimeAssets, artifactPort, 
       const startDispatches = evidence.gpuDispatches, startSubmissions = evidence.gpuSubmissions;
       try {
         throwIfAborted(generationSignal); progress?.({ type: 'mesh-generation', stage: 'image', loaded: 0, total: 1 });
-        const image = new ort.Tensor('float32', prepareImage(normalized.image), [1, 3, 512, 512]);
+        let prepared = normalized.image;
+        if (foreground && !hasForegroundAlpha(prepared)) {
+          const tensor = new ort.Tensor('float32', prepareForeground(prepared), [1, 3, FOREGROUND_SIZE, FOREGROUND_SIZE]);
+          let masks;
+          try {
+            masks = await runGpu('foreground separation', () => foreground.run({ 'input.1': tensor }));
+            throwIfAborted(generationSignal);
+            const mask = masks['1959'];
+            if (mask?.type !== 'float32' || mask.dims.join() !== '1,1,320,320') throw new Error('Unexpected foreground model output');
+            prepared = applyMask(prepared, mask.data);
+          } finally { tensor.dispose(); releaseOutputs(masks); }
+          evidence.foregroundRequests = (evidence.foregroundRequests ?? 0) + 1;
+        }
+        throwIfAborted(generationSignal);
+        const image = new ort.Tensor('float32', prepareImage(prepared), [1, 3, 512, 512]);
         let outputs, planes;
         try {
           outputs = await runGpu('image encoding', () => encoder.run({ image }));

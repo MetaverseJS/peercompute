@@ -49,7 +49,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
   if (!adapter?.upsert || !adapter?.normalizePosition || !adapter?.dispose) throw new Error('A world agent body adapter is required');
   const lifetime = new AbortController(), bodies = new Map(), heads = new Map(), transcripts = new Map();
   let runtime, agents, network, worldManager, speech, audio, ui, selectedKey, disposed = false, closing, unsubscribe;
-  let refreshing, networkStarting, modelStarting, networkTimer, navigationTimer, panel, panelOpening, panelClosing, panelShell, panelReturnFocus, embodimentLease;
+  let refreshing, refreshPending = false, networkStarting, modelStarting, networkTimer, navigationTimer, panel, panelOpening, panelClosing, panelShell, panelReturnFocus, embodimentLease;
   let operation, operationDone, voicePreparation, voicePreparationDone, recordingStart, voiceEnabled = false, recording = false;
   let appearance, appearancePresenter, generatedObjects, worldChat, experience, conversations, motor, memory, social, socialOperation, socialDone;
   let objectives, objectiveStore, unsubscribeObjectives;
@@ -170,11 +170,28 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     while (entries.length > 1 && encoder.encode(JSON.stringify(entries)).length > 128 * 1024) entries.shift();
     transcripts.set(key, entries); showMessages(key);
   }
-  async function refreshLocal() {
+  function refreshLocal() {
+    if (disposed) return Promise.resolve();
+    refreshPending = true;
     if (refreshing) return refreshing;
-    refreshing = (async () => {
+    // Mutations during a store/lease read invalidate that pass. Every waiter
+    // must see the newer state before returning (not a stale created/paused
+    // body after resume). Assign the promise before invoking any collaborator.
+    refreshing = Promise.resolve().then(async () => {
+      try {
+        do { refreshPending = false; await refreshLocalSnapshot(); }
+        while (refreshPending && !disposed);
+      } finally {
+        // Clear in this continuation, without a separate finally microtask
+        // that could swallow a new invalidation after the drain finishes.
+        refreshing = null;
+      }
+    });
+    return refreshing;
+  }
+  async function refreshLocalSnapshot() {
       const records = await agents.list();
-      if (disposed) return;
+      if (disposed || refreshPending) return;
       const current = new Set(); heads.clear();
       for (const head of records) {
         heads.set(head.agentId, head);
@@ -221,8 +238,6 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
       }
       await objectives?.syncOwnership();
       updateList();
-    })().finally(() => { refreshing = null; });
-    return refreshing;
   }
   function directory(entries) {
     if (disposed) return;

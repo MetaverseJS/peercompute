@@ -7,7 +7,7 @@ import { GGUF_MODEL_CATALOG } from '../../../peercompute/src/peercompute/artifac
 import { DIFFUSION_MODEL_CATALOG } from '../../../peercompute/src/peercompute/artifacts/diffusionModelCatalog.js';
 import { SPEECH_MODEL_CATALOG } from '../../../peercompute/src/peercompute/inference/speech/speechCatalog.js';
 import { SPEECH_LIMITS } from '../../../peercompute/src/peercompute/inference/speech/runtimeDefinition.js';
-import { MESH_MODEL_CATALOG } from '../../../peercompute/src/peercompute/artifacts/meshModelCatalog.js';
+import { MESH_MODEL_CATALOG, LEGACY_MESH_PACKAGES } from '../../../peercompute/src/peercompute/artifacts/meshModelCatalog.js';
 import { MESH_RESOURCE_POLICY } from '../../../peercompute/src/peercompute/inference/mesh/runtimeDefinition.js';
 
 const GiB = 1024 ** 3;
@@ -57,7 +57,11 @@ function profile(entry) {
   }
   const base = composed?.baseManifest ?? entry;
   const input = base?.model ?? base ?? {};
-  const trusted = findModelCatalogEntry(base);
+  // Saved alpha-only mesh packages retain their exact runtime contract. Keep
+  // legacy entries out of ordinary catalog/descriptor lookup so browsing the
+  // current model still selects the package with foreground extraction.
+  const trusted = findModelCatalogEntry(base) ?? (base?.model && Array.isArray(base.files) && input.runtime === 'onnx-mesh'
+    ? findModelCatalogEntry(base, LEGACY_MESH_PACKAGES) : undefined);
   // Display-only peer descriptors may identify a catalog entry; their memory
   // claims and purported allocation requirements are never trusted.
   const model = entry?.model ? input : trusted?.model ?? input;

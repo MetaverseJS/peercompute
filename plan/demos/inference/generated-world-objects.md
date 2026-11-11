@@ -7,9 +7,10 @@ demo production builds and internal inference preview checks pass.
 
 ## First executable slice
 
-Use the pinned `cgb/triposr-onnx-webgpu` Q8 export, approximately 462 MiB, for
+Use the pinned `cgb/triposr-onnx-webgpu` Q8 export, approximately 467 MiB, for
 image-to-3D. The managed hardware-browser run reconstructs a recognizable
-chair with 4,908 triangles and 1,207 GPU dispatches. The ONNX native WebGPU
+chair with 4,908 triangles and 1,207 GPU dispatches. That initial receipt used an alpha cutout; the complete opaque-image chain is
+qualified below. The ONNX native WebGPU
 backend supports this export's eight-bit MatMulNBits; the JSEP backend used by
 existing diffusion does not. A tiny known-answer GPU test verified that
 distinction before the full download. This runtime uses separate matching ORT
@@ -87,3 +88,66 @@ an actual source image and a remote TripoSR provider. It proves neural generatio
 placement, peer transfer, rendering and retained reload. LLM-authored proposals
 and the text-to-image chain have separate integration tests; this receipt alone
 does not qualify their full combined model execution or image quality.
+
+## November 11 continuation
+
+The user authorized proceeding with the remaining live authoring chain. Test an
+owner's actual chat request, the real language model's separate object proposal,
+an actual image generator, managed TripoSR and two CubeChat renderers together.
+Preserve all earlier receipts. Fix demonstrated failures and add focused regression
+coverage; do not replace any inference stage with a fixture. No Pages or push.
+
+Actual first continuation exposed a coalesced resident refresh losing a resume
+invalidation, so the first speech appeared to supersede its own action. Drain
+invalidated snapshots before returning while retaining genuine movement guards.
+Four regressions cover stale pause/resume, owner movement, store failure and
+disposal. The next run completed all four model calls and the two-peer retained
+object lifecycle, but visual acceptance found an opaque-background slab around
+the reconstructed chair. Alpha crop/padding already matched TripoSR; opaque
+generated input needs foreground preparation before that stage. The color-matte experiment was rejected as too restrictive for gray/white objects.
+A 4.36 MiB U2NetP foreground model passed a real native WebGPU probe on both the
+original and grayscale reference. Add its pinned graph to the managed TripoSR
+package, preserve usable caller alpha, reject unusable masks and repeat the full
+GPU/world acceptance. This is learned preprocessing; it does not guarantee correct
+segmentation or reconstruction for arbitrary photos.
+
+The current package adds pinned `edgetools/u2netp` at
+`25dee37ab19c5b6ad64ba6578eba63f1ae07720c`, byte-identical to the official
+[rembg release](https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2netp.onnx).
+The [upstream preprocessing](https://github.com/danielgatis/rembg/blob/991927b77667946dab59c50df31f7d4640e80457/rembg/sessions/u2netp.py)
+is reproduced with bounded RGB normalization and mask composition; browser
+canvas high-quality resize approximates PIL Lanczos. The same owned GPU now
+executes foreground, encoder and decoder sessions. There is no separate provider
+to discover or remote script to execute. Model files retain their exact hashes,
+source revisions and upstream licenses. Existing alpha-only package manifests
+remain admitted for cutouts, without appearing as duplicate catalog choices.
+
+## Complete live authoring acceptance — November 11
+
+The final run uses an ordinary owner chat with no supplied image or replaced
+inference stage. Real peer Qwen3.5 0.8B GGUF supplies speech and independent
+object JSON, DreamShaper supplies opaque 512×512 RGBA, and the managed mesh worker
+uses U2NetP followed by TripoSR. Both full CubeChat clients display the same
+883,820-byte, 7,356-triangle chair. Close visual inspection confirms an isolated
+chair with seat, back and legs; surfaces remain coarse and uneven, not a polished
+production asset. The owner restores it without inference or HF requests; the
+unpinned viewer cache is collectible while owner retention survives.
+
+Model request durations were 4.49s speech, 2.57s object selection, 4.65s image and
+5.01s mesh including foreground separation. These are one hardware/network run,
+not general performance guarantees. Both clients have zero page/console errors,
+failed requests and unexpected HF requests. The provider closes with zero active
+CPU/GPU leases. Expected ORT constant-folding/node-placement warnings are retained
+in the provider report.
+
+Evidence: `/home/cos/.cache/peercompute-cube3d-chain-20261111/cube-run-3/`.
+Artifact CID: `bafkreibng7sc3br6axkansm5zwv2x6oququjouemdbvgbgfkdv6ag34nqy`.
+GLB SHA256: `277a963c5b9b66361f7ef7e43deea2fc5e90b770f5897def6b58ea83f186ae16`.
+Earlier run1 preserves the stale-refresh failure; run2 preserves successful
+transport with failed visual quality. Their receipts are not overwritten.
+
+The updated package also passes source-off IndexedDB restart in the same browser
+origin/profile. Cancellation after the first density batch leaves the worker
+ready; recovery regenerates the exact same GLB with 1,693 GPU dispatches and
+zero downloads. All sessions and CPU/GPU leases release on unload. See
+`retained-mesh-report.json` alongside the live-chain evidence.

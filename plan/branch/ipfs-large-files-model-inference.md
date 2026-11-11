@@ -1624,3 +1624,16 @@ actualpeer generation/cancel/recovery/source-offreload and twofullCubepage
 CID/render/reload checks pass. Temporary viewer retention, cancellation cleanup and focused final
 regressions pass; inference/CubeChat/Earth builds and internal preview promotion
 are complete. No Hunyuan/rigging/avatar claim; noPages/push.
+
+November11 “proceed”: qualify the remaining complete live owner-chat→language→
+image→TripoSR→shared CubeChat placement chain; fix observed integration failures.
+Use owned browsers/models and preserve storeddata/userprocesses. Internalpreview
+updates/localcommits remain authorized, Pages/push remain excluded.
+
+- November11 live-chain continuation now proves ordinary owner chat through real
+  peer text/action, image and learned foreground/3D stages, two CubeChat renderers,
+  retained owner reload and viewer GC. Fix queued resident refresh invalidation;
+  add pinned U2NetP inside the existing managed mesh worker. Keep old alpha-only
+  packages trusted for cutouts without a duplicate catalog entry. Preserve source
+  and licenses; no color-key fallback. Generated geometry remains coarse/static.
+  Internal preview refresh only; no GitHub Pages or push.

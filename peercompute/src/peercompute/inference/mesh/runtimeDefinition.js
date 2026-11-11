@@ -1,5 +1,5 @@
 import { normalizeArtifactManifest } from '../../artifacts/ArtifactManifest.js';
-import { MESH_MODEL_CATALOG } from '../../artifacts/meshModelCatalog.js';
+import { MESH_MODEL_CATALOG, LEGACY_MESH_PACKAGES } from '../../artifacts/meshModelCatalog.js';
 import { validateImageInput } from '../modelTask.js';
 
 export const MESH_RUNTIME_VERSION = '1.31.1';
@@ -14,7 +14,7 @@ const same = (a, b) => a === b || (a && b && typeof a === 'object' && typeof b =
  * descriptions never select code, preprocessing, or additional model files. */
 export function validateMeshManifest(input) {
   const manifest = normalizeArtifactManifest(input), model = manifest.model;
-  const trusted = Object.values(MESH_MODEL_CATALOG).find(entry => same(entry.model, model));
+  const trusted = [...Object.values(MESH_MODEL_CATALOG), ...LEGACY_MESH_PACKAGES].find(entry => same(entry.model, model));
   if (!trusted || manifest.files.length !== trusted.files.length || trusted.files.some(expected =>
     !manifest.files.some(file => file.path === expected.path && file.size === expected.size && file.sha256 === expected.sha256))) {
     throw new Error('3D model package differs from its qualified runtime catalog');

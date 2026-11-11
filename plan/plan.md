@@ -14,6 +14,14 @@ The root node should exist on a domain secured with SSL enabling all executable 
 
 ## Project Goals:
 
+November11 live authoring chain passes: an owner chat routes through real peer
+Qwen0.8 speech/action decisions, DreamShaper and managed U2NetP+TripoSR to a
+retained 3D chair displayed by both CubeChat peers and restored after reload.
+Fixed the resident refresh race that cancelled first actions and added learned
+foreground removal to prevent opaque backgrounds becoming slabs. Geometry is
+coarse and static. Old stored TripoSR packages still accept transparent cutouts;
+the current catalog package includes foreground removal. No Pages or push.
+
 Current user-directed order (November 10): finish actual Gemma companion testing,
 then implement reusable LoRA support for qualified base/runtime combinations,
 then implement 3D generation and world placement tools for CubeChat agents.

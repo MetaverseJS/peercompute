@@ -1,5 +1,6 @@
 import { MarchingCubes } from 'three/examples/jsm/objects/MarchingCubes.js';
 import { MeshBasicMaterial } from 'three';
+import { requireForegroundAlpha, validateMeshImage } from './imagePreparation.js';
 
 // TripoSR's MIT reference uses 0.87 world radius, zero-padded grid_sample with
 // align_corners=false, plane order xy/xz/yz, and exp(raw_density - 1) at iso25.
@@ -14,10 +15,7 @@ export function requireFinite(values, label) {
 }
 
 export function foregroundBounds(image) {
-  const { width, height, data } = image ?? {};
-  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1
-      || width * height > 4096 * 4096 || !(data instanceof Uint8Array || data instanceof Uint8ClampedArray)
-      || data.length !== width * height * 4) throw new Error('TripoSR needs bounded RGBA pixels');
+  const { width, height, data } = validateMeshImage(image);
   let minX = width, minY = height, maxX = -1, maxY = -1;
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
     if (!data[(y * width + x) * 4 + 3]) continue;
@@ -42,6 +40,7 @@ export function rgbaToTripoInput(data) {
 }
 
 export function prepareTripoImage(image, { canvas = (width, height) => new OffscreenCanvas(width, height) } = {}) {
+  image = requireForegroundAlpha(image);
   const bounds = foregroundBounds(image), size = TRIPOSR.imageSize;
   const source = canvas(image.width, image.height), target = canvas(size, size);
   source.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(image.data), image.width, image.height), 0, 0);
