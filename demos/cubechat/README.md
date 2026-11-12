@@ -427,3 +427,16 @@ a car shape does not add driving physics, and limbs are not animated.
 Shared implementation: `WorldMeshGeneration`, `WorldResidentAvatars`,
 `WorldResidentAvatarPresenter`, `ResidentAvatar`, and `GeneratedMeshView`. World
 adapters own rendering; the agent record owns the durable appearance reference.
+
+Generated props and avatars now choose a size for their intended role. A person
+is six world units; typical sizes are a mug 0.8, chair 3, car 15 and tree 24. Ask for a
+“toy car” or “giant robot” to change that intent. Size is the largest dimension,
+bounded to 0.3–48, applied uniformly so proportions remain intact. Existing saved
+avatars without size metadata keep their previous six-unit presentation. New
+size metadata survives peer fetch, reload and cloning. Collision and movement
+still use the original resident body; scaling is cosmetic.
+
+To remove placed 3D objects, open **☰ → Objects**, select them, then choose
+**Delete selected**. This lists objects placed by this device in the current
+room. Their shared instances disappear from other peers; other hosts manage
+their own objects. This does not remove residents, avatars or inference models.

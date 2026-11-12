@@ -1,3 +1,5 @@
+import { createCubeObjectUi } from './CubeObjectUi.js';
+
 /** CubeChat's shell and small, purpose-specific settings windows. */
 export const cubeShell = `
   <div id="loading" role="button" tabindex="0" aria-label="Start CubeChat">
@@ -15,6 +17,7 @@ export const cubeShell = `
       <button data-settings-section="media">Camera, voice &amp; screen</button>
       <button data-world-action="residents">Residents</button>
       <button data-world-action="models">Models</button>
+      <button data-world-action="objects">Objects</button>
     </nav>
     <p class="cube-settings-note">Enter opens chat. Type to everyone in the room, or select a resident for a direct conversation. Escape returns to the world.</p>
   </dialog>
@@ -50,12 +53,14 @@ export const cubeShell = `
     <button id="room-list-refresh">Refresh</button><div id="room-list-items"></div>
   </dialog>`;
 
-export function createCubeSettingsUi({ container = document, beforeOpen = () => {}, onResidents, onModels } = {}) {
+export function createCubeSettingsUi({ container = document, beforeOpen = () => {}, onResidents, onModels, getGeneratedObjects } = {}) {
   const ids = { menu: 'settings-menu', player: 'player-settings', world: 'world-settings', media: 'media-settings', rooms: 'room-list' };
   const dialogs = Object.fromEntries(Object.entries(ids).map(([key, id]) => [key, container.querySelector(`#${id}`)]));
   const controller = new AbortController();
+  const objects = createCubeObjectUi({ container: container === document ? document.body : container, getGeneratedObjects, beforeOpen,
+    getReturnFocus: () => container.querySelector('#settings-button') });
   let closed = false, previousFocus;
-  const close = () => { Object.values(dialogs).forEach(dialog => { if (dialog.open) dialog.close(); }); };
+  const close = () => { objects.close({ restore: false }); Object.values(dialogs).forEach(dialog => { if (dialog.open) dialog.close(); }); };
   const open = (section = 'menu') => {
     if (closed) return;
     const dialog = dialogs[section]; if (!dialog) return;
@@ -71,8 +76,11 @@ export function createCubeSettingsUi({ container = document, beforeOpen = () => 
     });
     for (const button of dialog.querySelectorAll('[data-settings-section]')) listen(button, 'click', () => open(button.dataset.settingsSection));
     for (const button of dialog.querySelectorAll('[data-world-action]')) listen(button, 'click', () => {
-      close(); Promise.resolve(button.dataset.worldAction === 'residents' ? onResidents?.() : onModels?.()).catch(() => {});
+      close();
+      const action = button.dataset.worldAction;
+      Promise.resolve(action === 'residents' ? onResidents?.() : action === 'models' ? onModels?.()
+        : objects.open({ returnFocus: container.querySelector('#settings-button') })).catch(() => {});
     });
   }
-  return { open, close, dispose() { closed = true; controller.abort(); close(); } };
+  return { open, close, dispose() { closed = true; controller.abort(); close(); objects.dispose(); } };
 }

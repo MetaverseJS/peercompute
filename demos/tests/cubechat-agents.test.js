@@ -600,7 +600,7 @@ test('generated avatars keep the same physics body, motion, picking and identity
     const renderedCid = active.avatar.artifactCid, taggedCid = active.group.userData.residentAvatar.artifactCid;
     layer.setAppearance(base.key, { width: 1, height: 1, channels: 4, data: new Uint8Array([255,0,0,255]) });
     const hidden = !entry.baseMaterial.visible && !entry.faceMaterial.visible && !entry.outline.visible;
-    const {x,y} = project([0,3,0]), picked = layer.pick(x,y);
+    const {x,y} = project([0,1.5,0]), picked = layer.pick(x,y);
     let disposed = 0; active.group.traverse(item => item.geometry?.addEventListener('dispose', () => disposed++));
     layer.setMovement(base.key, 'stationary'); layer.place(entry, [8,3,2]); layer.upsert({ ...base, avatar, name: 'Robot' });
     const same = entry.body === body && entry.mesh === root && physics.world.bodies.length === 2 && layer.entries.size === 1;
@@ -613,4 +613,83 @@ test('generated avatars keep the same physics body, motion, picking and identity
   assert.equal(result.taggedCid, result.renderedCid);
   assert.equal(result.minY, 0); assert.equal(Math.max(...result.extent), 6); assert.equal(result.disposed, 1);
   assert.deepEqual(result.position, [8,3,2]); assert.equal(result.restored, true);
+});
+
+test('semantic avatar sizes preserve proportions, grounded feet, captions and the existing physics body', async t => {
+  const page = await fixture(t);
+  const result = await page.evaluate(async () => {
+    const { encodeGeneratedMesh } = await import('/peercompute/src/peercompute/inference/GeneratedMeshArtifact.js');
+    const geometry = new THREE.BoxGeometry(4, 2, 2);
+    const mesh = encodeGeneratedMesh({ positions: geometry.attributes.position.array, indices: new Uint32Array(geometry.index.array) });
+    geometry.dispose();
+    const avatar = { kind: 'generated-mesh', artifactCid: 'bafkreihd7nlvbwjkdustvo23a7jo44x6lc26n7pob5bsqtyutvwen26spe' };
+    layer.upsert({ ...base, avatar, caption: 'Hello' });
+    const entry = layer.entries.get(base.key), body = entry.body, root = entry.mesh, measurements = [];
+    for (const size of [.6, 6, 15]) {
+      const prepared = await layer.prepareAvatar(mesh, { size }); prepared.commit(base.key, { avatar });
+      layer.upsert({ ...base, avatar, caption: 'Hello', name: `Size ${size}`, status: 'speaking' });
+      root.updateWorldMatrix(true, true);
+      const bounds = new THREE.Box3().setFromObject(entry.avatarView.group), label = entry.label.getWorldPosition(new THREE.Vector3());
+      const caption = layer.captions.entries.get(base.key).sprite;
+      measurements.push({ size, dimensions: bounds.getSize(new THREE.Vector3()).toArray(), ground: bounds.min.y,
+        label: label.y, captionBottom: caption.position.y - caption.scale.y / 2,
+        storedSize: entry.avatarView.worldSize, sameBody: entry.body === body && entry.mesh === root,
+        collision: body.shapes[0].halfExtents.toArray() });
+    }
+    const carPoint = project([6,3,0]), carPick = layer.pick(carPoint.x, carPoint.y);
+    const tiny = await layer.prepareAvatar(mesh, { size: .6 }); tiny.commit(base.key, { avatar });
+    const emptyPoint = project([2,3,0]), emptyPick = layer.pick(emptyPoint.x, emptyPoint.y);
+    const tinyPoint = project([0,.15,0]), tinyPick = layer.pick(tinyPoint.x, tinyPoint.y);
+    layer.clearAvatar(base.key); root.updateWorldMatrix(true, true);
+    const cubePoint = project([2,3,0]);
+    return { measurements, carPick, emptyPick, tinyPick, cubePick: layer.pick(cubePoint.x, cubePoint.y),
+      resetLabel: entry.label.getWorldPosition(new THREE.Vector3()).y,
+      resetCaptionBottom: entry.caption.position.y - entry.caption.scale.y / 2,
+      bodyCount: physics.world.bodies.length };
+  });
+  for (const value of result.measurements) {
+    assert.equal(value.storedSize, value.size); assert.equal(value.sameBody, true);
+    assert.deepEqual(value.collision, [3,3,3]);
+    value.dimensions.forEach((dimension, axis) => assert(Math.abs(dimension - value.size * (axis ? .5 : 1)) < 1e-6));
+    assert(Math.abs(value.ground) < 1e-6);
+    assert(Math.abs(value.label - (value.size / 2 + 1.5)) < 1e-6);
+    assert(Math.abs(value.captionBottom - (value.size / 2 + 3)) < 1e-6);
+  }
+  assert.equal(result.carPick, 'local:agent-1'); assert.equal(result.emptyPick, null);
+  assert.equal(result.tinyPick, 'local:agent-1'); assert.equal(result.cubePick, 'local:agent-1');
+  assert.equal(result.resetLabel, 7.5); assert.equal(result.resetCaptionBottom, 9); assert.equal(result.bodyCount, 2);
+});
+
+test('placed objects use the same uniform size and stay grounded above uneven terrain', async t => {
+  const page = await fixture(t);
+  const result = await page.evaluate(async () => {
+    const { CubeGeneratedObjectLayer } = await import('/demos/cubechat/src/renderer/CubeGeneratedObjectLayer.js');
+    const { encodeGeneratedMesh } = await import('/peercompute/src/peercompute/inference/GeneratedMeshArtifact.js');
+    const { WORLD_OBJECT_SCHEMA } = await import('/demos/shared/agents/WorldObjectAction.js');
+    const geometry = new THREE.BoxGeometry(4, 2, 2);
+    const mesh = encodeGeneratedMesh({ positions: geometry.attributes.position.array, indices: new Uint32Array(geometry.index.array) });
+    geometry.dispose();
+    const objects = new CubeGeneratedObjectLayer({ scene: { ...shell, gridSize: 100 },
+      physics: { getGroundHeight: () => 7 }, getResidentPosition: () => [0,10,0] });
+    const measurements = [];
+    try {
+      for (const size of [.6, 6, 15]) {
+        const placement = { schema: WORLD_OBJECT_SCHEMA, worldId: 'scale-world', ownerHostId: 'host', agentId: 'agent',
+          objectId: `scale-${size}`, requestId: `scale-${size}`, requestHash: 'a'.repeat(64), name: 'Scaled prop',
+          position: objects.getPlacement('agent', size), size };
+        const prepared = await objects.prepare(mesh); prepared.commit(placement.objectId,
+          { artifactCid: 'bafkreihd7nlvbwjkdustvo23a7jo44x6lc26n7pob5bsqtyutvwen26spe', placement });
+        const entry = objects.entries.get(placement.objectId); entry.group.updateWorldMatrix(true, true);
+        const bounds = new THREE.Box3().setFromObject(entry.group);
+        measurements.push({ size, dimensions: bounds.getSize(new THREE.Vector3()).toArray(), ground: bounds.min.y,
+          x: entry.group.position.x, bodies: physics.world.bodies.length });
+      }
+    } finally { objects.dispose(); }
+    return { measurements, remaining: objects.entries.size };
+  });
+  for (const value of result.measurements) {
+    value.dimensions.forEach((dimension, axis) => assert(Math.abs(dimension - value.size * (axis ? .5 : 1)) < 1e-6));
+    assert.equal(value.ground, 7); assert.equal(value.x, 6 + value.size / 2); assert.equal(value.bodies, 1);
+  }
+  assert.equal(result.remaining, 0);
 });

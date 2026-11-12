@@ -2354,3 +2354,14 @@ resident-chosen design, neural follow, exact-CID peer display, retained reload,
 cloning and typed reset pass on the internal preview. A native chat-reset trial
 hit a peer language-model session failure; reset lifecycle was then qualified
 separately. Cosmetic static geometry only; no new vehicle physics or rigs.
+
+Next slice in progress: semantic generated-model scale shared by objects and
+avatars, using the six-unit person as reference. Preserve uniform proportions,
+grounding, labels, peer persistence and clone size. Add an Objects menu/modal for
+selecting and deleting this device's placed objects. Keep avatars/residents and
+downloaded inference models separate. Internal preview only; no Pages push.
+
+Implementation and two-peer acceptance pass: stored semantic sizes, uniform
+grounded rendering, scaled picking/labels, clone/reload continuity and mobile
+Objects batch deletion with remote withdrawal. Existing collision bodies stay
+unchanged. Promote the verified internal preview; no Pages publication requested.

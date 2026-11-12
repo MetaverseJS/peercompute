@@ -7,7 +7,7 @@ import { plaintext } from '@libp2p/plaintext';
 import { yamux } from '@libp2p/yamux';
 import { identify } from '@libp2p/identify';
 import { channel } from '../../peercompute/src/peercompute/networkManager/inference/protocol.js';
-import { WorldGeneratedObjectNetwork, WORLD_OBJECT_PROTOCOL } from '../shared/agents/WorldGeneratedObjectNetwork.js';
+import { WorldGeneratedObjectNetwork, WORLD_OBJECT_PROTOCOL, LEGACY_WORLD_OBJECT_PROTOCOL } from '../shared/agents/WorldGeneratedObjectNetwork.js';
 import { WORLD_OBJECT_SCHEMA } from '../shared/agents/WorldObjectAction.js';
 import { ArtifactStore } from '../../peercompute/src/peercompute/artifacts/ArtifactStore.js';
 
@@ -40,6 +40,21 @@ test('real Noise peers discover exact CID records with transport-derived owner i
   await a.service.refresh(); assert.equal(a.directories.at(-1).length, 1);
   b.objects = []; await a.service.refresh(); assert.deepEqual(a.directories.at(-1), []);
   assert.equal(a.node.getConnections()[0].encryption, '/noise');
+});
+test('scaled objects transfer exactly on v2; v1 receives only compatible objects and new clients can query old peers', { timeout: 12000 }, async t => {
+  const [a, b] = await fixture(t), peerId = b.node.peerId.toString();
+  const original = b.objects[0];
+  b.objects.push(...[0.8, 15, 48].map((size, i) => ({ ...original,
+    placement: { ...original.placement, size, objectId: `scaled-${i}` } })));
+  const result = await a.service.query(peerId);
+  assert.deepEqual(result.map(value => value.placement.size), [8, 0.8, 15, 48]);
+  const connection = a.node.getConnections()[0], stream = await connection.newStream(LEGACY_WORLD_OBJECT_PROTOCOL);
+  const io = channel(stream), nonce = crypto.randomUUID(), signal = AbortSignal.timeout(1500);
+  await io.write({ type: 'query', recipient: peerId, nonce, worldId, scope }, signal);
+  const response = await io.read(signal);
+  assert.deepEqual(response.objects, [original]); await stream.close();
+  await b.node.unhandle(WORLD_OBJECT_PROTOCOL);
+  assert.deepEqual((await a.service.query(peerId)).map(value => value.placement.size), [8]);
 });
 test('plaintext, unknown room members, relay peers and claimed owner fields cannot publish object descriptors', { timeout: 12000 }, async t => {
   const [a, b] = await fixture(t), peerId = b.node.peerId.toString();

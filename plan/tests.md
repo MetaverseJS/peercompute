@@ -5124,3 +5124,26 @@ transfer failure and false-positive harness check are preserved, not counted as
 passes. Final internal preview passes exact TLS/index/assets, desktop/390px layout,
 authenticated SecretWorkshop and zero browser errors or weight downloads.
 Evidence: /home/cos/.cache/peercompute-resident-avatar-20261111/.
+
+### Semantic size and Objects cleanup — November11
+
+- `world-model-scale`, `world-resident-avatar` and `world-generated-*` cover
+  explicit/omitted size, malformed bounds/metadata, retained reload/peer display,
+  clone file identity, immutable scale, and real Noise v2/v1 range negotiation.
+- Cube renderer cases check0.6/6/15-unit avatars and props, natural proportions,
+  grounded feet, name/status label refresh, speech anchors, actual mesh picking
+  beyond the old cube and no empty oversized hit area. Cannon identity is stable.
+- `cubechat-objects-ui` covers owned-only selection/delete, partial failures and
+  retry, close/dispose, room changes, delayed startup, mobile wrapping and inert
+  untrusted names. Existing Cube native UI/input coverage protects the menu.
+- Actual private-room two-browser acceptance reuses already neural-generated
+  retained geometry, never substitutes it for a new inference result. Verify
+  peer size equality, mobile batch deletion/remote withdrawal, no prop resurrection
+  and scaled-avatar reload. Native-scale-delete-1 passes with no browser errors,
+  model downloads or new inference calls; all owned browsers/server close.
+- Counts:55 core,119 integration,32 renderer,6 new UI,54 existing UI; final14
+  prompt/size checks overlap prior scopes. CubeChat/Earth/inference builds pass.
+  External evidence: /home/cos/.cache/peercompute-model-scale-20261111/.
+- Bounded live planner probe found no remote text candidates and made no model
+  requests. Semantic size choice by a real peer LLM remains unqualified; do not
+  confuse the passing retained-mesh sizing check with new model inference.

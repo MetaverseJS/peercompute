@@ -1,5 +1,6 @@
 import { readGeneratedMesh } from '../../../peercompute/src/peercompute/inference/GeneratedMeshArtifact.js';
 import { normalizeResidentAvatar, residentAvatarFromManifest, sameResidentAvatar } from '../../../peercompute/src/peercompute/agents/ResidentAvatar.js';
+import { worldModelSizeFromManifest } from '../world/WorldModelScale.js';
 
 /** A renderer-neutral, bounded cache of cosmetic resident bodies. */
 export function createWorldResidentAvatarPresenter({ runtime, adapter, worldId, onError = () => {}, concurrency = 2, now = Date.now }) {
@@ -10,13 +11,14 @@ export function createWorldResidentAvatarPresenter({ runtime, adapter, worldId, 
   async function read(body, signal) {
     const cid = body.avatar.artifactCid;
     const manifest = body.local ? await runtime.store.getManifest(cid, { signal }) : await runtime.inspectPeerPackage(cid, { signal });
-    try { residentAvatarFromManifest(cid, manifest, { worldId, agentId: body.agentId }); }
+    let size;
+    try { residentAvatarFromManifest(cid, manifest, { worldId, agentId: body.agentId }); size = worldModelSizeFromManifest(manifest); }
     catch (error) { error.invalidAvatar = true; throw error; }
     signal.throwIfAborted();
-    if (body.local) return readGeneratedMesh(runtime.store, cid, { signal });
+    if (body.local) return { mesh: await readGeneratedMesh(runtime.store, cid, { signal }), size };
     return runtime.withArtifactRetention(async retained => {
       await retained.ensure(cid, { signal, pin: false });
-      return readGeneratedMesh(retained, cid, { signal });
+      return { mesh: await readGeneratedMesh(retained, cid, { signal }), size };
     }, { signal });
   }
   function pump() {
@@ -28,8 +30,8 @@ export function createWorldResidentAvatarPresenter({ runtime, adapter, worldId, 
       work.done = (async () => {
         let prepared;
         try {
-          const mesh = await read(body, work.controller.signal);
-          prepared = await adapter.prepare(mesh, { signal: work.controller.signal });
+          const { mesh, size } = await read(body, work.controller.signal);
+          prepared = await adapter.prepare(mesh, { signal: work.controller.signal, size });
           work.controller.signal.throwIfAborted();
           if (closed || !same(desired.get(key), body)) return;
           prepared.commit(key, body); rendered.set(key, body); failures.delete(key); prepared = null;

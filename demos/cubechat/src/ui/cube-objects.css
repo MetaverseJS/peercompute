@@ -1,0 +1,7 @@
+.cube-objects { width: min(560px, calc(100vw - 24px)); }
+.cube-objects-list { display: grid; gap: 8px; margin-block: 14px; }
+.cube-objects .cube-object-row { display: flex; gap: 10px; align-items: center; min-width: 0; margin: 0; padding: 10px; border: 1px solid #397a89; border-radius: 3px; }
+.cube-objects .cube-object-row input { flex: 0 0 auto; width: 18px; height: 18px; min-height: 0; margin: 0; }
+.cube-object-row span { min-width: 0; overflow-wrap: anywhere; }
+.cube-objects-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.cube-objects button:disabled { cursor: default; opacity: .5; }

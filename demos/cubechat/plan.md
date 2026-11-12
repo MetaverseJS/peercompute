@@ -660,3 +660,24 @@ reload pass. Native chat reset hit a remote GGUF session failure; direct typed
 reset, peer replication and clone survival were independently verified. Preserve
 that distinction. Internal HTTPS5176 desktop/mobile, exact assets and authenticated
 SecretWorkshop connection pass. Avatars have not been published to Pages.
+
+### Intended model size and object cleanup — November11
+
+Shared WorldModelScale admits0.3–48 largest-dimension world units, anchored to a
+six-unit person. The action planner chooses semantic size; small name/description
+defaults cover older omitted-size proposals. Uniform fit preserves shape and
+grounding. Labels, speech anchors and visible-mesh picking track scaled geometry.
+Avatar metadata is retained in its immutable manifest and copied by clones;
+legacy avatars stay6. Object protocolv2 carries the wider range; oldv1 receives
+only its valid1–12 subset and new clients retain fallback. Physics is unchanged.
+
+Hamburger Objects manages only this device's placed props, with batch selection,
+Delete selected, partial failure/retry and room-change guards. Real two-browser
+checks reuse previously neural-generated geometry:0.8/6/15 props and a15-unit
+avatar render across peers, mobile UI deletion withdraws props, and both deletion
+and avatar size survive reload. This is not a new neural-generation qualification.
+55 core,119 integration,32 renderer,6 Objects UI and54 existing UI checks pass;
+the final shared-prompt14-case rerun also passes (scopes overlap).
+The bounded live semantic-planner probe saw no remote text candidate and sent no
+requests; real LLM size choice remains unqualified. Exact internal desktop/mobile
+preview, Objects UI and authenticated SecretWorkshop connection pass. No Pages push.

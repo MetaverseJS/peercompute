@@ -1,4 +1,4 @@
-import { prepareGeneratedMeshView } from '../../../shared/world/GeneratedMeshView.js';
+import { prepareGeneratedMeshView, fitGeneratedMeshView } from '../../../shared/world/GeneratedMeshView.js';
 import { normalizeResidentAvatar, sameResidentAvatar } from '../../../../peercompute/src/peercompute/agents/ResidentAvatar.js';
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
@@ -108,7 +108,12 @@ export class CubeAgentLayer {
     this.physics.world.addEventListener('addBody', this.onNavigationGeometryChanged);
     this.physics.world.addEventListener('removeBody', this.onNavigationGeometryChanged);
     this.captions = new SpeechBubbleLayer({ scene: scene.scene, camera: scene.camera,
-      getAnchor: key => this.entries.get(key)?.mesh, durationMs: captionDurationMs, maximum: maximumAgents, offsetY: 6 });
+      getAnchor: key => {
+        const entry = this.entries.get(key); if (!entry) return null;
+        const position = entry.mesh.getWorldPosition(new THREE.Vector3());
+        if (entry.avatarView) position.y += entry.avatarView.renderedHeight - HALF_SIZE * 2;
+        return position;
+      }, durationMs: captionDurationMs, maximum: maximumAgents, offsetY: 6 });
     this.group = new THREE.Group(); this.group.name = 'CubeChat agents'; scene.scene.add(this.group);
     this.geometry = new THREE.BoxGeometry(6, 6, 6);
     this.edgeGeometry = new THREE.EdgesGeometry(this.geometry);
@@ -357,7 +362,7 @@ export class CubeAgentLayer {
     if (!previous || previous.name !== descriptor.name || previous.status !== descriptor.status) {
       const label = textSprite(`${descriptor.name}${descriptor.status === 'idle' ? '' : ` · ${descriptor.status}`}`);
       disposeSprite(entry.label); entry.label = label; entry.mesh.add(label);
-      if (entry.avatarView) label.position.y = entry.avatarView.height * 6 / entry.avatarView.extent - 1.5;
+      if (entry.avatarView) label.position.y = entry.avatarView.renderedHeight - HALF_SIZE + 1.5;
     }
     if (!previous || previous.caption !== descriptor.caption) {
       clearTimeout(entry.captionTimer); entry.captionTimer = null;
@@ -409,21 +414,24 @@ export class CubeAgentLayer {
     return true;
   }
 
-  async prepareAvatar(mesh, { signal } = {}) {
+  async prepareAvatar(mesh, { signal, size = 6 } = {}) {
     if (this.closed) throw new Error('Resident renderer closed');
     const view = await prepareGeneratedMeshView(mesh, { signal });
+    try { fitGeneratedMeshView(view, size); }
+    catch (error) { view.dispose(); throw error; }
     let committed = false;
     return { dispose: view.dispose, commit: (key, descriptor) => {
       const entry = this.entries.get(key);
       if (this.closed || view.released || committed || !entry
           || !sameResidentAvatar(entry.descriptor.avatar, descriptor.avatar)) throw new Error('Resident avatar changed before display');
       this.clearAvatar(key);
-      view.group.scale.setScalar(6 / view.extent); view.group.position.y = -HALF_SIZE;
+      view.group.position.y = -HALF_SIZE;
       view.avatar = normalizeResidentAvatar(descriptor.avatar);
       view.group.userData.residentAvatar = view.avatar;
       entry.mesh.add(view.group); entry.avatarView = view;
       entry.baseMaterial.visible = false; if (entry.faceMaterial) entry.faceMaterial.visible = false;
-      entry.outline.visible = false; entry.label.position.y = view.height * 6 / view.extent - 1.5;
+      entry.outline.visible = false; entry.label.position.y = view.renderedHeight - HALF_SIZE + 1.5;
+      this.captions.update();
       committed = true;
     } };
   }
@@ -433,6 +441,7 @@ export class CubeAgentLayer {
     entry.avatarView?.group.removeFromParent(); entry.avatarView?.dispose(); entry.avatarView = null;
     entry.baseMaterial.visible = true; if (entry.faceMaterial) entry.faceMaterial.visible = true;
     entry.outline.visible = true; if (entry.label) entry.label.position.y = 4.5;
+    this.captions.update();
   }
 
   pick(clientX, clientY) {
@@ -443,7 +452,14 @@ export class CubeAgentLayer {
     const pointer = locked ? new THREE.Vector2() : new THREE.Vector2((clientX - bounds.left) / bounds.width * 2 - 1, -(clientY - bounds.top) / bounds.height * 2 + 1);
     this.scene.camera.updateWorldMatrix(true, false); this.group.updateWorldMatrix(true, true);
     this.raycaster.setFromCamera(pointer, this.scene.camera);
-    return this.raycaster.intersectObjects([...this.entries.values()].map(({ mesh }) => mesh), false)[0]?.object.userData.agentKey ?? null;
+    const targets = [], keys = new Map();
+    for (const [key, entry] of this.entries) {
+      if (entry.avatarView) entry.avatarView.group.traverseVisible(object => {
+        if (object.isMesh) { targets.push(object); keys.set(object, key); }
+      });
+      else { targets.push(entry.mesh); keys.set(entry.mesh, key); }
+    }
+    return keys.get(this.raycaster.intersectObjects(targets, false)[0]?.object) ?? null;
   }
 
   select(key) {

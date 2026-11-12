@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { prepareGeneratedMeshView } from '../../../shared/world/GeneratedMeshView.js';
+import { prepareGeneratedMeshView, fitGeneratedMeshView } from '../../../shared/world/GeneratedMeshView.js';
 import { normalizeWorldObjectDescriptor, objectPosition, WORLD_OBJECT_LIMITS } from '../../../shared/agents/WorldObjectAction.js';
 
 /** Cosmetic objects, independent of resident cubes and their physics bodies. */
@@ -23,7 +23,7 @@ export class CubeGeneratedObjectLayer {
     if (this.closed) throw new Error('Generated object renderer is closed');
     signal?.throwIfAborted();
     const view = await prepareGeneratedMeshView(mesh, { signal });
-    const { group, extent, dispose } = view;
+    const { group, dispose } = view;
     let committed = false;
     try {
       signal?.throwIfAborted();
@@ -34,7 +34,7 @@ export class CubeGeneratedObjectLayer {
           const checkedDescriptor = normalizeWorldObjectDescriptor(descriptor);
           if (!this.entries.has(key) && this.entries.size >= WORLD_OBJECT_LIMITS.visible) throw new Error('World object display limit reached');
           const placement = checkedDescriptor.placement;
-          group.scale.setScalar(placement.size / extent); group.position.fromArray(placement.position);
+          fitGeneratedMeshView(view, placement.size); group.position.fromArray(placement.position);
           group.name = placement.name; group.userData.generatedObject = checkedDescriptor;
           this.remove(key); this.group.add(group); committed = true;
           this.entries.set(key, { group, descriptor: checkedDescriptor, dispose });

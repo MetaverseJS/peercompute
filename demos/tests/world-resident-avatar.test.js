@@ -11,6 +11,7 @@ import { readGeneratedMesh } from '../../peercompute/src/peercompute/inference/G
 import { createWorldResidentAvatars } from '../shared/agents/WorldResidentAvatars.js';
 import { createWorldResidentAvatarPresenter } from '../shared/agents/WorldResidentAvatarPresenter.js';
 import { projectWorldIntentRequest } from '../shared/agents/WorldIntentDecision.js';
+import { worldModelSizeFromManifest } from '../shared/world/WorldModelScale.js';
 import { meshFixture, imageFixture, sceneAdapter, worldId, deferred, until } from './world-generated-fixtures.js';
 
 const action = { name: 'Robot', prompt: 'A friendly copper robot with a square head' };
@@ -109,7 +110,7 @@ test('avatar admission is opt-in owner capability; reset is exact and proposals 
   const disabled = projectWorldIntentRequest('become a robot', observed);
   assert.throws(() => disabled.resolve(JSON.stringify({ avatar: action })));
   const enabled = projectWorldIntentRequest('become a robot', observed, { allowAvatar: true });
-  assert.deepEqual(enabled.resolve(JSON.stringify({ avatar: action })), { avatar: action });
+  assert.deepEqual(enabled.resolve(JSON.stringify({ avatar: action })), { avatar: { ...action, size: 6 } });
   assert.deepEqual(enabled.resolve('{"avatar":{"reset":true}}'), { avatar: { reset: true } });
   assert.throws(() => enabled.resolve('{"avatar":{"reset":true,"url":"bad"}}'));
 });
@@ -146,4 +147,20 @@ test('same request ID is idempotent and a conflicting action cannot reuse the ol
   const f = await fixture(t), id = crypto.randomUUID(), result = await f.generate(action, { requestId: id });
   assert.deepEqual((await f.generate(action, { requestId: id })).avatar, result.avatar);
   await assert.rejects(f.generate({ reset: true }, { requestId: id }), /Conflicting/); assert.equal(f.calls.length, 2);
+});
+test('avatar size survives generation, retained reload, remote display and independently retained cloning without rewriting mesh bytes', async t => {
+  const f = await fixture(t), first = await f.generate({ name: 'Car', prompt: 'A full-size blue car', size: 15 });
+  const cid = first.avatar.artifactCid, manifest = await f.store.getManifest(cid);
+  assert.equal(worldModelSizeFromManifest(manifest), 15);
+  assert(f.adapter.prepared.some(value => value.size === 15));
+  const restored = sceneAdapter(), presenter = createWorldResidentAvatarPresenter({ runtime: f.runtime, adapter: restored, worldId });
+  t.after(() => presenter.dispose());
+  const sourceBody = { ...(await f.bodies())[0], local: false, key: `remote:${f.head.agentId}` };
+  presenter.sync([sourceBody]); await until(() => restored.visible.size === 1);
+  assert.equal(restored.prepared[0].size, 15);
+  const clone = await f.service.retainClone({ sourceBody, avatar: first.avatar, agentId: 'clone' });
+  const clonedManifest = await f.store.getManifest(clone.artifactCid);
+  assert.equal(worldModelSizeFromManifest(clonedManifest), 15);
+  assert.deepEqual(clonedManifest.files, manifest.files);
+  assert.notEqual(clone.artifactCid, cid); assert.equal(f.calls.length, 2);
 });

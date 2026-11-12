@@ -1,8 +1,9 @@
 import { artifactCID } from '../../../peercompute/src/peercompute/artifacts/ArtifactManifest.js';
+import { normalizeWorldModelSize, resolveWorldModelSize, WORLD_MODEL_SIZE } from '../world/WorldModelScale.js';
 
 export const WORLD_OBJECT_SCHEMA = 'peercompute.world.generated-object.v1';
 export const WORLD_OBJECT_LIMITS = Object.freeze({ perOwner: 32, visible: 128, promptBytes: 1024, nameBytes: 120,
-  minimumSize: 1, maximumSize: 12, maximumCoordinate: 100000, meshBytes: 16 * 1024 * 1024 });
+  minimumSize: WORLD_MODEL_SIZE.minimum, maximumSize: WORLD_MODEL_SIZE.maximum, maximumCoordinate: 100000, meshBytes: 16 * 1024 * 1024 });
 const bytes = value => new TextEncoder().encode(value).length;
 export function objectText(value, maximum, label) {
   if (typeof value !== 'string' || !value.trim() || /[\u0000-\u001f\u007f]/.test(value)
@@ -25,21 +26,19 @@ export function objectPosition(value) {
   return [...value];
 }
 function objectSize(value) {
-  if (!Number.isFinite(value) || value < WORLD_OBJECT_LIMITS.minimumSize || value > WORLD_OBJECT_LIMITS.maximumSize) {
-    throw new TypeError('Generated object size must be between 1 and 12 world units');
-  }
-  return value;
+  return normalizeWorldModelSize(value);
 }
 
 /** A proposal is descriptive data; it never grants ownership or arbitrary code. */
 export function normalizeWorldObjectAction(value) {
   fields(value, ['name', 'prompt', 'size']);
-  return { name: objectText(value.name, WORLD_OBJECT_LIMITS.nameBytes, 'name'),
-    prompt: objectText(value.prompt, WORLD_OBJECT_LIMITS.promptBytes, 'description'), size: objectSize(value.size ?? 6) };
+  const action = { name: objectText(value.name, WORLD_OBJECT_LIMITS.nameBytes, 'name'),
+    prompt: objectText(value.prompt, WORLD_OBJECT_LIMITS.promptBytes, 'description') };
+  return { ...action, size: resolveWorldModelSize(value.size, action) };
 }
 export const WORLD_OBJECT_ACTION_INSTRUCTIONS = 'You may also create a 3D object when the owner explicitly asks you to generate/build/place a new object. '
-  + 'Return {"object":{"name":"short name","prompt":"visual description of one isolated object on a plain white background","size":6}}. '
-  + 'Size is 1 to 12 world units. The object is placed beside your cube. This only proposes generation; do not claim it already exists. '
+  + 'Return an object with name, prompt and size, for example {"object":{"name":"Coffee mug","prompt":"One ceramic coffee mug on a plain white background","size":0.8}}. '
+  + 'The object is placed beside your cube. This only proposes generation; do not claim it already exists. '
   + 'Do not create objects for questions, hypothetical examples, avatars, or movement requests.';
 
 export function normalizeWorldObjectPlacement(value, { worldId, ownerHostId } = {}) {

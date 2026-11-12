@@ -14,8 +14,8 @@ export async function until(check) { for (let i = 0; i < 100; i++) { if (check()
 export function sceneAdapter() {
   const visible = new Map(), prepared = [], removed = [];
   return { visible, prepared, removed, getPlacement: () => [10, 0, 4],
-    async prepare(mesh, { signal } = {}) {
-      signal?.throwIfAborted(); const state = { mesh, released: false, committed: false }; prepared.push(state);
+    async prepare(mesh, { signal, size } = {}) {
+      signal?.throwIfAborted(); const state = { mesh, size, released: false, committed: false }; prepared.push(state);
       return { commit(key, descriptor) { state.committed = true; visible.set(key, descriptor); }, dispose() { state.released = true; } };
     },
     remove(key) { removed.push(key); visible.delete(key); },

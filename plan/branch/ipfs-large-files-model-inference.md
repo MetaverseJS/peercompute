@@ -1663,3 +1663,9 @@ generation, existing neural movement, retained shared geometry, independent
 clones and reset lifecycle. 200 focused regressions plus the 39-case diagnostic
 rerun pass. Native chat-reset provider failure remains recorded separately from
 the passing typed reset. No further Pages deployment or remote push in this slice.
+
+November11 next request: size generated shapes according to their intended kind,
+including props and resident avatars. Shared bounded world-size metadata must
+survive peer fetch/reload/clone without altering GLB bytes. Follow-up asks how to
+delete clutter: expose existing owned object removal in a hamburger Objects modal.
+Continue internal previews only; preserve old manifests and older protocol peers.

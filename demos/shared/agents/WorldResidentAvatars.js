@@ -5,6 +5,7 @@ import { RESIDENT_AVATAR_SCHEMA, normalizeResidentAvatarProvenance, residentAvat
 import { generateWorldMesh } from './WorldMeshGeneration.js';
 import { normalizeWorldAvatarAction } from './WorldAvatarAction.js';
 import { createWorldResidentAvatarPresenter } from './WorldResidentAvatarPresenter.js';
+import { worldModelScale, worldModelSizeFromManifest } from '../world/WorldModelScale.js';
 
 /** Durable avatars belong to agent bindings; they never create a second actor. */
 export function createWorldResidentAvatars({ runtime, agents, adapter, worldId, ownerHostId, isOwner, onSaved, onStatus = () => {} }) {
@@ -63,10 +64,10 @@ export function createWorldResidentAvatars({ runtime, agents, adapter, worldId, 
         if (!proposal.reset) {
           const mesh = await generateWorldMesh({ inference: agents.inference, head, name: proposal.name, description: proposal.prompt,
             signal, assertCurrent: () => authority(agentId, expectedRevision, signal), onEvent: event => emit({ agentId, ...event }) });
-          prepared = await presenter.prepare(mesh, { signal });
+          prepared = await presenter.prepare(mesh, { signal, size: proposal.size });
           await authority(agentId, expectedRevision, signal);
           const record = await retainGeneratedMesh(runtime.store, mesh, { name: proposal.name, signal,
-            provenance: { residentAvatar: provenance(agentId, requestId, fingerprint, proposal.name) },
+            provenance: { residentAvatar: provenance(agentId, requestId, fingerprint, proposal.name), worldScale: worldModelScale(proposal.size) },
             beforeCommit: () => authority(agentId, expectedRevision, signal) });
           avatar = { kind: 'generated-mesh', artifactCid: record.artifactCid };
         }
@@ -108,11 +109,12 @@ export function createWorldResidentAvatars({ runtime, agents, adapter, worldId, 
     const signal = combined(callerSignal), cid = avatar.artifactCid;
     const manifest = sourceBody.local ? await runtime.store.getManifest(cid, { signal }) : await runtime.inspectPeerPackage(cid, { signal });
     residentAvatarFromManifest(cid, manifest, { worldId, agentId: sourceBody.agentId });
+    const size = worldModelSizeFromManifest(manifest);
     const mesh = sourceBody.local ? await readGeneratedMesh(runtime.store, cid, { signal }) : await runtime.withArtifactRetention(async retained => {
       await retained.ensure(cid, { signal, pin: false }); return readGeneratedMesh(retained, cid, { signal });
     }, { signal });
     const record = await retainGeneratedMesh(runtime.store, mesh, { signal, name: manifest.name,
-      provenance: { residentAvatar: provenance(agentId, crypto.randomUUID(), hash({ agentId, cid }), manifest.provenance.residentAvatar.name, cid) } });
+      provenance: { residentAvatar: provenance(agentId, crypto.randomUUID(), hash({ agentId, cid }), manifest.provenance.residentAvatar.name, cid), worldScale: worldModelScale(size) } });
     return { kind: 'generated-mesh', artifactCid: record.artifactCid };
     })());
   }

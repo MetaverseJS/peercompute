@@ -1,6 +1,18 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { validateGeneratedMesh } from '../../../peercompute/src/peercompute/inference/GeneratedMeshArtifact.js';
+import { normalizeWorldModelSize } from './WorldModelScale.js';
+
+/** Uniform sizing preserves the generated proportions and its grounded origin. */
+export function fitGeneratedMeshView(view, size) {
+  const checked = normalizeWorldModelSize(size);
+  if (!Number.isFinite(view.extent) || view.extent <= 0 || !Number.isFinite(view.height) || view.height < 0) {
+    throw new TypeError('Invalid generated mesh bounds');
+  }
+  view.group.scale.setScalar(checked / view.extent);
+  view.worldSize = checked; view.renderedHeight = view.height * checked / view.extent;
+  return view.renderedHeight;
+}
 
 function disposeObject(root) {
   const geometries = new Set(), materials = new Set(), textures = new Set();

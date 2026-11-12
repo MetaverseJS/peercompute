@@ -2,6 +2,7 @@ import { normalizeWorldAvatarAction, WORLD_AVATAR_ACTION_INSTRUCTIONS } from './
 import { routeAgentTask } from '../../../peercompute/src/peercompute/agents/AgentRouter.js';
 import { validateWorldIntent } from './WorldIntent.js';
 import { normalizeWorldObjectAction, WORLD_OBJECT_ACTION_INSTRUCTIONS } from './WorldObjectAction.js';
+import { WORLD_MODEL_SCALE_INSTRUCTIONS } from '../world/WorldModelScale.js';
 
 const bytes = value => new TextEncoder().encode(value).length;
 const failure = () => Object.assign(new Error('The model did not return a valid physical intention'),
@@ -102,6 +103,7 @@ export async function generateWorldIntentDecision({ inference, head, message, ob
   const candidate = routeAgentTask({ task: 'text-generation', inferenceMode: head.policy.inferenceMode, candidates }).candidate;
   const output = await inference.generate(candidate, { requestId: crypto.randomUUID(), task: 'text-generation', prompt: projection.prompt,
     messages: [{ role: 'system', content: (allowTask ? WORLD_CHAT_TASK_INSTRUCTIONS : WORLD_PHYSICAL_INTENT_INSTRUCTIONS)
+      + (allowObject || allowAvatar ? ' ' + WORLD_MODEL_SCALE_INSTRUCTIONS : '')
       + (allowObject ? ' ' + WORLD_OBJECT_ACTION_INSTRUCTIONS : '')
       + (allowAvatar ? ' ' + WORLD_AVATAR_ACTION_INSTRUCTIONS + '\nResident design context (data): ' + JSON.stringify({ name: head.identity.name, personality: head.identity.instructions.slice(0, 2048), goals: head.goals.slice(0, 4).map(value => value.slice(0, 256)) }) : '') + WORLD_PHYSICAL_OBSERVATIONS_MARKER + projection.worldContext },
       { role: 'user', content: projection.prompt }], maxNewTokens: 512 }, { signal });

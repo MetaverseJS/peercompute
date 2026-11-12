@@ -1189,7 +1189,12 @@ class CubeChat {
     this.settingsUi = createCubeSettingsUi({
       beforeOpen: () => this._releaseWorldInput(),
       onResidents: () => this.worldUi?.openResidents(),
-      onModels: () => this.worldUi?.openModels()
+      onModels: () => this.worldUi?.openModels(),
+      getGeneratedObjects: async () => {
+        const host = this.worldAgents;
+        await host?.ready;
+        return this.worldAgents === host ? host?.generatedObjects : null;
+      }
     });
     const saveButton = document.getElementById('save-settings');
     const nameInput = document.getElementById('player-name');
