@@ -62913,3 +62913,34 @@ startup/shutdown race separately; no source attribution is established yet.
   failures recover without replay; owner pause/unload remains authoritative.
 - This final receipt is a local documentation checkpoint only. Published code and
   assets remain the fully verified3abaf23b; no second Pages build is needed.
+
+
+### 2026-11-12T17:01:30.174922+00:00 — next-slice recommendation
+
+- User prompt: “whats next?” Receipt time above; exact delivery timestamp is not
+  available. This requests a recommendation, not implementation or deployment.
+- Consulted ICC assistant-status/source-drift, current plan/plan.md and log,
+  inhabited-agents roadmap, Humunculus HTML architecture/milestones, live
+  WorldMemoryStore, WorldOodaResident/Decision and CubeAgentLayer observation code.
+  An independent read-only agent checked the same gap and existing spatial goals.
+  ICC drift is limited to five final-release documentation files; live source was
+  read directly. No unrelated ICC backlog work was started.
+- Recommend grounded persistent knowledge of people and named places, derived
+  from existing scoped episodes with evidence IDs, timestamps, uncertainty and
+  corrections. Retrieve relevant knowledge into conversation, OODA and goal
+  planning; retain owner inspect/forget controls and existing sharing permissions.
+  Current substring/recency episode retrieval and sampled navigation points do
+  not provide a durable named-place/entity index. Existing memory, learned motor,
+  multi-step objectives, vision and recovery should be reused.
+- Proposed acceptance: “Remember this as our meeting spot”; leave/reload; ask to
+  return; resident retrieves the location and confirms arrival from the motor's
+  physical receipt. Identity-based familiarity must avoid name collisions;
+  stale/moved/removed targets must not be reported as currently observed.
+  This is memory-guided adaptation; self-directed neural weight training remains
+  the later practice/evaluation milestone. Recommendation is not yet authorized
+  for implementation.
+- Commands: ICC status/drift queries, rg/sed source and plan reads, git status and
+  documentation diff check. Files touched: plan/log.md only. No runtime tests,
+  source changes, model execution, rebuild, push or Pages deployment for this
+  discussion. Initial guessed glob/path reads missed files; resolved existing
+  Humunculus HTML and live modules supplied the actual evidence.
