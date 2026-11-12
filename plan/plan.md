@@ -2374,3 +2374,7 @@ IDOL is another evaluation candidate: its native PyTorch pipeline generates
 Gaussian-splat PLY, so integration additionally requires validated splat results
 and rendering alongside the current GLB path. Native published VRAM measurements
 do not establish WebGPU support. No implementation or benchmark authorized yet.
+Stable Fast 3D follow-up: existing lyonsno/sf3d-webgpu implementation and
+needle-tools/SF3D-webgpu ONNX exports make SF3D a stronger near-term browser
+integration candidate. Evaluate output quality and textured-GLB support before
+choosing an adapter; neither export is currently admitted or tested here.
