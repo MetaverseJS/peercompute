@@ -68,7 +68,11 @@ async function fixture(t, { mobile = false, enabled = true } = {}) {
       onSend: async input => {
         calls.push({ type: 'agent-send', ...input }); ui.setBusy(true);
         ui.setMessages([{ role: 'user', text: input.text }]);
-        try { if (window.holdReply) await hold('reply'); ui.setMessages([{ role: 'user', text: input.text }, { role: 'assistant', text: 'Controlled reply' }]); }
+        try {
+          if (window.failSend) throw Error('Avatar generation failed');
+          if (window.avatarFailed) { ui.setMessages([{ role: 'system', text: 'Avatar failed; reference retained' }]); return { avatarFailed: true }; }
+          if (window.holdReply) await hold('reply'); ui.setMessages([{ role: 'user', text: input.text }, { role: 'assistant', text: 'Controlled reply' }]);
+        }
         finally { ui.setBusy(false); }
       },
       onCancel: async () => {
@@ -152,6 +156,124 @@ async function openResidents(page) {
   await page.getByRole('dialog', { name: 'World menu', exact: true }).getByRole('button', { name: 'Residents', exact: true }).click();
 }
 async function selectAgent(page, key = 'local:ada') { await target(page).selectOption(key); await page.waitForFunction(key => ui.getTarget() === key && !document.querySelector('[aria-label="World message"]').disabled, key); }
+
+async function transferAvatarImage(page, { kind = 'paste', blobUrl = false, name = 'robot.png' } = {}) {
+  return page.evaluate(async ({ kind, blobUrl, name }) => {
+    const canvas = document.createElement('canvas'); canvas.width = 2; canvas.height = 1;
+    const ctx = canvas.getContext('2d'); ctx.fillStyle = '#ff0000'; ctx.fillRect(0, 0, 1, 1);
+    ctx.fillStyle = '#00ff00'; ctx.fillRect(1, 0, 1, 1);
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+    const transfer = new DataTransfer();
+    if (blobUrl) {
+      window.avatarBlobUrl = URL.createObjectURL(blob); transfer.setData('text/plain', avatarBlobUrl);
+    } else transfer.items.add(new File([blob], name, { type: 'image/png' }));
+    const event = kind === 'drop' ? new DragEvent('drop', { dataTransfer: transfer, bubbles: true, cancelable: true })
+      : new ClipboardEvent('paste', { clipboardData: transfer, bubbles: true, cancelable: true });
+    document.querySelector('[aria-label="World message"]').dispatchEvent(event);
+    return event.defaultPrevented;
+  }, { kind, blobUrl, name });
+}
+
+test('owned resident avatar paste sends decoded pixels and clears a successful reference without leaking image URLs', async t => {
+  const page = await fixture(t, { mobile: true }); await openChat(page); await selectAgent(page);
+  assert.equal(await transferAvatarImage(page, { blobUrl: true }), true);
+  await page.getByAltText('Avatar reference', { exact: true }).waitFor({ state: 'visible' });
+  await page.waitForFunction(() => !document.querySelector('.cube-native-composer button[type="submit"]').disabled);
+  assert.equal(await prompt(page).inputValue(), '');
+  assert.match(await prompt(page).getAttribute('title'), /Avatar prompt: <exact image prompt>/);
+  assert.equal(await page.getByText('Avatar reference — replaces this resident’s body', { exact: true }).isVisible(), true);
+  assert.equal(await page.locator('.cube-native-avatar-reference').evaluate(row => row.scrollWidth <= row.clientWidth), true);
+  assert.match(await page.getByAltText('Avatar reference', { exact: true }).getAttribute('src'), /^data:image\/webp/);
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  await page.getByAltText('Avatar reference', { exact: true }).waitFor({ state: 'hidden' });
+  const sent = await page.evaluate(() => {
+    const value = calls.find(call => call.type === 'agent-send');
+    return { ...value, avatarImage: { ...value.avatarImage, data: [...value.avatarImage.data] } };
+  });
+  assert.equal(sent.key, 'local:ada'); assert.equal(sent.text, 'Use this image as your avatar.');
+  assert.deepEqual(sent.avatarImage, { width: 2, height: 1, channels: 4, data: [255, 0, 0, 255, 0, 255, 0, 255] });
+  assert.equal(JSON.stringify(sent).includes('blob:'), false);
+  assert.equal(await page.evaluate(() => calls.some(call => call.type === 'caption' && /blob:|data:/.test(call.text))), false);
+  assert.equal(await page.getByAltText('Avatar reference', { exact: true }).getAttribute('src'), null);
+  await page.evaluate(() => URL.revokeObjectURL(avatarBlobUrl));
+});
+
+test('avatar drop retains the chosen reference on failure and supports removal or successful retry', async t => {
+  const page = await fixture(t); await openChat(page); await selectAgent(page);
+  assert.equal(await transferAvatarImage(page, { kind: 'drop', name: '<robot>.png' }), true);
+  await page.getByAltText('Avatar reference', { exact: true }).waitFor({ state: 'visible' });
+  await prompt(page).fill('Use this robot'); await page.evaluate(() => { window.failSend = true; });
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  await page.getByText('Avatar generation failed', { exact: true }).first().waitFor();
+  assert.equal(await page.getByAltText('Avatar reference', { exact: true }).isVisible(), true);
+  assert.equal(await prompt(page).inputValue(), 'Use this robot');
+  assert.equal(await page.getByText('<robot>.png', { exact: true }).isVisible(), true);
+  await page.evaluate(() => { window.failSend = false; window.avatarFailed = true; });
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  await transcript(page).getByText('Avatar failed; reference retained', { exact: true }).waitFor();
+  assert.equal(await page.getByAltText('Avatar reference', { exact: true }).isVisible(), true);
+  assert.equal(await prompt(page).inputValue(), 'Use this robot');
+  await page.evaluate(() => { window.avatarFailed = false; });
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  await page.getByAltText('Avatar reference', { exact: true }).waitFor({ state: 'hidden' });
+  assert.equal(await page.evaluate(() => calls.filter(call => call.type === 'agent-send').length), 3);
+  await transferAvatarImage(page); await page.getByAltText('Avatar reference', { exact: true }).waitFor({ state: 'visible' });
+  await page.getByRole('button', { name: 'Remove avatar reference', exact: true }).click();
+  assert.equal(await page.getByAltText('Avatar reference', { exact: true }).isVisible(), false);
+  assert.equal(await page.getByRole('button', { name: 'Send', exact: true }).isDisabled(), true);
+});
+
+test('room, peer-owned, paused and busy resident chats reject avatar images explicitly', async t => {
+  const page = await fixture(t); await openChat(page);
+  await transferAvatarImage(page);
+  await page.getByText('Avatar images belong in a local resident’s private chat, not room chat.', { exact: true }).first().waitFor();
+  await selectAgent(page, 'peer:remote'); await transferAvatarImage(page);
+  await page.getByText('Only this resident’s owner can change its body. Select a resident on this device.', { exact: true }).first().waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Attach avatar reference image' }).isVisible(), false);
+  await page.evaluate(() => ui.select(residents.find(row => row.key === 'local:paused'))); await transferAvatarImage(page);
+  await page.getByText('Wait until this resident is ready before attaching an avatar image.', { exact: true }).first().waitFor();
+  await page.evaluate(() => { ui.select(residents[0]); ui.setBusy(true); }); await transferAvatarImage(page);
+  await page.getByText('Wait until this resident is ready before attaching an avatar image.', { exact: true }).first().waitFor();
+  assert.equal(await page.getByAltText('Avatar reference', { exact: true }).isVisible(), false);
+  assert.equal(await prompt(page).inputValue(), '');
+  assert.equal(await page.evaluate(() => calls.some(call => call.type === 'agent-send' || call.type === 'room-send')), false);
+});
+
+test('avatar file picker uses the same decoder and discards its reference when the selected resident changes', async t => {
+  const page = await fixture(t, { mobile: true }); await openChat(page); await selectAgent(page);
+  const bytes = await page.evaluate(async () => {
+    const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
+    return [...new Uint8Array(await (await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))).arrayBuffer())];
+  });
+  const chooserPromise = page.waitForEvent('filechooser'); await page.getByRole('button', { name: 'Attach avatar reference image' }).click();
+  await (await chooserPromise).setFiles({ name: 'mobile-robot.png', mimeType: 'image/png', buffer: Buffer.from(bytes) });
+  await page.getByAltText('Avatar reference', { exact: true }).waitFor({ state: 'visible' });
+  await selectAgent(page, 'peer:remote');
+  assert.equal(await page.getByAltText('Avatar reference', { exact: true }).isVisible(), false);
+  await selectAgent(page); assert.equal(await page.getByRole('button', { name: 'Send', exact: true }).isDisabled(), true);
+});
+
+test('cancel, target change and disposal prevent late avatar decoding from committing to another chat', async t => {
+  const page = await fixture(t); await openChat(page); await selectAgent(page);
+  for (const operation of ['cancel', 'switch', 'dispose']) {
+    await page.evaluate(() => {
+      const original = window.originalImageBitmap ?? createImageBitmap; window.originalImageBitmap = original;
+      window.createImageBitmap = (...args) => new Promise(resolve => {
+        window.releaseAvatarBitmap = async () => resolve(await original(...args));
+      });
+    });
+    await transferAvatarImage(page);
+    await page.waitForFunction(() => typeof window.releaseAvatarBitmap === 'function');
+    if (operation === 'cancel') await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+    else if (operation === 'switch') await selectAgent(page, 'peer:remote');
+    else await page.evaluate(() => ui.dispose());
+    await page.evaluate(async () => { await releaseAvatarBitmap(); window.releaseAvatarBitmap = null; window.createImageBitmap = originalImageBitmap; });
+    await page.waitForFunction(() => !document.querySelector('.cube-native-avatar-reference:not([hidden])'));
+    assert.equal(await page.evaluate(() => calls.some(call => call.type === 'agent-send' || call.type === 'cancel')), false);
+    if (operation === 'switch') await selectAgent(page);
+  }
+  assert.equal(await page.locator('.cube-native-ui').count(), 0);
+});
 
 test('world HUD has no Residents or Models launchers; external menu and hidden-opener focus remain usable', async t => {
   const page = await fixture(t);
@@ -376,7 +498,7 @@ test('native cube chat resumes only owned residents, preserving drafts and waiti
   });
   await target(page).selectOption('peer:remote');
   assert.equal(await resume.isVisible(), false);
-  assert.match(await page.locator('.cube-native-chat .cube-native-note').innerText(), /Only its owner can resume/);
+  assert.match(await page.locator('.cube-native-chat-body > .cube-native-note').innerText(), /Only its owner can resume/);
   assert.equal(await prompt(page).isDisabled(), true);
   await page.evaluate(() => [...document.querySelectorAll('.cube-native-chat button')].find(button => button.textContent === 'Resume').click());
   assert.equal(await page.evaluate(() => calls.filter(call => call.type === 'resume').length), 1);
@@ -384,7 +506,7 @@ test('native cube chat resumes only owned residents, preserving drafts and waiti
   await target(page).selectOption('local:paused');
   const acknowledge = page.locator('.cube-native-chat').getByRole('button', { name: 'Acknowledge and resume', exact: true });
   assert.equal(await acknowledge.isVisible(), true);
-  assert.match(await page.locator('.cube-native-chat .cube-native-note').innerText(), /old request will not replay/);
+  assert.match(await page.locator('.cube-native-chat-body > .cube-native-note').innerText(), /old request will not replay/);
   await page.evaluate(() => { holdResume = false; failResume = true; }); await acknowledge.click();
   await page.locator('.cube-native-chat [role="status"]').filter({ hasText: 'Resume was not saved' }).waitFor();
   assert.equal(await prompt(page).isDisabled(), true); assert.equal(await acknowledge.isEnabled(), true);
@@ -963,4 +1085,40 @@ test('resident chat presents owner task progress and interrupt controls without 
   assert.equal(await task.isVisible(), false);
   await page.evaluate(() => ui.setGoalStatus('peer:remote', { goalId: 'foreign', revision: 6, status: 'paused' }));
   assert.equal(await task.isVisible(), false);
+});
+
+test('private reply model labels remain inert and bounded across mobile redraws without entering room chat or captions', async t => {
+  const page = await fixture(t, { mobile: true });
+  const hostile = '<img src=x onerror="window.labelExecuted=true">' + 'LongModel'.repeat(60);
+  await page.evaluate(hostile => {
+    ui.open(); ui.select(residents[0]);
+    ui.setMessages([
+      { role: 'user', text: 'My question', modelLabel: 'Never display user metadata' },
+      { role: 'assistant', text: 'First reply', modelLabel: 'Qwen 2B · peer' },
+      { role: 'assistant', text: 'Second reply', modelLabel: hostile },
+      { role: 'assistant', text: 'Unattributed remote reply' },
+      { role: 'assistant', text: 'Malformed metadata', modelLabel: { name: 'Not a label' } },
+      { role: 'system', text: 'Status', modelLabel: 'Never display status metadata' }
+    ]);
+    ui.setAgents(residents.map(entry => ({ ...entry })));
+    ui.appendMessage('user', 'Next question');
+  }, hostile);
+  const log = page.getByRole('log', { name: 'World conversation' });
+  const labels = log.locator('[data-model-label]');
+  assert.deepEqual(await labels.allTextContents(), ['Model: Qwen 2B · peer', 'Model: ' + hostile.slice(0, 240)]);
+  assert.equal(await log.locator('img,script,a,button').count(), 0);
+  assert.equal(await page.evaluate(() => window.labelExecuted), undefined);
+  assert.equal(await labels.first().evaluate(node => node.tabIndex), -1);
+  assert.equal(await log.evaluate(node => node.scrollWidth <= node.clientWidth + 1), true);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  assert.deepEqual(await page.evaluate(() => calls.filter(call => call.type === 'caption').map(call => call.text)), ['Next question']);
+  await page.evaluate(() => {
+    ui.select(null);
+    ui.appendRoomMessage({ id: 'room-label', peerId: 'owner', name: 'Ada', text: 'Public words', modelLabel: 'Private model metadata' });
+  });
+  assert.equal(await labels.count(), 0);
+  assert.equal(await log.locator('article strong').innerText(), 'Ada');
+  assert.equal(await log.locator('article p').innerText(), 'Public words');
+  await page.evaluate(() => ui.select(residents[0]));
+  assert.equal(await labels.count(), 2);
 });

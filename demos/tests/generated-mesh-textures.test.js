@@ -113,6 +113,47 @@ test('checked embedded PNG/JPEG textures render through real Three and release G
   assert.equal(result.fetches, 0); assert.equal(result.urls, 0);
 });
 
+test('avatar forward alignment turns SF3D toward +Z while props and existing mesh conventions keep their yaw', async t => {
+  const page = await fixture(t);
+  const result = await page.evaluate(async () => {
+    const shape = new THREE.BoxGeometry(2, 2, 2), colors = new Float32Array(shape.attributes.position.count * 3);
+    // A red -Z front and blue other sides make a half-turn visibly measurable.
+    for (let i = 0; i < shape.attributes.normal.count; i++) colors.set(
+      shape.attributes.normal.getZ(i) < -.5 ? [1, 0, 0] : [0, 0, 1], i * 3);
+    const encoded = artifacts.encodeGeneratedMesh({ positions: shape.attributes.position.array,
+      normals: shape.attributes.normal.array, indices: new Uint32Array(shape.index.array), colors });
+    shape.dispose();
+    const data = modify(encoded.data, json => { json.asset.generator = 'SF3D-WebGPU'; });
+    const sf3d = artifacts.validateGeneratedMesh({ data }), before = data.slice(), results = [];
+    const renderer = new THREE.WebGLRenderer({ antialias: false, preserveDrawingBuffer: true }); renderer.setSize(128, 128);
+    const camera = new THREE.PerspectiveCamera(50, 1, .1, 20); camera.position.set(0, 1, 4); camera.lookAt(0, 1, 0);
+    for (const [mesh, options] of [[sf3d, {}], [sf3d, { alignForward: true }], [encoded, { alignForward: true }]]) {
+      const view = await views.prepareGeneratedMeshView(mesh, options), scene = new THREE.Scene();
+      scene.add(view.group, new THREE.AmbientLight(0xffffff, 2)); renderer.render(scene, camera);
+      const gl = renderer.getContext(), pixel = new Uint8Array(4); gl.readPixels(64, 64, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+      const bounds = new THREE.Box3().setFromObject(view.group);
+      results.push({ yaw: view.group.rotation.y, pixel: [...pixel], ground: bounds.min.y,
+        dimensions: bounds.getSize(new THREE.Vector3()).toArray() });
+      view.dispose();
+    }
+    let invalid;
+    try { await views.prepareGeneratedMeshView(sf3d, { alignForward: 'yes' }); }
+    catch (error) { invalid = error.name; }
+    renderer.dispose(); renderer.forceContextLoss();
+    return { results, unchanged: data.every((value, i) => value === before[i]),
+      sha: artifacts.validateGeneratedMesh({ data }).sha256 === sf3d.sha256, invalid };
+  });
+  const [prop, avatar, legacy] = result.results;
+  assert.equal(prop.yaw, 0); assert.equal(avatar.yaw, Math.PI); assert.equal(legacy.yaw, 0);
+  assert(prop.pixel[2] > prop.pixel[0] * 2 && prop.pixel[2] > 100);
+  assert(avatar.pixel[0] > avatar.pixel[2] * 2 && avatar.pixel[0] > 100);
+  assert.deepEqual(legacy.pixel, prop.pixel);
+  for (const view of result.results) {
+    assert.equal(view.ground, 0); view.dimensions.forEach(value => assert(Math.abs(value - 2) < 1e-9));
+  }
+  assert.equal(result.unchanged, true); assert.equal(result.sha, true); assert.equal(result.invalid, 'TypeError');
+});
+
 test('hostile embedded references and oversized image dimensions fail before any image decoding or fetch', async t => {
   const page = await fixture(t);
   const result = await page.evaluate(async () => {

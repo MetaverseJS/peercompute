@@ -615,6 +615,72 @@ test('generated avatars keep the same physics body, motion, picking and identity
   assert.deepEqual(result.position, [8,3,2]); assert.equal(result.restored, true);
 });
 
+test('generated avatar fronts follow local movement, remote interpolation and look-at without rotating physics', async t => {
+  const page = await fixture(t);
+  const result = await page.evaluate(async () => {
+    const { encodeGeneratedMesh, validateGeneratedMesh } = await import('/peercompute/src/peercompute/inference/GeneratedMeshArtifact.js');
+    const tagGenerator = (mesh, generator) => {
+      const data = mesh.data, header = new DataView(data.buffer, data.byteOffset, data.byteLength), oldLength = header.getUint32(12, true);
+      const json = JSON.parse(new TextDecoder().decode(data.subarray(20, 20 + oldLength))); json.asset.generator = generator;
+      const bytes = new TextEncoder().encode(JSON.stringify(json)), length = Math.ceil(bytes.length / 4) * 4;
+      const next = new Uint8Array(data.length + length - oldLength), view = new DataView(next.buffer);
+      next.set(data.subarray(0, 20)); view.setUint32(8, next.length, true); view.setUint32(12, length, true);
+      next.fill(32, 20, 20 + length); next.set(bytes, 20); next.set(data.subarray(20 + oldLength), 20 + length);
+      return validateGeneratedMesh({ data: next });
+    };
+    const avatar = { kind: 'generated-mesh', artifactCid: 'bafkreihd7nlvbwjkdustvo23a7jo44x6lc26n7pob5bsqtyutvwen26spe' };
+    const results = [];
+    for (const [local, generator, sign] of [[true, 'SF3D-WebGPU', -1], [false, 'SF3D-WebGPU', -1],
+      [true, 'PeerCompute generated mesh', 1]]) {
+      const key = local ? base.key : 'remote:agent-1', descriptor = { ...base, key, local, avatar, movement: 'stationary', caption: 'Hello' };
+      layer.upsert(descriptor);
+      const entry = layer.entries.get(key), body = entry.body, root = entry.mesh;
+      // An asymmetric arrow-shaped body, with its nose on this exporter’s front axis.
+      const mesh = tagGenerator(encodeGeneratedMesh({ positions: new Float32Array([-1,0,0, 1,0,0, 0,0,sign * 3, 0,2,0]),
+        indices: new Uint32Array([0,1,2, 0,3,1, 0,2,3, 1,3,2]) }), generator);
+      const prepared = await layer.prepareAvatar(mesh); prepared.commit(key, { avatar });
+      const facing = () => {
+        root.updateWorldMatrix(true, true); const asset = entry.avatarView.group.children[0];
+        return asset.localToWorld(new THREE.Vector3(0, .5, sign)).sub(asset.localToWorld(new THREE.Vector3(0, .5, 0))).normalize();
+      };
+      const dots = [];
+      for (const [dx, dz] of local ? [[0,4], [4,0], [0,-4], [-4,0]] : [[4,0]]) {
+        const previous = root.position.clone();
+        if (local) { body.position.x += dx; body.position.z += dz; }
+        else layer.upsert({ ...descriptor, position: [previous.x + dx, 3, previous.z + dz] });
+        layer.afterPhysics(.1);
+        const moved = root.position.clone().sub(previous).normalize(); dots.push(facing().dot(moved));
+      }
+      let lookDot = null;
+      if (local) {
+        participants[0].position = [body.position.x + 20, 3, body.position.z + 4];
+        layer.setIntent(key, { type: 'look-at', targetId: 'human:owner-peer', requestId: 'look-generated' });
+        layer.beforePhysics(); lookDot = facing().dot(new THREE.Vector3(20, 0, 4).normalize());
+      }
+      const asset = entry.avatarView.group.children[0], center = asset.localToWorld(new THREE.Vector3(0, .5, sign * .75));
+      const point = project(center.toArray()), pick = layer.pick(point.x, point.y);
+      const bounds = new THREE.Box3().setFromObject(entry.avatarView.group);
+      const labelY = entry.label.getWorldPosition(new THREE.Vector3()).y;
+      const sameBody = entry.body === body && entry.mesh === root, quaternion = body.quaternion.toArray();
+      const yaw = entry.avatarView.group.rotation.y;
+      layer.clearAvatar(key); const restored = entry.baseMaterial.visible && entry.outline.visible;
+      results.push({ local, generator, dots, lookDot, pick, key, sameBody, quaternion, yaw,
+        ground: bounds.min.y, labelY, height: bounds.max.y, restored,
+        unchanged: validateGeneratedMesh(mesh).sha256 === mesh.sha256 });
+      layer.remove(key);
+    }
+    return results;
+  });
+  for (const value of result) {
+    value.dots.forEach(dot => assert(Math.abs(dot - 1) < 1e-9));
+    if (value.local) assert(Math.abs(value.lookDot - 1) < 1e-9);
+    assert.equal(value.pick, value.key); assert.equal(value.sameBody, true);
+    assert.deepEqual(value.quaternion, [0, 0, 0, 1]); assert.equal(value.restored, true); assert.equal(value.unchanged, true);
+    assert.equal(value.yaw, value.generator === 'SF3D-WebGPU' ? Math.PI : 0);
+    assert(Math.abs(value.ground) < 1e-9); assert(Math.abs(value.labelY - value.height - 1.5) < 1e-9);
+  }
+});
+
 test('semantic avatar sizes preserve proportions, grounded feet, captions and the existing physics body', async t => {
   const page = await fixture(t);
   const result = await page.evaluate(async () => {

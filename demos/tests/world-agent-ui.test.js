@@ -275,3 +275,29 @@ test('native mobile and desktop layout wraps long names and messages with usable
   await page.getByRole('button', { name: 'Send', exact: true }).click();
   assert.equal(await page.evaluate(() => calls.filter(call => call.type === 'send').length), 1);
 });
+
+test('reply model attribution is assistant-only plain text that survives redraw and fits a mobile conversation', async t => {
+  const page = await fixture(t); await page.setViewportSize({ width: 390, height: 844 });
+  await open(page); await choose(page);
+  const hostile = '<script>window.labelExecuted=true</script>' + 'LongModel'.repeat(60);
+  await page.evaluate(hostile => {
+    ui.setMessages([
+      { role: 'user', text: 'Question', modelLabel: 'User metadata' },
+      { role: 'assistant', text: 'Answer', modelLabel: 'Qwen 2B · local' },
+      { role: 'assistant', text: 'Another answer', modelLabel: hostile },
+      { role: 'assistant', text: 'Unattributed remote answer' },
+      { role: 'assistant', text: 'Malformed metadata', modelLabel: ['Not a label'] },
+      { role: 'system', text: 'Status', modelLabel: 'Status metadata' }
+    ]);
+    ui.setAgents([...heads].reverse()); ui.appendMessage('user', 'A new question');
+  }, hostile);
+  const log = page.getByRole('log', { name: 'Agent conversation' });
+  const labels = log.locator('[data-model-label]');
+  assert.deepEqual(await labels.allTextContents(), ['Model: Qwen 2B · local', 'Model: ' + hostile.slice(0, 240)]);
+  assert.equal(await log.locator('img,script,a,button').count(), 0);
+  assert.equal(await page.evaluate(() => window.labelExecuted), undefined);
+  assert.equal(await labels.first().evaluate(node => node.tabIndex), -1);
+  assert.equal(await log.evaluate(node => node.scrollWidth <= node.clientWidth + 1), true);
+  assert.equal(await dialog(page).evaluate(node => node.scrollWidth <= node.clientWidth + 1), true);
+  assert.deepEqual(await page.evaluate(() => calls.filter(call => call.type === 'send')), []);
+});

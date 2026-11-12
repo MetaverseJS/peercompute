@@ -20,6 +20,10 @@
 .cube-native-composer { display: flex; flex-direction: column; gap: 8px; }
 .cube-native-composer textarea { width: 100%; min-height: 60px; max-height: 18dvh; }
 .cube-native-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.cube-native-avatar-reference { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.cube-native-avatar-reference img { width: 56px; height: 56px; object-fit: contain; flex: 0 0 auto; }
+.cube-native-avatar-reference > div { flex: 1; min-width: 0; }
+.cube-native-avatar-reference > button { flex: 0 0 auto; }
 .cube-native-dialog { position: fixed; inset: 0; margin: auto; width: min(650px, calc(100vw - 24px)); max-height: calc(100dvh - 32px); overflow: auto; padding: 16px; background: #071722; color: var(--cube-ink); border: 1px solid var(--cube-border); border-radius: 4px; font: inherit; scrollbar-color: #4aa8bb #071722; }
 .cube-native-dialog::backdrop { background: #0009; }
 .cube-native-dialog header { position: sticky; top: -16px; background: #071722; padding-block: 8px; z-index: 1; border-bottom: 1px solid #4aa8bb66; margin-bottom: 12px; }

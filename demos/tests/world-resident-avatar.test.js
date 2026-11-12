@@ -148,6 +148,18 @@ test('same request ID is idempotent and a conflicting action cannot reuse the ol
   assert.deepEqual((await f.generate(action, { requestId: id })).avatar, result.avatar);
   await assert.rejects(f.generate({ reset: true }, { requestId: id }), /Conflicting/); assert.equal(f.calls.length, 2);
 });
+
+test('avatar image inputs and exact-prompt mode participate in idempotency without changing body authority', async t => {
+  const f = await fixture(t), image = imageFixture(), requestId = crypto.randomUUID();
+  const result = await f.generate(action, { requestId, image });
+  assert.deepEqual(f.calls.map(c => c.input.task), ['image-to-3d']);
+  assert.deepEqual((await f.generate(action, { requestId, image })).avatar, result.avatar);
+  const changed = { ...image, data: image.data.slice() }; changed.data[0] ^= 255;
+  await assert.rejects(f.generate(action, { requestId, image: changed }), /Conflicting/);
+  await assert.rejects(f.generate(action, { requestId, image, exactPrompt: true }), /Conflicting/);
+  await assert.rejects(f.generate({ reset: true }, { image }), /Reset/);
+  await assert.rejects(f.generate(action, { exactPrompt: 'yes' }), /boolean/);
+});
 test('avatar size survives generation, retained reload, remote display and independently retained cloning without rewriting mesh bytes', async t => {
   const f = await fixture(t), first = await f.generate({ name: 'Car', prompt: 'A full-size blue car', size: 15 });
   const cid = first.avatar.artifactCid, manifest = await f.store.getManifest(cid);

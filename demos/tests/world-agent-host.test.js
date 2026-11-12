@@ -102,7 +102,8 @@ async function boot() {
                 if (window.profileError) throw Object.assign(new Error('Profile context is too large'), { code: 'ERR_MODEL_CONTEXT_BUDGET' });
                 return { text: JSON.stringify(window.fixtureProfilePatch ?? null), finishReason: 'stop' };
               }
-              if ([WORLD_PHYSICAL_INTENT_INSTRUCTIONS, WORLD_CHAT_TASK_INSTRUCTIONS].some(prefix => input.messages?.[0]?.content.startsWith(prefix + WORLD_PHYSICAL_OBSERVATIONS_MARKER))) {
+              if ([WORLD_PHYSICAL_INTENT_INSTRUCTIONS, WORLD_CHAT_TASK_INSTRUCTIONS].some(prefix => input.messages?.[0]?.content.startsWith(prefix))
+                  && input.messages[0].content.includes(WORLD_PHYSICAL_OBSERVATIONS_MARKER)) {
                 calls.push(['intent-decision', input]);
                 return { text: JSON.stringify(window.fixtureIntentDecision ?? { intent: null }), finishReason: 'stop' };
               }

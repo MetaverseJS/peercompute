@@ -6,6 +6,7 @@ import { generateWorldMesh } from './WorldMeshGeneration.js';
 import { normalizeWorldAvatarAction } from './WorldAvatarAction.js';
 import { createWorldResidentAvatarPresenter } from './WorldResidentAvatarPresenter.js';
 import { worldModelScale, worldModelSizeFromManifest } from '../world/WorldModelScale.js';
+import { validateImageInput } from '../../../peercompute/src/peercompute/inference/modelTask.js';
 
 /** Durable avatars belong to agent bindings; they never create a second actor. */
 export function createWorldResidentAvatars({ runtime, agents, adapter, worldId, ownerHostId, isOwner, onSaved, onStatus = () => {} }) {
@@ -51,8 +52,14 @@ export function createWorldResidentAvatars({ runtime, agents, adapter, worldId, 
     if (published.has(avatar.artifactCid)) { await runtime.withdraw(avatar.artifactCid); published.delete(avatar.artifactCid); }
     await runtime.store.unpin(avatar.artifactCid);
   }
-  function generate({ agentId, action, expectedRevision, requestId = crypto.randomUUID(), signal: callerSignal } = {}) {
-    const proposal = normalizeWorldAvatarAction(action), fingerprint = hash({ agentId, proposal });
+  function generate({ agentId, action, image, exactPrompt = false, expectedRevision, requestId = crypto.randomUUID(), signal: callerSignal } = {}) {
+    if (typeof exactPrompt !== 'boolean') throw new TypeError('Exact prompt must be a boolean');
+    const proposal = normalizeWorldAvatarAction(action);
+    if (proposal.reset && (image != null || exactPrompt)) throw new TypeError('Reset does not accept generation inputs');
+    const reference = image == null ? null : validateImageInput(image);
+    const pixels = reference ? { ...reference, data: new Uint8Array(reference.data) } : undefined;
+    const fingerprint = hash({ agentId, proposal, exactPrompt, ...(pixels ? { image: { width: pixels.width, height: pixels.height,
+      channels: pixels.channels, sha256: bytesToHex(sha256(pixels.data)) } } : {}) });
     const previous = requests.get(requestId);
     if (previous) return previous.fingerprint === fingerprint ? previous.promise : Promise.reject(new Error('Conflicting repeated avatar request'));
     if (busy) return Promise.reject(new Error('Wait for the current avatar generation or cancel it'));
@@ -63,7 +70,7 @@ export function createWorldResidentAvatars({ runtime, agents, adapter, worldId, 
       try {
         if (!proposal.reset) {
           const mesh = await generateWorldMesh({ inference: agents.inference, head, name: proposal.name, description: proposal.prompt,
-            signal, assertCurrent: () => authority(agentId, expectedRevision, signal), onEvent: event => emit({ agentId, ...event }) });
+            image: pixels, exactPrompt, signal, assertCurrent: () => authority(agentId, expectedRevision, signal), onEvent: event => emit({ agentId, ...event }) });
           prepared = await presenter.prepare(mesh, { signal, size: proposal.size });
           await authority(agentId, expectedRevision, signal);
           const record = await retainGeneratedMesh(runtime.store, mesh, { name: proposal.name, signal,

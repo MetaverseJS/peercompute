@@ -119,3 +119,21 @@ Powered by Stability AI. Preserve the original Stability Community license,
 source attribution and derivative notices. The inference-kit dependency has its
 own MIT/BSD notices, included in catalog attribution. The initial 0.1.53 port
 dependency declared UNLICENSED; integration now pins the licensed 0.1.60 release.
+
+
+### Resident facing correction (November 11)
+
+SF3D's camera-facing surface uses -Z, while CubeChat body-forward is +Z. The
+resident adapter opts into `GeneratedMeshView` forward alignment, which adds a
+cosmetic half-turn only when the validated GLB identifies `SF3D-WebGPU`. This
+covers owned and remote avatars, including retained assets after reload. Generic
+placed objects, TripoSR and unknown generators keep their original orientation.
+Artifact bytes/CIDs, size, physics heading, motor state and identity are unchanged.
+
+38 focused movement/rendering tests pass, including four cardinal headings,
+remote interpolation, look-at, picking, grounding, labels and reset. Software
+WebGL verifies asymmetric front/back pixels. An isolated Three render of the
+actual retained SF3D chair shows the corrected front in the forward direction:
+`/home/cos/.cache/peercompute-avatar-orientation-20261111/`. Root and an independent
+reviewer inspected the screenshot. This is rendering evidence, not a new GPU
+inference benchmark or live-network navigation qualification.

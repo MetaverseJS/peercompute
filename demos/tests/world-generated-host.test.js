@@ -20,9 +20,9 @@ async function fixture(t, { avatar = false } = {}) {
     lockManager: { request: async (_name, _options, callback) => callback({}) } }); await records.open();
   const store = new ArtifactStore({ persistent: false }); await store.open();
   const memory = new WorldMemoryStore({ name: crypto.randomUUID(), indexedDBImpl: db });
-  const calls = [], statuses = [], bodies = new Map(), objects = sceneAdapter(), state = { action, mesh: async () => ({ mesh: meshFixture() }) };
+  const calls = [], statuses = [], bodies = new Map(), objects = sceneAdapter(), view = {}, state = { action, speech: 'I will try to make that.', mesh: async () => ({ mesh: meshFixture() }) };
   const candidates = ['text-generation', 'text-to-image', 'image-to-3d'].map(task => ({ key: `local:${task}`, local: true,
-    available: true, manifestCid: task, sessionId: task, task, runtime: 'fixture',
+    available: true, manifestCid: task, sessionId: task, name: `Fixture ${task}`, task, runtime: 'fixture',
     modalities: task === 'image-to-3d' ? ['image'] : ['text'], outputModalities: task === 'image-to-3d' ? ['mesh'] : task === 'text-to-image' ? ['image'] : ['text'] }));
   const agents = new AgentRuntime({ store: records, inference: { listCandidates: async () => candidates,
     async generate(_candidate, input, options) {
@@ -32,7 +32,7 @@ async function fixture(t, { avatar = false } = {}) {
       if (input.messages?.[0]?.content.includes('Choose optional physical action')) {
         return { text: JSON.stringify(state.action ? { [avatar ? 'avatar' : 'object']: state.action } : { intent: null }) };
       }
-      return { text: 'I will try to make that.', finishReason: 'stop' };
+      return { text: state.speech, finishReason: 'stop' };
     }, cancel: async () => {} } });
   let networkOptions;
   const host = installWorldAgents({ worldId, worldLabel: 'CubeChat', generatedObjectAdapter: objects,
@@ -48,13 +48,13 @@ async function fixture(t, { avatar = false } = {}) {
         { id: 'human:visitor', peerId: 'visitor', kind: 'human', name: 'Visitor', position: [15, 3, 0], distance: 15 }], requesterId: 'human:owner' }),
       setIntent: () => { throw new Error('Object creation must not alter resident movement'); }, subscribeOutcomes: () => () => {},
       dispose: () => bodies.clear() },
-    uiFactory: () => ({ open() {}, select() {}, setAgents() {}, setMessages() {}, setStatus: value => statuses.push(value),
+    uiFactory: () => ({ open() {}, select() {}, setAgents() {}, setMessages: rows => { view.messages = rows; }, setStatus: value => statuses.push(value),
       setBusy() {}, setVoiceStatus() {}, dispose() {} }),
     serviceFactory: options => { networkOptions = options; return { start: async () => {}, close: async () => {} }; },
   });
   t.after(() => host.dispose()); await host.ready; await tick();
   const head = await host.spawn({ name: 'Builder', shared: true, movement: 'stationary' });
-  return { host, agents, objects, calls, statuses, state, head, memory, get networkOptions() { return networkOptions; } };
+  return { host, agents, objects, calls, statuses, state, head, memory, view, get networkOptions() { return networkOptions; } };
 }
 test('full world host sends owner proposal through real agent journal, artifact manager and final placement receipt; visitors cannot create', async t => {
   const f = await fixture(t), key = `local:${f.head.agentId}`;
@@ -99,4 +99,78 @@ test('owner private chat changes the existing resident avatar and records a veri
   assert.deepEqual((await f.agents.get(f.head.agentId)).embodiments[0].avatar, saved.embodiments[0].avatar);
   f.state.action = { reset: true }; const reset = await f.host.send({ key, text: 'Go back to your original cube' });
   assert.match(reset.text, /Avatar saved: original cube/); assert.equal(f.host.getStatus().residentAvatars.rendered, 0);
+});
+
+test('a declined conversational reply never launches image or avatar work and exposes its actual model', async t => {
+  const f = await fixture(t, { avatar: true }), key = `local:${f.head.agentId}`;
+  f.state.speech = 'I cannot generate that avatar. I can suggest another design.';
+  const reply = await f.host.send({ key, text: 'Try the first design' });
+  assert.equal(reply.text, f.state.speech); assert.equal(reply.modelLabel, 'Fixture text-generation · local');
+  assert.deepEqual(f.calls.map(value => value.task), ['text-generation']);
+  await f.host.openConversation(key); assert.equal(f.view.messages.at(-1).modelLabel, reply.modelLabel);
+  f.state.speech = 'I will try the copper robot.';
+  await f.host.send({ key, text: 'Try a copper robot instead' });
+  assert.equal(f.calls[1].messages.at(-1).content, 'Try a copper robot instead');
+  assert.match(f.calls[2].messages[0].content, /I will try the copper robot/);
+  assert((await f.agents.get(f.head.agentId)).embodiments[0].avatar);
+});
+
+test('a failed avatar settles, records the failure for the next turn and does not reuse its result', async t => {
+  const f = await fixture(t, { avatar: true }), key = `local:${f.head.agentId}`;
+  f.state.mesh = async () => { throw new Error('3D provider stopped'); };
+  const failed = await f.host.send({ key, text: 'Become a first robot' });
+  assert.equal(failed.avatarFailed, true); assert.match(failed.text, /3D provider stopped/);
+  assert.equal(f.host.getStatus().residentAvatars.busy, false);
+  f.state.mesh = async () => ({ mesh: meshFixture() }); f.state.speech = 'Trying your second design.';
+  const before = f.calls.length, next = await f.host.send({ key, text: 'Become a second robot' });
+  assert.match(next.text, /^Trying your second design/); assert.match(next.text, /Avatar saved/);
+  assert.equal(f.calls[before].messages.at(-1).content, 'Become a second robot');
+  assert.match(f.calls[before].messages[0].content, /3D provider stopped/);
+});
+
+test('owner image controls bypass text and image models, copy pixels and restore command history', async t => {
+  const f = await fixture(t, { avatar: true }), key = `local:${f.head.agentId}`, image = imageFixture();
+  const expected = [...image.data], pending = f.host.send({ key, text: '', avatarImage: image }); image.data.fill(0);
+  const reply = await pending; assert.match(reply.text, /Avatar saved/); assert.equal(reply.role, 'system');
+  assert.deepEqual(f.calls.map(value => value.task), ['image-to-3d']); assert.deepEqual([...f.calls[0].image.data], expected);
+  assert.equal((await f.agents.events(f.head.agentId)).filter(event => event.type === 'result').length, 0, 'No fabricated LLM response');
+  await f.host.openConversation(key);
+  assert(f.view.messages.some(row => row.role === 'user' && row.text === 'Use this image as your avatar.'));
+  assert(f.view.messages.some(row => row.role === 'system' && /Avatar saved/.test(row.text)));
+});
+
+test('exact owner prompt is sent unchanged without a speech or prompt-generation model', async t => {
+  const f = await fixture(t, { avatar: true }), key = `local:${f.head.agentId}`;
+  const literal = 'A copper robot, blue eyes.\nRound hands.';
+  const reply = await f.host.send({ key, text: `Avatar prompt: ${literal}` });
+  assert.match(reply.text, /Avatar saved/); assert.equal(reply.modelLabel, undefined);
+  assert.deepEqual(f.calls.map(value => value.task), ['text-to-image', 'image-to-3d']);
+  assert.equal(f.calls[0].prompt, literal);
+});
+
+test('multibyte owner commands and failed replies fit durable memory without blocking avatar work', async t => {
+  const f = await fixture(t, { avatar: true }), key = `local:${f.head.agentId}`;
+  const command = '机器人'.repeat(300);
+  const result = await f.host.send({ key, text: command, avatarImage: imageFixture() });
+  assert.match(result.text, /Avatar saved/);
+  await f.host.openConversation(key);
+  const saved = f.view.messages.find(row => row.role === 'user' && row.text.startsWith('机器人'));
+  assert(saved); assert(new TextEncoder().encode(saved.text).length <= 2048); assert(saved.text.endsWith('…'));
+  f.state.speech = '机器人'.repeat(300); f.state.mesh = async () => { throw new Error('Provider stopped'); };
+  const failed = await f.host.send({ key, text: 'Try another robot' });
+  assert.equal(failed.avatarFailed, true); assert.doesNotMatch(failed.text, /Failure memory not saved/);
+  f.state.action = null; f.state.speech = 'Ready.';
+  const before = f.calls.length; await f.host.send({ key, text: 'What happened?' });
+  assert.match(f.calls[before].messages[0].content, /Provider stopped/);
+});
+
+test('failed image commands return a retryable result without making the resident require Resume', async t => {
+  const f = await fixture(t, { avatar: true }), key = `local:${f.head.agentId}`;
+  f.state.mesh = async () => { throw new Error('Model unavailable'); };
+  const result = await f.host.send({ key, text: '', avatarImage: imageFixture() });
+  assert.equal(result.avatarFailed, true); assert.equal(result.role, 'system');
+  assert.equal(f.host.getStatus().residentAvatars.busy, false);
+  const head = await f.agents.get(f.head.agentId); assert.notEqual(head.status, 'paused'); assert.equal(Boolean(head.recoveryRequired), false);
+  f.state.mesh = async () => ({ mesh: meshFixture() });
+  assert.match((await f.host.send({ key, text: '', avatarImage: imageFixture() })).text, /Avatar saved/);
 });

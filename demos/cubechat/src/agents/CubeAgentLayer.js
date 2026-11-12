@@ -416,7 +416,7 @@ export class CubeAgentLayer {
 
   async prepareAvatar(mesh, { signal, size = 6 } = {}) {
     if (this.closed) throw new Error('Resident renderer closed');
-    const view = await prepareGeneratedMeshView(mesh, { signal });
+    const view = await prepareGeneratedMeshView(mesh, { signal, alignForward: true });
     try { fitGeneratedMeshView(view, size); }
     catch (error) { view.dispose(); throw error; }
     let committed = false;

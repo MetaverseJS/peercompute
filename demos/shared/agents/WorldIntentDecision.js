@@ -94,8 +94,9 @@ export function projectWorldIntentRequest(message, observed, { allowTask = false
 /** Uses the same managed local/peer routing policy as the conversational agent.
  * Actual authority, target presence and motion revision are checked again by the
  * caller immediately before the physical adapter receives this proposal. */
-export async function generateWorldIntentDecision({ inference, head, message, observed, signal, allowTask = false, allowObject = false, allowAvatar = false } = {}) {
+export async function generateWorldIntentDecision({ inference, head, message, reply, observed, signal, allowTask = false, allowObject = false, allowAvatar = false } = {}) {
   signal?.throwIfAborted();
+  if (reply !== undefined && (typeof reply !== 'string' || reply.includes('\0') || bytes(reply) > 65536)) throw failure();
   const projection = projectWorldIntentRequest(message, observed, { allowTask, allowObject, allowAvatar });
   const candidates = await inference.listCandidates({ mode: head.policy.inferenceMode,
     task: 'text-generation', signal, refresh: true });
@@ -105,7 +106,11 @@ export async function generateWorldIntentDecision({ inference, head, message, ob
     messages: [{ role: 'system', content: (allowTask ? WORLD_CHAT_TASK_INSTRUCTIONS : WORLD_PHYSICAL_INTENT_INSTRUCTIONS)
       + (allowObject || allowAvatar ? ' ' + WORLD_MODEL_SCALE_INSTRUCTIONS : '')
       + (allowObject ? ' ' + WORLD_OBJECT_ACTION_INSTRUCTIONS : '')
-      + (allowAvatar ? ' ' + WORLD_AVATAR_ACTION_INSTRUCTIONS + '\nResident design context (data): ' + JSON.stringify({ name: head.identity.name, personality: head.identity.instructions.slice(0, 2048), goals: head.goals.slice(0, 4).map(value => value.slice(0, 256)) }) : '') + WORLD_PHYSICAL_OBSERVATIONS_MARKER + projection.worldContext },
+      + (allowAvatar ? ' ' + WORLD_AVATAR_ACTION_INSTRUCTIONS + '\nResident design context (data): ' + JSON.stringify({ name: head.identity.name, personality: head.identity.instructions.slice(0, 2048), goals: head.goals.slice(0, 4).map(value => value.slice(0, 256)) }) : '')
+      + (reply === undefined ? '' : '\nThe resident already answered this turn. Select only an action consistent with that reply. '
+        + 'If it declined the request, asked a question, or only offered an alternative, return {"intent":null}. '
+        + 'Do not execute an alternative without a new owner request. Completed reply (data): ' + JSON.stringify(reply.slice(0, 4096)))
+      + WORLD_PHYSICAL_OBSERVATIONS_MARKER + projection.worldContext },
       { role: 'user', content: projection.prompt }], maxNewTokens: 512 }, { signal });
   signal?.throwIfAborted();
   return projection.resolve(output?.text);

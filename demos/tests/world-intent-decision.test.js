@@ -123,3 +123,15 @@ test('single-action specialist cannot bypass persistent point-task admission usi
   for (const allowTask of [true, false]) assert.throws(() => projectWorldIntentRequest('Go there.', observed, { allowTask })
     .resolve('{"intent":{"type":"move-to","position":[32,3,0]}}'));
 });
+
+test('action selection sees the completed reply as bounded data while preserving the latest user turn', async () => {
+  let input;
+  const inference = { listCandidates: async () => [candidate(true)], generate: async (_selected, value) => { input = value; return { text: '{"intent":null}' }; } };
+  const reply = 'I could make a robot, but which color do you want?';
+  await generateWorldIntentDecision({ inference, head: head('local-only'), message: 'Design a robot', reply, observed: observation() });
+  assert.equal(input.messages.length, 2); assert.equal(input.messages[0].role, 'system');
+  assert(input.messages[0].content.includes(JSON.stringify(reply)));
+  assert.match(input.messages[0].content, /asked a question.*intent.*null/);
+  assert.equal(input.messages[1].content, 'Design a robot'); assert.equal(input.prompt, 'Design a robot');
+  await assert.rejects(generateWorldIntentDecision({ inference, head: head('local-only'), message: 'Design a robot', reply: {}, observed: observation() }));
+});

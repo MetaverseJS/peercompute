@@ -1,6 +1,7 @@
 import { normalizeWorldAvatarAction } from './WorldAvatarAction.js';
 import { generateWorldIntentDecision } from './WorldIntentDecision.js';
 import { normalizeWorldObjectAction } from './WorldObjectAction.js';
+import { residentDeclinedAction, residentReplyModelLabel } from './WorldReplyDisposition.js';
 
 const aborted = reason => new DOMException(reason, 'AbortError');
 const changed = () => new Error('The resident or conversation changed before the action could start.');
@@ -45,7 +46,9 @@ export function createWorldConversationTurns({ agents, experience, signal: paren
       maxNewTokens, signal: entry.signal });
     const text = outcome.result?.text;
     if (typeof text !== 'string') throw new TypeError('Invalid resident speech');
-    const result = { text, finishReason: outcome.result.finishReason ?? 'stop', applied: false };
+    const modelLabel = residentReplyModelLabel(outcome.route);
+    const result = { text, finishReason: outcome.result.finishReason ?? 'stop', applied: false,
+      ...(modelLabel ? { modelLabel } : {}) };
     entry.revision = outcome.head.revision;
     entry.phase = 'decision';
     entry.signal.throwIfAborted();
@@ -57,6 +60,7 @@ export function createWorldConversationTurns({ agents, experience, signal: paren
       await experience.rememberReply(turn, text, { valid: () => current(entry) && !entry.decision.signal.aborted });
       const head = await headFor(entry);
       entry.decision.signal.throwIfAborted();
+      if (residentDeclinedAction(text)) return result;
       const observed = experience.observe(entry.key, turn.speaker.peerId);
       if (turn.senses.self.intentRevision !== undefined && observed.self.intentRevision !== turn.senses.self.intentRevision) {
         throw new Error('A newer movement command superseded this intention.');
@@ -66,7 +70,7 @@ export function createWorldConversationTurns({ agents, experience, signal: paren
       else delete observed.requesterId;
       const decisionSignal = AbortSignal.any([entry.signal, entry.decision.signal]);
       const decision = await decideIntent({ inference: agents.inference, head, message: entry.message,
-        observed, signal: decisionSignal, allowTask: entry.allowTask, allowObject: entry.allowObject, allowAvatar: entry.allowAvatar });
+        reply: text, observed, signal: decisionSignal, allowTask: entry.allowTask, allowObject: entry.allowObject, allowAvatar: entry.allowAvatar });
       await headFor(entry);
       decisionSignal.throwIfAborted();
       if (entry.allowAvatar && decision?.avatar && Object.keys(decision).length === 1) {

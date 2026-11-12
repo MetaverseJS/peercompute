@@ -248,8 +248,8 @@ encrypted peer streams. TripoSR requires hardware WebGPU but does not require
 
 The reusable `WorldGeneratedObjects.generate({ agentId, action, image, ... })`
 API also accepts bounded RGBA source pixels, skipping text-to-image generation.
-The current CubeChat composer uses generated reference images; it does not yet
-provide a source-image upload control for this action. A single isolated subject
+CubeChat's image attachment control currently replaces an owned resident's
+avatar; placed objects still use generated references in chat. A single isolated subject
 on a plain background is the intended reference input. The current TripoSR
 package includes a small U2NetP model that removes the background in its managed
 worker before reconstruction. Usable transparent cutouts bypass this step.
@@ -419,6 +419,24 @@ an image-to-3D model such as TripoSR. Local-only residents require local models;
 other residents can use compatible peer-hosted models. This does not download
 missing models automatically.
 
+To use your own reference, drag or paste an image into your resident's private
+chat, or choose **+**. Sending it goes directly to the image-to-3D model, without
+a language model or image generator. The preview identifies it as an avatar
+reference; remove it to return to ordinary conversation. This control is only
+available for residents owned by this device. Failed generation keeps the
+reference attached so you can retry after a provider is available.
+
+To supply the image generator's prompt yourself, type **Avatar prompt: a copper
+robot with blue eyes** or **Use this exact prompt: ...**. The text after the
+prefix goes unchanged to the image model; the language model does not rewrite
+it. Ordinary requests such as “Become a robot” still let the resident choose a
+design. Neither control changes the selected model's own behavior.
+
+Owner chat replies show the actual language-model name when route information
+is available, including saved replies. A declined conversational request does
+not start avatar generation. Failed actions are saved as outcomes for the next
+turn; failed generation does not require resuming an otherwise healthy resident.
+
 The generated shape replaces the visual on the same resident body. Identity,
 memories, chat, voice and learned movement continue. Its verified GLB is retained
 on the device and shared by CID with room peers when the resident is shared.
@@ -435,6 +453,9 @@ a car shape does not add driving physics, and limbs are not animated.
 Shared implementation: `WorldMeshGeneration`, `WorldResidentAvatars`,
 `WorldResidentAvatarPresenter`, `ResidentAvatar`, and `GeneratedMeshView`. World
 adapters own rendering; the agent record owns the durable appearance reference.
+SF3D avatars align their generated front with the body's forward direction;
+the correction also applies to already saved SF3D avatars after reloading.
+It changes presentation only, preserving the artifact CID and movement state.
 
 Generated props and avatars now choose a size for their intended role. A person
 is six world units; typical sizes are a mug 0.8, chair 3, car 15 and tree 24. Ask for a

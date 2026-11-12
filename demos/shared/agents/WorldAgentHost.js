@@ -23,15 +23,33 @@ import { createWorldGeneratedObjects } from './WorldGeneratedObjects.js';
 import { createWorldChatResponder } from './WorldChatResponder.js';
 import { worldConversationContext, worldReplyPrompt, worldResidentName, worldPublicMessage } from './WorldConversationContext.js';
 import { routeAgentTask } from '../../../peercompute/src/peercompute/agents/AgentRouter.js';
+import { AVATAR_IMAGE_PROMPT, ownerAvatarInput } from './WorldAvatarInput.js';
+import { residentReplyModelLabel } from './WorldReplyDisposition.js';
 export { speechChunks } from '../../../peercompute/src/peercompute/inference/speech/chunks.js';
 
 const encoder = new TextEncoder();
+function memoryExcerpt(value, { tail = false } = {}) {
+  const text = String(value).replaceAll('\0', '');
+  if (encoder.encode(text).length <= 2048) return text;
+  const characters = [...text];
+  if (tail) characters.reverse();
+  const kept = []; let bytes = 0;
+  for (const character of characters) {
+    const size = encoder.encode(character).length;
+    if (bytes + size > 2045) break;
+    kept.push(character); bytes += size;
+  }
+  return tail ? '…' + kept.reverse().join('') : kept.join('') + '…';
+}
 const standingLimits = Object.freeze({ discoveryMs: 60000, generationMs: 45000, decisionMs: 120000 });
 const defaultRuntime = async (options) => (await import('../../inference/src/runtime.js')).createInferenceRuntime(options);
 const defaultSpeech = async (options) => (await import('./speech/WorldSpeech.js')).createWorldSpeech(options);
 const defaultAudio = async (options) => (await import('./speech/WorldAudio.js')).createWorldAudio(options);
 const statusOf = (head) => head.recoveryRequired || head.status === 'paused' ? 'paused'
   : ['queued', 'running'].includes(head.activity?.status) ? 'thinking' : 'idle';
+const conversationReply = output => ({ text: output.text, finishReason: output.finishReason,
+  ...(output.modelLabel ? { modelLabel: output.modelLabel } : {}), ...(output.directAvatar ? { role: 'system' } : {}),
+  ...(output.avatarFailed ? { avatarFailed: true } : {}) });
 
 export async function worldConversationId(worldId, requester) {
   const digest = await crypto.subtle.digest('SHA-256', encoder.encode(`${worldId}\0${requester}`));
@@ -166,8 +184,9 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     if (current && !disposed) setBody({ ...current, caption: text.slice(0, 2048), status });
   }
   function showMessages(key) { if (selectedKey === key && !disposed) ui.setMessages(transcripts.get(key) ?? []); }
-  function message(key, role, text) {
-    const entries = [...(transcripts.get(key) ?? []), { role, text }].slice(-24);
+  function message(key, role, text, modelLabel) {
+    const entries = [...(transcripts.get(key) ?? []), { role, text,
+      ...(role === 'assistant' && modelLabel ? { modelLabel } : {}) }].slice(-24);
     while (entries.length > 1 && encoder.encode(JSON.stringify(entries)).length > 128 * 1024) entries.shift();
     transcripts.set(key, entries); showMessages(key);
   }
@@ -261,13 +280,13 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     for (const [key, body] of bodies) if (!body.local && !current.has(key)) { adapter.remove(key); bodies.delete(key); }
     updateList();
   }
-  async function respond({ agentId, prompt, requesterPeerId, signal }) {
+  async function respond({ agentId, prompt, requesterPeerId, signal, avatarInput }) {
     privateResponses++;
     try { await Promise.all([interruptSocial('human'), objectives?.interrupt({ agentId, reason: 'human conversation' })]);
-      return await respondToVisitor({ agentId, prompt, requesterPeerId, signal }); }
+      return await respondToVisitor({ agentId, prompt, requesterPeerId, signal, avatarInput }); }
     finally { privateResponses--; social?.sync(); standing?.sync(); worldChat?.sync(); }
   }
-  async function respondToVisitor({ agentId, prompt, requesterPeerId, signal }) {
+  async function respondToVisitor({ agentId, prompt, requesterPeerId, signal, avatarInput }) {
     alive();
     const head = await agents.get(agentId), binding = bindingOf(head);
     if (!binding || (requesterPeerId && !binding.shared)) throw new Error('This agent is not shared in this world');
@@ -275,13 +294,16 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     const descriptor = storedBody && liveBody(storedBody);
     if (!descriptor) throw new Error('This agent has no body in this world');
     if (head.recoveryRequired || head.status === 'paused') throw new Error('This agent is paused; its owner must resume it');
+    if (avatarInput && (requesterPeerId || !residentAvatars || !ownsObjective(agentId))) throw new Error('Only the owner of a resident with avatar support can supply avatar inputs');
     const conversationId = await worldConversationId(worldId, requesterPeerId || 'owner');
     const context = JSON.stringify(adapter.getContext?.(descriptor) ?? { world: worldLabel, position: descriptor.position });
     if (encoder.encode(context).length > 8192) throw new Error('World observations exceed the conversation budget');
     const turn = await experience?.prepare({ key: descriptor.key, agentId, conversationId, audience: 'private',
       requesterPeerId: requesterPeerId || worldNetwork()?.peerId, prompt, scene: JSON.parse(context),
       publicConversationId: await worldConversationId(worldId, 'public-room'), signal });
-    const output = await conversations.run({ key: descriptor.key, agentId, turn,
+    const output = avatarInput ? { text: '', finishReason: 'stop', directAvatar: true,
+      avatar: { action: avatarInput.action, residentRevision: head.revision, requestId: crypto.randomUUID() } }
+      : await conversations.run({ key: descriptor.key, agentId, turn,
       prompt: turn?.prompt ?? prompt, message: prompt, conversationId, worldContext: turn?.worldContext ?? context,
       taskInstructions: worldKnowledge,
       allowTask: !requesterPeerId && !!objectives,
@@ -291,9 +313,18 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
         && (!requesterPeerId || bindingOf(current).shared) });
     if (!requesterPeerId && output.applied) await pauseResidentObjective(agentId);
     if (output.avatar) {
+      const rememberOutcome = async (kind, text, outcome, sourceKind = 'verified-action') => memory?.append({
+        worldId, agentId, audience: 'private', conversationId, kind,
+        who: sourceKind === 'authenticated-message' ? { peerId: descriptor.ownerPeerId || agents.store.hostId, name: 'Owner' }
+          : { peerId: descriptor.ownerPeerId || agents.store.hostId, agentId, name: descriptor.name },
+        where: descriptor.position, outcome, text: memoryExcerpt(text, { tail: sourceKind !== 'authenticated-message' }),
+        source: { kind: sourceKind, eventId: `${output.avatar.requestId}:${kind}` } });
       try {
         if (requesterPeerId || disposed || !ownsObjective(agentId)) throw new Error('Only the resident owner can request an avatar change');
+        if (avatarInput) await rememberOutcome('avatar-command', prompt,
+          avatarInput.image ? 'Owner supplied an image directly for the resident avatar.' : 'Owner supplied the exact image prompt; no language-model rewriting.', 'authenticated-message');
         const result = await residentAvatars.generate({ agentId, action: output.avatar.action,
+          ...(avatarInput ? { image: avatarInput.image, exactPrompt: avatarInput.exactPrompt } : {}),
           expectedRevision: output.avatar.residentRevision, requestId: output.avatar.requestId, signal });
         output.text += `\n[Avatar saved: ${result.name}.]`;
         try {
@@ -304,9 +335,19 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
             source: { kind: 'verified-action', eventId: output.avatar.requestId } });
         } catch (error) { output.text += `\n[Avatar saved; memory update failed: ${String(error.message).slice(0, 160)}]`; }
       } catch (error) {
-        signal?.throwIfAborted(); output.text += `\n[Avatar update failed: ${String(error.message).replaceAll('\0', '').slice(0, 240)}]`;
+        signal?.throwIfAborted();
+        const failure = `Avatar update failed: ${String(error.message).replaceAll('\0', '').slice(0, 240)}`;
+        output.text += `\n[${failure}]`;
+        output.avatarFailed = true;
+        try { await rememberOutcome('action-outcome', failure, 'Avatar update failed; no new avatar was confirmed.'); }
+        catch (memoryError) { output.text += `\n[Failure memory not saved: ${String(memoryError.message).slice(0, 160)}]`; }
       }
-      return { text: output.text, finishReason: output.finishReason };
+      if (avatarInput) {
+        output.text = output.text.trim();
+        try { await rememberOutcome('avatar-command-result', output.text, 'Result of the explicit owner avatar command.'); }
+        catch (error) { output.text += `\n[Command history not saved: ${String(error.message).slice(0, 160)}]`; }
+      }
+      return conversationReply(output);
     }
     if (output.object) {
       try {
@@ -322,9 +363,16 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
             source: { kind: 'verified-action', eventId: output.object.requestId } });
         } catch (error) { output.text += `\n[Object saved; memory update failed: ${String(error.message).slice(0, 160)}]`; }
       } catch (error) {
-        signal?.throwIfAborted(); output.text += `\n[Object not placed: ${String(error.message).replaceAll('\0', '').slice(0, 240)}]`;
+        signal?.throwIfAborted();
+        const failure = `Object not placed: ${String(error.message).replaceAll('\0', '').slice(0, 240)}`;
+        output.text += `\n[${failure}]`;
+        try { await memory?.append({ worldId, agentId, audience: 'private', conversationId, kind: 'action-outcome',
+          who: { peerId: descriptor.ownerPeerId || agents.store.hostId, agentId, name: descriptor.name }, where: descriptor.position,
+          outcome: 'Object generation failed; no new placement was confirmed.', text: memoryExcerpt(failure),
+          source: { kind: 'verified-action', eventId: output.object.requestId } }); }
+        catch (memoryError) { output.text += `\n[Failure memory not saved: ${String(memoryError.message).slice(0, 160)}]`; }
       }
-      return { text: output.text, finishReason: output.finishReason };
+      return conversationReply(output);
     }
     if (output.task) {
       try {
@@ -333,7 +381,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
           isOwner: () => !requesterPeerId && !disposed && ownsObjective(agentId),
           getHead: id => agents.get(id), assign: input => objectives.assign(input) });
       } catch (error) { signal?.throwIfAborted(); output.text += chatTaskFailure(error); }
-      return { text: output.text, finishReason: output.finishReason };
+      return conversationReply(output);
     }
     // Only a conversation from this installation's owner can reshape a resident.
     // Speech is already journaled; a separate structured proposal cannot rewrite
@@ -369,7 +417,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
         output.text += `\n[Profile not updated: ${String(error.message).replaceAll('\0', '').slice(0, 180)}]`;
       } finally { if (!disposed) await refreshLocal().catch(fail); }
     }
-    return { text: output.text, finishReason: output.finishReason };
+    return conversationReply(output);
   }
   async function ensureModelNetwork() {
     if (disposed || runtime.networkReady || modelStarting) return modelStarting;
@@ -427,9 +475,21 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
         if (page.length < 100 || events.length >= 300) break;
         after = page.at(-1).sequence;
       }
-      transcripts.set(key, events.filter((event) => event.conversationId === channel && ['request', 'result'].includes(event.type))
-        .slice(-24).map((event) => ({ role: event.type === 'request' ? 'user' : 'assistant', text: event.type === 'request'
-          ? originalWorldPrompt(event.text) : parseWorldReply(event.text).text })));
+      const rows = events.filter((event) => event.conversationId === channel && ['request', 'result'].includes(event.type))
+        .map((event) => ({ at: event.at, role: event.type === 'request' ? 'user' : 'assistant', text: event.type === 'request'
+          ? originalWorldPrompt(event.text) : parseWorldReply(event.text).text,
+          ...(event.type === 'result' && residentReplyModelLabel(event.route) ? { modelLabel: residentReplyModelLabel(event.route) } : {}) }));
+      if (memory) {
+        let controls = [];
+        try { controls = await memory.retrieve({ worldId, agentId: descriptor.agentId, audience: 'private', conversationId: channel, query: '', limit: 32 }); }
+        catch (error) { fail(new Error(`Command history unavailable: ${error.message}`)); }
+        for (const item of controls.reverse()) if ((item.kind === 'avatar-command' && item.source.kind === 'authenticated-message'
+            && !item.who.agentId) || (item.kind === 'avatar-command-result' && item.source.kind === 'verified-action'
+            && item.who.agentId === descriptor.agentId)) {
+          rows.push({ at: item.when, role: item.kind === 'avatar-command' ? 'user' : 'system', text: item.text });
+        }
+      }
+      transcripts.set(key, rows.sort((a, b) => a.at - b.at).slice(-24).map(({ at, ...row }) => row));
     }
     showMessages(key);
     // The roster can still contain a coalesced pre-resume snapshot. Chat
@@ -822,15 +882,16 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     await agents.resume(body.agentId); await refreshLocal(); await select(key);
     ui.setStatus(`${body.name} is ready for a new message. No previous request was replayed.`);
   }
-  async function converse({ key, text, voiceReply, signal }) {
+  async function converse({ key, text, voiceReply, signal, avatarInput }) {
     signal.throwIfAborted();
     if (typeof text !== 'string' || !text.trim() || encoder.encode(text).length > WORLD_AGENT_LIMITS.promptBytes) throw new Error('Enter a message within 16 KiB');
     const body = bodies.get(key); if (!body) throw new Error('Choose an agent in this world');
+    if (avatarInput && !body.local) throw new Error('Only this resident’s owner can supply an avatar image or exact prompt');
     message(key, 'user', text); ui.setStatus(`${body.name} is thinking…`);
-    const result = body.local ? await respond({ agentId: body.agentId, prompt: text, signal })
+    const result = body.local ? await respond({ agentId: body.agentId, prompt: text, signal, avatarInput })
       : await network?.request(body.ownerPeerId, { agentId: body.agentId, prompt: text }, { signal });
     signal.throwIfAborted(); if (!result) throw new Error('The agent owner is not connected');
-    message(key, 'assistant', result.text); caption(key, result.text);
+    message(key, result.role === 'system' ? 'system' : 'assistant', result.text, result.modelLabel); caption(key, result.text);
     ui.setStatus(result.finishReason === 'length' ? 'Reply reached the output limit. Ask the agent to continue.' : 'Ready.');
     if (voiceReply && voiceEnabled) {
       if (!refreshVoiceAvailability()) ui.setStatus(`Text reply received. ${voiceUnavailable}`);
@@ -864,9 +925,12 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
       });
     operationDone = pending; return pending;
   }
-  async function send({ key = selectedKey, text, voiceReply = false }) {
+  async function send({ key = selectedKey, text, voiceReply = false, avatarImage }) {
+    // Copy caller-owned pixels before the first asynchronous boundary.
+    const avatarInput = ownerAvatarInput(text, avatarImage);
+    if (avatarImage != null && !text?.trim()) text = AVATAR_IMAGE_PROMPT;
     await ready; alive(); requireConversationIdle();
-    return runOperation((signal) => converse({ key, text, voiceReply, signal }));
+    return runOperation((signal) => converse({ key, text, voiceReply, signal, avatarInput }));
   }
   async function cancel() {
     const socialCancelled = interruptSocial('human');

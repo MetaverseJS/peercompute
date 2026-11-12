@@ -5,7 +5,10 @@ export function normalizeWorldAvatarAction(value) {
   if (!value || Array.isArray(value) || typeof value !== 'object') throw new TypeError('Invalid avatar proposal');
   if (value.reset === true && Object.keys(value).length === 1) return { reset: true };
   if (Object.keys(value).some(key => !['name', 'prompt', 'size'].includes(key))) throw new TypeError('Unexpected avatar proposal fields');
-  const action = { name: objectText(value.name, 120, 'avatar name'), prompt: objectText(value.prompt, 1024, 'avatar description') };
+  // Text prompts may contain normal whitespace (including owner-supplied line
+  // breaks). Keep the actual string verbatim while checking all other controls.
+  objectText(typeof value.prompt === 'string' ? value.prompt.replace(/[\t\r\n]/g, ' ') : value.prompt, 1024, 'avatar description');
+  const action = { name: objectText(value.name, 120, 'avatar name'), prompt: value.prompt };
   return { ...action, size: resolveWorldModelSize(value.size, action) };
 }
 export const WORLD_AVATAR_ACTION_INSTRUCTIONS = 'When the owner asks you to change your body/model/avatar, become a car or robot, '

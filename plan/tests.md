@@ -5186,3 +5186,34 @@ Evidence: /home/cos/.cache/peercompute-resident-avatar-20261111/.
   controller tests. Native v6 transfer reports encrypted native transport;
   do not describe that particular receipt as Noise. Exact preview verification
   and final build receipts are recorded in log.md.
+
+
+### Resident avatar inputs, turn recovery and facing (November 11)
+
+- Host tests use real AgentRuntime journals, WorldMemoryStore and artifact
+  managers with deterministic inference fixtures: declined speech starts no
+  action/image/mesh call; failure returns idle; the next turn receives the new
+  prompt and saved failure; direct owner images and exact prompts bypass speech;
+  image pixels are copied; owner authority and command-history restoration hold.
+- Reference pixels and exact-prompt mode participate in deduplication. Invalid
+  reset combinations fail before dispatch. UTF-8 history fits the memory limit
+  without preventing valid non-English commands or losing failure receipts.
+- Mesh tests change provider availability between stages and preserve local-only
+  routing/cancellation. Literal prompts are not decorated; normal generated
+  references retain their existing background instructions.
+- Browser UI coverage includes owner/remote/room/busy gating, dropped/pasted/file
+  references, preview removal, late decode cancellation, success/failure retention
+  and escaped model attribution. 58 UI tests and 9 shared media tests pass.
+- Facing: 38 CubeAgentLayer / textured GLB tests pass for SF3D front alignment,
+  legacy and prop orientation, local/remote movement, grounding/picking/labels.
+  Actual retained chair screenshot inspected; no fresh model inference required.
+- Regression fixtures identify action requests by the existing instruction prefix
+  plus observation marker, since reply-consistency text now lies between them.
+  Earlier failed fixture run is retained; do not mistake it for product acceptance.
+- Final test/build/internal HTTPS receipts belong in log.md. No docs/Pages build
+  or push is part of this slice.
+
+Final focused avatar/conversation/intent/mesh/object suite:68/68passes. Final
+UTF-8 failure-receipt host scope9/9passes and task-attribution scope3/3passes.
+Desktop/mobile internal native UI checks pass at1440x1000 and390x844 with no
+overflow or JS/console errors; exact final asset/network receipts are external.

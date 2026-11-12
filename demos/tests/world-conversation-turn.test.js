@@ -35,7 +35,7 @@ async function fixture(t) {
   const f = { store, agents, inference, body, senses, speech, answers, actions, episodes, decisions, experience,
     decide: async () => ({ intent: null }) };
   const conversations = createWorldConversationTurns({ agents, experience, decideIntent: async options => {
-    decisions.push({ message: options.message, observed: structuredClone(options.observed) }); return f.decide(options);
+    decisions.push({ message: options.message, reply: options.reply, observed: structuredClone(options.observed) }); return f.decide(options);
   } });
   f.conversations = conversations;
   f.run = async (prompt, options = {}) => {
@@ -67,6 +67,30 @@ test('one journaled speech turn retains history and strips only the exact old sc
   assert.deepEqual(events.slice(before.length).map(event => [event.type, event.text]),
     [['request', 'What is here?'], ['result', 'Reply 1'], ['request', 'What changed?'], ['result', 'Reply 2']]);
   assert.equal(f.decisions.length, 2); assert.deepEqual(f.actions, []);
+});
+
+test('an explicit declined reply settles without an action and a different next turn uses its own prompt', async t => {
+  const f = await fixture(t);
+  const declined = 'I cannot generate that avatar. I can help design a different robot.';
+  f.answers.push(declined, 'I will try a copper robot.');
+  f.decide = async () => ({ avatar: { name: 'Robot', prompt: 'A copper robot' } });
+  const first = await f.run('First avatar design', { allowAvatar: true });
+  assert.equal(first.text, declined); assert.equal(first.avatar, undefined); assert.equal(f.decisions.length, 0);
+  const second = await f.run('Become a copper robot', { allowAvatar: true });
+  assert.equal(second.avatar.action.name, 'Robot'); assert.equal(f.decisions.length, 1);
+  assert.equal(f.decisions[0].message, 'Become a copper robot'); assert.equal(f.decisions[0].reply, 'I will try a copper robot.');
+  assert.equal(f.speech[1].messages.at(-1).content, 'Become a copper robot');
+  assert(f.speech[1].messages.some(message => message.content === declined), 'Do not erase refusals or prior history');
+  assert.notEqual(f.speech[0].requestId, f.speech[1].requestId);
+  assert.equal((await f.agents.events(f.body.agentId)).filter(event => event.type === 'result').length, 2);
+});
+
+test('quoted refusals and ordinary inability language do not become a content filter', async t => {
+  const f = await fixture(t);
+  f.answers.push('I cannot wait to become that robot!', 'The sign says "I cannot generate that". I will try your design.');
+  f.decide = async () => ({ avatar: { name: 'Robot', prompt: 'A copper robot' } });
+  for (const prompt of ['Become a robot', 'Use the robot design']) assert((await f.run(prompt, { allowAvatar: true })).avatar);
+  assert.equal(f.decisions.length, 2);
 });
 
 test('adapter knowledge survives a personality replacement without reviving the legacy action prompt', async t => {

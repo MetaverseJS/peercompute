@@ -154,3 +154,30 @@ origin/profile. Cancellation after the first density batch leaves the worker
 ready; recovery regenerates the exact same GLB with 1,693 GPU dispatches and
 zero downloads. All sessions and CPU/GPU leases release on unload. See
 `retained-mesh-report.json` alongside the live-chain evidence.
+
+## Resident avatar input and recovery follow-up (November 11)
+
+`WorldAvatarInput` parses explicit owner controls separately from conversational
+speech. Supplied RGBA references skip text and image inference; `Avatar prompt:`
+and `Use this exact prompt:` preserve the literal image prompt and skip speech
+inference. CubeChat accepts these references only for an owned resident, with
+preview/removal and retry retention. The shared image intake/decoder now lives
+under `demos/shared/chat`; inference's old import paths re-export it unchanged.
+Placed-object chat retains its existing generated-reference behavior.
+
+A conversational physical decision receives the completed reply and must agree
+with it. Explicit leading declines skip the action call; this is a bounded
+English consistency check, not a general semantic guarantee or content filter.
+Failure outcomes enter private scoped WorldMemory, while normal speech keeps its
+original agent journal and route. Explicit commands/results use authenticated
+owner / verified-action memories, not fabricated language-model turns. Multibyte
+history truncation respects the memory store's UTF-8 byte limit. Reference pixels
+are transient; the resulting mesh remains durably content addressed.
+
+Mesh selection is refreshed both before image generation and just before mesh
+dispatch, preserving local-only policy and cancellation. No automatic inference
+retries, model downloads or refusal rewriting are introduced. Provider loss can
+still fail a request; the UI preserves the prior body and reports the failure.
+The reported identical model reply was not independently reproduced as a cached
+transport result. Tests prove current prompts, distinct calls, idle recovery and
+saved failure context, rather than claiming all semantic repetition is fixed.

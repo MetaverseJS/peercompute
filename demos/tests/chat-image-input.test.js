@@ -9,6 +9,8 @@ before(async () => {
   const modules = new Map(await Promise.all([
     ['/chatImageInput.js', '../inference/src/ui/chatImageInput.js'],
     ['/imageAttachment.js', '../inference/src/ui/imageAttachment.js'],
+    ['/shared/chat/chatImageInput.js', '../shared/chat/chatImageInput.js'],
+    ['/shared/chat/imageAttachment.js', '../shared/chat/imageAttachment.js'],
   ].map(async ([url, file]) => [url, await readFile(new URL(file, import.meta.url), 'utf8')])));
   server = createServer((request, response) => {
     if (modules.has(request.url)) { response.setHeader('Content-Type', 'text/javascript'); response.end(modules.get(request.url)); return; }

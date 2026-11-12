@@ -2391,3 +2391,23 @@ CubeChat props/avatars on two clients. Catalog qualified on NVIDIA16GiB;340
 focused regressions pass. Internal inference/CubeChat/Earth previews are updated;
 exact TLS build hashes, catalog desktop/mobile layout and SecretWorkshop Noise
 connection pass. No Pages push.
+
+November 11 — resident avatar recovery and direct inputs: bind physical actions
+to the current conversational reply, stop action dispatch after explicit declines,
+and remember verified failures without replaying earlier requests. Show the
+actual speech model on owner replies. Accept owner-only dragged/pasted/picked
+images and literal `Avatar prompt:` commands through reusable generation APIs.
+Refresh the mesh provider after image generation. Align SF3D avatar fronts with
+CubeChat's +Z body direction without changing stored GLBs or prop orientation.
+Focused regressions and internal-preview verification are in progress; no Pages
+publication or push is authorized for this slice.
+
+Avatar slice implementation and scoped tests pass. Internal previews now contain
+owner reference images, literal prompts, model attribution, failure receipts and
+correct SF3D facing. Desktop/mobile visuals and world network checks pass; final
+source evidence/checkpoint follows. No public deployment.
+
+Final internal preview acceptance passes on desktop and mobile, including both
+world and model SecretWorkshop connections and exact served build hashes.
+Checkpoint this bounded slice locally; broader ICC baseline audit remains red
+for existing repository findings, with no policy suppression or public release.

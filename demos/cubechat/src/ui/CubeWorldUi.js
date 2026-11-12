@@ -1,4 +1,6 @@
 import './cubeWorldUi.css';
+import { bindChatImageInput } from '../../../shared/chat/chatImageInput.js';
+import { readImageAttachment } from '../../../shared/chat/imageAttachment.js';
 import { createResidentNavigationInspector } from '../../../shared/agents/ResidentNavigationInspector.js';
 import { createResidentGoalControls } from '../../../shared/agents/ResidentGoalControls.js';
 import { createResidentTaskStatus } from '../../../shared/agents/ResidentTaskStatus.js';
@@ -90,12 +92,22 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
   const status = node('p', '', 'cube-native-status'); status.setAttribute('role', 'status');
   const composer = node('form', undefined, 'cube-native-composer');
   const prompt = node('textarea'); prompt.rows = 2; prompt.setAttribute('aria-label', 'World message');
+  const attach = button('+'); attach.setAttribute('aria-label', 'Attach avatar reference image');
+  attach.title = 'Attach, paste or drop an image to replace this resident’s body.';
+  const imageFile = node('input'); imageFile.type = 'file'; imageFile.accept = 'image/png,image/jpeg,image/webp,image/gif';
+  imageFile.hidden = true; imageFile.setAttribute('aria-label', 'Avatar reference image file');
+  const attachmentRow = node('div', undefined, 'cube-native-avatar-reference'); attachmentRow.hidden = true;
+  const thumbnail = node('img'); thumbnail.alt = 'Avatar reference';
+  const attachmentInfo = node('div'), attachmentName = node('span', '', 'cube-native-note');
+  attachmentInfo.append(attachmentName, node('div', 'Avatar reference — replaces this resident’s body', 'cube-native-note'));
+  const removeAttachment = button('Remove'); removeAttachment.setAttribute('aria-label', 'Remove avatar reference');
+  attachmentRow.append(thumbnail, attachmentInfo, removeAttachment);
   const send = button('Send'); send.type = 'submit';
   const talk = button('Talk'), cancel = button('Cancel'), voiceButton = button('Voice options'), resume = button('Resume');
-  const actions = node('div', undefined, 'cube-native-actions'); actions.append(resume, send, talk, cancel, voiceButton);
+  const actions = node('div', undefined, 'cube-native-actions'); actions.append(resume, attach, send, talk, cancel, voiceButton);
   const taskStatus = createResidentTaskStatus({ onPauseGoal, onResumeGoal, onCancelGoal });
   const taskSnapshots = new Map();
-  composer.append(prompt, actions); chatBody.append(chatHeader, scopeNote, messages, taskStatus.element, status, composer);
+  composer.append(prompt, attachmentRow, imageFile, actions); chatBody.append(chatHeader, scopeNote, messages, taskStatus.element, status, composer);
   dock.append(launcher, chatBody);
 
   const makeDialog = (title) => {
@@ -157,12 +169,14 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
   let sending = false, mutating = false, selecting = false, cancelling = false, modelOpening = false, closing;
   let sendDone, cancelDone, roomSendController, recordPending = false, recordIntent = false, recordEpoch = 0, voiceEpoch = 0;
   let voiceState = { enabled: false, preparing: false, recording: false };
+  let attachment = null, attachmentRead = null, imageTransferPending = false;
   const drafts = new Map(), histories = new Map(), movementByKey = new Map(), captionPrimed = new Set();
   const restores = new Map();
   let editingKey = null, editHistoryChanged = false, editPrivateHistoryChanged = false;
   const currentKey = () => selected?.key ?? 'room';
   const capturing = () => recordPending || recordIntent || voiceState.recording;
-  const active = () => sending || busy || capturing() || voiceState.preparing;
+  const attachmentLoading = () => imageTransferPending || !!attachmentRead;
+  const active = () => sending || busy || capturing() || voiceState.preparing || attachmentLoading();
   const paused = () => selected?.status === 'paused' || selected?.recoveryRequired;
   const fail = (error) => {
     if (disposed) return;
@@ -171,6 +185,46 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
     residentStatus.textContent = voiceStatus.textContent = editStatus.textContent = value; update();
     if (editor.dialog.open) editor.dialog.scrollTop = 0;
   };
+  function canAttach() {
+    if (!selected) return 'Avatar images belong in a local resident’s private chat, not room chat.';
+    if (!selected.local) return 'Only this resident’s owner can change its body. Select a resident on this device.';
+    if (disposed || !enabled || closing || modelOpening || mutating || selecting || cancelling
+      || sending || busy || capturing() || voiceState.preparing || paused()) return 'Wait until this resident is ready before attaching an avatar image.';
+    return true;
+  }
+  function renderAttachment() {
+    attachmentRow.hidden = !attachment;
+    if (attachment) { thumbnail.src = attachment.preview; attachmentName.textContent = attachment.name; }
+    else { thumbnail.removeAttribute('src'); attachmentName.textContent = ''; }
+  }
+  function cancelAvatarRead() {
+    imageInput.cancel(); attachmentRead?.controller.abort(); attachmentRead = null; imageTransferPending = false;
+  }
+  function clearAvatarAttachment() {
+    cancelAvatarRead(); attachment = null; imageFile.value = ''; renderAttachment(); update();
+  }
+  async function attachAvatarFile(file, { signal } = {}) {
+    const allowed = canAttach(); if (allowed !== true) throw new Error(allowed);
+    attachmentRead?.controller.abort();
+    const read = { key: currentKey(), controller: new AbortController() }; attachmentRead = read;
+    const readSignal = signal ? AbortSignal.any([signal, read.controller.signal]) : read.controller.signal;
+    update();
+    try {
+      const decoded = await readImageAttachment(file, { signal: readSignal });
+      readSignal.throwIfAborted();
+      if (attachmentRead !== read || currentKey() !== read.key || canAttach() !== true) return;
+      attachment = decoded; renderAttachment();
+    } finally { if (attachmentRead === read) attachmentRead = null; update(); }
+  }
+  const imageInput = bindChatImageInput({ textarea: prompt, onFile: attachAvatarFile, canAccept: canAttach,
+    onError: fail, onPendingChange(value) { imageTransferPending = value; update(); } });
+  attach.onclick = () => { if (!attach.disabled) imageFile.click(); };
+  imageFile.onchange = () => {
+    const file = imageFile.files?.[0]; imageFile.value = ''; if (!file) return;
+    imageInput.cancel();
+    void attachAvatarFile(file).catch(error => { if (error?.name !== 'AbortError') fail(error); });
+  };
+  removeAttachment.onclick = clearAvatarAttachment;
   function signalOpen() {
     try { Promise.resolve(onOpen?.()).catch(fail); } catch (error) { fail(error); }
   }
@@ -185,14 +239,17 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
     prompt.disabled = locked || transition || sending || busy || capturing() || paused();
     prompt.maxLength = selected ? 16000 : 1024;
     prompt.placeholder = selected ? `Message ${text(selected.name, 80)}…` : 'Message everyone in this room…';
-    send.disabled = prompt.disabled || !prompt.value.trim() || typeof (selected ? onSend : onRoomSend) !== 'function';
+    prompt.title = selected?.local ? 'Paste or drop an avatar reference image, or use Avatar prompt: <exact image prompt>.' : '';
+    send.disabled = prompt.disabled || attachmentLoading() || (!prompt.value.trim() && !attachment) || typeof (selected ? onSend : onRoomSend) !== 'function';
+    attach.hidden = !selected?.local; attach.disabled = canAttach() !== true;
+    removeAttachment.disabled = locked || transition || sending || busy || capturing();
     resume.hidden = !paused() || !selected?.local || typeof onResume !== 'function';
     resume.textContent = selected?.recoveryRequired ? 'Acknowledge and resume' : 'Resume';
     resume.disabled = locked || transition || active();
     talk.hidden = voiceButton.hidden = !selected;
     talk.textContent = voiceState.recording || recordIntent ? 'Stop' : 'Talk';
     talk.disabled = locked || transition || !selected || paused() || !voiceState.enabled || voiceState.preparing
-      || ((sending || busy || recordPending) && !voiceState.recording && !recordIntent) || typeof onRecord !== 'function';
+      || attachment || attachmentLoading() || ((sending || busy || recordPending) && !voiceState.recording && !recordIntent) || typeof onRecord !== 'function';
     cancel.hidden = !active() && !cancelling;
     cancel.disabled = locked || cancelling || !active(); cancel.textContent = cancelling ? 'Cancelling…' : 'Cancel';
     voiceButton.disabled = locked || transition;
@@ -216,7 +273,7 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
         + (paused() ? !selected.local ? ' Paused. Only its owner can resume it.'
           : selected.recoveryRequired ? ' Previous outcome unknown. Acknowledge and resume below; the old request will not replay.'
             : ' Paused. Resume below to accept new messages.' : '');
-    status.textContent = selected ? agentStatus : roomStatus || worldStatus;
+    status.textContent = attachmentLoading() ? 'Preparing avatar reference…' : selected ? agentStatus : roomStatus || worldStatus;
     for (const control of list.querySelectorAll('button,select,input')) {
       if (!control.closest('[data-resident-goal]')) control.disabled = locked || transition || active() || control.dataset.unavailable === 'true';
     }
@@ -240,7 +297,12 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
       const article = node('article');
       if (entry.id) article.dataset.messageId = entry.id;
       if (entry.peerId) article.dataset.peerId = entry.peerId;
-      article.append(node('strong', text(entry.name ?? (entry.role === 'user' ? 'You' : entry.role === 'assistant' ? selected?.name ?? 'Resident' : 'Status'), 240)), node('p', text(entry.text, 16000)));
+      article.append(node('strong', text(entry.name ?? (entry.role === 'user' ? 'You' : entry.role === 'assistant' ? selected?.name ?? 'Resident' : 'Status'), 240)));
+      if (selected && entry.role === 'assistant' && entry.modelLabel) {
+        const label = node('small', `Model: ${entry.modelLabel}`, 'cube-native-note');
+        label.dataset.modelLabel = ''; article.append(node('br'), label);
+      }
+      article.append(node('p', text(entry.text, 16000)));
       messages.append(article);
     }
     messages.scrollTop = messages.scrollHeight;
@@ -248,6 +310,7 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
   function rememberDraft() { drafts.set(currentKey(), prompt.value); }
   function select(descriptor) {
     if (disposed) return;
+    if (currentKey() !== (descriptor?.key ?? 'room') || !!selected?.local !== !!descriptor?.local) clearAvatarAttachment();
     rememberDraft(); selected = descriptor ? { ...descriptor } : null;
     if (descriptor) { hostKey = descriptor.key; captionPrimed.delete(hostKey); }
     prompt.value = drafts.get(currentKey()) ?? ''; renderTargets(); renderMessages();
@@ -255,9 +318,11 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
   }
   async function cancelWork() {
     if (cancelDone) return cancelDone;
+    const attachmentOnly = attachmentLoading() && !sending && !busy && !capturing() && !voiceState.preparing;
+    cancelAvatarRead();
     roomSendController?.abort(new DOMException('Room message cancelled', 'AbortError'));
     cancelling = true; update();
-    cancelDone = Promise.resolve().then(() => onCancel?.()).then(async () => { await sendDone; })
+    cancelDone = Promise.resolve().then(() => { if (!attachmentOnly) return onCancel?.(); }).then(async () => { await sendDone; })
       .finally(() => {
         cancelling = false; cancelDone = null; update();
         if (!disposed && expanded && !prompt.disabled && !residents.dialog.open && !voice.dialog.open) prompt.focus();
@@ -307,6 +372,7 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
   async function close() {
     if (closing) return closing;
     if (disposed) return;
+    cancelAvatarRead();
     roomSendController?.abort(new DOMException('Room message cancelled', 'AbortError'));
     closing = Promise.resolve().then(async () => { await onClose?.(); await sendDone; }).then(() => {
       if (disposed) return;
@@ -463,7 +529,11 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
       appendRow(controls); reconcileChildren(row, children); rows.push(row);
     }
     reconcileChildren(list, rows);
-    if (selected) { const fresh = agents.find(agent => agent.key === selected.key); if (fresh) selected = { ...fresh }; else select(null); }
+    if (selected) {
+      const fresh = agents.find(agent => agent.key === selected.key);
+      if (fresh) { if (!fresh.local && selected.local) clearAvatarAttachment(); selected = { ...fresh }; }
+      else select(null);
+    }
     if (editingKey && !agents.some(agent => agent.key === editingKey && agent.local)) { hideDialog(editor.dialog, false); editingKey = null; }
     const keys = new Set(['room', ...agents.map(agent => agent.key)]);
     for (const map of [drafts, histories, movementByKey]) for (const key of map.keys()) if (!keys.has(key)) map.delete(key);
@@ -491,7 +561,11 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
   function setMessages(next) {
     if (disposed || !hostKey) return;
     const previous = histories.get(hostKey) ?? [];
-    const entries = (Array.isArray(next) ? next : []).slice(-32).map(item => ({ role: ['user', 'assistant', 'system'].includes(item?.role) ? item.role : 'system', text: text(item?.text, 16000) }));
+    const entries = (Array.isArray(next) ? next : []).slice(-32).map(item => {
+      const modelLabel = item?.role === 'assistant' && typeof item.modelLabel === 'string' ? text(item.modelLabel, 240).trim() : '';
+      return { role: ['user', 'assistant', 'system'].includes(item?.role) ? item.role : 'system', text: text(item?.text, 16000),
+        ...(modelLabel ? { modelLabel } : {}) };
+    });
     let bytes = 128000;
     for (let index = entries.length - 1; index >= 0; index--) { entries[index].text = entries[index].text.slice(0, Math.max(0, bytes)); bytes -= entries[index].text.length; }
     histories.set(hostKey, entries);
@@ -510,18 +584,23 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
   }
   async function sendMessage() {
     if (disposed || send.disabled || sending) return;
-    const key = currentKey(), content = prompt.value.trim(), isRoom = key === 'room';
+    const key = currentKey(), typed = prompt.value.trim(), image = attachment, content = typed || (image ? 'Use this image as your avatar.' : ''), isRoom = key === 'room';
+    if (image && canAttach() !== true) { fail(new Error(String(canAttach()))); return; }
     if (isRoom && (content.length > 1024 || encoder.encode(content).length > 2048)) { fail(new Error('Room messages can contain up to 1024 characters and 2048 UTF-8 bytes.')); return; }
     const roomController = isRoom ? new AbortController() : null;
     if (roomController) roomSendController = roomController;
     sending = true; update();
     sendDone = Promise.resolve().then(() => {
       roomController?.signal.throwIfAborted();
-      return isRoom ? onRoomSend({ text: content }, { signal: roomController.signal }) : onSend({ key, text: content, voiceReply: voiceState.enabled && speak.input.checked });
+      return isRoom ? onRoomSend({ text: content }, { signal: roomController.signal }) : onSend({ key, text: content,
+        voiceReply: voiceState.enabled && speak.input.checked, ...(image ? { avatarImage: image.image } : {}) });
     })
       .then(result => {
-        if (roomController?.signal.aborted || result?.delivery?.cancelled) return;
-        if (!disposed && currentKey() === key && prompt.value.trim() === content) { prompt.value = ''; drafts.set(key, ''); }
+        if (roomController?.signal.aborted || result?.delivery?.cancelled || result?.avatarFailed === true) return;
+        if (!disposed && currentKey() === key) {
+          if (prompt.value.trim() === typed) { prompt.value = ''; drafts.set(key, ''); }
+          if (image && attachment === image) clearAvatarAttachment();
+        }
       })
       .catch(fail).finally(() => { if (roomSendController === roomController) roomSendController = null; sending = false; sendDone = null; update(); if (!disposed && expanded && currentKey() === key && !prompt.disabled && !residents.dialog.open && !voice.dialog.open) prompt.focus(); });
     return sendDone;
@@ -635,12 +714,13 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
       if (!voiceState.enabled) speak.input.checked = false;
       update();
     },
-    setEnabled(value) { enabled = Boolean(value); if (!enabled) { expanded = false; hideDialog(residents.dialog, false); hideDialog(voice.dialog, false); hideDialog(editor.dialog, false); } update(); },
+    setEnabled(value) { enabled = Boolean(value); if (!enabled) { clearAvatarAttachment(); expanded = false; hideDialog(residents.dialog, false); hideDialog(voice.dialog, false); hideDialog(editor.dialog, false); } update(); },
     getTarget: currentKey,
     get selectedKey() { return selected?.key ?? null; },
     dispose() {
       if (disposed) return;
       disposed = true; voiceEpoch++; recordEpoch++; window.removeEventListener('keydown', onKeyDown, true);
+      clearAvatarAttachment(); void imageInput.dispose();
       roomSendController?.abort(new DOMException('Room chat closed', 'AbortError'));
       hideDialog(residents.dialog, false); hideDialog(voice.dialog, false); hideDialog(editor.dialog, false); root.remove();
       drafts.clear(); histories.clear(); movementByKey.clear(); restores.clear(); captionPrimed.clear(); agents = []; roomMessages = [];

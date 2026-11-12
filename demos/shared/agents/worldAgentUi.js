@@ -159,7 +159,11 @@ export function createWorldAgentUi({ worldLabel = 'World', container = document.
 
   function setMessages(next) {
     if (disposed) return;
-    messageList = (Array.isArray(next) ? next : []).slice(-32).map(item => ({ role: ['user', 'assistant', 'system'].includes(item?.role) ? item.role : 'system', text: text(item?.text, 16_000) }));
+    messageList = (Array.isArray(next) ? next : []).slice(-32).map(item => {
+      const modelLabel = item?.role === 'assistant' && typeof item.modelLabel === 'string' ? text(item.modelLabel, 240).trim() : '';
+      return { role: ['user', 'assistant', 'system'].includes(item?.role) ? item.role : 'system', text: text(item?.text, 16_000),
+        ...(modelLabel ? { modelLabel } : {}) };
+    });
     let budget = 128_000;
     for (let index = messageList.length - 1; index >= 0; index--) {
       messageList[index].text = messageList[index].text.slice(0, Math.max(0, budget)); budget -= messageList[index].text.length;
@@ -167,7 +171,12 @@ export function createWorldAgentUi({ worldLabel = 'World', container = document.
     messages.replaceChildren();
     for (const message of messageList) {
       const article = element('article');
-      article.append(element('strong', message.role === 'user' ? 'You' : message.role === 'assistant' ? 'Agent' : 'Status'), element('p', message.text));
+      article.append(element('strong', message.role === 'user' ? 'You' : message.role === 'assistant' ? 'Agent' : 'Status'));
+      if (message.role === 'assistant' && message.modelLabel) {
+        const label = element('small', `Model: ${message.modelLabel}`, 'pc-world-agent-note');
+        label.dataset.modelLabel = ''; article.append(element('br'), label);
+      }
+      article.append(element('p', message.text));
       messages.append(article);
     }
     messages.scrollTop = messages.scrollHeight;

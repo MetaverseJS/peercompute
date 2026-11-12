@@ -1683,3 +1683,15 @@ the documented earlier OOM/cache and discovery failures; broader device/network
 reliability is not inferred from this qualification. Internal preview verification
 passes for exact TLS builds, desktop/mobile catalog and SecretWorkshop Noise.
 Checkpoint locally; no public deployment or push.
+
+November 11 follow-ups: resident declines must not trigger unrelated avatar
+work, and a failed model provider must leave the next turn usable. Surface the
+actual speech-model route rather than guessing which model refused. Add owner
+reference images through chat drag/paste/file selection and literal image prompts
+without language-model rewriting. Correct backwards SF3D avatar presentation on
+the existing body; preserve props, physics, stored CIDs and peer identity.
+Keep changes reusable across world adapters and update internal previews only.
+
+Implemented and qualified with scoped tests and desktop/mobile internal preview.
+Keep historical failure reports and distinguish model-conditioned repetition
+from proven current-message/request isolation. No Pages or origin push.

@@ -62451,3 +62451,101 @@ startup/shutdown race separately; no source attribution is established yet.
 - Final `npm --prefix demos/{inference,cubechat,earth} run build -- --outDir /home/cos/.cache/peercompute-sf3d-20261111/build/<demo>` pass16.84/19.41/28.92seconds; parent `npm --prefix peercompute run build -- --output-path .../build/peercompute` passes22.77seconds with existing circular/bundle-size warnings. Catalog metadata update rerun9/9passes; no logic changed after340-suite. `git diff --check` passes. Promoted all three stable HTTPS pointers only after preparing/retaining old hashed assets (322/741/322 respectively), without server restarts. `check-preview.mjs` passes exactindexTLS hashes, desktop/mobile catalog/task filter, no overflow, noerrors/noHFdownloads and actualSecretWorkshopNoise. Separate3entryJSasset hashes match overTLS. Root visually inspected both catalog screenshots; WebGPU-disabled test profile correctly shows setuphelp. Allownedacceptancebrowsers/serversclosed;stablepreviewsremain. NoGitHubPagesfiles modified or remote push. Final ICC gates and local checkpoint follow; known unchangedscene.js size audit risk remains outside this slice.
 - ICC whole-worktree guard passes without violations. Full reindex104.18seconds plus separate history refresh completed; the final preview receipts subsequently changed only four plan documents, requiring final refresh. Broad production audit remains red for24preexisting oversized files (newvendormaximum1905lines), unrelated NetViz/motorcycle fallback classifications, baseline shell/Python findings and those four stale docs. Generic completion oracle has target_matched:false and no authored SF3D criteria; it is not acceptance evidence. Preserve these reports without exclusions/waivers or unrelated refactors. Saved SF3D plan records actual340tests, native run7/run8, textured world and verified preview receipts. Final staged guard, local commit and post-checkpoint freshness follow; no required model/browser/build check remains running.
 - Staging expands the previously grouped vendor directory:102files/17,037addedlines. Staged guard flags one exact-upstream WGSL comment at patch_embed_dinov2.wgsl:82 (“otherwise skip”) as test_skip_added. Inspected actual code: it unconditionally adds posEmbed[idx], contains no skipped test or removed execution, and is byte-identical to pinned upstream and the tested kernel. Preserve this classifier false-positive report; do not edit kernel comments or suppress policy merely to turn it green. Staged whitespace check also reports original trailing spaces in the verbatim upstream LICENSE.md; preserve that legal source. Earlier unstaged check did not include new files. These are recorded review findings, not missing model acceptance. No binaries/credentials/runtime artifacts staged. Checkpoint includes only the authorized implementation, tests, notices and plans.
+
+
+### 2026-11-11T18:56:16-09:00 — resident avatar failure and stale-looking replies
+
+- User supplied repeated refusal text with first `Model session lost: 3D model is
+  not ready`, then no available 3D model. Timestamp is first explicit clock
+  receipt; exact delivery time unavailable. Engaged ICC task
+  `resident-avatar-turn-recovery-20261111`, queried status/work evidence, read
+  skill/plan/log, and established non-overlapping agent leases before edits.
+- Traced WorldConversationTurn, WorldAgentHost and WorldMeshGeneration. Speech
+  and optional physical decision were independent; the latter did not receive
+  the spoken refusal. Avatar failures were displayed but not saved in memory;
+  the mesh provider snapshot could expire during reference-image generation.
+  No stale cached transport response was demonstrated. Do not equate this repair
+  with eliminating model-conditioned repetition.
+- Bound the action decision to current speech and skip action calls after explicit
+  leading declines. Persist failed action outcomes, preserve current message and
+  request identity, and refresh model selection between generation stages. Added
+  actual reply model labels from saved route data; historical refusing model
+  cannot be identified from the supplied transcript alone.
+
+### 2026-11-11T19:16:40-09:00 — follow-up receipt and implementation record
+
+- Exact delivery times of the three follow-ups are unavailable; this is the next
+  explicit clock receipt. Requests: identify the refusing model; allow images
+  dragged into chat or exact prompts without generated rewriting; correct
+  backwards-facing replacement avatars. Continued all three within the same
+  slice; no GitHub Pages deployment or push requested.
+- New WorldAvatarInput, WorldReplyDisposition and shared chat image modules;
+  modified WorldAvatarAction, WorldResidentAvatars, WorldAgentHost,
+  WorldConversationTurn, WorldIntentDecision and WorldMeshGeneration. CubeWorldUi
+  adds owner-only image preview/attachment lifecycle; worldAgentUi and native UI
+  show escaped model attribution. Shared image implementation moved unchanged;
+  inference imports remain compatible. Updated CubeChat README and relevant
+  plan/tests/branch/SF3D/object documents.
+- Direct images skip text/image inference. `Avatar prompt:` and `Use this exact
+  prompt:` skip LLM rewriting and send literal content to image inference.
+  Commands/results use private scoped memories, not fabricated LLM journal turns.
+  Independent review found character slicing could exceed memory's UTF-8 limit;
+  implemented byte-safe head/tail excerpts and added non-English regression.
+- GeneratedMeshView aligns SF3D's -Z front with CubeChat's +Z body direction only
+  for avatars. Existing CIDs, props, legacy TripoSR and body physics remain
+  unchanged. 38 rendering/movement checks pass. Actual retained chair visual
+  inspected at `/home/cos/.cache/peercompute-avatar-orientation-20261111/`; not
+  a fresh model run or live network-navigation test. Owned browser closed.
+- Commands/results so far: focused `node --test` host/avatar/conversation/intent/
+  mesh/object scope initially passes66/66; full native/shared UI58/58; shared
+  browser media9/9. Broader regression126tests had4 failures: three old fixture
+  prefix assumptions and one async assert. Corrected fixture detection and
+  assert.rejects; rerunning affected tests plus new multibyte coverage. Earlier
+  failures/logs retained under
+  `/home/cos/.cache/peercompute-avatar-recovery-20261111/`.
+- Building inference, CubeChat and Earth production packages with `npm --prefix
+  demos/<demo> run build -- --outDir <external-evidence>/build/<demo>`; final
+  results and internal preview validation will be appended after completion.
+
+- Final validation: 68/68 focused conversation/intent/host/avatar/mesh/object
+  tests pass; broader browser host rerun resolves the three fixture failures.
+  Added UTF-8 regression initially revealed contextual clipping of the failure
+  behind a long speech reply. Persist only the concise action failure receipt;
+  all9generated-host tests now pass, including subsequent context inspection.
+  Final early task-return now preserves model attribution;3affected checks pass.
+- Three accepted production builds complete. All internal roots move atomically
+  after asset preparation; prior hashed assets remain available to open clients.
+  Initial build receipts13.82/17.22/22.37seconds are superseded by final builds
+  after the one-line task-attribution correction. Existing chunk-size warnings
+  remain. No generated docs/Pages files, credentials or runtime artifacts enter
+  the repository. Exact TLS index and entry-script hashes are checked.
+- Native desktop1440x1000 and mobile390x844 preview attachment interactions pass,
+  with no overflow, JS errors or console errors. Root and UI agent inspected
+  screenshots. Owned software-WebGL browser disables WebGPU/model execution;
+  permission-denied microphone and no-adapter warnings are expected. Both world
+  transports connect via open Noise WSS to secretworkshop.net. Desktop model
+  transport is also verified; final-reload receipt will wait for both on mobile.
+  Initial mobile harness pasted before selection completed; fixed readiness wait
+  (no product change). Earlier harness failure is retained, not overwritten.
+- Whole-worktree ICC guard reports zero violations and advisory extraction/diff
+  warnings. Source review confirms moved image helpers are unchanged with legacy
+  re-exports. Full ICC refresh, production/readiness/oracle evidence, final staged
+  guard and local checkpoint remain; generic/baseline findings are not waivers.
+
+- Accepted builds pass in14.25/14.64/24.59seconds (inference/CubeChat/Earth).
+  Final HTML and entry-JS hashes match all3exact HTTPS URLs. Final desktop and
+  mobile CubeChat both have open Noise WSS connections for world AND model
+  transport to SecretWorkshop. No model loading, prompts or HF downloads occurred;
+  owned browser closed. See preview-ui/report.json and tls-hashes-final.json in
+  the external evidence directory. Stable preview servers remain available.
+- Full ICC reindex completes101.8seconds; separate Git history and freshness show
+  no stale/missing stores (index DIRTY_WORKTREE is expected before checkpoint).
+  Generic completion oracle is unmatched/blocked by existing NetViz and motorcycle
+  fallback classifications, with no authored criteria for this repair. Broad
+  production audit retains24preexisting oversized-file findings, baseline
+  shell/Python findings and advisory moved-helper warnings. No checks suppressed,
+  no policy changed and no unrelated refactor undertaken. The bounded acceptance
+  rests on actual test/build/render/preview receipts, not that generic verdict.
+- All requested implementation and relevant validation are complete. Preparing
+  the local checkpoint with staged guard/whitespace review; final source identity,
+  freshness and attempt receipt are persisted through ICC after commit. No push.

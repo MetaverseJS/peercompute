@@ -30,7 +30,8 @@ function disposeObject(root, textures = new Set(), bitmaps = new Set()) {
 }
 
 /** Decode only the self-contained generated mesh profile; share between objects and bodies. */
-export async function prepareGeneratedMeshView(mesh, { signal } = {}) {
+export async function prepareGeneratedMeshView(mesh, { signal, alignForward = false } = {}) {
+  if (typeof alignForward !== 'boolean') throw new TypeError('Generated mesh forward alignment must be a boolean');
   signal?.throwIfAborted();
   const checked = validateGeneratedMesh(mesh);
   const manager = new THREE.LoadingManager();
@@ -73,6 +74,11 @@ export async function prepareGeneratedMeshView(mesh, { signal } = {}) {
     const center = bounds.getCenter(new THREE.Vector3());
     root.position.set(-center.x, -bounds.min.y, -center.z);
     const group = new THREE.Group(); group.add(root);
+    // SF3D's export turns its camera-facing +X side into glTF -Z. Resident
+    // bodies face +Z; align only that known convention when the caller opts in.
+    // Existing TripoSR/unknown meshes and placed props keep their original yaw.
+    // The validated generator string is a cosmetic hint, never authority.
+    if (alignForward && asset.asset?.generator === 'SF3D-WebGPU') group.rotation.y = Math.PI;
     return { group, extent, height: size.y, dispose, get released() { return released; } };
   } catch (error) { dispose(); throw error; }
 }
