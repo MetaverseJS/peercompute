@@ -2,6 +2,7 @@ import { activeWorldGoalMilestone, worldGoalMilestonesComplete }
   from '../../../peercompute/src/peercompute/agents/WorldGoalPlan.js';
 
 const terminal = status => ['completed', 'cancelled'].includes(status);
+const automaticPause = goal => goal?.status === 'paused' && ['system', 'model', 'uncertain'].includes(goal.pauseSource);
 const short = value => String(value ?? '').replaceAll('\0', '').slice(0, 1024);
 const labels = { ready: 'Task accepted', planning: 'Planning', acting: 'Moving', paused: 'Paused',
   'waiting-for-model': 'Waiting for an available model', completed: 'Completed', cancelled: 'Cancelled' };
@@ -20,7 +21,7 @@ export function describeResidentTask(goal) {
   }
   const last = goal.receipts?.at(-1);
   const blocked = last?.status === 'blocked' && !terminal(goal.status) && goal.status !== 'acting';
-  return [blocked ? 'Blocked' : labels[goal.status] ?? 'Task', progress,
+  return [automaticPause(goal) ? 'Recovering automatically' : blocked ? 'Blocked' : labels[goal.status] ?? 'Task', progress,
     goal.reason && short(goal.reason)].filter(Boolean).join(' · ');
 }
 
@@ -56,7 +57,7 @@ export function createResidentTaskStatus({ onPauseGoal, onResumeGoal, onCancelGo
     objective.textContent = short(goal?.objective);
     status.textContent = error || describeResidentTask(goal);
     for (const { method, button, handler } of buttons) {
-      button.hidden = !goal || terminal(goal.status) || (method === 'resume' ? goal.status !== 'paused' : method === 'pause' && goal.status === 'paused');
+      button.hidden = !goal || terminal(goal.status) || (method === 'resume' ? goal.status !== 'paused' : method === 'pause' && goal.status === 'paused' && !automaticPause(goal));
       button.disabled = !enabled || pending || !resident?.local || typeof handler !== 'function';
     }
   }

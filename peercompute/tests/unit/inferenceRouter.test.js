@@ -67,10 +67,19 @@ test('combined-media routing requires one capable host with capacity, not a unio
     { task: 'text-generation', modalities: ['text', 'image', 'audio'], outputModalities: ['text'], busy: true, queuedRequests: 4 },
   ] });
   const input = { task: 'audio-text-to-text', mode: 'peers', inputModalities: ['image', 'audio'], candidates: [group] };
-  assert.throws(() => routeInferenceTask(input), { code: 'ERR_INFERENCE_NO_MODEL' });
+  assert.throws(() => routeInferenceTask(input), { code: 'ERR_INFERENCE_BUSY' });
   group.hosts[1].queuedRequests = 3;
   assert.equal(routeInferenceTask(input).candidate.manifestCid, group.manifestCid);
   assert.throws(() => routeInferenceTask({ ...input, inputModalities: ['video'] }), /policy/);
+});
+
+test('full compatible queues are availability waits while wrong modalities and locality remain no-model', () => {
+  const full = model('full', 'image-text-to-text', true, { busy: true, queuedRequests: 4 });
+  const input = { task: 'image-text-to-text', candidates: [full] };
+  assert.throws(() => routeInferenceTask(input), { code: 'ERR_INFERENCE_BUSY' });
+  assert.throws(() => routeInferenceTask({ ...input, mode: 'peers' }), { code: 'ERR_INFERENCE_NO_MODEL' });
+  assert.throws(() => routeInferenceTask({ ...input, inputModalities: ['audio'] }), { code: 'ERR_INFERENCE_NO_MODEL' });
+  assert.throws(() => routeInferenceTask({ ...input, candidates: [{ ...full, available: false }] }), { code: 'ERR_INFERENCE_NO_MODEL' });
 });
 
 test('a peer group cannot inherit media capabilities from a filtered local host', () => {

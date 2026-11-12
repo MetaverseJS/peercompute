@@ -8,6 +8,7 @@ import { MOTOR_DYNAMICS as MOTOR } from '../../../shared/agents/motor/motorContr
 import { CubeResidentMotor } from './CubeResidentMotor.js';
 import { createCubeNavigationSensors } from './CubeNavigationSensors.js';
 import { createCubeSpatialTargets } from './CubeSpatialTargets.js';
+import { ResidentViewCapture } from '../../../shared/world/ResidentViewCapture.js';
 
 const HALF_SIZE = 3;
 const MAX_COORDINATE = 1_000_000;
@@ -242,6 +243,27 @@ export class CubeAgentLayer {
         ...(motion.targetPosition ? { targetPosition: motion.targetPosition } : {}) } } : {}) },
     participants, obstacles, ...(entry.descriptor.local ? this.spatialTargets.describe(key) : {}),
     ...(requesterPeerId && participants.some(p => p.peerId === requesterPeerId) ? { requesterId: `human:${requesterPeerId}` } : {}) };
+  }
+
+  /** Capture the current owned body's view, not the human orbit/VR camera. */
+  async captureVision(key, { signal } = {}) {
+    signal?.throwIfAborted();
+    const entry = this.entries.get(key);
+    const stale = () => Object.assign(new Error('Resident vision requires an active owned body'), { code: 'ERR_WORLD_VISION_STALE' });
+    if (this.closed || !entry?.descriptor.local || entry.descriptor.status === 'paused') throw stale();
+    const intentRevision = entry.intentRevision;
+    this.viewCapture ??= new ResidentViewCapture({ renderer: this.scene.renderer, scene: this.scene.scene });
+    const position = entry.mesh.getWorldPosition(new THREE.Vector3());
+    // The visual ground may differ from the planar collision body. Generated
+    // avatars use their own height; ordinary cubes look from near their top.
+    position.y += (entry.avatarView?.renderedHeight ?? HALF_SIZE * 2) * .8 - HALF_SIZE;
+    const direction = new THREE.Vector3(0, 0, 1).applyQuaternion(entry.mesh.getWorldQuaternion(new THREE.Quaternion()));
+    const exclude = [...this.entries.values()].filter(other => other === entry || (other.descriptor.local && !other.descriptor.shared)).map(other => other.mesh);
+    const frame = await this.viewCapture.capture({ pose: { position: position.toArray(), direction: direction.toArray() }, exclude, signal });
+    signal?.throwIfAborted();
+    if (this.closed || this.entries.get(key) !== entry || !entry.descriptor.local || entry.descriptor.status === 'paused'
+        || entry.intentRevision !== intentRevision) throw stale();
+    return { ...frame, intentRevision };
   }
 
   place(entry, position) {
@@ -513,7 +535,7 @@ export class CubeAgentLayer {
 
   dispose() {
     if (this.closed) return;
-    this.closed = true; this.clear(); this.captions.dispose(); this.group.removeFromParent();
+    this.closed = true; this.viewCapture?.dispose(); this.clear(); this.captions.dispose(); this.group.removeFromParent();
     this.physics.world.removeEventListener('preStep', this.onPhysicsStep); this.motor.dispose();
     this.physics.world.removeEventListener('addBody', this.onNavigationGeometryChanged);
     this.physics.world.removeEventListener('removeBody', this.onNavigationGeometryChanged);

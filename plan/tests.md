@@ -5255,3 +5255,44 @@ headless momentum drift is confirmed against prior35bec9c5 public evidence;
 numerical conservation remains unqualified. No model inference was performed
 for this deployment. External public-summary.json and public-review.json retain
 full evidence and limitations.
+
+
+### Continuous resident OODA and recovery
+
+Use fake clock/RNG to verify60–180second recovery, owner-pause race protection,
+lease loss, cancel acknowledgement, repeated errors without permanent pause,
+busy/no-model without failure budget consumption, and fresh request identity.
+Exercise two residents receiving one world-chat hello and deferred resident
+dialogue without consuming turns or republishing acknowledgements. Vision
+checks: no capture until requested, local-only routing, body POV independent
+of player camera, no UI/video capture, state restoration and stale-result
+rejection. Model recovery checks: exact retained CID/options, cleanup before
+reload, explicit unload/delete/cancel wins and no generation replay. Headless
+visual and real peer acceptance follow focused tests; keep failures and limits.
+
+
+November12 crash resumption: authored edits survived, preview services restored,
+Node24 retained. Rebuild serially. Full Pages publication is explicitly authorized
+once continuous OODA/recovery acceptance passes. Original two-resident hello
+context overflow was reproduced on real peer Qwen0.8 at2048context; public scene
+projection removes duplicate metadata/current-event context while preserving full
+user speech and durable history. Real resident POV vision and fresh postvision
+reflection, automatic recovery and owned-worker retained reload pass. A final
+original-input social conversation run and final full staging/public checks remain.
+
+
+November12 functional acceptance complete: unchanged2048-context peer Qwen
+successfully answers two resident hellos and reciprocal resident dialogue;
+model-selected POV vision and private reflection work, automatic readiness
+recovery and retained worker reload pass without replay. Follow cognition keeps
+the standing follow command intact. Final full Pages build/route/visual/network
+validation and authorized publication are now in progress.
+
+
+Final staging release checks pass: canonical build630,451,926bytes; independent
+3057file manifest;19general+4native physics routes with4software presentation
+repeats;11authenticated SecretWorkshop routes and zero recorded route errors.
+Final standalone CubeChat/Earth previews also pass. Preserve the documented
+whole-generated-diff guard failure and existing numerical/device limitations;
+authored guard passes. Publish after final repository review, then verify public
+workflow commit, exact assets, full routes and screenshots independently.

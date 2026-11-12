@@ -1,4 +1,5 @@
 import { chatIdentifier, chatText, normalizeChatInput, validateSocialAuthor, ROOM_SOCIAL_LIMITS, ROOM_CHAT_LIMITS } from '../chat/roomChatContracts.js';
+import { classifyInferenceAvailability } from '../../../peercompute/src/peercompute/inference/InferenceAvailability.js';
 
 export const WORLD_CHAT_LIMITS = Object.freeze({ residents: 16, contextMessages: 16, contextBytes: 8192,
   seenEntries: 1024, seenMs: 300000, cooldownMs: 5000, discussionMs: 120000, turnsPerResident: 2 });
@@ -22,10 +23,11 @@ function displayName(value) {
  * Opt-in revocation cancels work but retains the single slot until it settles. */
 export function createWorldChatResponder({ getResidents, respond, publish, onStatus = () => {}, onDelivered = () => {},
   now = () => performance.now(), wallNow = Date.now, cooldownMs = WORLD_CHAT_LIMITS.cooldownMs,
-  discussionMs = WORLD_CHAT_LIMITS.discussionMs } = {}) {
+  discussionMs = WORLD_CHAT_LIMITS.discussionMs, retryMs = 1000 } = {}) {
   if (![getResidents, respond, publish, onStatus, onDelivered, now, wallNow].every(value => typeof value === 'function')
       || !Number.isFinite(cooldownMs) || cooldownMs < 0 || cooldownMs > 60000
-      || !Number.isFinite(discussionMs) || discussionMs <= 0 || discussionMs > 300000) {
+      || !Number.isFinite(discussionMs) || discussionMs <= 0 || discussionMs > 300000
+      || !Number.isFinite(retryMs) || retryMs < 10 || retryMs > 60000) {
     throw new TypeError('World chat requires callbacks, a bounded cooldown and a discussion deadline');
   }
   const residents = new Map(), seen = new Map(), socialRoots = new Map();
@@ -58,7 +60,7 @@ export function createWorldChatResponder({ getResidents, respond, publish, onSta
     }
     // A slow initial answer still belongs to its human. The deadline applies
     // only to autonomous follow-ups. Already-dispatched inference owns the slot
-    // until it finishes; aborting it would persistently pause AgentRuntime.
+    // until it finishes, preserving the human's request through slow inference.
     // Explicit social threads use ephemeral inference and can stop immediately.
     if (discussion.kind === 'social' && active?.discussion === discussion) active.controller.abort(abortReason());
     for (const entry of residents.values()) if (entry.pending?.message.agentId !== undefined) entry.pending = null;
@@ -86,7 +88,7 @@ export function createWorldChatResponder({ getResidents, respond, publish, onSta
       retained.add(body.key);
       const previous = residents.get(body.key);
       if (!previous || previous.body.agentId !== body.agentId) {
-        residents.set(body.key, { body: { ...body }, pending: null, lastStarted: -Infinity });
+        residents.set(body.key, { body: { ...body }, pending: null, lastStarted: -Infinity, nextAt: 0 });
       } else previous.body = { ...body };
     }
     for (const key of residents.keys()) if (!retained.has(key)) residents.delete(key);
@@ -110,17 +112,33 @@ export function createWorldChatResponder({ getResidents, respond, publish, onSta
     reconcile();
     for (const [key, entry] of residents) if (entry.pending && !remaining(key, entry, entry.pending)) entry.pending = null;
     const clock = now(), pending = [...residents.entries()].filter(([, entry]) => entry.pending && entry.body.available !== false);
-    if (!pending.length) return;
-    const ready = pending.filter(([, entry]) => clock >= entry.lastStarted + cooldownMs)
+    if (!pending.length) {
+      if ([...residents.values()].some(entry => entry.pending)) {
+        timer = setTimeout(schedule, retryMs); timer.unref?.();
+      }
+      return;
+    }
+    const ready = pending.filter(([, entry]) => clock >= Math.max(entry.nextAt, entry.lastStarted + cooldownMs))
       .sort((a, b) => a[1].lastStarted - b[1].lastStarted || a[1].pending.order - b[1].pending.order);
     if (!ready.length) {
-      const wait = Math.max(1, Math.min(...pending.map(([, entry]) => entry.lastStarted + cooldownMs - clock)));
+      const wait = Math.max(1, Math.min(...pending.map(([, entry]) => Math.max(entry.nextAt, entry.lastStarted + cooldownMs) - clock)));
       timer = setTimeout(schedule, wait); timer.unref?.(); return;
     }
     const [key, entry] = ready[0], pendingMessage = entry.pending, previousStart = entry.lastStarted;
     entry.pending = null; entry.lastStarted = clock;
     const run = { key, entry, body: { ...entry.body }, message: pendingMessage.message,
       discussion: pendingMessage.discussion, controller: new AbortController() };
+    function defer(reason) {
+      stillOwned(run);
+      if (run.publishing) return false;
+      // Waiting did not produce speech or consume a social turn. Preserve the
+      // same current message, but never replace a newer human message.
+      if (run.charged) { run.discussion.residents.get(key).turns--; run.charged = false; }
+      entry.pending ??= pendingMessage; entry.lastStarted = previousStart;
+      entry.nextAt = now() + retryMs;
+      notify({ key, status: 'waiting', messageId: run.message.id, reason });
+      return true;
+    }
     active = run;
     run.done = Promise.resolve().then(async () => {
       stillOwned(run);
@@ -130,12 +148,13 @@ export function createWorldChatResponder({ getResidents, respond, publish, onSta
         entry.pending ??= pendingMessage; entry.lastStarted = previousStart; return;
       }
       const budget = run.discussion.residents.get(key);
-      budget.turns++;
+      budget.turns++; run.charged = true;
       notify({ key, status: 'responding', messageId: run.message.id });
       stillOwned(run);
       const isCurrent = () => { try { stillOwned(run); return true; } catch { return false; } };
       const answer = await respond(run.body, run.message, { signal: run.controller.signal, context: publicContext(), isCurrent });
       stillOwned(run);
+      if (answer?.status === 'waiting') { defer(answer.reason ?? 'Waiting for inference'); return; }
       if (typeof answer === 'string' && !answer.trim()) {
         if (run.discussion.kind === 'social') run.discussion.socialRoot.closed = true;
         notify({ key, status: 'idle', messageId: run.message.id, reason: 'quiet' }); return;
@@ -149,6 +168,7 @@ export function createWorldChatResponder({ getResidents, respond, publish, onSta
       }
       notify({ key, status: 'publishing', messageId: run.message.id });
       stillOwned(run);
+      run.publishing = true;
       const result = await publish(output, { signal: run.controller.signal });
       // Delivery is an observed fact even if a human supersedes the thread while
       // its already-committed transport acknowledgment is returning.
@@ -156,6 +176,9 @@ export function createWorldChatResponder({ getResidents, respond, publish, onSta
       budget.lastOutput = normalized;
       stillOwned(run); notify({ key, status: 'idle', messageId: run.message.id });
     }).catch(error => {
+      if (classifyInferenceAvailability(error) && !run.publishing && !run.controller.signal.aborted) {
+        try { if (defer(error.message)) return; } catch { /* A newer message or owner choice wins. */ }
+      }
       const cancelled = run.controller.signal.aborted || error?.name === 'AbortError';
       notify({ key, status: cancelled ? 'cancelled' : 'error', messageId: run.message.id,
         ...(cancelled ? {} : { error: String(error?.message ?? error).slice(0, 512) }) });

@@ -6,6 +6,7 @@ import { validateHubPackage, matchesHubPackage, verifyStoredHubPackage } from '.
 import { createModelPreferences, DEFAULT_MODEL_ID } from './modelPreferences.js';
 import { MODEL_POLICY } from '../../../peercompute/src/peercompute/inference/modelManifest.js';
 import { routeInferenceTask } from '../../../peercompute/src/peercompute/inference/InferenceRouter.js';
+import { classifyInferenceAvailability } from '../../../peercompute/src/peercompute/inference/InferenceAvailability.js';
 import { inferInferenceTask, supportsInferenceInput } from '../../../peercompute/src/peercompute/inference/InferenceCapabilities.js';
 import { snapshotGenerationInput } from '../../../peercompute/src/peercompute/inference/GenerationInput.js';
 
@@ -353,6 +354,7 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
     }
   }
   async function unloadModel(cid) {
+    runtime.stopResidentRecovery?.(cid);
     if (!runtime.unloadResidentModel) {
       await peerService?.setHostingEnabled(false);
       await runtime.service.unloadModel();
@@ -686,6 +688,7 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
       const wasDeleting = deleting.has(cid);
       let ownershipEntered = false;
       deleting.add(cid);
+      runtime.stopResidentRecovery?.(cid);
       const deletion = mutate((activeSignal) => withModelDeletionOwnership(runtime, async () => {
         ownershipEntered = true;
         let unloaded = false;
@@ -698,7 +701,8 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
           if (runtime.networkManager?.getPublishedArtifactCids?.().includes(cid)) await runtime.withdraw(cid);
           published.delete(cid);
           const service = serviceFor(cid);
-          const matching = service?.getStatus().manifestCid === cid;
+          const matching = service?.getStatus().manifestCid === cid
+            || runtime.getResidentModelStates?.().some(entry => entry.manifestCid === cid);
           if (matching) {
             if (!runtime.unloadResidentModel) await peerService?.setHostingEnabled(false);
             else await peerService?.cancelHostedModel?.(cid);
@@ -762,7 +766,7 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
           if (automatic !== 'local') {
             try { routeInferenceTask({ task: inferInferenceTask(options),
               mode: automatic, candidates, inputModalities }); ready = true; }
-            catch (error) { if (error.code !== 'ERR_INFERENCE_NO_MODEL') throw error; }
+            catch (error) { if (!classifyInferenceAvailability(error)) throw error; }
           }
           if (automatic !== 'local' && !ready) candidates = await refreshCandidates();
         } else if (target === 'local') {
@@ -777,7 +781,7 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
               && typeof target === 'string' && target.startsWith('peer:')) {
             candidates = (await refreshCandidates()).filter((entry) => entry.key === target);
           }
-          if (!candidates.length) throw new Error('The selected model is no longer available');
+          if (!candidates.length) throw Object.assign(new Error('The selected model is no longer available'), { code: 'ERR_MODEL_NOT_READY' });
         }
         signal.throwIfAborted();
         const task = inferInferenceTask(options, automatic ? 'text-generation' : candidates[0]?.task);
@@ -806,8 +810,18 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
       return true;
     },
   });
+  const unsubscribeResidents = runtime.subscribeResidentModels?.(event => {
+    if (closed || event.type !== 'recovered' || deleting.has(event.manifestCid) || unloadingResidents.has(event.manifestCid)) return;
+    const admitted = admittedResidents.get(event.manifestCid);
+    if (admitted?.service !== event.previousService || admitted?.sessionId !== event.previousSessionId) return;
+    // The registry recovered the same authorized CID/options after acknowledged
+    // teardown. Refresh its session guard before advertising the replacement.
+    admittedResidents.set(event.manifestCid, { service: event.service, sessionId: event.sessionId });
+    localStates.set(event.manifestCid, { active: 0, lastIdleAt: now() });
+  });
   runtime.dispose = async () => {
     closed = true; hostInference = false; current = null; lifetime.abort('Model console closed');
+    runtime.stopResidentRecovery?.(); unsubscribeResidents?.();
     for (const request of requests.values()) request.abort.abort('Model console closed');
     await peerStarting?.catch(() => {});
     // Failed startup may leave a manager-owned handle awaiting cleanup even

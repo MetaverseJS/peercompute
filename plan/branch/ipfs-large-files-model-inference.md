@@ -1707,3 +1707,31 @@ two-cube height with saved appearance hints, and the full demo set is live on
 Pages after independent public byte, route, network and visual checks. Existing
 saved sizes stay intact. Final receipt is local documentation only; no second
 build is necessary.
+
+November11 continuous cognition request: residents should optionally inspect
+their world through vision models, repeatedly reflect/act toward goals, recover
+after randomized1–3minute error cooldowns, wait for contested inference and
+converse with other residents. Unexpectedly unloaded desired models should
+reload. Preserve owner pause/unload choices. Follow-up repro: two residents
+both pause after one human world-chat hello. Internal preview only.
+
+November11 follow-up: deploy the completed OODA/recovery slice to GitHub Pages.
+Rebuild the full demo set and verify staging/public routes, visuals and backend
+connections before calling the release complete.
+
+
+November12 functional acceptance complete: unchanged2048-context peer Qwen
+successfully answers two resident hellos and reciprocal resident dialogue;
+model-selected POV vision and private reflection work, automatic readiness
+recovery and retained worker reload pass without replay. Follow cognition keeps
+the standing follow command intact. Final full Pages build/route/visual/network
+validation and authorized publication are now in progress.
+
+
+Final staging release checks pass: canonical build630,451,926bytes; independent
+3057file manifest;19general+4native physics routes with4software presentation
+repeats;11authenticated SecretWorkshop routes and zero recorded route errors.
+Final standalone CubeChat/Earth previews also pass. Preserve the documented
+whole-generated-diff guard failure and existing numerical/device limitations;
+authored guard passes. Publish after final repository review, then verify public
+workflow commit, exact assets, full routes and screenshots independently.

@@ -9,7 +9,9 @@ const TERMINAL = new Set(['completed', 'cancelled']);
 const ACTIONS = new Set(['approach', 'look-at', 'move-to', 'stop']);
 const RECEIPT_STATUSES = new Set(['arrived', 'stopped', 'target-lost', 'blocked', 'cancelled', 'failed']);
 const MUTABLE = ['requesterId', 'status', 'reason', 'steps', 'failures', 'startedAt', 'deadlineAt', 'nextDecisionAt',
-  'pendingDecision', 'pendingAction', 'lastReceipt', 'currentStep', 'modelAssessment', 'plan'];
+  'pendingDecision', 'pendingAction', 'lastReceipt', 'currentStep', 'modelAssessment', 'plan', 'pauseSource', 'recovery'];
+const AUTOMATIC_PAUSES = new Set(['system', 'model', 'uncertain']);
+const RECOVERY_RECEIPTS = 16;
 const encoder = new TextEncoder(), decoder = new TextDecoder();
 const copy = value => value === undefined ? undefined : structuredClone(value);
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -98,6 +100,60 @@ function eventRecord(value, at) {
     ...(Object.hasOwn(value, 'text') ? { text: text(value.text, 512, 'event text', true) } : {}),
     ...(Object.hasOwn(value, 'requestId') ? { requestId: agentIdentifier(value.requestId, 'event request ID') } : {}) };
 }
+function recovery(value) {
+  if (value === null) return null;
+  fields(value, ['windowIndex', 'windowStartedAt', 'stepBase', 'retryAt', 'retryScheduledAt'], 'recovery');
+  return { windowIndex: integer(value.windowIndex, Number.MAX_SAFE_INTEGER, 'recovery window'),
+    windowStartedAt: timestamp(value.windowStartedAt, 'recovery start'),
+    stepBase: integer(value.stepBase, Number.MAX_SAFE_INTEGER, 'recovery step baseline'),
+    retryAt: optionalTime(value.retryAt, 'recovery retry time'),
+    retryScheduledAt: optionalTime(value.retryScheduledAt ?? null, 'recovery scheduling time') };
+}
+function validateRecovery(previous, next, now) {
+  const before = previous.recovery, after = next.recovery;
+  if (!after) { if (before) throw new Error('Goal recovery cannot be removed'); return; }
+  if (after.windowStartedAt > now || after.stepBase > next.steps
+      || next.steps - after.stepBase > WORLD_GOAL_LIMITS.maxSteps) throw new Error('Invalid goal recovery window allowance');
+  if (!before) {
+    if (after.windowIndex !== 0 || now - after.windowStartedAt > 60000 || after.stepBase !== next.steps
+        || !['paused', 'ready'].includes(next.status)) throw new Error('Invalid initial goal recovery window');
+  } else if (after.windowIndex === before.windowIndex) {
+    if (after.windowStartedAt !== before.windowStartedAt || after.stepBase !== before.stepBase) throw new Error('Goal recovery window cannot reset in place');
+  } else {
+    if (after.windowIndex !== before.windowIndex + 1 || previous.status !== 'paused' || next.status !== 'ready'
+        || next.pendingDecision || next.pendingAction || after.retryAt !== null || now - after.windowStartedAt > 60000
+        || after.windowStartedAt < before.windowStartedAt
+        || after.stepBase !== next.steps || next.failures !== 0
+        || next.steps !== previous.steps + (previous.pendingDecision ? 1 : 0)
+        || (previous.pauseSource !== 'owner' && (!AUTOMATIC_PAUSES.has(previous.pauseSource)
+          || before.retryAt === null || now < before.retryAt))) throw new Error('Goal recovery requires a due acknowledged pause');
+  }
+  if (after.retryAt !== null) {
+    if (next.status !== 'paused' || !AUTOMATIC_PAUSES.has(next.pauseSource)) throw new Error('Only automatic goal pauses may schedule recovery');
+    if (after.retryScheduledAt === null || after.retryAt - after.retryScheduledAt < 60000
+        || after.retryAt - after.retryScheduledAt > 180000) {
+      throw new Error('Goal recovery cooldown must be between one and three minutes');
+    }
+    if ((after.retryAt !== before?.retryAt || after.retryScheduledAt !== before?.retryScheduledAt)
+        && (after.retryScheduledAt > now || now - after.retryScheduledAt > 60000)) throw new Error('Invalid goal recovery scheduling time');
+  } else if (after.retryScheduledAt !== null) throw new Error('Inactive recovery cannot retain a scheduled cooldown');
+}
+function trimFailedReceipts(record) {
+  const keep = new Set(record.completedMilestones.map(item => item.requestId));
+  const removable = item => item.requestId !== record.lastReceipt?.requestId && !keep.has(item.requestId)
+    && !['arrived', 'stopped'].includes(item.status);
+  while (record.receipts.length > RECOVERY_RECEIPTS) {
+    const index = record.receipts.findIndex(removable);
+    if (index < 0) throw new Error('Goal receipt capacity contains only protected physical evidence');
+    record.receipts.splice(index, 1);
+  }
+  // Long-lived jobs retain their proofs, not an unbounded failed-attempt log.
+  while (encoder.encode(JSON.stringify(record)).length > 32 * 1024 && record.trace.length) record.trace.shift();
+  while (encoder.encode(JSON.stringify(record)).length > 32 * 1024) {
+    const index = record.receipts.findIndex(removable); if (index < 0) break;
+    record.receipts.splice(index, 1);
+  }
+}
 function changedRecord(previous, patch, now) {
   fields(patch, MUTABLE, 'patch');
   const next = { ...previous, ...copy(patch), revision: previous.revision + 1, updatedAt: now };
@@ -109,7 +165,13 @@ function changedRecord(previous, patch, now) {
   next.reason = text(next.reason, 512, 'reason', true);
   next.currentStep = text(next.currentStep, 240, 'current step', true);
   next.modelAssessment = text(next.modelAssessment, 512, 'model assessment', true);
-  next.steps = integer(next.steps, WORLD_GOAL_LIMITS.maxSteps, 'steps');
+  next.recovery = recovery(next.recovery ?? null);
+  next.pauseSource = Object.hasOwn(patch, 'pauseSource') ? patch.pauseSource
+    : next.status === 'paused' ? (previous.status === 'paused' ? previous.pauseSource ?? 'owner' : 'owner') : null;
+  if (next.status === 'paused' ? !['owner', 'model', 'system', 'uncertain'].includes(next.pauseSource) : next.pauseSource !== null) {
+    throw new TypeError('Invalid goal pause source');
+  }
+  next.steps = integer(next.steps, next.recovery ? Number.MAX_SAFE_INTEGER : WORLD_GOAL_LIMITS.maxSteps, 'steps');
   next.failures = integer(next.failures, WORLD_GOAL_LIMITS.maxFailures, 'failures');
   if (next.steps < previous.steps) throw new Error('Goal steps cannot decrease');
   next.startedAt = optionalTime(next.startedAt, 'start time');
@@ -123,6 +185,7 @@ function changedRecord(previous, patch, now) {
   }
   next.pendingDecision = pendingDecision(next.pendingDecision);
   next.pendingAction = pendingAction(next.pendingAction);
+  validateRecovery(previous, next, now);
   if (Object.hasOwn(patch, 'plan')) {
     if (previous.plan !== null) throw new Error('Goal milestone plan cannot be replaced');
     if (previous.status !== 'planning' || !previous.pendingDecision || next.pendingDecision
@@ -155,7 +218,7 @@ function changedRecord(previous, patch, now) {
         && Math.hypot(outcome.position[0] - outcome.targetPosition[0], outcome.position[2] - outcome.targetPosition[2])
           > action.intent.stopDistance) throw new Error('Goal point arrival lies outside its acknowledged stopping distance');
     if (previous.receipts.some(item => item.requestId === outcome.requestId)) throw new Error('Goal receipt request was already settled');
-    if (previous.receipts.length >= WORLD_GOAL_LIMITS.maxSteps) throw new Error('Goal receipt budget exhausted');
+    if (!next.recovery && previous.receipts.length >= WORLD_GOAL_LIMITS.maxSteps) throw new Error('Goal receipt budget exhausted');
     if (next.pendingAction) throw new Error('Goal receipt must settle the pending action');
     next.receipts = [...previous.receipts, outcome];
     if (action.milestoneIndex === undefined) {
@@ -245,7 +308,8 @@ export class WorldGoalStore {
     if (record && record.ownerHostId !== this.hostId) throw new Error('This installation does not own the goal');
     // Version-one databases predate ordered plans. Hydrate without rewriting
     // their receipts or pending checkpoints, and never infer milestone credit.
-    return record && { ...record, plan: record.plan ?? null, completedMilestones: record.completedMilestones ?? [] };
+    return record && { ...record, plan: record.plan ?? null, completedMilestones: record.completedMilestones ?? [],
+      recovery: record.recovery ?? null, pauseSource: record.pauseSource ?? (record.status === 'paused' ? 'owner' : null) };
   }
   _expected(record, goalId, revision) {
     record = this._owner(record);
@@ -279,7 +343,7 @@ export class WorldGoalStore {
         revision: (previous?.revision ?? 0) + 1, objective, requesterId, ...origin, status: 'paused', reason: '', steps: 0, failures: 0,
         startedAt: null, deadlineAt: null, nextDecisionAt: null, pendingDecision: null, pendingAction: null,
         lastReceipt: null, receipts: [], plan: null, completedMilestones: [], currentStep: '', modelAssessment: '',
-        limits: { ...WORLD_GOAL_LIMITS }, trace: [], createdAt: now, updatedAt: now };
+        limits: { ...WORLD_GOAL_LIMITS }, pauseSource: 'owner', recovery: null, trace: [], createdAt: now, updatedAt: now };
       await request(store.put(this._row(record))); return record;
     }, signal);
   }
@@ -305,6 +369,7 @@ export class WorldGoalStore {
       if (TERMINAL.has(previous.status)) throw new Error('Terminal goals cannot be resumed or changed');
       const record = changedRecord(previous, patch, now);
       if (event) record.trace = [...previous.trace, event].slice(-16);
+      if (record.recovery) trimFailedReceipts(record);
       await request(store.put(this._row(record))); return record;
     }, signal);
   }

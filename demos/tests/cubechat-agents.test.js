@@ -102,6 +102,53 @@ test('agent positions are copied and bounded without accepting strings or nonfin
   }
 });
 
+test('resident vision uses the current visual body and heading, excludes self/private bodies and remains opt-in', async t => {
+  const page = await fixture(t);
+  const result = await page.evaluate(async () => {
+    layer.upsert(base); layer.upsert({ ...base, key: 'local:private', agentId: 'private', position: [10, 3, 0] });
+    layer.upsert({ ...base, key: 'local:public', agentId: 'public', shared: true, position: [20, 3, 0] });
+    layer.upsert({ ...base, key: 'remote:other', agentId: 'other', ownerPeerId: 'other', local: false, position: [30, 3, 0] });
+    const notCreated = layer.viewCapture === undefined, entry = layer.entries.get(base.key), calls = []; let disposed = 0;
+    entry.mesh.position.set(10, 30, 20); entry.mesh.rotation.y = Math.PI / 2;
+    layer.viewCapture = { capture: async input => { calls.push({ pose: input.pose, excluded: input.exclude.map(mesh => mesh.userData.agentKey) });
+      return { pixels: { data: new Uint8Array(4), width: 1, height: 1, channels: 4 }, observedAt: Date.now(), pose: input.pose }; }, dispose: () => disposed++ };
+    const normal = await layer.captureVision(base.key);
+    entry.avatarView = { renderedHeight: 24 }; const avatar = await layer.captureVision(base.key); delete entry.avatarView;
+    let remoteError; try { await layer.captureVision('remote:other'); } catch (error) { remoteError = error.code; }
+    const playerPosition = shell.camera.position.toArray(); layer.dispose();
+    return { notCreated, calls, normal: normal.pose, avatar: avatar.pose, intentRevision: normal.intentRevision,
+      remoteError, disposed, playerPosition };
+  });
+  assert.equal(result.notCreated, true); assert.equal(result.calls.length, 2);
+  assert.deepEqual(result.calls[0].excluded.sort(), ['local:agent-1', 'local:private']);
+  assert.deepEqual(result.normal.position, [10, 31.8, 20]); assert.deepEqual(result.avatar.position, [10, 46.2, 20]);
+  assert(Math.abs(result.normal.direction[0] - 1) < 1e-10); assert(Math.abs(result.normal.direction[2]) < 1e-10);
+  assert.equal(result.remoteError, 'ERR_WORLD_VISION_STALE'); assert.equal(result.disposed, 1);
+  assert.deepEqual(result.playerPosition, [0, 8, 30]); assert(Number.isSafeInteger(result.intentRevision));
+});
+
+test('resident vision discards readbacks after owner-body replacement, pause, new intent or cancellation', async t => {
+  const page = await fixture(t);
+  const result = await page.evaluate(async () => {
+    const outcomes = [];
+    for (const change of ['replace', 'pause', 'intent', 'abort']) {
+      layer.upsert({ ...base, status: 'idle' });
+      const controller = new AbortController(); let finish;
+      layer.viewCapture = { capture: () => new Promise(resolve => { finish = resolve; }), dispose() {} };
+      const pending = layer.captureVision(base.key, { signal: controller.signal });
+      if (change === 'replace') { layer.remove(base.key); layer.upsert(base); }
+      if (change === 'pause') layer.upsert({ ...base, status: 'paused' });
+      if (change === 'intent') layer.entries.get(base.key).intentRevision++;
+      if (change === 'abort') controller.abort();
+      finish({ pixels: { data: new Uint8Array(4), width: 1, height: 1, channels: 4 }, observedAt: Date.now() });
+      try { await pending; outcomes.push('unexpected-success'); } catch (error) { outcomes.push(error.code ?? error.name); }
+    }
+    return outcomes;
+  });
+  assert.deepEqual(result.slice(0, 3), Array(3).fill('ERR_WORLD_VISION_STALE'));
+  assert.equal(result[3], 20, 'DOM AbortError preserves its native code');
+});
+
 test('agent cubes have distinct dynamic local and kinematic remote ownership while humans remain untouched', async t => {
   const page = await fixture(t);
   const result = await page.evaluate(() => {

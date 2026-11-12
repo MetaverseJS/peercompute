@@ -9,26 +9,29 @@ import { ResidentModelAdmission } from '../../src/peercompute/serviceOrchestrati
 
 const cids = await Promise.all([1, 2, 3, 4].map(async (value) => CID.createV1(0x55, await sha256.digest(new Uint8Array([value]))).toString()));
 function deferred() { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; }
-function fixture(t, { beforeLoad, beforeFactory, failDispose = () => false } = {}) {
+function fixture(t, { beforeLoad, beforeFactory, beforeDispose, recovery, now, random, failDispose = () => false } = {}) {
   const broker = new ResourceLeaseBroker({ capacities: { cpu: { units: 8, memoryBytes: 60 }, gpu: { units: 8, memoryBytes: 60 } } });
   const admission = new ResidentModelAdmission({ broker });
-  const uses = new Set(), services = [];
+  const uses = new Set(), services = [], useEvents = [], factories = [];
   const store = {
-    async acquireUse(cid) { uses.add(cid); return () => uses.delete(cid); },
+    async acquireUse(cid) { uses.add(cid); useEvents.push(['acquire', cid]); return () => { useEvents.push(['release', cid]); uses.delete(cid); }; },
     async getManifest(cid) { return { name: cid, model: { runtime: 'transformers.js', task: 'text-generation' } }; },
   };
-  const registry = new ResidentModelRegistry({ artifactStore: store, async createService({ manifestCid }) {
+  const registry = new ResidentModelRegistry({ artifactStore: store, recovery, now, random, async createService({ manifestCid, runtimeOptions }) {
+    factories.push({ manifestCid, runtimeOptions: structuredClone(runtimeOptions) });
     await beforeFactory?.();
-    let status = 'idle', lease;
+    let status = 'idle', lease, loss;
     const service = {
       closed: false,
-      getStatus: () => ({ status, manifestCid: status === 'idle' ? null : manifestCid, sessionId: manifestCid }),
+      getStatus: () => ({ status, loss, manifestCid: status === 'idle' ? null : manifestCid, sessionId: `session-${services.indexOf(service)}` }),
+      lose({ recoverable = true } = {}) { status = 'lost'; loss = { recoverable, manifestCid, sessionId: `session-${services.indexOf(service)}` }; },
       async loadModel({ signal }) {
         status = 'loading'; await beforeLoad?.(manifestCid, signal); signal.throwIfAborted();
         lease = await admission.acquire({ sessionId: manifestCid, manifestCid, estimatedCpuBytes: 20, estimatedGpuBytes: 20 });
         status = 'ready'; return { workerId: `worker-${services.indexOf(service)}` };
       },
       async dispose() {
+        await beforeDispose?.(manifestCid);
         if (failDispose(manifestCid)) { status = 'cleanup-failed'; throw new Error('Worker termination was not acknowledged'); }
         await lease?.release(); status = 'idle'; this.closed = true;
       },
@@ -36,7 +39,7 @@ function fixture(t, { beforeLoad, beforeFactory, failDispose = () => false } = {
     services.push(service); return service;
   } });
   t.after(() => registry.dispose());
-  return { registry, broker, uses, services };
+  return { registry, broker, uses, services, factories, useEvents };
 }
 
 test('same-runtime models receive independent services and shared aggregate admission without eviction', async (t) => {
@@ -100,4 +103,135 @@ test('load cancellation cleans only its own service and keeps an existing model 
   assert.equal(f.registry.list().length, 1); assert.equal(f.uses.size, 1);
   assert.equal(f.registry.getService(cids[0]).getStatus().status, 'ready');
   assert.equal(f.broker.reportPressure().pools.gpu.activeMemoryBytes, 20);
+});
+
+const recovery = { pollMs: 100_000, retryMs: 10, stableMs: 1000, maximumAttempts: 3 };
+
+test('recovery keeps the exact package/options and file lease while awaiting old worker acknowledgement', async (t) => {
+  const hold = deferred(); let delayCleanup = true;
+  const f = fixture(t, { recovery, beforeDispose: () => delayCleanup ? hold.promise : undefined });
+  const options = { ggufGpuLayers: 17 };
+  await f.registry.load(cids[0], { runtimeOptions: options });
+  const original = f.services[0], events = []; f.registry.subscribe(event => events.push(event));
+  original.lose();
+  const first = f.registry.checkRecovery(), second = f.registry.checkRecovery();
+  await tick();
+  assert.equal(f.services.length, 1, 'a second worker cannot be created before old disposal acknowledges');
+  assert.equal(f.registry.list()[0].status, 'recovering');
+  assert.equal(f.uses.size, 1); assert.equal(f.broker.reportPressure().pools.gpu.activeMemoryBytes, 20);
+  delayCleanup = false; hold.resolve(); await first; await second;
+  assert.equal(f.services.length, 2); assert.equal(f.services[0].closed, true);
+  assert.equal(f.registry.list()[0].status, 'ready');
+  assert.equal(f.broker.reportPressure().pools.gpu.activeMemoryBytes, 20);
+  assert.deepEqual(f.factories, [0, 1].map(() => ({ manifestCid: cids[0], runtimeOptions: options })));
+  assert.deepEqual(f.useEvents, [['acquire', cids[0]]], 'artifact-use ownership must have no gap');
+  const recovered = events.find(event => event.type === 'recovered');
+  assert.equal(recovered.previousService, original); assert.equal(recovered.service, f.services[1]);
+  assert.equal(recovered.previousSessionId, 'session-0'); assert.equal(recovered.sessionId, 'session-1');
+});
+
+test('explicit unload racing a replacement load cancels recovery and never resurrects the model', async (t) => {
+  const hold = deferred(); let loads = 0;
+  const f = fixture(t, { recovery, beforeLoad: async () => { if (++loads === 2) await hold.promise; } });
+  await f.registry.load(cids[0]); f.services[0].lose();
+  const repair = f.registry.checkRecovery(); await tick();
+  const unloading = f.registry.unload(cids[0]); hold.resolve();
+  await repair; await unloading; await f.registry.checkRecovery();
+  assert.equal(f.registry.list().length, 0); assert.equal(f.uses.size, 0);
+  assert.equal(f.broker.reportPressure().pools.gpu.activeMemoryBytes, 0);
+  assert.equal(f.services.length, 2); assert(f.services.every(service => service.closed));
+});
+
+test('failed cleanup remains quarantined and recovery can retry only after acknowledgement', async (t) => {
+  let at = 0, fail = true;
+  const f = fixture(t, { recovery, now: () => at, failDispose: () => fail });
+  await f.registry.load(cids[0]); f.services[0].lose();
+  const original = f.services[0], events = []; f.registry.subscribe(event => events.push(event));
+  await f.registry.checkRecovery();
+  assert.equal(f.services.length, 1); assert.equal(f.registry.list()[0].status, 'cleanup-failed');
+  assert.equal(f.broker.reportPressure().pools.gpu.activeMemoryBytes, 20); assert.equal(f.uses.size, 1);
+  await f.registry.checkRecovery(); assert.equal(f.registry.list()[0].recovery.attempts, 1, 'backoff must prevent a hot loop');
+  fail = false; at = 10; await f.registry.checkRecovery();
+  assert.equal(f.services.length, 2); assert.equal(f.registry.list()[0].status, 'ready');
+  assert.equal(events.find(event => event.type === 'recovered').previousService, original);
+});
+
+test('replacement failures use bounded bursts and randomized cooldown, then retry retained intent', async (t) => {
+  let at = 0, loads = 0, fail = true;
+  const f = fixture(t, { recovery, now: () => at, random: () => 0.5,
+    beforeLoad: () => { if (++loads > 1 && fail) throw new Error('GPU unavailable'); } });
+  await f.registry.load(cids[0]); f.services[0].lose();
+  await f.registry.checkRecovery();
+  await f.registry.checkRecovery(); assert.equal(loads, 2);
+  at = 10; await f.registry.checkRecovery(); assert.equal(loads, 3);
+  at = 30; await f.registry.checkRecovery(); assert.equal(loads, 4);
+  at = 10000; await f.registry.checkRecovery(); assert.equal(loads, 4);
+  assert.equal(f.registry.list()[0].recovery.status, 'cooldown'); assert.equal(f.uses.size, 1);
+  assert.equal(f.registry.list()[0].recovery.nextAttemptAt, 120030, 'cooldown is randomized within 60–180 seconds');
+  assert.equal(f.broker.reportPressure().pools.gpu.activeMemoryBytes, 0);
+  at = 120029; await f.registry.checkRecovery(); assert.equal(loads, 4);
+  fail = false; at = 120030; await f.registry.checkRecovery(); assert.equal(loads, 5);
+  assert.equal(f.registry.list()[0].status, 'ready'); assert.equal(f.registry.list()[0].recovery.attempts, 1);
+  await f.registry.unload(cids[0]); assert.equal(f.uses.size, 0);
+});
+
+test('unload during cooldown cancels future recovery bursts and releases retained artifacts', async (t) => {
+  let at = 0, loads = 0;
+  const f = fixture(t, { recovery: { ...recovery, maximumAttempts: 1 }, now: () => at, random: () => 1,
+    beforeLoad: () => { if (++loads > 1) throw new Error('GPU memory occupied'); } });
+  await f.registry.load(cids[0]); f.services[0].lose(); await f.registry.checkRecovery();
+  assert.equal(f.registry.list()[0].recovery.nextAttemptAt, 180000);
+  await f.registry.unload(cids[0]); at = 300000; await f.registry.checkRecovery();
+  assert.equal(loads, 2); assert.equal(f.registry.list().length, 0); assert.equal(f.uses.size, 0);
+});
+
+test('rapid successful reloads that immediately lose residency also cool down without abandoning intent', async (t) => {
+  let at = 0;
+  const f = fixture(t, { recovery: { ...recovery, maximumAttempts: 1 }, now: () => at, random: () => 0 });
+  await f.registry.load(cids[0]); f.services[0].lose(); await f.registry.checkRecovery();
+  f.services[1].lose(); await f.registry.checkRecovery();
+  assert.equal(f.registry.list()[0].recovery.status, 'cooldown'); assert.equal(f.services.length, 2);
+  at = 60000; await f.registry.checkRecovery();
+  assert.equal(f.services.length, 3); assert.equal(f.registry.list()[0].status, 'ready');
+});
+
+test('a later recovery burst still cannot load over quarantined resources without cleanup acknowledgement', async (t) => {
+  let at = 0, fail = true;
+  const f = fixture(t, { recovery: { ...recovery, maximumAttempts: 1 }, now: () => at,
+    random: () => 0, failDispose: () => fail });
+  await f.registry.load(cids[0]); f.services[0].lose(); await f.registry.checkRecovery();
+  assert.equal(f.registry.list()[0].recovery.status, 'cooldown');
+  at = 60000; await f.registry.checkRecovery();
+  assert.equal(f.services.length, 1); assert.equal(f.broker.reportPressure().pools.gpu.activeMemoryBytes, 20);
+  assert.equal(f.registry.list()[0].recovery.nextAttemptAt, 120000);
+  fail = false; at = 120000; await f.registry.checkRecovery();
+  assert.equal(f.services.length, 2); assert.equal(f.registry.list()[0].status, 'ready');
+  assert.equal(f.broker.reportPressure().pools.gpu.activeMemoryBytes, 20);
+});
+
+test('a service explicitly reporting nonrecoverable loss and direct disposal do not authorize recovery', async (t) => {
+  const f = fixture(t, { recovery });
+  await f.registry.load(cids[0]); f.services[0].lose({ recoverable: false });
+  await f.registry.checkRecovery(); assert.equal(f.services.length, 1);
+  await f.registry.unload(cids[0]); await f.registry.load(cids[0]);
+  await f.services[1].dispose(); await f.registry.checkRecovery(); assert.equal(f.services.length, 2);
+});
+
+test('an explicitly nonrecoverable loss does not reuse old recovery state', async (t) => {
+  const f = fixture(t, { recovery });
+  await f.registry.load(cids[0]); f.services[0].lose(); await f.registry.checkRecovery();
+  f.services[1].lose({ recoverable: false }); await f.registry.checkRecovery();
+  assert.equal(f.services.length, 2);
+});
+
+test('cancelling a recovery waiter does not cancel the owner and disposal aborts a late factory', async (t) => {
+  const hold = deferred(); let factories = 0;
+  const f = fixture(t, { recovery, beforeFactory: async () => { if (++factories === 2) await hold.promise; } });
+  await f.registry.load(cids[0]); f.services[0].lose(); const repair = f.registry.checkRecovery(); await tick();
+  const caller = new AbortController();
+  const joined = f.registry.load(cids[0], { signal: caller.signal });
+  caller.abort(); await assert.rejects(joined, { name: 'AbortError' });
+  const disposing = f.registry.dispose(); hold.resolve(); await repair; await disposing;
+  assert.equal(f.registry.list().length, 0); assert.equal(f.uses.size, 0);
+  assert(f.services.every(service => service.closed));
 });

@@ -136,6 +136,26 @@ test('resident speakers resolve to their own observed body, not the human who ho
   await f.experience.dispose();
 });
 
+test('public scene excludes only the current event while full speech and earlier same-text evidence remain', async () => {
+  const f = fixture(), statement = 'Hello again, what have you seen?', prompt = `Pat says: ${statement}`;
+  const scene = { kind: 'public-room-chat', messages: [
+    { id: 'older', peerId: 'visitor', name: 'Pat', text: statement },
+    { id: 'current', peerId: 'visitor', name: 'Pat', text: statement },
+  ] }, original = structuredClone(scene);
+  const turn = await f.turn({ audience: 'public', conversationId: 'public-room', scene,
+    prompt, statement, eventId: 'current' });
+  assert.deepEqual(JSON.parse(turn.worldContext).scene.messages, [scene.messages[0]]);
+  assert.equal(turn.prompt, prompt);
+  assert.equal(f.episodes.at(-1).text, statement);
+  assert.equal(f.episodes.at(-1).source.eventId, 'current');
+  assert.deepEqual(scene, original, 'Evidence is not mutated by prompt projection');
+  const unrelated = await f.turn({ audience: 'public', scene, eventId: 'different' });
+  assert.equal(JSON.parse(unrelated.worldContext).scene.messages.length, 2);
+  const privateTurn = await f.turn({ scene, eventId: 'current' });
+  assert.equal(JSON.parse(privateTurn.worldContext).scene.messages.length, 2);
+  await f.experience.dispose();
+});
+
 test('a continuing follow retains later terminal outcomes with bounded transition writes', async () => {
   const f = fixture(), turn = await f.turn();
   await f.experience.finish(turn, JSON.stringify({ text: 'I will follow.', intent: { type: 'follow', targetId: 'human:visitor' } }));
@@ -243,6 +263,23 @@ test('crowded prompt context keeps the current requester and explicit omissions 
   assert.equal(context.scene.kind, 'public-room-chat'); assert.equal(context.scene.world, 'CubeChat');
   assert(context.scene.messages.every(message => message.excerpted));
   assert.deepEqual({ scene, senses }, before);
+});
+
+test('ordinary public hello omits duplicated room bodies even below the byte ceiling', () => {
+  const senses = { self: { id: 'resident:owner:mira', name: 'Mira', position: [-5, 3, 0] },
+    requesterId: 'human:owner', participants: [{ id: 'human:owner', name: 'Pat', position: [0, 3, 0] },
+      { id: 'resident:owner:nova', name: 'Nova', position: [5, 3, 0] }], obstacles: [] };
+  const scene = { kind: 'public-room-chat', world: 'CubeChat', self: senses.self,
+    residents: senses.participants, scene: { agent: senses.self, theme: 'tron' },
+    messages: [{ id: 'hello', peerId: 'owner', name: 'Pat', text: 'Hello Mira and Nova.' }] };
+  const before = structuredClone({ scene, senses });
+  assert(new TextEncoder().encode(JSON.stringify(before)).length < WORLD_PROMPT_CONTEXT_BYTES);
+  const context = compactWorldContext({ scene, senses });
+  assert.equal(context.scene.self, undefined); assert.equal(context.scene.residents, undefined);
+  assert.equal(context.scene.world, 'CubeChat'); assert.equal(context.scene.messages[0].text, 'Hello Mira and Nova.');
+  assert.equal(context.senses.self.id, senses.self.id); assert.equal(context.senses.requesterId, 'human:owner');
+  assert.deepEqual(context.senses.participants, senses.participants);
+  assert.deepEqual({ scene, senses }, before, 'Projection does not delete saved messages or physical observations');
 });
 
 test('compaction keeps the actual CubeChat scene name and theme while retaining the exact current requester', () => {

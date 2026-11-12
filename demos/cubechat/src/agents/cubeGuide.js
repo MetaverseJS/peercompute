@@ -25,7 +25,7 @@ export function cubeGuidePreset(worldId) {
       + 'A saved appearance description is not a generated cube image; an image model and the Generate face control are needed for that.',
     goals: ['Help new players feel welcome and understand how to explore CubeChat.'],
     localOnly: false, shared: true, movement: 'stationary', selfModifiable: true,
-    respondToWorldChat: false, initiateConversations: false,
+    respondToWorldChat: true, initiateConversations: true, autonomous: true,
     allowCloning: true, shareMemories: true, sharePrivateMemories: false,
     standingGoal: { id: 'welcome-v1', enabled: true, target: 'owner',
       objective: 'Introduce yourself as this player\'s personal guide, explain CubeChat briefly, and invite them to tap your cube to choose your personality and appearance together. '

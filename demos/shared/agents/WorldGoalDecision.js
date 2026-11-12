@@ -2,6 +2,7 @@ import { routeAgentTask } from '../../../peercompute/src/peercompute/agents/Agen
 import { activeWorldGoalMilestone, normalizeWorldGoalPlan, normalizeWorldGoalPosition, worldGoalMilestoneMatchesAction,
   worldGoalMilestonesComplete } from '../../../peercompute/src/peercompute/agents/WorldGoalPlan.js';
 import { validateWorldIntent } from './WorldIntent.js';
+import { classifyInferenceAvailability } from '../../../peercompute/src/peercompute/inference/InferenceAvailability.js';
 
 const bytes = value => new TextEncoder().encode(value).length;
 const failure = () => Object.assign(new Error('The model did not return a valid bounded objective decision'), { code: 'ERR_WORLD_GOAL_DECISION' });
@@ -124,7 +125,7 @@ export function projectWorldGoal(goal, observed) {
     distance: Math.round(Math.hypot(location.position[0] - sensed.self.position[0], location.position[2] - sensed.self.position[2])),
     relativePosition: location.position.map((value, index) => Math.round(value - sensed.self.position[index])) });
   const context = { phase: !saved.plan ? 'plan' : active ? 'milestone' : 'assess',
-    stepsUsed: saved.steps, maximumSteps: saved.limits.maxSteps,
+    stepsUsed: saved.steps - (saved.recovery?.stepBase ?? 0), totalAttempts: saved.steps, maximumSteps: saved.limits.maxSteps,
     ...(active ? { activeMilestone: { index: active.index, label: active.milestone.label, type: active.intent.type,
       ...(active.intent.targetId ? { targetId: references.get(active.intent.targetId) ?? null,
         targetPresent: references.has(active.intent.targetId) } : {}),
@@ -239,7 +240,7 @@ export async function generateWorldGoalDecision({ inference, head, goal, observe
       candidates: await inference.listCandidates({ mode: head.policy.inferenceMode, task: 'text-generation', signal, refresh: true }) }).candidate;
   } catch (error) {
     signal?.throwIfAborted();
-    if (error.code === 'ERR_AGENT_NO_MODEL') return { status: 'waiting-for-model' };
+    if (classifyInferenceAvailability(error)) return { status: 'waiting-for-model' };
     throw error;
   }
   const projection = projectWorldGoal(goal, observed);

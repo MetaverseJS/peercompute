@@ -5,6 +5,7 @@ import { CID } from 'multiformats/cid';
 import { sha256 } from 'multiformats/hashes/sha2';
 import { createArtifactFetch, serveArtifactPort } from '../../src/peercompute/inference/ArtifactReadBridge.js';
 import { ModelInferenceService } from '../../src/peercompute/inference/ModelInferenceService.js';
+import { ResidentModelRegistry } from '../../src/peercompute/inference/ResidentModelRegistry.js';
 import { ResidentModelAdmission } from '../../src/peercompute/serviceOrchestration/ResidentModelAdmission.js';
 import { ResourceLeaseBroker } from '../../src/peercompute/serviceOrchestration/ResourceLeaseBroker.js';
 import { createModelTaskRuntime, validateImageInput } from '../../src/peercompute/inference/modelTask.js';
@@ -542,10 +543,13 @@ test('ready status rejects a missing or replaced original worker without releasi
     await service.loadModel({ sessionId: 'worker-lost', manifestCid: cid });
     computeManager.getWorkerAffinityState = (affinityKey) => ({ affinityKey, ...state });
     assert.equal(service.getStatus().status, 'lost');
-    await assert.rejects(service.generate({ prompt: 'Do not dispatch' }), /not ready/);
+    assert.equal(service.getStatus().loss.recoverable, true);
+    assert.equal(service.getStatus().loss.sessionId, 'worker-lost');
+    await assert.rejects(service.generate({ prompt: 'Do not dispatch' }), { code: 'ERR_MODEL_NOT_READY' });
     assert.equal(submissions.filter((task) => task.data.command === 'generate').length, 0);
     assert.ok(!events.includes('release-admission'));
     await service.unloadModel();
+    assert.equal(service.getStatus().loss, null, 'explicit unload clears recovery intent');
     assert.ok(events.indexOf('terminate:model:worker-lost') < events.indexOf('release-admission'));
   }
 });
@@ -598,7 +602,10 @@ test('revocation during active generation suppresses its result and cancels queu
   const queued = service.generate({ requestId: 'queued', prompt: 'Later' });
   const rejected = assert.rejects(queued, { name: 'AbortError' });
   revoked = true; gate.resolve();
-  await assert.rejects(active, /revoked/); await rejected;
+  await assert.rejects(active, error => {
+    assert.match(error.message, /revoked/); assert.equal(error.code, 'ERR_MODEL_RESIDENCY_INACTIVE');
+    assert.equal(error.committed, true, 'post-dispatch loss must not requeue the same prompt'); return true;
+  }); await rejected;
   assert.equal(service.getStatus().status, 'lost');
   assert.equal(submissions.filter((task) => task.data.command === 'generate').length, 1);
   assert.ok(!events.includes('release-admission'));
@@ -618,7 +625,7 @@ test('host service bounds its queue and cancels queued work without dispatch', a
   await started.promise;
   const queued = Array.from({ length: 4 }, (_, index) => service.generate({ requestId: `queued-${index}`, prompt: 'x' }));
   const outcomes = queued.map((promise) => promise.catch((error) => error));
-  await assert.rejects(service.generate({ requestId: 'over-limit', prompt: 'x' }), /queue is full/);
+  await assert.rejects(service.generate({ requestId: 'over-limit', prompt: 'x' }), { code: 'ERR_INFERENCE_BUSY' });
   for (let index = 0; index < 4; index += 1) await service.cancel(`queued-${index}`);
   assert.ok((await Promise.all(outcomes)).every((error) => error.name === 'AbortError'));
   assert.equal(submissions.filter((task) => task.data.command === 'generate').length, 1);
@@ -733,12 +740,93 @@ test('owned worker loss invalidates residency and rejects queued requests before
   const queued = service.generate({ requestId: 'lost-queued', prompt: 'x' });
   const rejected = assert.rejects(queued, { name: 'AbortError' });
   gate.resolve();
-  await assert.rejects(active, /Worker terminated/);
+  await assert.rejects(active, error => {
+    assert.match(error.message, /Worker terminated/); assert.equal(error.committed, true); return true;
+  });
   await rejected;
   assert.equal(service.getStatus().status, 'idle');
+  assert.deepEqual(service.getStatus().loss, { recoverable: true, manifestCid: cid, sessionId: 'lost',
+    code: 'ERR_MODEL_SESSION_LOST', message: 'Worker terminated' });
   assert.ok(events.includes('release-admission'));
   // The fake manager cannot kill a real realm; dispose its injected runtime explicitly.
   await fixture.runtime({ command: 'unload', sessionId: 'lost' });
+});
+
+test('prompt cancellation that retires its worker preserves desired model residency', async () => {
+  const { service, computeManager, fixture } = serviceFor();
+  service.runtimeDefinition = { ...service.runtimeDefinition, terminateOnGenerationAbort: true };
+  await service.loadModel({ sessionId: 'intentional-cancel', manifestCid: cid });
+  const started = deferred();
+  computeManager.submitTask = task => {
+    assert.equal(task.data.command, 'generate'); started.resolve();
+    return new Promise((_resolve, reject) => task.signal.addEventListener('abort', () => reject(task.signal.reason), { once: true }));
+  };
+  const controller = new AbortController();
+  const generating = service.generate({ prompt: 'Cancel this', signal: controller.signal });
+  await started.promise; controller.abort(); await assert.rejects(generating, { name: 'AbortError' });
+  assert.equal(service.getStatus().status, 'idle'); assert.equal(service.getStatus().loss.recoverable, true);
+  await service.dispose(); assert.equal(service.getStatus().loss, null);
+  await fixture.runtime({ command: 'unload', sessionId: 'intentional-cancel' });
+});
+
+test('cancelled prompt retirement reloads its retained model once, without replay, and owner unload wins', async (t) => {
+  const fixtures = [], started = deferred(); let generations = 0, leases = 0;
+  const registry = new ResidentModelRegistry({ recovery: { pollMs: 100000 }, artifactStore: {
+    ...storeFor(), async acquireUse() { leases++; return () => { leases--; }; },
+  }, createService() {
+    const f = serviceFor(); fixtures.push(f);
+    f.service.runtimeDefinition = { ...f.service.runtimeDefinition, terminateOnGenerationAbort: true };
+    const submit = f.computeManager.submitTask;
+    f.computeManager.submitTask = task => {
+      if (task.data.command === 'load') f.sessionId = task.data.sessionId;
+      if (task.data.command !== 'generate') return submit(task);
+      generations++; started.resolve();
+      return new Promise((_resolve, reject) => task.signal.addEventListener('abort', () => reject(
+        task.signal.reason instanceof Error ? task.signal.reason : new DOMException(String(task.signal.reason), 'AbortError')), { once: true }));
+    };
+    return f.service;
+  } });
+  t.after(async () => {
+    await registry.dispose();
+    // The injected manager cannot destroy a real realm. Close its fake runtime.
+    for (const f of fixtures) if (f.sessionId) await f.fixture.runtime({ command: 'unload', sessionId: f.sessionId });
+  });
+  await registry.load(cid);
+  const old = registry.getService(cid), sessionId = old.getStatus().sessionId, cancel = new AbortController();
+  const request = old.generate({ prompt: 'Speculative thought interrupted by a new world hello', signal: cancel.signal });
+  await started.promise; cancel.abort(); await assert.rejects(request, { name: 'AbortError' });
+  assert.equal(old.getStatus().loss.recoverable, true); assert.equal(leases, 1);
+  await registry.checkRecovery();
+  assert.equal(fixtures.length, 2); assert.notEqual(registry.getService(cid), old);
+  assert.equal(registry.getService(cid).getStatus().status, 'ready');
+  assert.equal(generations, 1, 'the cancelled thought must never be regenerated'); assert.equal(leases, 1);
+  await fixtures[0].fixture.runtime({ command: 'unload', sessionId });
+  const unloadingService = registry.getService(cid);
+  const ownerInterrupted = assert.rejects(unloadingService.generate({ prompt: 'Owner unload interrupts this new request' }), { name: 'AbortError' });
+  await nextTurn(); await registry.unload(cid); await ownerInterrupted; await registry.checkRecovery();
+  assert.equal(unloadingService.getStatus().loss, null, 'owner unload clears recovery intent even while cancelling a prompt');
+  assert.equal(fixtures.length, 2); assert.equal(registry.list().length, 0); assert.equal(leases, 0);
+});
+
+test('readiness-loss cancellation in a retiring runtime preserves unexpected recovery intent', async () => {
+  const { service, computeManager, fixture } = serviceFor();
+  service.runtimeDefinition = { ...service.runtimeDefinition, terminateOnGenerationAbort: true };
+  await service.loadModel({ sessionId: 'readiness-loss', manifestCid: cid });
+  const started = deferred();
+  computeManager.submitTask = task => {
+    started.resolve();
+    return new Promise((_resolve, reject) => task.signal.addEventListener('abort', () => {
+      reject(new DOMException('Worker aborted after health loss', 'AbortError'));
+    }, { once: true }));
+  };
+  const generating = service.generate({ prompt: 'Interrupted by device loss' });
+  await started.promise;
+  computeManager.getWorkerAffinityState = () => ({ reserved: true, workerId: null });
+  assert.equal(service.getStatus().status, 'lost');
+  await assert.rejects(generating, { name: 'AbortError', committed: true });
+  assert.equal(service.getStatus().loss.recoverable, true);
+  assert.equal(service.getStatus().loss.code, 'ERR_MODEL_RESIDENCY_INACTIVE');
+  await service.dispose(); await fixture.runtime({ command: 'unload', sessionId: 'readiness-loss' });
 });
 
 test('partial loader failure waits for owned-worker termination before releasing resident admission', async () => {
@@ -873,7 +961,9 @@ test('failed generation termination quarantines residency and prevents further d
     : submit(task);
   const terminate = computeManager.terminateWorkerAffinity;
   computeManager.terminateWorkerAffinity = async () => { throw new Error('Stop still failing'); };
-  await assert.rejects(service.generate({ prompt: 'x' }), /cleanup failed/);
+  await assert.rejects(service.generate({ prompt: 'x' }), error => {
+    assert.match(error.message, /cleanup failed/); assert.equal(error.committed, true); return true;
+  });
   assert.equal(service.getStatus().status, 'cleanup-failed');
   assert.ok(!events.includes('release-admission'));
   await assert.rejects(service.generate({ prompt: 'x' }), /not ready/);
@@ -892,7 +982,9 @@ test('revoked admission rejects queued generation without freeing resident capac
   });
   await service.loadModel({ sessionId: 'revoked', manifestCid: cid });
   revoked = true;
-  await assert.rejects(service.generate({ prompt: 'x' }), /revoked/);
+  await assert.rejects(service.generate({ prompt: 'x' }), error => {
+    assert.match(error.message, /revoked/); assert.equal(error.committed, undefined, 'pre-dispatch admission remains a wait'); return true;
+  });
   assert.equal(service.getStatus().status, 'lost');
   assert.equal(submissions.filter((task) => task.data.command === 'generate').length, 0);
   assert.ok(!events.includes('release-admission'));

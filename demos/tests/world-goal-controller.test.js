@@ -9,11 +9,12 @@ const act = targetId => ({ decision: 'act', intent: { type: 'approach', targetId
 const plan = () => ({ decision: 'plan', milestones: [
   { label: 'Visit Nova', type: 'approach', targetId: 'human:nova' },
   { label: 'Return to owner', type: 'approach', targetRole: 'requester' }] });
-async function fixture({ decide, dispatch, stop, observe, planFirst = true, canRun = () => true, indexedDB = new IDBFactory(), name = crypto.randomUUID() } = {}) {
+async function fixture({ decide, dispatch, stop, observe, planFirst = true, canRun = () => true, autoRecovery = false, random = () => 0,
+  indexedDB = new IDBFactory(), name = crypto.randomUUID() } = {}) {
   let clock = 1000, sensed = 0, seedingPlan = false;
   const store = new WorldGoalStore({ name, hostId: 'owner-host', indexedDBImpl: indexedDB, now: () => clock }); await store.open();
   const calls = [], changes = [], pending = [], timers = new Map(); let timerId = 0;
-  const options = { store, worldId: 'world', owns: () => true, now: () => clock,
+  const options = { store, worldId: 'world', owns: () => true, now: () => clock, autoRecovery, random,
     setTimer(fn, ms) { const id = ++timerId; timers.set(id, { fn, ms }); return id; }, clearTimer(id) { timers.delete(id); },
     canRun, onChange: goal => changes.push(goal),
     observe: (scope, input) => {
@@ -64,6 +65,197 @@ async function fixture({ decide, dispatch, stop, observe, planFirst = true, canR
     advance: ms => { clock += ms; }, get sensed() { return sensed; },
     async close() { await controller.dispose(); await store.destroy(); } };
 }
+
+test('automatic failure recovery renews only a due bounded window while retaining cumulative attempts and original identity', async () => {
+  let failing = true;
+  const f = await fixture({ autoRecovery: true, random: () => .5, decide: () => { if (failing) throw new Error('Bad planner output'); return act('human:nova'); } });
+  try {
+    await f.assign();
+    for (let i = 0; i < 3; i++) { await f.step(); if (i < 2) f.advance(30000); }
+    const paused = await f.controller.get('agent');
+    assert.equal(paused.pauseSource, 'system'); assert.equal(paused.steps, 4); assert.equal(paused.failures, 3);
+    assert.equal(paused.recovery.retryAt - paused.updatedAt, 120000);
+    f.advance(119999); await f.step(); assert.equal(f.pending.length, 0);
+    failing = false; f.advance(1); const resumed = await f.step();
+    assert.equal(resumed.status, 'acting'); assert.equal(resumed.recovery.windowIndex, 1); assert.equal(resumed.recovery.stepBase, 4);
+    assert.equal(resumed.steps, 5); assert.equal(resumed.failures, 0); assert.equal(resumed.goalId, paused.goalId);
+    assert.equal(resumed.startedAt, paused.startedAt); assert.equal(resumed.deadlineAt, paused.deadlineAt);
+    assert.deepEqual(resumed.plan, paused.plan); assert(f.sensed > 3);
+  } finally { await f.close(); }
+});
+
+test('automatic step and elapsed windows keep working past the original budgets without resetting attempt history', async () => {
+  const f = await fixture({ autoRecovery: true, decide: () => ({ decision: 'wait', reason: 'Observe before proceeding.' }) });
+  try {
+    await f.assign(); const initial = await f.controller.get('agent');
+    for (let i = 0; i < 48; i++) { await f.step(); f.advance(60000); }
+    const goal = await f.controller.get('agent');
+    assert(goal.steps > 24); assert(goal.recovery.windowIndex >= 3); assert(goal.steps - goal.recovery.stepBase <= 8);
+    assert.equal(goal.startedAt, initial.startedAt); assert.equal(goal.deadlineAt, initial.deadlineAt);
+    assert.equal(goal.goalId, initial.goalId); assert.equal(goal.receipts.length, 0); assert(goal.trace.length <= 16);
+  } finally { await f.close(); }
+  const g = await fixture({ autoRecovery: true });
+  try {
+    await g.assign(); await g.step(); const previous = g.pending[0];
+    g.advance(600000); const paused = await g.step(); assert.equal(paused.pauseSource, 'system'); assert.equal(paused.pendingAction, null);
+    assert(g.calls.some(call => call.kind === 'stop' && call.input.requestId === previous.requestId));
+    g.advance(60000); const renewed = await g.step(); assert.equal(renewed.status, 'acting');
+    assert.notEqual(renewed.pendingAction.requestId, previous.requestId); assert.equal(renewed.startedAt, 1000);
+  } finally { await g.close(); }
+});
+
+test('model pause recovers automatically while owner pause, manual movement and cancellation stay held across reload', async () => {
+  let pauseModel = true;
+  const f = await fixture({ autoRecovery: true, decide: () => pauseModel ? { decision: 'pause', reason: 'I need a moment.' } : act('human:nova') });
+  try {
+    await f.assign(); const paused = await f.step(); assert.equal(paused.pauseSource, 'model');
+    pauseModel = false; f.advance(60000); const active = await f.step(); assert.equal(active.status, 'acting');
+    const held = await f.controller.pause({ agentId: 'agent', goalId: active.goalId, expectedRevision: active.revision });
+    assert.equal(held.pauseSource, 'owner'); assert.equal(held.recovery.retryAt, null);
+    f.advance(1_000_000); await f.step(); assert.equal(f.pending.length, 1);
+    const second = createWorldGoalController(f.options); await second.ready;
+    try { await second.tick(); assert.equal((await second.get('agent')).pauseSource, 'owner'); assert.equal(f.pending.length, 1); }
+    finally { await second.dispose(); }
+    const current = await f.controller.get('agent'); await f.controller.resume({ agentId: 'agent', goalId: current.goalId, expectedRevision: current.revision });
+    await f.step(); await f.receipt('cancelled'); f.advance(1_000_000); await f.step();
+    assert.equal((await f.controller.get('agent')).pauseSource, 'owner'); assert.equal(f.pending.length, 2);
+    const manual = await f.controller.get('agent'); await f.controller.cancel({ agentId: 'agent', goalId: manual.goalId, expectedRevision: manual.revision });
+    f.advance(1_000_000); await f.step(); assert.equal((await f.controller.get('agent')).status, 'cancelled');
+  } finally { await f.close(); }
+});
+
+test('no-model and busy capacity responses wait without consuming allowance or failure streak', async () => {
+  let count = 0;
+  const f = await fixture({ autoRecovery: true, planFirst: false, decide: () => {
+    if (++count % 2) throw Object.assign(new Error('Busy provider'), { code: 'ERR_INFERENCE_BUSY' });
+    return { status: 'waiting-for-model' };
+  } });
+  try {
+    await f.assign();
+    for (let i = 0; i < 12; i++) { const goal = await f.step(); assert.equal(goal.status, 'waiting-for-model');
+      assert.equal(goal.steps, 0); assert.equal(goal.failures, 0); f.advance(30000); }
+    assert.equal(f.pending.length, 0);
+  } finally { await f.close(); }
+});
+
+test('closing and reopening an automatically recovering controller never converts owner Pause into a system retry', async () => {
+  const f = await fixture({ autoRecovery: true });
+  let second;
+  try {
+    await f.assign(); const active = await f.step();
+    await f.controller.pause({ agentId: 'agent', goalId: active.goalId, expectedRevision: active.revision });
+    await f.controller.dispose();
+    const saved = await f.store.get({ worldId: 'world', agentId: 'agent' });
+    assert.equal(saved.pauseSource, 'owner'); assert.equal(saved.recovery.retryAt, null);
+    f.advance(1_000_000); second = createWorldGoalController(f.options); await second.ready; await second.tick();
+    assert.equal((await second.get('agent')).pauseSource, 'owner'); assert.equal(f.pending.length, 1);
+  } finally { await second?.dispose(); await f.close(); }
+});
+
+test('restored interrupted actions clean up their exact old request before automatic fresh observation and new dispatch', async () => {
+  const f = await fixture({ autoRecovery: true }); let second;
+  try {
+    await f.assign(); const before = await f.step(), oldId = before.pendingAction.requestId;
+    second = createWorldGoalController(f.options); await second.ready;
+    const restored = await second.get('agent'); assert.equal(restored.pauseSource, 'uncertain');
+    assert.equal(restored.pendingAction.requestId, oldId); await second.tick(); assert.equal(f.pending.length, 1);
+    f.advance(60000); await second.tick();
+    for (let attempt = 0; attempt < 100 && second.getStatus().active; attempt++) await new Promise(resolve => setImmediate(resolve));
+    const renewed = await second.get('agent');
+    assert.equal(renewed.status, 'acting'); assert.notEqual(renewed.pendingAction.requestId, oldId);
+    assert(f.calls.some(call => call.kind === 'stop' && call.input.requestId === oldId)); assert.equal(renewed.receipts.length, 0);
+  } finally { await second?.dispose(); await f.close(); }
+});
+
+test('an absent old request can recover only from explicit idle senses, while a newer stop remains owner-held', async () => {
+  for (const motionStatus of ['idle', 'stopped', 'moving', null]) {
+    const f = await fixture({ autoRecovery: true,
+      observe: (_scope, _input, current) => ({ ...current, self: { ...current.self,
+        ...(motionStatus ? { motion: { type: motionStatus === 'stopped' ? 'stop' : 'approach', status: motionStatus } } : {}) } }),
+      stop: () => false }); let second;
+    try {
+      await f.assign(); await f.step(); second = createWorldGoalController(f.options); await second.ready;
+      f.advance(60000); await second.tick();
+      for (let attempt = 0; attempt < 100 && second.getStatus().active; attempt++) await new Promise(resolve => setImmediate(resolve));
+      const result = await second.get('agent');
+      assert.equal(result.status, motionStatus === 'idle' ? 'acting' : 'paused');
+      if (motionStatus !== 'idle') assert.equal(result.pauseSource, 'owner');
+      assert.equal(f.pending.length, motionStatus === 'idle' ? 2 : 1);
+    } finally { await second?.dispose(); await f.close(); }
+  }
+});
+
+test('uncertain model outcomes are charged once and discarded before a fresh automatic request', async () => {
+  let unknown = true;
+  const f = await fixture({ autoRecovery: true, decide: () => {
+    if (unknown) throw Object.assign(new Error('Committed remote outcome unknown'), { code: 'ERR_INFERENCE_BUSY', committed: true });
+    return act('human:nova');
+  } });
+  try {
+    await f.assign(); const interrupted = await f.step(); assert.equal(interrupted.pauseSource, 'uncertain');
+    assert(interrupted.pendingDecision); assert.equal(interrupted.steps, 1);
+    unknown = false; f.advance(60000); const renewed = await f.step();
+    assert.equal(renewed.status, 'acting'); assert.equal(renewed.steps, 3); assert.equal(renewed.recovery.stepBase, 2);
+    assert.equal(renewed.pendingDecision, null); assert.notEqual(renewed.pendingAction.requestId, interrupted.pendingDecision.id);
+    assert(renewed.trace.some(event => event.type === 'outcome-unknown')); assert(renewed.trace.some(event => event.type === 'window-restarted'));
+  } finally { await f.close(); }
+});
+
+test('uncertain physical cleanup retries after cooldown and cannot dispatch until the old request is acknowledged', async () => {
+  let dispatches = 0, failCleanup = true;
+  const f = await fixture({ autoRecovery: true, dispatch: () => { if (++dispatches === 1) throw new Error('Lost acknowledgement'); },
+    stop: () => { if (failCleanup) throw new Error('Cleanup temporarily unavailable'); return true; } });
+  try {
+    await f.assign(); const first = await f.step(); const requestId = first.pendingAction.requestId;
+    assert.equal(first.recoveryRequired, true); assert.equal(dispatches, 1);
+    for (let i = 0; i < 3; i++) { f.advance(60000); await f.step(); assert.equal(dispatches, 1); }
+    assert.equal((await f.store.get({ agentId: 'agent', worldId: 'world' })).pendingAction.requestId, requestId);
+    failCleanup = false; f.advance(180000); const renewed = await f.step();
+    assert.equal(renewed.status, 'acting'); assert.equal(dispatches, 2); assert.notEqual(renewed.pendingAction.requestId, requestId);
+    assert.equal(renewed.receipts.length, 0, 'Unknown effects receive no invented milestone receipt');
+  } finally { failCleanup = false; await f.close(); }
+});
+
+test('owner Pause arriving during automatic cleanup wins before any fresh action is admitted', async () => {
+  let dispatched = false, firstStop = true, pendingStop;
+  const gate = deferred();
+  const f = await fixture({ autoRecovery: true, dispatch: () => { if (!dispatched) { dispatched = true; throw new Error('Uncertain physical request'); } },
+    stop: () => { if (firstStop) { firstStop = false; throw new Error('Initial cleanup failed'); }
+      if (!pendingStop) { pendingStop = true; return gate.promise; } return true; } });
+  try {
+    await f.assign(); await f.step(); f.advance(60000); await f.step(); f.advance(60000);
+    const running = f.controller.tick();
+    for (let i = 0; i < 100 && !pendingStop; i++) await new Promise(resolve => setImmediate(resolve));
+    assert(pendingStop); const goal = f.controller.list()[0];
+    const pausing = f.controller.pause({ agentId: 'agent', goalId: goal.goalId, expectedRevision: goal.revision });
+    await new Promise(resolve => setImmediate(resolve)); gate.resolve(true);
+    await running; const paused = await pausing;
+    assert.equal(paused.pauseSource, 'owner'); assert.equal(paused.recovery.retryAt, null);
+    f.advance(1_000_000); await f.step(); assert.equal(f.pending.length, 1);
+  } finally { gate.resolve(true); await f.close(); }
+});
+
+test('bounded receipt retention preserves successful milestone proofs through many recovery windows', async () => {
+  const f = await fixture({ autoRecovery: true, decide: (_scope, { goal }) => goal.completedMilestones.length === 2
+    ? { decision: 'done', assessment: 'Both visits are physically verified.', receiptIds: goal.completedMilestones.map(item => item.requestId) }
+    : act(goal.completedMilestones.length ? goal.requesterId : 'human:nova') });
+  try {
+    await f.assign(); await f.step(); await f.receipt();
+    const first = await f.controller.get('agent'), proof = first.receipts[0];
+    for (let attempt = 0; attempt < 32; attempt++) {
+      let goal;
+      for (let retry = 0; retry < 4; retry++) { goal = await f.step(); if (goal.status === 'acting') break; f.advance(180000); }
+      assert.equal(goal.status, 'acting'); await f.receipt('blocked'); f.advance(30000);
+    }
+    const bounded = await f.controller.get('agent'); assert(bounded.steps > 32); assert(bounded.receipts.length <= 16);
+    assert.deepEqual(bounded.completedMilestones, first.completedMilestones); assert(bounded.receipts.some(item => item.requestId === proof.requestId));
+    assert(new TextEncoder().encode(JSON.stringify(bounded)).length <= 32768); assert(bounded.trace.length <= 16);
+    let goal;
+    for (let i = 0; i < 4; i++) { goal = await f.step(); if (goal.status === 'acting') break; f.advance(180000); }
+    await f.receipt(); const complete = await f.step(); assert.equal(complete.status, 'completed');
+    assert.equal(complete.completedMilestones.length, 2); assert.equal(complete.startedAt, first.startedAt);
+  } finally { await f.close(); }
+});
 
 test('two physical steps and a model assessment use fresh senses, durable checkpoints and matching receipts', async () => {
   const f = await fixture({ decide(_scope, { goal }) {

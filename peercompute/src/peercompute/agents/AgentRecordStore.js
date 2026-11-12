@@ -132,11 +132,14 @@ export class AgentRecordStore {
     }, signal);
   }
   get(id, { signal } = {}) {
-    agentIdentifier(id); return this._transaction(['heads'], 'readonly', async (tx) => (await request(tx.objectStore('heads').get(id)))?.record, signal);
+    agentIdentifier(id); return this._transaction(['heads'], 'readonly', async (tx) => {
+      const record = (await request(tx.objectStore('heads').get(id)))?.record;
+      return record && normalizeAgentRecord(record);
+    }, signal);
   }
   list({ after, limit = 50, signal } = {}) {
     if (after !== undefined) agentIdentifier(after);
-    return this._transaction(['heads'], 'readonly', (tx) => this._scan(tx, 'heads', after === undefined ? null : this.keyRange.lowerBound(after, true), this._limit(limit), (value) => value.record), signal);
+    return this._transaction(['heads'], 'readonly', (tx) => this._scan(tx, 'heads', after === undefined ? null : this.keyRange.lowerBound(after, true), this._limit(limit), (value) => normalizeAgentRecord(value.record)), signal);
   }
   events(id, { after, limit = 50, signal } = {}) {
     agentIdentifier(id);
@@ -247,7 +250,7 @@ export class AgentRecordStore {
         this._scan(tx, 'attachments', this._range(id), AGENT_LIMITS.attachmentCount,
           ({ id, width, height, channels }) => ({ id, width, height, channels, omitted: true }))]);
       return boundedAgentJson({ schema: AGENT_EXPORT_SCHEMA, exportedAt: this._time(),
-        agent: { ...stored.record, status: 'paused', pendingOperation: null }, events, attachments,
+        agent: { ...stored.record, status: 'paused', pauseCause: 'owner', pendingOperation: null }, events, attachments,
         attachmentsOmitted: true }, AGENT_LIMITS.exportBytes, 'export').value;
     }, signal);
   }

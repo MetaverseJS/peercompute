@@ -277,45 +277,39 @@ test('a no-model failure returns to waiting without an execution receipt or retr
   assert.equal((await restored.get(f.id)).status, 'waiting');
   assert.equal((await f.runtime.get(f.id)).activity.status, 'waiting');
   const event = (await restored.events(f.id)).at(-1);
-  assert.equal(event.type, 'failed'); assert.equal(event.dispatched, false); assert.match(event.text, /No compatible local model/);
+  assert.equal(event.type, 'waiting'); assert.equal(event.waiting, 'model-unavailable');
+  assert.equal(event.dispatched, false); assert.match(event.text, /No compatible local model/);
   assert.equal((await f.store.operations(f.id)).length, 0); assert.equal(f.calls.filter((item) => item.type === 'generate').length, 0);
   await restored.dispose();
 });
 
-test('three consecutive settled failures pause durably; success and owner Resume reset the streak', async t => {
+test('repeated settled failures remain automatically recoverable without replay or overriding owner pause', async t => {
   let calls = 0, failing = true;
   const f = await fixture(t, { inference: { async generate() {
     calls++; if (failing) throw new Error('Provider unavailable'); return { text: 'Recovered' };
   } } });
   await f.runtime.resume(f.id);
-  // Exercise the journal cursor rather than relying on the first events page.
-  for (let i = 0; i < 102; i++) await f.runtime.update(f.id, { name: 'Ada' });
-  for (let i = 0; i < 2; i++) {
-    await assert.rejects(f.runtime.run(f.id, { prompt: `Attempt ${i}` }), /Provider unavailable/);
-    assert.equal((await f.runtime.get(f.id)).status, 'waiting');
-    assert.equal((await f.runtime.get(f.id)).activity.status, 'waiting');
-    assert.equal(calls, i + 1, 'readiness must not replay a failed request');
-  }
   const reopened = new AgentRuntime({ store: f.store, inference: f.inference });
   t.after(() => reopened.dispose());
-  await assert.rejects(reopened.run(f.id, { prompt: 'Third attempt' }), /Provider unavailable/);
-  assert.equal((await reopened.get(f.id)).status, 'paused');
-  assert.equal((await reopened.get(f.id)).pendingOperation, null);
-  await assert.rejects(reopened.run(f.id, { prompt: 'Blocked' }), { code: 'ERR_AGENT_PAUSED' });
-  assert.equal(calls, 3);
-  await reopened.resume(f.id); assert.equal(calls, 3);
-  await assert.rejects(reopened.run(f.id, { prompt: 'Fresh attempt' }), /Provider unavailable/);
-  assert.equal((await reopened.get(f.id)).status, 'waiting');
-  failing = false; await reopened.run(f.id, { prompt: 'Success resets' }); failing = true;
-  for (let i = 0; i < 2; i++) {
-    await assert.rejects(reopened.run(f.id, { prompt: 'Separate attempt' }), /Provider unavailable/);
+  for (let i = 0; i < 5; i++) {
+    await assert.rejects(reopened.run(f.id, { prompt: `Fresh attempt ${i}` }), /Provider unavailable/);
+    const head = await reopened.get(f.id);
+    assert.equal(head.status, 'paused'); assert.equal(head.pauseCause, 'automatic');
+    assert.equal(head.pendingOperation, null);
+    await assert.rejects(reopened.run(f.id, { prompt: 'Before coordinator cooldown' }), { code: 'ERR_AGENT_PAUSED' });
+    await reopened.recoverReady(f.id, { expectedRevision: head.revision });
+    assert.equal(calls, i + 1, 'recovery changes readiness, never resubmits the failed input');
     assert.equal((await reopened.get(f.id)).status, 'waiting');
   }
-  await reopened.pause(f.id);
+  failing = false; await reopened.run(f.id, { prompt: 'Successful new turn' });
+  const revision = (await reopened.get(f.id)).revision;
+  await reopened.recoverReady(f.id); assert.equal((await reopened.get(f.id)).revision, revision, 'clean continuity needs no new checkpoint');
+  await reopened.pause(f.id); assert.equal((await reopened.get(f.id)).pauseCause, 'owner');
+  await assert.rejects(reopened.recoverReady(f.id), { code: 'ERR_AGENT_OWNER_PAUSED' });
   await assert.rejects(reopened.run(f.id, { prompt: 'Owner paused' }), { code: 'ERR_AGENT_PAUSED' });
 });
 
-test('confirmed context rejection after peer admission is failed, ready and never replayed', async t => {
+test('confirmed context rejection after peer admission cools down automatically and never replays', async t => {
   let calls = 0;
   const f = await fixture(t, { inference: { async generate(_candidate, _input, callbacks) {
     calls++; callbacks.onProgress({ type: 'accepted', peerId: 'host' });
@@ -324,9 +318,10 @@ test('confirmed context rejection after peer admission is failed, ready and neve
   await f.runtime.resume(f.id);
   await assert.rejects(f.runtime.run(f.id, { prompt: 'Large request' }), { code: 'ERR_MODEL_CONTEXT_BUDGET' });
   const head = await f.runtime.get(f.id);
-  assert.equal(head.status, 'waiting'); assert.equal(head.activity.status, 'waiting');
+  assert.equal(head.status, 'paused'); assert.equal(head.pauseCause, 'automatic');
   assert.equal(head.pendingOperation, null); assert.equal(calls, 1);
   assert.equal((await f.store.operations(f.id))[0].status, 'failed');
+  await f.runtime.recoverReady(f.id); assert.equal(calls, 1);
   f.inference.generate = async () => { calls++; return { text: 'New request' }; };
   await f.runtime.run(f.id, { prompt: 'Smaller separate request' }); assert.equal(calls, 2);
 });
@@ -354,6 +349,133 @@ test('context error code cannot hide output already emitted or bypass an unsaved
   await f.runtime.resume(f.id);
   for (let i = 0; i < 2; i++) {
     await assert.rejects(f.runtime.run(f.id, { prompt: 'Fresh attempt' }), { code: 'ERR_MODEL_CONTEXT_BUDGET' });
-    assert.equal((await f.runtime.get(f.id)).status, 'waiting');
+    assert.equal((await f.runtime.get(f.id)).pauseCause, 'automatic');
+    await f.runtime.recoverReady(f.id);
   }
+});
+
+test('two residents superseded by world-chat turns remain ready and isolated from deliberate owner pause', async t => {
+  const f = await fixture(t); await f.runtime.resume(f.id);
+  const other = await f.runtime.create({ name: 'Second resident' }); await f.runtime.resume(other.agentId);
+  const calls = [];
+  f.inference.generate = async (_candidate, input, { signal }) => {
+    calls.push(input.prompt);
+    await new Promise(resolve => signal.addEventListener('abort', resolve, { once: true }));
+    throw new DOMException('New world-chat message superseded this reply', 'AbortError');
+  };
+  for (const id of [f.id, other.agentId]) {
+    const controller = new AbortController();
+    const task = f.runtime.run(id, { prompt: `Current hello for ${id}`, signal: controller.signal });
+    while (f.runtime.activities.get(id)?.status !== 'running') await tick();
+    controller.abort(new DOMException('Conversation changed', 'AbortError'));
+    await assert.rejects(task, { name: 'AbortError' });
+    const head = await f.runtime.get(id), events = await f.runtime.events(id);
+    assert.equal(head.status, 'waiting'); assert.equal(head.pauseCause, null);
+    assert.equal(head.pendingOperation, null); assert.equal(events.at(-1).type, 'cancelled');
+    assert.equal(events.at(-1).superseded, true); assert.equal(events.some(event => event.type === 'failed'), false);
+  }
+  await f.runtime.pause(f.id); await assert.rejects(f.runtime.recoverReady(f.id), { code: 'ERR_AGENT_OWNER_PAUSED' });
+  await f.runtime.recoverReady(other.agentId);
+  assert.equal((await f.runtime.get(other.agentId)).status, 'waiting'); assert.equal(calls.length, 2);
+  f.inference.generate = async (_candidate, input) => ({ text: input.prompt });
+  const result = await f.runtime.run(other.agentId, { prompt: 'A completely new hello' });
+  assert.equal(result.result.text, 'A completely new hello');
+  assert.equal((await f.runtime.get(f.id)).pauseCause, 'owner');
+});
+
+test('automatic recovery reconciles interrupted work and unsaved output without invoking inference', async t => {
+  const f = await fixture(t); await f.runtime.resume(f.id);
+  let head = await f.store.get(f.id);
+  head = await f.store.commit(f.id, { expectedRevision: head.revision, head: { ...head, status: 'running' },
+    operation: { id: 'interrupted', status: 'prepared' } });
+  await f.store.commit(f.id, { expectedRevision: head.revision, operation: { id: 'interrupted', status: 'dispatched' } });
+  assert.equal((await f.runtime.get(f.id)).pauseCause, 'automatic');
+  await f.runtime.recoverReady(f.id);
+  assert.equal((await f.store.getOperation(f.id, 'interrupted')).status, 'outcome-unknown');
+  assert.equal(f.calls.length, 0);
+  const commit = f.store.commit.bind(f.store); let failing = true;
+  f.store.commit = (id, change, options) => failing && change.event?.type === 'result'
+    ? Promise.reject(new DOMException('Storage refused', 'QuotaExceededError')) : commit(id, change, options);
+  await assert.rejects(f.runtime.run(f.id, { prompt: 'One generation' }), { name: 'QuotaExceededError' });
+  assert.equal((await f.runtime.get(f.id)).pauseCause, 'automatic');
+  failing = false; await f.runtime.recoverReady(f.id);
+  assert.equal(f.calls.filter(call => call.type === 'generate').length, 1);
+  assert.equal((await f.runtime.events(f.id)).at(-1).text, 'Hello');
+  assert.equal((await f.runtime.get(f.id)).pendingOperation, null);
+});
+
+test('busy model admission never consumes an error budget or mutates another resident', async t => {
+  const f = await fixture(t); await f.runtime.resume(f.id);
+  const other = await f.runtime.create({ name: 'Do not touch' });
+  f.inference.generate = async () => { throw Object.assign(new Error('Host is occupied'), { code: 'ERR_INFERENCE_BUSY' }); };
+  for (let i = 0; i < 5; i++) {
+    await assert.rejects(f.runtime.run(f.id, { prompt: `Current request ${i}` }), { code: 'ERR_INFERENCE_BUSY' });
+    assert.equal((await f.runtime.get(f.id)).status, 'waiting');
+    assert.equal((await f.runtime.events(f.id)).at(-1).type, 'waiting');
+  }
+  assert.equal((await f.runtime.events(f.id)).some(event => event.type === 'failed'), false);
+  assert.deepEqual(await f.store.get(other.agentId), other);
+  assert.equal((await f.runtime.get(f.id)).pendingOperation, null);
+});
+
+test('late automatic recovery cannot overrule an owner pause or a changed revision', async t => {
+  const f = await fixture(t); await f.runtime.resume(f.id);
+  f.inference.generate = async () => { throw new Error('Transient failure'); };
+  await assert.rejects(f.runtime.run(f.id, { prompt: 'Failure' }), /Transient/);
+  const failed = await f.runtime.get(f.id);
+  await f.runtime.pause(f.id);
+  await assert.rejects(f.runtime.recoverReady(f.id, { expectedRevision: failed.revision }), { code: 'ERR_AGENT_REVISION' });
+  await assert.rejects(f.runtime.recoverReady(f.id), { code: 'ERR_AGENT_OWNER_PAUSED' });
+  assert.equal((await f.runtime.get(f.id)).pauseCause, 'owner');
+});
+
+test('queued owner cancellation fences recovery and new work until its pause is durable', async t => {
+  const f = await fixture(t); await f.runtime.resume(f.id);
+  const other = await f.runtime.create({ name: 'Queued resident' }); await f.runtime.resume(other.agentId);
+  const started = deferred(), finish = deferred(), checkpoint = deferred(), release = deferred();
+  f.inference.generate = async () => { started.resolve(); await finish.promise; return { text: 'Finished' }; };
+  const active = f.runtime.run(f.id, { prompt: 'Current work' }); await started.promise;
+  const queued = f.runtime.run(other.agentId, { prompt: 'Not yet dispatched' });
+  const withRun = f.store.withRun.bind(f.store); let delay = true;
+  f.store.withRun = async (id, callback, options) => {
+    if (id === other.agentId && delay) { delay = false; checkpoint.resolve(); await release.promise; }
+    return withRun(id, callback, options);
+  };
+  const cancelled = f.runtime.cancel(other.agentId); await checkpoint.promise;
+  await assert.rejects(queued, { name: 'AbortError' });
+  assert.equal((await f.store.get(other.agentId)).status, 'waiting', 'Owner checkpoint is deliberately still pending');
+  await assert.rejects(f.runtime.recoverReady(other.agentId), { code: 'ERR_AGENT_OWNER_PAUSED' });
+  assert.throws(() => f.runtime.run(other.agentId, { prompt: 'Must not sneak in' }), { code: 'ERR_AGENT_BUSY' });
+  release.resolve(); await cancelled;
+  assert.equal((await f.runtime.get(other.agentId)).pauseCause, 'owner');
+  finish.resolve(); await active;
+  assert.equal((await f.store.operations(other.agentId)).length, 0);
+});
+
+test('residency lost after dispatch preserves unknown outcome without replaying generation', async t => {
+  const f = await fixture(t); await f.runtime.resume(f.id); let generated = 0;
+  f.inference.generate = async () => {
+    generated++; throw Object.assign(new Error('Model left memory'), { code: 'ERR_MODEL_RESIDENCY_INACTIVE' });
+  };
+  await assert.rejects(f.runtime.run(f.id, { prompt: 'One uncertain request' }), { code: 'ERR_MODEL_RESIDENCY_INACTIVE', committed: true });
+  assert.equal((await f.runtime.get(f.id)).status, 'paused');
+  assert.equal((await f.runtime.get(f.id)).pauseCause, 'automatic');
+  assert.equal((await f.store.operations(f.id)).at(-1).status, 'outcome-unknown');
+  assert.equal((await f.runtime.events(f.id)).at(-1).waiting, undefined);
+  await f.runtime.recoverReady(f.id); assert.equal(generated, 1);
+});
+
+test('an owner pause during a failed checkpoint remains owner-controlled until acknowledged', async t => {
+  const f = await fixture(t); await f.runtime.resume(f.id);
+  const commit = f.store.commit.bind(f.store); let blocked = true;
+  f.store.commit = (id, change, options) => blocked && change.event?.type === 'result'
+    ? Promise.reject(new DOMException('Storage denied', 'QuotaExceededError')) : commit(id, change, options);
+  await assert.rejects(f.runtime.run(f.id, { prompt: 'One saved result' }), { name: 'QuotaExceededError' });
+  await assert.rejects(f.runtime.pause(f.id), { code: 'ERR_AGENT_UNSAVED' });
+  assert.equal((await f.runtime.get(f.id)).pauseCause, 'owner');
+  blocked = false;
+  await assert.rejects(f.runtime.recoverReady(f.id), { code: 'ERR_AGENT_OWNER_PAUSED' });
+  await f.runtime.resume(f.id);
+  assert.equal((await f.runtime.events(f.id)).at(-1).text, 'Hello');
+  assert.equal(f.calls.filter(call => call.type === 'generate').length, 1);
 });

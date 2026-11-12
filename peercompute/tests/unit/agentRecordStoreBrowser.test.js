@@ -16,8 +16,15 @@ test('actual IndexedDB and Web Locks fence two tabs, recover a crash, and acknow
     await writeFile(path.join(temporary, 'index.html'), '<script type="module" src="/fixture.js"></script>');
     await writeFile(path.join(temporary, 'fixture.js'), `
       import {AgentRecordStore} from ${JSON.stringify(path.join(repo, 'peercompute/src/peercompute/agents/AgentRecordStore.js'))};
+      import {AgentRuntime} from ${JSON.stringify(path.join(repo, 'peercompute/src/peercompute/agents/AgentRuntime.js'))};
       window.store = new AgentRecordStore({name:'owned-browser-test'});
-      await store.open(); window.ready = true;
+      await store.open();
+      window.inferenceCalls = 0;
+      window.runtime = new AgentRuntime({store, inference:{
+        async listCandidates(){ inferenceCalls++; throw new Error('Recovery must never select a model'); },
+        async generate(){ inferenceCalls++; throw new Error('Recovery must never replay inference'); }
+      }});
+      window.ready = true;
       window.holdRun = async (id, checkpoint = false) => {
         window.controller = new AbortController();
         let entered; const ready = new Promise(resolve=>entered=resolve);
@@ -56,7 +63,11 @@ test('actual IndexedDB and Web Locks fence two tabs, recover a crash, and acknow
     const a = await context.newPage(), b = await context.newPage();
     for (const page of [a, b]) { page.on('pageerror', (error) => errors.push(error.message)); await page.goto(origin); await page.waitForFunction(() => ready); }
     const created = await a.evaluate(() => store.create({name:'Local Ada',instructions:'Keep private',goals:['Describe'],inferenceMode:'local-only'}));
+    assert.equal(created.pauseCause, 'owner');
     assert.deepEqual(await b.evaluate((id)=>store.get(id),created.agentId),created);
+    assert.equal(await b.evaluate(async(id)=>{
+      try { await runtime.recoverReady(id); } catch(error) { return error.code; }
+    },created.agentId), 'ERR_AGENT_OWNER_PAUSED');
     await a.evaluate((id)=>holdRun(id),created.agentId);
     const busy = () => b.evaluate(async id => {
       try { await store.withRun(id,()=>{}); return null; } catch(error) {return error.code;}
@@ -72,14 +83,23 @@ test('actual IndexedDB and Web Locks fence two tabs, recover a crash, and acknow
     // acknowledgements. Wait for release; never steal a lock on a timer.
     await b.waitForFunction(async (id) => !(await navigator.locks.query()).held.some(
       (lock) => lock.name === `${store.lockName}:run:${id}`), created.agentId, { timeout: 5000 });
-    const recovered = await b.evaluate(async id => store.withRun(id, async({head})=>{
-      const prior=head.pendingOperation;
-      const updated=await store.commit(id,{expectedRevision:head.revision,head:{...head,status:'paused'},
-        operation:{id:prior.id,status:'outcome-unknown'}});
-      return {prior,updated,operation:await store.getOperation(id,prior.id)};
-    }),created.agentId);
-    assert.equal(recovered.prior.status,'dispatched'); assert.equal(recovered.updated.status,'paused');
+    // Lock queries are diagnostic snapshots. Actual admission is the final
+    // acknowledgement that the closed renderer's run lock has been released.
+    await b.waitForFunction(async id => {
+      try {
+        const head=await runtime.get(id),prior=head.pendingOperation;
+        const updated=await runtime.recoverReady(id,{expectedRevision:head.revision});
+        window.recovered={prior,head,updated,operation:await store.getOperation(id,prior.id),inferenceCalls};
+        return true;
+      } catch(error) { if(error.code==='ERR_AGENT_BUSY') return false; throw error; }
+    },created.agentId,{timeout:5000,polling:50});
+    const recovered=await b.evaluate(()=>window.recovered);
+    assert.equal(recovered.head.recoveryRequired,true); assert.equal(recovered.head.pauseCause,'automatic');
+    assert.equal(recovered.prior.status,'dispatched'); assert.equal(recovered.updated.status,'waiting');
+    assert.equal(recovered.updated.pauseCause,null); assert.equal(recovered.inferenceCalls,0);
     assert.equal(recovered.updated.pendingOperation,null); assert.equal(recovered.operation.status,'outcome-unknown');
+    const ownerPaused=await b.evaluate(id=>runtime.pause(id),created.agentId);
+    assert.equal(ownerPaused.pauseCause,'owner');
     const failure = await b.evaluate(async id => {
       const before=await store.get(id),original=IDBObjectStore.prototype.put;
       let rejected;
@@ -92,10 +112,14 @@ test('actual IndexedDB and Web Locks fence two tabs, recover a crash, and acknow
       return {rejected,before,after:await store.get(id),events:await store.events(id)};
     },created.agentId);
     assert.equal(failure.rejected,'QuotaExceededError'); assert.deepEqual(failure.before,failure.after);
-    assert.equal(failure.events.length,1);
+    assert.deepEqual(failure.events.map(event=>event.type),['intent','outcome-unknown','paused']);
     await b.reload(); await b.waitForFunction(()=>ready);
-    assert.deepEqual(await b.evaluate(id=>store.get(id),created.agentId),recovered.updated);
-    await b.evaluate(async id=>{const head=await store.get(id);await store.delete(id,{expectedRevision:head.revision});await store.destroy();},created.agentId);
+    assert.deepEqual(await b.evaluate(id=>store.get(id),created.agentId),ownerPaused);
+    assert.equal(await b.evaluate(async(id)=>{
+      try { await runtime.recoverReady(id); } catch(error) { return error.code; }
+    },created.agentId), 'ERR_AGENT_OWNER_PAUSED');
+    assert.equal(await b.evaluate(()=>inferenceCalls),0);
+    await b.evaluate(async id=>{const head=await store.get(id);await store.delete(id,{expectedRevision:head.revision});await runtime.dispose();await store.destroy();},created.agentId);
     assert.deepEqual(external,[]); assert.deepEqual(errors,[]);
   } finally {
     await browser?.close();

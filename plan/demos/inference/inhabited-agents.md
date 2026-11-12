@@ -360,3 +360,32 @@ stopped the loop. Multi-step quality remains an open acceptance gate; do not mar
 this broader objective complete or encode the test itinerary as a fixed behavior.
 Next: evaluate reliable model-produced plans on varied multi-step tasks, keeping
 this failed fixture and distinguishing model/export/runtime quality from delivery.
+
+
+### Continuous resident cognition and recovery — November 11, 2026
+
+CubeChat uses a reusable slow `WorldOodaLoop` above the existing world experience,
+managed model router, bounded memory store and learned motor. A decision reads
+current symbolic observations, private reflections and recent public delivery
+receipts. It chooses rest, a validated physical intention, a short public
+conversation, or optional first-person vision followed by another decision.
+The loop does not manufacture user messages or fill the finite chat journal.
+Visual descriptions are uncertain model interpretations; physical completion
+still requires adapter receipts. Raw frames are not retained or broadcast.
+
+One slow slot per host gives human conversation priority and rotates residents
+fairly. Missing/busy resources wait; automatic failures use randomized 60–180
+second cooldowns. Deliberate owner pauses remain authoritative. Interrupted
+requests are reconciled without replay; the next cycle observes afresh. Physical
+tasks preserve their plan and verified completed milestones across bounded
+recovery windows. Model recovery reloads the exact retained CID and options
+only after worker cleanup acknowledges; owner unload/delete/disposal stops it.
+
+Capture and reasoning are separate interfaces: `ResidentViewCapture` renders a
+body viewpoint without changing the player camera; `WorldVision` routes pixels
+to a compatible managed local/peer model. `WorldOodaResident` binds the resulting
+interpretation to current identity, ownership and intent revision. Public chat
+uses the existing authenticated, bounded resident dialogue protocol. This is
+runtime deliberation and episodic memory, not online weight training or a claim
+of consciousness. Real model output remains a separate acceptance gate from
+scheduler, authority, persistence and scene-capture tests.

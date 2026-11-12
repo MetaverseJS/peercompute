@@ -2433,3 +2433,40 @@ image avatars default to12units high with physical-description hints; explicit
 and already-saved sizes remain unchanged. Existing MPM numerical drift and
 WXGlobe footer overlap remain documented; release smoke is not a conservation
 or model-quality qualification. This deployment task is complete.
+
+
+November11 next Humunculus slice: continuous resident observe/orient/decide/act
+with model-selected vision, bounded retained reflections, resource waiting and
+randomized60–180second automatic recovery. Preserve owner pauses and request
+identity/physical receipts; no uncertain-operation replay. Restore desired model
+residency after unexpected loss, respect explicit unload. First regression:
+two residents must queue independent replies to a single world-chat hello
+without pausing. Reuse authenticated resident dialogue and slow specialist
+routing. Validate on internal preview; no Pages publication this slice.
+
+
+November12 crash resumption: authored edits survived, preview services restored,
+Node24 retained. Rebuild serially. Full Pages publication is explicitly authorized
+once continuous OODA/recovery acceptance passes. Original two-resident hello
+context overflow was reproduced on real peer Qwen0.8 at2048context; public scene
+projection removes duplicate metadata/current-event context while preserving full
+user speech and durable history. Real resident POV vision and fresh postvision
+reflection, automatic recovery and owned-worker retained reload pass. A final
+original-input social conversation run and final full staging/public checks remain.
+
+
+November12 functional acceptance complete: unchanged2048-context peer Qwen
+successfully answers two resident hellos and reciprocal resident dialogue;
+model-selected POV vision and private reflection work, automatic readiness
+recovery and retained worker reload pass without replay. Follow cognition keeps
+the standing follow command intact. Final full Pages build/route/visual/network
+validation and authorized publication are now in progress.
+
+
+Final staging release checks pass: canonical build630,451,926bytes; independent
+3057file manifest;19general+4native physics routes with4software presentation
+repeats;11authenticated SecretWorkshop routes and zero recorded route errors.
+Final standalone CubeChat/Earth previews also pass. Preserve the documented
+whole-generated-diff guard failure and existing numerical/device limitations;
+authored guard passes. Publish after final repository review, then verify public
+workflow commit, exact assets, full routes and screenshots independently.

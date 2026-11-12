@@ -81,6 +81,15 @@ test('appearance references are private and world-chat replies default off', () 
 });
 function bodyForFace() { return { agentId: 'agent', name: 'Ada', color: '#44ffaa', position: [0, 3, 0], status: 'idle' }; }
 
+test('automatic reflection preference persists without entering the public body directory', () => {
+  for (const autonomous of [true, false]) {
+    const value = normalizeAgentInput({ name: 'Ada', embodiments: [{ ...binding, autonomous }] });
+    assert.equal(value.embodiments[0].autonomous, autonomous);
+    assert.equal('autonomous' in normalizePublicAgent({ ...bodyForFace(), autonomous }), false);
+  }
+  assert.throws(() => normalizeAgentInput({ name: 'Ada', embodiments: [{ ...binding, autonomous: 'yes' }] }));
+});
+
 test('cloning requires explicit owner preference and movement is a bounded persisted preference', () => {
   const legacy = normalizeAgentInput({ name: 'Ada', embodiments: [{ ...binding, allowCloning: undefined }] });
   assert.equal(legacy.embodiments[0].allowCloning, false);

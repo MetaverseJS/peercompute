@@ -37,6 +37,59 @@ async function seedLegacy(store, record) {
   return legacy;
 }
 
+test('recovery windows are strict durable CAS transitions, never arbitrary budget or start-time resets', async t => {
+  let clock = 100000;
+  const { store } = await fixture(t, { now: () => clock });
+  let record = await change(store, await store.assign(assignment), { status: 'ready', startedAt: clock, deadlineAt: clock + 600000,
+    recovery: { windowIndex: 0, windowStartedAt: clock, stepBase: 0, retryAt: null } });
+  record = await change(store, record, { steps: 8 });
+  for (const recovery of [{ ...record.recovery, stepBase: 8 }, { ...record.recovery, windowStartedAt: clock + 1 }, null]) {
+    await assert.rejects(change(store, record, { recovery }));
+  }
+  record = await change(store, record, { status: 'paused', pauseSource: 'system', recovery: { ...record.recovery, retryAt: clock + 60000, retryScheduledAt: clock } });
+  const next = () => ({ status: 'ready', failures: 0, recovery: { windowIndex: 1, windowStartedAt: clock, stepBase: 8, retryAt: null } });
+  await assert.rejects(change(store, record, next()), /due acknowledged pause/);
+  clock += 60000;
+  for (const patch of [{ ...next(), recovery: { ...next().recovery, windowIndex: 2 } },
+    { ...next(), recovery: { ...next().recovery, stepBase: 7 } }, { ...next(), steps: 7 }, { ...next(), startedAt: clock }]) {
+    await assert.rejects(change(store, record, patch));
+  }
+  const original = record; record = await change(store, record, next()); record = await change(store, record, { steps: 9 });
+  assert.equal(record.startedAt, original.startedAt); assert.equal(record.deadlineAt, original.deadlineAt); assert.equal(record.steps, 9);
+  assert.equal(record.recovery.windowIndex, 1); assert.equal(record.recovery.stepBase, 8);
+  await assert.rejects(change(store, record, { steps: 17 }), /window allowance/);
+  await assert.rejects(change(store, record, { status: 'paused', pauseSource: 'owner', recovery: { ...record.recovery, retryAt: clock + 60000 } }), /automatic goal pauses/);
+});
+
+test('unknown planning checkpoints require exactly one charged attempt before a due fresh window', async t => {
+  let clock = 100000; const { store, indexedDBImpl } = await fixture(t, { now: () => clock });
+  let record = await change(store, await store.assign(assignment), { status: 'ready', startedAt: clock, deadlineAt: clock + 600000,
+    recovery: { windowIndex: 0, windowStartedAt: clock, stepBase: 0, retryAt: null } });
+  record = await decision(store, record, 'uncertain-decision');
+  record = await change(store, record, { status: 'paused', pauseSource: 'uncertain', recovery: { ...record.recovery, retryAt: clock + 60000, retryScheduledAt: clock } });
+  await store.close(); const { store: reopened } = await fixture(t, { indexedDBImpl, now: () => clock });
+  assert.deepEqual(await reopened.get(scope), record); clock += 60000;
+  const patch = { status: 'ready', pendingDecision: null, steps: 1, failures: 0,
+    recovery: { windowIndex: 1, windowStartedAt: clock, stepBase: 1, retryAt: null } };
+  await assert.rejects(change(reopened, record, { ...patch, steps: 0, recovery: { ...patch.recovery, stepBase: 0 } }), /due acknowledged pause/);
+  const recovered = await change(reopened, record, patch);
+  assert.equal(recovered.steps, 1); assert.equal(recovered.pendingDecision, null); assert.equal(recovered.goalId, record.goalId);
+});
+
+test('window and cooldown timestamps tolerate storage latency without weakening the one-to-three-minute interval', async t => {
+  let clock = 100005; const { store } = await fixture(t, { now: () => clock });
+  let record = await change(store, await store.assign(assignment), { status: 'ready', startedAt: 100000, deadlineAt: 700000,
+    recovery: { windowIndex: 0, windowStartedAt: 100000, stepBase: 0, retryAt: null } });
+  for (const delay of [59999, 180001]) await assert.rejects(change(store, record, { status: 'paused', pauseSource: 'system',
+    recovery: { ...record.recovery, retryScheduledAt: 100000, retryAt: 100000 + delay } }), /one and three minutes/);
+  record = await change(store, record, { status: 'paused', pauseSource: 'system',
+    recovery: { ...record.recovery, retryScheduledAt: 100000, retryAt: 160000 } });
+  clock = 160007;
+  record = await change(store, record, { status: 'ready', failures: 0,
+    recovery: { windowIndex: 1, windowStartedAt: 160000, stepBase: 0, retryAt: null } });
+  assert.equal(record.recovery.windowStartedAt, 160000); assert.equal(record.startedAt, 100000);
+});
+
 test('private paused goals survive reopen without replay, stay scoped, and return detached records', async t => {
   const { store, indexedDBImpl } = await fixture(t);
   const first = await store.assign(assignment);
@@ -353,7 +406,7 @@ test('all eight legacy receipts and interrupted planning remain intact without e
   const receipts = Array.from({ length: 8 }, (_, i) => outcome(`legacy-${i}`));
   const legacy = await seedLegacy(store, { ...initial, steps: 8, receipts, lastReceipt: receipts.at(-1), status: 'paused',
     pendingDecision: { id: 'legacy-decision', startedAt: 100000 } });
-  let record = await store.get(scope); assert.deepEqual(record, { ...legacy, plan: null, completedMilestones: [] });
+  let record = await store.get(scope); assert.deepEqual(record, { ...legacy, pauseSource: 'owner', plan: null, completedMilestones: [] });
   for (const patch of [{ steps: 9 }, { steps: 7 }, { failures: 4 }, { deadlineAt: 700001 }]) await assert.rejects(change(store, record, patch));
   record = await change(store, record, { reason: 'Still needs owner recovery.' });
   assert.equal(record.receipts.length, 8); assert.deepEqual(record.pendingDecision, legacy.pendingDecision);

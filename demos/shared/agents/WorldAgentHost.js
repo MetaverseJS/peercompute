@@ -25,6 +25,9 @@ import { worldConversationContext, worldReplyPrompt, worldResidentName, worldPub
 import { routeAgentTask } from '../../../peercompute/src/peercompute/agents/AgentRouter.js';
 import { AVATAR_IMAGE_PROMPT, ownerAvatarInput } from './WorldAvatarInput.js';
 import { residentReplyModelLabel } from './WorldReplyDisposition.js';
+import { createWorldOodaLoop } from './WorldOodaLoop.js';
+import { createWorldOodaResident } from './WorldOodaResident.js';
+import { classifyInferenceAvailability } from '../../../peercompute/src/peercompute/inference/InferenceAvailability.js';
 export { speechChunks } from '../../../peercompute/src/peercompute/inference/speech/chunks.js';
 
 const encoder = new TextEncoder();
@@ -59,7 +62,7 @@ export async function worldConversationId(worldId, requester) {
 /** Scene-owned bodies and conversations. Closing a window never owns the agent. */
 export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOptions = () => ({}), beforeOpen,
   exclusiveEmbodiments = false, panelOwnsWindow = false, getModelReturnFocus = () => document.activeElement,
-  publishWorldMessage, socialOptions = {}, goalOptions = {}, defaultResident, worldKnowledge = '', generatedObjectAdapter, residentAvatarAdapter,
+  publishWorldMessage, socialOptions = {}, goalOptions = {}, oodaOptions = {}, defaultResident, worldKnowledge = '', generatedObjectAdapter, residentAvatarAdapter,
   runtimeFactory = defaultRuntime, speechFactory = defaultSpeech, audioFactory = defaultAudio,
   uiFactory = createWorldAgentUi, serviceFactory = (options) => new AgentConversationService(options),
   panelFactory = async (options) => (await import('../../inference/src/agentPanel.js')).mountInferencePanel(options) } = {}) {
@@ -72,7 +75,8 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
   let operation, operationDone, voicePreparation, voicePreparationDone, recordingStart, voiceEnabled = false, recording = false;
   let appearance, appearancePresenter, generatedObjects, residentAvatars, worldChat, experience, conversations, motor, memory, social, socialOperation, socialDone;
   let objectives, objectiveStore, unsubscribeObjectives;
-  let standing, standingRunner, standingStore;
+  let standing, standingRunner, standingStore, ooda;
+  const oodaStates = new Map();
   const standingStates = new Map();
   const profileStates = new Map();
   const objectiveStates = new Map(), objectiveDecisions = new Map();
@@ -231,6 +235,8 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
             ...(binding.face ? { face: appearance.publicRef(head) } : {}) }),
           key, ownerPeerId: worldNetwork()?.peerId ?? '', local: true,
           recoveryRequired: !!head.recoveryRequired, shared: binding.shared,
+          pauseCause: head.pauseCause, revision: head.revision, autonomous: binding.autonomous !== false,
+          oodaStatus: oodaStates.get(key),
           instructions: head.identity.instructions, goals: head.goals, localOnly: head.policy.inferenceMode === 'local-only',
           allowCloning: !!binding.allowCloning, shareMemories: !!binding.shareMemories, sharePrivateMemories: !!binding.sharePrivateMemories, ...(binding.movement ? { movement: binding.movement } : {}),
           respondToWorldChat: !!binding.respondToWorldChat, initiateConversations: !!binding.initiateConversations,
@@ -248,7 +254,8 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
         await pauseResidentObjective(body.agentId);
         adapter.remove(key); bodies.delete(key); socialStates.delete(key); objectiveStates.delete(body.agentId); appearanceStates.delete(body.agentId); await embodimentLease?.release(body.agentId);
       }
-      for (const body of bodies.values()) if (body.local && body.status === 'paused') await pauseResidentObjective(body.agentId);
+      for (const body of bodies.values()) if (body.local && body.status === 'paused'
+          && body.pauseCause !== 'automatic') await pauseResidentObjective(body.agentId);
       if (embodimentLease) for (const id of [...embodimentLease.entries.keys()]) {
         if (!current.has(localKey(id))) await embodimentLease.release(id);
       }
@@ -259,6 +266,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
       }
       await objectives?.syncOwnership();
       updateList();
+      ooda?.sync();
   }
   function directory(entries) {
     if (disposed) return;
@@ -499,7 +507,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
       ? descriptor.local ? 'Paused. Resume to start a new conversation.' : 'Paused. Only its owner can resume this resident.'
       : `Talk to ${descriptor.name}.`);
   }
-  async function spawn({ name, goals = [], localOnly = false, shared = true, appearancePrompt = '', respondToWorldChat = false, initiateConversations = false,
+  async function spawn({ name, goals = [], localOnly = false, shared = true, appearancePrompt = '', respondToWorldChat = false, initiateConversations = true, autonomous = true,
     instructions, shareMemories = false, sharePrivateMemories = false, allowCloning = shareMemories, movement = 'stationary', standingGoal, selfModifiable = false }) {
     await ready; alive(); await interruptSocial('owner');
     requireConversationIdle();
@@ -508,7 +516,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     const position = adapter.normalizePosition(await adapter.getSpawnPosition());
     const head = await agents.create({ name, goals, inferenceMode: localOnly ? 'local-only' : 'network-assisted',
       instructions: instructions ?? `You inhabit a body in ${worldLabel}. Talk directly with the visitor. World observations describe your surroundings. You may propose supported body intentions; the world executes them and reports outcomes. Describe intended actions as intentions, and completed actions only when verified.`,
-      embodiments: [{ worldId, position, color: '#8fffd4', shared, appearancePrompt, respondToWorldChat, initiateConversations, allowCloning, shareMemories, sharePrivateMemories, movement, selfModifiable,
+      embodiments: [{ worldId, position, color: '#8fffd4', shared, appearancePrompt, respondToWorldChat, initiateConversations, autonomous, allowCloning, shareMemories, sharePrivateMemories, movement, selfModifiable,
         ...(standingGoal ? { standingGoal } : {}) }] });
     await agents.resume(head.agentId); await refreshLocal(); await select(localKey(head.agentId));
     if (appearancePrompt.trim()) void generateAppearance({ key: localKey(head.agentId) }).catch(fail);
@@ -525,7 +533,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     return createResidentProfile(ownerCopy ? { ...current, embodiments: [{ ...binding, shared: true, allowCloning: true }] }
       : current, worldId, { memories: episodes });
   }
-  async function edit({ key, name, instructions, goals, appearancePrompt, movement, shared, respondToWorldChat, initiateConversations, allowCloning, shareMemories, sharePrivateMemories, localOnly, standingGoal, selfModifiable }) {
+  async function edit({ key, name, instructions, goals, appearancePrompt, movement, shared, respondToWorldChat, initiateConversations, autonomous, allowCloning, shareMemories, sharePrivateMemories, localOnly, standingGoal, selfModifiable }) {
     await ready; alive(); await Promise.all([interruptSocial('owner'), objectives?.interrupt({ reason: 'resident editing' })]); requireConversationIdle();
     const body = bodies.get(key); if (!body?.local) throw new Error('Only the owner can edit this resident; clone it to customize your own');
     const head = await agents.get(body.agentId), binding = bindingOf(head);
@@ -534,7 +542,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
       throw new Error('The owner must be nearby before selecting Follow');
     }
     const next = { ...binding };
-    for (const [field, value] of Object.entries({ appearancePrompt, movement, shared, respondToWorldChat, initiateConversations, allowCloning, shareMemories, sharePrivateMemories, standingGoal, selfModifiable })) {
+    for (const [field, value] of Object.entries({ appearancePrompt, movement, shared, respondToWorldChat, initiateConversations, autonomous, allowCloning, shareMemories, sharePrivateMemories, standingGoal, selfModifiable })) {
       if (value !== undefined) next[field] = value;
     }
     if (appearancePrompt !== undefined && appearancePrompt !== binding.appearancePrompt) {
@@ -716,7 +724,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
   function interruptSocial(reason = 'human') {
     social?.interrupt(reason); standing?.interrupt(reason);
     socialOperation?.abort(new DOMException('Social decision superseded', 'AbortError'));
-    return socialDone?.catch(() => {});
+    return Promise.allSettled([socialDone, ooda?.interrupt()]);
   }
   function runSocial(work, { signal, timeoutMs = 45000, isCurrent } = {}) {
     if (socialOperation || objectivePlanning() || operation || disposed) return Promise.resolve({ status: 'busy' });
@@ -761,7 +769,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
         candidates: await agents.inference.listCandidates({ mode: head.policy.inferenceMode,
           task: 'text-generation', signal: AbortSignal.any([signal, AbortSignal.timeout(standingLimits.discoveryMs)]), refresh: true }) }).candidate;
     } catch (error) {
-      if (error.code !== 'ERR_AGENT_NO_MODEL') throw error;
+      if (!classifyInferenceAvailability(error)) throw error;
       standingStatus(body.key, 'waiting-for-model'); return { status: 'waiting-for-model' };
     }
     // Session peer IDs rotate on reload. The guide's owner encounter is bound to
@@ -824,7 +832,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
       candidate = routeAgentTask({ task: 'text-generation', inferenceMode: head.policy.inferenceMode,
         candidates: await agents.inference.listCandidates({ mode: head.policy.inferenceMode,
           task: 'text-generation', signal, refresh: true }) }).candidate;
-    } catch (error) { if (error.code === 'ERR_AGENT_NO_MODEL') return { status: 'waiting-for-model' }; throw error; }
+    } catch (error) { if (classifyInferenceAvailability(error)) return { status: 'waiting-for-model' }; throw error; }
     signal.throwIfAborted();
     const conversationId = await worldConversationId(worldId, 'public-room');
     const common = { key: body.key, agentId: body.agentId, conversationId, signal };
@@ -864,7 +872,8 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     const result = await runSocial(combined => decideSocial({ resident: body, target, signal: combined, incoming, context, isCurrent }),
       { signal, timeoutMs: Math.min(45000, incoming.social.expiresAt - Date.now()),
         isCurrent: () => isCurrent() && experience.observe(body.key).participants.some(item => item.id === target.id && item.distance < 60) });
-    return result?.text ?? '';
+    return ['busy', 'waiting-for-model'].includes(result?.status)
+      ? { status: 'waiting', reason: 'Waiting for an available model or conversation slot.' } : result?.text ?? '';
   }
   async function remove(key) {
     const body = bodies.get(key); if (!body?.local) throw new Error('Only the owner can remove this body');
@@ -1114,7 +1123,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
           inferenceMode: preset.localOnly ? 'local-only' : 'network-assisted',
           embodiments: [{ worldId, position, color: '#8fffd4', shared: preset.shared,
             movement: preset.movement, standingGoal: preset.standingGoal, selfModifiable: preset.selfModifiable,
-            respondToWorldChat: preset.respondToWorldChat, initiateConversations: preset.initiateConversations,
+            respondToWorldChat: preset.respondToWorldChat, initiateConversations: preset.initiateConversations, autonomous: preset.autonomous !== false,
             allowCloning: preset.allowCloning, shareMemories: preset.shareMemories, sharePrivateMemories: preset.sharePrivateMemories }],
         }, { signal: lifetime.signal });
         if (provisioned.created) await agents.resume(provisioned.head.agentId, { signal: lifetime.signal });
@@ -1126,7 +1135,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
       const name = `${agents.store.name}-objectives`.slice(0, 80);
       objectiveStore = runtime.stateManager.getWorldGoalStore(name) ?? runtime.stateManager.createWorldGoalStore({ name, hostId: agents.store.hostId });
       await objectiveStore.open(); lifetime.signal.throwIfAborted();
-      objectives = createWorldGoalController({ ...goalOptions, store: objectiveStore, worldId,
+      objectives = createWorldGoalController({ autoRecovery: true, ...goalOptions, store: objectiveStore, worldId,
         owns: ({ agentId }) => ownsObjective(agentId),
         observe: async ({ agentId }, { goal, signal }) => {
           const key = localKey(agentId), head = await agents.get(agentId);
@@ -1175,7 +1184,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     }
     if (worldChat && experience) social = createWorldSocialInitiative({ ...socialOptions,
       getResidents: () => list().map(body => ({ ...body, revision: body.socialRevision,
-        initiateConversations: body.initiateConversations && !body.standingGoal?.enabled,
+        initiateConversations: body.initiateConversations && (body.autonomous === false || oodaOptions.enabled === false) && !body.standingGoal?.enabled,
         paused: body.status === 'paused', recovery: body.recoveryRequired,
         available: !operation && !socialOperation && !objectivePlanning() && !objectiveActive(body.agentId) && !privateResponses && !['thinking', 'speaking'].includes(body.status)
           && !worldChat.getStatus().active && !worldChat.getStatus().pending
@@ -1214,7 +1223,34 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
             { deciding: 'considering', error: 'failed' }[event.status] ?? event.status);
         } });
     }
-    social?.sync(); standing?.sync();
+    if (experience && oodaOptions.enabled !== false && typeof agents.recoverReady === 'function') {
+      const deliberate = createWorldOodaResident({ worldId, agents, experience, adapter, memory,
+        getBody: key => bodies.get(key), owns: ownsObjective, publish: publishWorldMessage, conversationId: worldConversationId });
+      ooda = createWorldOodaLoop({ ...oodaOptions,
+        getResidents: () => list().filter(body => body.local).map(body => {
+          const recoverable = body.pauseCause === 'automatic' || body.recoveryRequired && body.pauseCause !== 'owner';
+          const idle = !disposed && ownsObjective(body.agentId)
+            && !['queued', 'running', 'cancelling'].includes(heads.get(body.agentId)?.activity?.status);
+          return { ...body, available: idle && (recoverable || !operation && !socialOperation && !privateResponses
+            && !objectivePlanning() && !objectiveActive(body.agentId) && !panel && !panelOpening
+            && !voicePreparation && !recording && !recordingStart
+            && !worldChat?.getStatus().active && !worldChat?.getStatus().pending
+            && (() => { const motion = adapter.observe?.(body.key)?.self?.motion;
+              return motion?.type === 'follow' || !['moving', 'acting'].includes(motion?.status); })()) };
+        }),
+        recover: async (body, { signal }) => {
+          if (!ownsObjective(body.agentId)) throw new Error('Resident ownership changed');
+          await agents.recoverReady(body.agentId, { expectedRevision: body.revision, signal }); await refreshLocal();
+        },
+        cycle: options => runSocial(signal => deliberate({ ...options, signal }), { signal: options.signal, timeoutMs: 120000 }),
+        onStatus: event => {
+          oodaStates.set(event.key, event);
+          const body = bodies.get(event.key);
+          if (body?.local && !disposed) { bodies.set(event.key, { ...body, oodaStatus: event }); ui.setAgents(list()); }
+        },
+      });
+    }
+    social?.sync(); standing?.sync(); ooda?.sync();
     void ensureModelNetwork(); void ensureNetwork();
     networkTimer = setInterval(() => {
       void ensureModelNetwork(); void ensureNetwork();
@@ -1230,7 +1266,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     open() { ui.open(); },
     openConversation(key) { return select(key).catch(fail); },
     getStatus: () => ({ worldId, bodies: list(), selectedKey, voiceEnabled, recording, disposed, network: !!network,
-      experience: experience?.getStatus(), motor: motor?.getStatus(), social: social?.getStatus(), standing: standing?.getStatus(), objectives: objectives?.getStatus(),
+      experience: experience?.getStatus(), motor: motor?.getStatus(), social: social?.getStatus(), standing: standing?.getStatus(), objectives: objectives?.getStatus(), ooda: ooda?.getStatus(),
       generatedObjects: generatedObjects?.getStatus(), residentAvatars: residentAvatars?.getStatus(),
       exclusiveEmbodiments: !!embodimentLease, crossTabOwnership: embodimentLease?.supported ?? null }),
     // The scene owns these operations; exposed for embedding and acceptance
@@ -1245,7 +1281,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
       disposed = true; lifetime.abort(new DOMException('World closed', 'AbortError')); clearInterval(networkTimer); clearInterval(navigationTimer); unsubscribe?.();
       closing = (async () => {
         await ready.catch(() => {}); await cancel(); await networkStarting; await modelStarting; await closePanel();
-        await objectives?.dispose(); unsubscribeObjectives?.();
+        await ooda?.dispose(); await objectives?.dispose(); unsubscribeObjectives?.();
         await social?.dispose(); await standing?.dispose(); await standingRunner?.dispose(); await worldChat?.dispose();
         await residentAvatars?.dispose();
         await generatedObjects?.dispose(); if (!generatedObjects) generatedObjectAdapter?.dispose();

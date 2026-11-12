@@ -62674,3 +62674,208 @@ startup/shutdown race separately; no source attribution is established yet.
   work is complete; this final documentation receipt stays local to avoid an
   unnecessary second Pages build. Fresh ICC stores/history and durable task
   receipt follow, preserving pre-publish baseline audit and generated-guard risks.
+
+### 2026-11-12T08:09:52Z — continuous resident cognition and recovery
+
+- First explicit clock receipt for the user request (exact delivery unavailable):
+  vision-equipped models on demand, perpetual OODA goal reflection, randomized
+  1–3minute recovery, automatic reload of forcibly unloaded models, resident
+  conversations and waiting for contested resources instead of pausing.
+  Follow-up first explicit log receipt 2026-11-12T08:17:58+00:00: two residents both pause when the
+  user says hello in world chat. Prioritize that reproduction.
+- Read plan/plan.md, log tail, agent/world/social/goal/runtime contracts and
+  relevant Humunculus plans. ICC repo/work entry reports fresh source/stores;
+  persisted resident-continuous-ooda-20261111 task and scoped plan. Generic
+  baseline oracle is blocked by existing NetViz/motorcycle classifications;
+  not a target-specific verdict. All four agent preflights pass six checks,
+  disjoint leases published before edits. Core pause provenance, desired model
+  recovery, resident POV vision and root integration are separate scopes.
+- Deliberate owner pauses/cancellation remain owner-controlled. Latest request
+  replaces permanent error-induced pauses with cooldown/recovery, never replay
+  unknown requests. Busy/no-model is waiting, not a failed action. Existing
+  resident dialogue protocol, human priority and physical receipts remain.
+  Do not journal perpetual observations through the finite chat operation log.
+  Internal previews only; no new GitHub Pages deploy or origin push requested.
+
+- Implemented core pause provenance and readiness reconciliation, exact-package
+  model recovery, fair slow OODA scheduling, current-body vision capture and
+  ephemeral deliberation with bounded episodic memory. World chat now queues
+  known admission failures without spending dialogue turns. Caller supersession
+  no longer persists an owner pause. Existing owner controls remain authoritative.
+- Review caught and fixed four integration issues: recovery blocked by unrelated
+  queued chat, optional-vision loops on text-only networks, UTF-8 memory-query
+  bounds, and missing public greeting evidence in reflections. Post-dispatch
+  model loss is marked committed so availability retry cannot replay old prompts.
+- Commands so far: node --test root OODA/decision/chat/goal-decision suites
+  passes63/63; CubeChat UI/social/goal-controls/world-contract suites22/22.
+  Core worker reports48/48 and models184/184 plus131adjacent regression passes;
+  resident vision53/53 includes real WebGL directional pixels with independent
+  player camera and renderer-state restoration. Root visually inspected
+  vision/resident-view-directions.png. These are controlled tests, not yet a
+  reproduction against the user's running residents or proof of model quality.
+- Initial host regression run64/69 exposed stale no-provider error expectations
+  and legacy scheduler fixture isolation; retained host-tests-first.log, repairing
+  expectations and adding actual AgentRuntime two-resident hello regression.
+  Physical goal rolling recovery and external browser acceptance remain in flight.
+  All evidence stays under ~/.cache/peercompute-resident-ooda-20261111/.
+
+- User follow-up receipt 2026-11-12T08:44:20.184411+00:00 (delivery timestamp unavailable):
+  “deploy to gh pages when done.” This authorizes the complete demo Pages rebuild
+  and origin publication after this slice passes acceptance. Prior internal-only
+  constraint is superseded for the finished slice. Keep owned previews/profiles
+  isolated, verify full staging routes/visuals/SecretWorkshop and exact published
+  assets; do not deploy while source or required validation is still in flight.
+
+- Follow-up source review found prompt cancellation can retire a GGUF worker.
+  This must recover desired model residency, unlike explicit owner unload.
+  Corrected service loss provenance; actual service+registry regression proves
+  one retained-CID reload after cleanup, no cancelled prompt replay, and no
+  resurrection after owner unload. Final model suites185/185 and131/131 pass.
+- Core known-dispatch residency loss now marks even older/custom adapter errors
+  committed before availability classification. Runtime27/27 passes; prevents
+  outcome-unknown requests being requeued as innocent capacity waits.
+- UI lets owners explicitly hold an automatically recovering objective paused.
+  UI15/15 and autonomous preference contracts pass. Adjacent world/memory tests
+ 96/96 pass. Release harness prepared externally with a private, paused,
+  local-only owned guide so route smoke cannot send prompts to user hosts.
+  First release command accidentally named two absent .js test paths; Node24
+  only ran5shared-runtime tests. Correct filenames rerun covers40/40 actual
+  release/assets/isolation tests; no inflated test count claimed.
+
+### 2026-11-12T09:50:19.452618+00:00 — resume after machine crash
+
+- User asks to pick up after computer crash. All authored edits and prior test
+  receipts survived; no new commit/push occurred. Full Pages build stopped during
+  webpack after deleting its two generated pooled WASM files. Three standalone
+  builds also stopped during transform; none is accepted as a successful build.
+  Existing static-root pointers still reference the previous validated release.
+- Node24.18.0 remains active; no build/test processes survived and transient
+  preview services are absent after reboot. ICC assistant-status/preflight and
+  renewed disjoint leases precede resumed edits. Restore only the two exact
+  generated HEAD assets removed by the interrupted build, restart previews, and
+  rerun builds serially to reduce memory pressure. No kernel OOM evidence was
+  returned by the available prior-boot check, so crash cause is not established.
+- Native agents resume host/core regression, real peer acceptance, and Pages
+  validation independently; no user profile/model changes or model downloads.
+  Authorized publication still waits for complete accepted build and tests.
+
+- Resumption preflight initially failed its rollback guard on the two missing
+  generated WASM files. Restored those exact HEAD artifacts removed by our
+  interrupted build; renewed preflight then passes with no lease conflict.
+  Preview services restarted as owned systemd user units, exact5176/5189TLS
+  addresses return200. Only one build runs at a time after resumption.
+
+- Post-crash full host/runtime suite77/77 passes (50actualbrowser host tests,
+ 27runtime): two queued resident replies after busy admission, new hello
+  preemption without stale speech/paused heads, no uncertain-request replay,
+  automatic recovery despite other queued chat, owner pause held. No source
+  changes needed; ownedbrowser/serverclosed. Goal recovery76/76 accepted before
+  crash includes actualclock skew, bounded receipt pruning and idle-only cleanup.
+- Serial internal builds pass Cube16.01s, inference19.07s, Earth28.87s. Retained
+  previous immutable assets, then updated only external root pointers. ExactTLS
+  HTMLSHA matches for5176/5189/5187; previewserversremainup. Full Pages rebuild
+  resumes separately; interrupted buildlogs retained instead of overwritten.
+- Network after reboot authenticatesSecretWorkshop but advertises no models.
+  No-provider native-chat waiting acceptance runs first. For actual peer/model
+  acceptance, use an explicitlyowned fresh5189profile with Qwen0.8GGUF plus
+  SmolVLM256M (~0.8GiB total), separate from all userprofiles/storage/models.
+  This bounded test download supersedes our initial no-download test strategy;
+  not a change to the user's app/model selection or a replay of old requests.
+
+- First complete staging candidate passes19/19general routes, all11network
+  routes authenticateSecretWorkshop,52independentvisualreviews, zero error or
+  model-response counters. Independent manifest3057files/630450249bytes hashes
+  clean; all560previousactivehashedassets retained;83deletedfiles exclusively
+  prior-retained generated output. AuthoredguardPASS192policydeletedlines; full
+  guardFAIL83generateddeletions/15552lines, preserved without policy changes.
+- Actual owned peer test proves two human-hello replies, and a real2048-context
+  overflow in a later publicfollow-up (1570input+512reserve). Readiness recovers
+  automatically after89.38seconds, no oldrequest replay. Next real QwenOODA
+  choosesvision;256x256RGBA goes to peerSmol, boundedinterpretation saved privately
+  without rawpixels or chatjournal entries. Follow-upQwen repeats unavailable
+  lookchoice and strictparserrejects. Overallpeerharness remainsFAIL on invalid
+  postvision decision; do not relabel fullcasepass. No source-level staleinput:
+  bothrequests have distinctUUIDs/messagehashes and secondincludesactualvision.
+- Improve smallmodel instructions by listing only currentlyavailable choices;
+  omitlookschema aftervision andspeakschema whenpermissionoff.14OODA tests pass
+  includingconditionalpromptassertions. RebuildCube/Earth andfullPages; archive
+  supersededcandidate externally and restore generateddocs to exactHEAD baseline
+  first so anotherbuild retains actualpublishedassets, not merelyunreleasedones.
+  Rerunaffectedrealpeeracceptance andfullstaging withnewphase receipts.
+
+- Continuing the same crash-resumption request (receipt above): live peer-3
+  reproduced the reported two-resident pause with the original full hello and
+  identity: 1543/1541 input tokens plus512 output reserve exceeded the unchanged
+ 2048-context Qwen0.8 worker. WorldExperience now projects public room metadata
+  compactly even below its byte ceiling, avoiding repeated body/transport IDs.
+ 92 context/host/conversation/OODA tests pass. Initial full hellos then both pass.
+- Peer-4 qualifies the real OODA chain on cubechat-context: Qwen chooses look,
+  peer SmolVLM interprets actual256x256RGBA resident POV, fresh Qwen chooses valid
+  wait/reflection with unavailable look omitted. Scoped private memory contains
+  the interpretation, no raw pixels or conversational journal turns.85exact
+  assets, zero browser/network/cleanup errors; owner-paused guide remains paused.
+  The tiny model incorrectly says nobody is nearby: model judgment is not
+  ground-truth sensing. A later public reply still overflowed1562+512; automatic
+  recovery occurred after162.804seconds with no replay. Reciprocal social chat
+  remains unqualified at this point, separately from passing OODA.
+- Remove only the exact current public event from the optional scene prompt
+  projection; the full current user turn, earlier same-text events, stored
+  evidence and private contexts remain unchanged. Files:WorldExperience.js and
+  world-experience.test.js. `node --test demos/tests/world-experience.test.js
+  demos/tests/world-conversation-turn.test.js` passes36/36. Rebuild standalone
+  Cube/Earth serially; final original-input real peer social/OODA run follows.
+- Actual owned native-GPU recovery test passes: cancelling GGUF generation is
+  cooperative and retains its session; deliberately terminating only an idle
+  owned model worker causes retained-CID reload/rehosting in about10seconds and
+  successful fresh inference, with no replay. This corrects the earlier general
+  cancellation note: cancellation retires some runtimes, not this GGUF path.
+  All user profiles/storage/models remain untouched.
+
+- Final live peer-5 PASS on exact cubechat-event-context: original authored hello
+  and identities unchanged, GGUF context2048 unchanged. Both human replies and
+  reciprocal resident replies complete (input1095/1275/1536/1477tokens),11unique
+  actual model calls, no context errors or unintended pauses. Real256x256 POV
+  reaches peerSmol, fresh Qwen decision stores private reflection;85asset hashes,
+  SecretWorkshop authentication, desktop/mobile visuals and ownedcleanup pass.
+  Tiny0.8B social replies sometimes confuse names; this validates execution and
+  current-turn delivery, not perfect dialogue quality. All earlier failed runs
+  retained under live/post-crash-peer-N. All owned modelhosts now closed.
+- Read-only review found continuous follow could starve slow cognition. Narrow
+  fix allows reflection during follow but removes movement choices from schema,
+  parser and execution while that task owns the motor; no one-shot movement
+  change. WorldAgentHost, WorldOodaDecision/Resident and their tests updated.
+ 15decision/loop tests pass; native host follow eligibility test passes. Two
+  earlier host fixture attempts timed out because fake time did not advance past
+  the existing30second owner-spawn quiet period; corrected fixture advances it,
+  keeping real scheduling unchanged. Final receipt follow-host-test-accepted.log.
+- Full final serial Pages build started with `npm run build`, after restoring
+  only generated docs to actual published baseline1becfff9 (unshipped candidate
+  archived). No source work or required functional gate remains outstanding;
+  complete staging/public release validation follows this build.
+
+- Final canonical `npm run build` passes:630,451,926bytes,2875active+182retained
+  files. Independent manifest verifier hashes3057files, retains all560previous
+  active hashed assets from actual public baseline1becfff9;83deleted files are
+  exclusively prior-retained generated output. Authored staged guard PASS:
+ 197policydeletedlines (216raw,19moves), zero authored file deletions. Full
+  generated-output guard FAIL remains recorded:83deletions/15561policylines,
+  zero rollback violations. This is the bounded previous-release asset rotation,
+  independently verified; no guard policy was changed or failure hidden.
+- Final staging19/19general routes,4/4native physics and4/4software presentation
+  checks pass. All11network routes authenticateSecretWorkshop overNoise; zero
+  page/console/HTTP/request/WebSocket/GPU-loss errors or model responses. Owned
+  test browsers/servers/Xvfb close. General52captures reviewed; physics16capture
+  review follows. Native headless physics canvases are diagnostic-only because
+  compositor capture is blank; software presentation shows actual scenes.
+  Existing MPM headless numerical drift, WXGlobe footer overlap, unavailable
+  realcamera/XR/geodata and smallmodel output quality remain separate limitations.
+- Final standalone Cube17.0s/Earth23.1s builds pass; external accepted roots
+  promoted with963/482oldimmutableassets retained. Exact5176/5187TLS pages and
+ 82/46loadedassets match, both authenticateSecretWorkshop, no browser errors or
+  model downloads. Preview services stay up; owned check browser closed.
+- Stored GitHub CLI credential is invalid, so authenticated Pages REST endpoints
+  return404. `git push --dry-run origin HEAD:main HEAD:feature/ipfs-artifacts-webgpu`
+  confirms SSH publication access; credentials are untouched. Public deployment
+  verification will independently match successful Pages workflow head_sha via
+  publicGitHubAPI plus exact deployed HTTP/MIME/SHA bytes. Original verifier and
+  failed API result remain distinguished; no public deployment claimed yet.

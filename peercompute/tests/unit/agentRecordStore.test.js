@@ -20,6 +20,27 @@ async function setup(t, options = {}) {
 const input = { name: 'Ada', instructions: 'Describe local scenes.', goals: ['Observe'], summary: '', inferenceMode: 'local-only' };
 const deferred = () => { let resolve; const promise = new Promise((r) => { resolve = r; }); return { promise, resolve }; };
 
+test('pause provenance survives storage and ambiguous legacy or restored pauses remain owner-controlled', async t => {
+  const store = await setup(t), created = await store.create(input);
+  assert.equal(created.pauseCause, 'owner');
+  const automatic = await store.commit(created.agentId, { expectedRevision: created.revision,
+    head: { ...created, pauseCause: 'automatic' } });
+  assert.equal((await store.get(created.agentId)).pauseCause, 'automatic');
+  const exported = await store.export(created.agentId);
+  assert.equal(exported.agent.pauseCause, 'owner');
+  assert.equal((await store.restoreAsNew(exported)).pauseCause, 'owner');
+  const legacy = { ...automatic }; delete legacy.pauseCause;
+  await store._transaction(['heads'], 'readwrite', async tx => {
+    const data = tx.objectStore('heads');
+    const row = await new Promise((resolve, reject) => { const req = data.get(created.agentId); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); });
+    row.record = legacy; data.put(row);
+  });
+  assert.equal((await store.get(created.agentId)).pauseCause, 'owner');
+  assert.equal((await store.list()).find(head => head.agentId === created.agentId).pauseCause, 'owner');
+  assert.throws(() => normalizeAgentRecord({ ...created, pauseCause: 'any-peer' }), /pause cause/);
+  assert.equal(normalizeAgentRecord({ ...created, status: 'waiting' }).pauseCause, null);
+});
+
 test('private record and atomic operation journal survive reopening without replay', async (t) => {
   const indexedDBImpl = new IDBFactory(), lockManager = locks();
   const first = await setup(t, { name: 'reopen', indexedDBImpl, lockManager });

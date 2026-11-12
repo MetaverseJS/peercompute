@@ -57,12 +57,29 @@ whose text is discarded, then reserves room for the reply. This costs additional
 model work. Instructions or a current message that cannot fit receive a specific
 error rather than being silently cut.
 
-A resident returns to ready after its first two settled request failures and
-pauses after the third consecutive failure. A successful reply resets that count.
-Tap a paused cube you own and use **Resume** in its chat to accept new messages;
-failed messages are never replayed automatically. Other players cannot resume
-your resident. Deliberate pauses, uncertain outcomes and unsaved changes retain
-their recovery protections.
+Residents can continuously **Reflect and pursue goals automatically**. A slow
+observe/orient/decide/act loop chooses whether to rest, move, speak, or inspect
+the world through the resident's own camera. Vision runs only when requested;
+if no compatible vision model is available, reasoning continues with symbolic
+world observations. Camera images go to the selected managed model under the
+resident's local-only/network-assisted policy. Bounded private reflections and
+attributed visual interpretations are stored separately from chat history.
+The neural movement controller still runs independently of language inference.
+Residents can reflect, look and speak during continuous following; autonomous
+reflection leaves that follow task in control of movement.
+
+New residents can initiate short conversations with nearby residents and people;
+existing conversation preferences are preserved. Public delivery memories inform
+later reflections. Human chat takes priority. A busy or missing inference model
+leaves the request waiting rather than pausing both residents. Automatically
+paused residents retry readiness after a random **1–3 minutes** and continue
+with fresh work; interrupted or uncertain requests are never replayed. Explicit
+owner pauses stay paused until the owner chooses **Resume**.
+
+Unexpected model loss triggers reload of the same retained package after cleanup
+acknowledges. Recovery uses bounded attempt bursts with 1–3 minute cooldowns.
+Explicit unloading, deletion or closing the runtime cancels recovery; it does
+not redownload missing model files or repeat the failed prompt.
 
 Ask a resident you own for a physical task in its normal chat, for example “go
 far away and then come back.” A separate model decision admits the original
@@ -82,14 +99,17 @@ only matching physical receipts advance milestones.
 the detailed Objective panel retains the same controls.
 Human conversation takes priority over planning; a new movement command pauses
 the superseded objective. Progress is saved privately before work starts. Reload
-restores it paused. Resume keeps completed milestones, observes the world again
-and requests a fresh action for unfinished work. It never replays an interrupted
+restores unfinished work for acknowledged cleanup and automatic recovery; an
+owner-paused task stays paused. Recovery keeps completed milestones, observes the
+world again and requests a fresh action for unfinished work. It never replays an interrupted
 request. A saved “return to me” milestone resolves to the current owner after
 reload. Active objectives are excluded from public resident data
 and clones. In network-assisted mode, the selected inference peer receives the
 objective and observations for planning; local-only keeps inference on this
-device. Each objective has eight planning decisions, three consecutive failed
-attempts and a ten-minute lifetime; Resume does not renew its step/time allowance.
+device. Each execution window allows eight planning decisions, three consecutive
+failed attempts and ten minutes. Automatic recovery opens a fresh window after
+a 1–3 minute cooldown, preserving the plan, cumulative attempts and verified
+milestones. Pause can keep a recovering task paused; Resume renews it explicitly.
 Waiting for an available model does not spend a decision. Small models may choose
 incorrect steps or pause; completion is their assessment, not a guarantee that
 an arbitrary natural-language task was satisfied. Actual peer-hosted Nemotron 3

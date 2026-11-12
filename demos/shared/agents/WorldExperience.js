@@ -35,7 +35,7 @@ function rounded(value) {
 /** A prompt projection, never the evidence used for physics or durable memory.
  * Preserve exact observed target IDs and provenance; omit repeated transport
  * identity fields and diagnostic hashes that consume small-model context. */
-export function compactWorldContext({ scene = {}, senses, memories = [] }) {
+export function compactWorldContext({ scene = {}, senses, memories = [], currentMessageId }) {
   const context = { scene: rounded(scene), senses: {
     ...selected(senses, ['observedAt', 'requesterId']),
     self: rounded(selected(senses.self, ['id', 'name', 'position', 'velocity', 'status', 'motion'])),
@@ -68,9 +68,16 @@ export function compactWorldContext({ scene = {}, senses, memories = [] }) {
     context.memories.pop(); mark('memories');
   }
   const oversized = () => size(context) > WORLD_PROMPT_CONTEXT_BYTES;
-  if (oversized()) {
+  // Room metadata repeats the same bodies/transport identities already in senses.
+  // Compact it even below the byte ceiling: those opaque IDs tokenize poorly
+  // and otherwise leave no reply allowance in a 2K-context model after a hello.
+  if (scene.kind === 'public-room-chat' || oversized()) {
     context.scene = { ...compactSceneLabels(scene), note: 'Compact scene; current message is in the user turn',
-      ...(scene.messages ? { messages: scene.messages.slice(-2).map(message => {
+      // The full authenticated current message is already the user turn. Only
+      // remove that exact event from this optional scene projection, not older
+      // messages with the same text or anything in durable conversation history.
+      ...(scene.messages ? { messages: scene.messages.slice(-2).filter(message =>
+        !(scene.kind === 'public-room-chat' && currentMessageId && message.id === currentMessageId)).map(message => {
         const text = excerpt(message.text, 256);
         return { ...selected(message, ['id', 'peerId', 'agentId', 'name']), text,
           ...(text !== message.text ? { excerpted: true } : {}) };
@@ -143,7 +150,8 @@ export function createWorldExperience({ worldId, adapter, memory, getBody, onSta
       }
       catch (error) { signal.throwIfAborted(); report(`Resident memory: ${error.message}`); }
     }
-    const context = compactWorldContext({ scene, senses, memories });
+    const context = compactWorldContext({ scene, senses, memories,
+      currentMessageId: audience === 'public' && !observation ? eventId : undefined });
     const entries = [], body = getBody(key);
     // Compaction retains retrieval order and removes only trailing memories.
     // Match full stored text, never the 240-byte prompt excerpt. Shared reports,

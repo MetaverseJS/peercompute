@@ -102,6 +102,7 @@ export class ModelInferenceService {
     this.queue = [];
     this.active = null;
     this.closed = false;
+    this.lastLoss = null;
   }
 
   async loadModel({ sessionId = crypto.randomUUID(), manifestCid, manifest, signal, onProgress } = {}) {
@@ -114,6 +115,7 @@ export class ModelInferenceService {
     }
     CID.parse(manifestCid);
     throwIfAborted(signal);
+    this.lastLoss = null;
     const entry = { sessionId, manifestCid, affinityKey: `model:${sessionId}`, status: 'loading', reserved: false };
     this.session = entry;
     const operation = operationSignal(signal, this.loadTimeoutMs);
@@ -200,7 +202,7 @@ export class ModelInferenceService {
     task, messages, prompt, image, audio, maxNewTokens = MODEL_POLICY.maxNewTokens, seed, steps, width, height,
     signal, onProgress, onToken } = {}) {
     if (this.closed || this.session?.status !== 'ready' || sessionId !== this.session.sessionId) {
-      return Promise.reject(new Error('Requested model is not ready'));
+      return Promise.reject(Object.assign(new Error('Requested model is not ready'), { code: 'ERR_MODEL_NOT_READY' }));
     }
     const healthError = this.#checkReadiness(this.session);
     if (healthError) return Promise.reject(healthError);
@@ -227,7 +229,7 @@ export class ModelInferenceService {
       return Promise.reject(new Error('Duplicate inference request ID'));
     }
     if (this.active && this.queue.length >= MODEL_POLICY.maxQueued) {
-      return Promise.reject(new Error('Inference queue is full'));
+      return Promise.reject(Object.assign(new Error('Inference queue is full'), { code: 'ERR_INFERENCE_BUSY' }));
     }
     const entry = this.session;
     const operation = operationSignal(signal, this.generationTimeoutMs);
@@ -294,12 +296,20 @@ export class ModelInferenceService {
       // another request. Queued/pre-admission cancellation never reaches it.
       const retireAbortedRuntime = this.runtimeDefinition.terminateOnGenerationAbort === true
         && item.dispatched && (item.operation.controller.signal.aborted || error?.name === 'AbortError');
+      const lostAfterDispatch = item.dispatched && (error?.code === 'ERR_MODEL_RESIDENCY_INACTIVE'
+        || this.lastLoss?.sessionId === item.session.sessionId && this.lastLoss.recoverable === true
+        || !retireAbortedRuntime && (workerWasTerminated(error) || error?.code === 'ERR_COMPUTE_WORKER_TERMINATION_FAILED'
+          || /GPU device lost|Model session lost/.test(error?.message ?? '')));
       if (error?.code === 'ERR_MODEL_RESIDENCY_INACTIVE') {
         // Keep resident capacity quarantined until explicit unload acknowledges
         // termination, just as when a readiness query discovers the loss.
         this.#markUnavailable(item.session, error);
       } else if (retireAbortedRuntime || workerWasTerminated(error) || error?.code === 'ERR_COMPUTE_WORKER_TERMINATION_FAILED'
           || /GPU device lost|Model session lost/.test(error?.message ?? '')) {
+        // Cancelling a prompt is not a request to unload its model. The
+        // registry still owns desired residency; explicit unload/dispose has
+        // already disarmed it before cancelling this work.
+        this.#recordLoss(item.session, error);
         item.session.status = 'lost';
         this.#rejectQueue('Model worker was lost');
         try {
@@ -314,6 +324,10 @@ export class ModelInferenceService {
           error = new AggregateError([error, cleanupError], 'Lost worker resource cleanup failed');
         }
       }
+      // A post-dispatch health failure may hide completed output. Availability
+      // coordinators must not requeue this prompt, even if cleanup later allows
+      // a replacement to serve a new request. Keep it on aggregate errors too.
+      if (lostAfterDispatch) error.committed = true;
       item.reject(error);
     } finally {
       item.operation.dispose();
@@ -341,6 +355,7 @@ export class ModelInferenceService {
       sessionId: this.session?.sessionId ?? null, manifestCid: this.session?.manifestCid ?? null,
       activeRequestId: this.active?.requestId ?? null, queuedRequests: this.queue.length,
       artifactReads: this.session?.bridge?.getStats() ?? null,
+      loss: this.lastLoss ? { ...this.lastLoss } : null,
       evidence: this.session?.evidence ?? null };
   }
 
@@ -348,8 +363,16 @@ export class ModelInferenceService {
     const snapshot = this.getStatus();
     const entry = this.session;
     if (!entry || entry.status !== 'ready' || this.active) return snapshot;
-    const result = await this.computeManager.submitTask({ module: this.moduleUrl, exportName: 'handleModelTask',
-      data: { command: 'status', sessionId: entry.sessionId }, affinityKey: entry.affinityKey, requireWorker: true });
+    let result;
+    try {
+      result = await this.computeManager.submitTask({ module: this.moduleUrl, exportName: 'handleModelTask',
+        data: { command: 'status', sessionId: entry.sessionId }, affinityKey: entry.affinityKey, requireWorker: true });
+    } catch (error) {
+      if (workerWasTerminated(error) || /GPU device lost|Model session lost/.test(error?.message ?? '')) {
+        this.#markUnavailable(entry, error);
+      }
+      throw error;
+    }
     if (this.session === entry && ['lost', 'absent', 'unloaded'].includes(result.status)) {
       this.#markUnavailable(entry, new Error('Model session lost: resident worker reported an unavailable runtime'));
     }
@@ -367,9 +390,20 @@ export class ModelInferenceService {
 
   #markUnavailable(entry, error) {
     if (this.session !== entry || ['unloading', 'cleanup-failed'].includes(entry.status)) return;
+    this.#recordLoss(entry, error);
     entry.status = 'lost';
     this.#rejectQueue(error.message);
     if (this.active?.session === entry) this.active.operation.controller.abort(error);
+  }
+
+  #recordLoss(entry, error) {
+    if (entry.intendedUnload || this.closed) return;
+    if (this.lastLoss?.sessionId === entry.sessionId) return;
+    // Keep this independent of session lifetime: acknowledged cleanup can set
+    // session=null before the registry observes the unexpected loss.
+    this.lastLoss = { manifestCid: entry.manifestCid, sessionId: entry.sessionId,
+      recoverable: true, code: String(error?.code ?? 'ERR_MODEL_SESSION_LOST'),
+      message: String(error?.message ?? error).slice(0, 2048) };
   }
 
   #checkReadiness(entry) {
@@ -425,8 +459,10 @@ export class ModelInferenceService {
   }
 
   async unloadModel() {
+    this.lastLoss = null;
     const entry = this.session;
     if (!entry) return { status: 'absent' };
+    entry.intendedUnload = true;
     if (entry.unloadingPromise) return entry.unloadingPromise;
     const unloading = this.#unloadEntry(entry);
     entry.unloadingPromise = unloading;

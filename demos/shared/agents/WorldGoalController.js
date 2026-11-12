@@ -1,6 +1,8 @@
 import { validateWorldIntent } from './WorldIntent.js';
 import { parseWorldGoalDecision } from './WorldGoalDecision.js';
 import { activeWorldGoalMilestone, normalizeWorldGoalPosition, worldGoalMilestoneMatchesAction } from '../../../peercompute/src/peercompute/agents/WorldGoalPlan.js';
+import { classifyInferenceAvailability } from '../../../peercompute/src/peercompute/inference/InferenceAvailability.js';
+import { residentRecoveryDelay } from './WorldOodaLoop.js';
 
 const clone = value => value == null ? value : structuredClone(value);
 const terminal = goal => !goal || ['completed', 'cancelled'].includes(goal.status);
@@ -24,21 +26,27 @@ function brief(value, maximum = 240) {
  * Storage, inference, body authority and GPU workers are injected and borrowed. */
 export function createWorldGoalController({ store, worldId, observe, decide, dispatch, stop, owns,
   canRun = () => true, onChange = () => {}, now = Date.now,
-  setTimer = setTimeout, clearTimer = clearTimeout, tickMs = 1000, decisionTimeoutMs = 60000 } = {}) {
+  setTimer = setTimeout, clearTimer = clearTimeout, tickMs = 1000, decisionTimeoutMs = 60000,
+  autoRecovery = false, random = Math.random } = {}) {
   if (!store?.get || !store?.list || !store?.assign || !store?.commit
-      || ![observe, decide, dispatch, stop, owns, canRun, onChange, now, setTimer, clearTimer].every(fn => typeof fn === 'function')
+      || ![observe, decide, dispatch, stop, owns, canRun, onChange, now, setTimer, clearTimer, random].every(fn => typeof fn === 'function')
+      || typeof autoRecovery !== 'boolean'
       || typeof worldId !== 'string' || !worldId || !Number.isSafeInteger(tickMs) || tickMs < 100
       || tickMs > 30000 || !Number.isSafeInteger(decisionTimeoutMs) || decisionTimeoutMs < 1 || decisionTimeoutMs > 60000) {
     throw new TypeError('Objective controller requires bounded storage, model and physical adapters');
   }
-  const heads = new Map(), queues = new Map(), controls = new Set(), settling = new Map(), unresolved = new Map(), expedited = new Set();
+  const heads = new Map(), queues = new Map(), controls = new Set(), controlCounts = new Map(), settling = new Map(), unresolved = new Map(), expedited = new Set();
   let active, timer, closed = false, disposal, ticking, syncing, quietUntil = 0;
   const scope = agentId => ({ agentId, worldId });
   const owned = agentId => owns(scope(agentId)) === true;
   const assertOwned = agentId => { if (!owned(agentId)) throw failure('This host does not own the resident body', 'ERR_WORLD_GOAL_OWNERSHIP'); };
   const time = () => { const value = now(); if (!Number.isSafeInteger(value) || value < 0) throw new Error('Invalid objective clock'); return value; };
   const snapshot = goal => goal && unresolved.has(goal.agentId) ? { ...clone(goal), status: 'paused', recoveryRequired: true,
-    reason: 'Objective state or cleanup was not acknowledged. Owner Resume must reconcile it.' } : clone(goal);
+    pauseSource: goal.pauseSource === 'owner' || unresolved.get(goal.agentId).ownerHeld ? 'owner' : 'uncertain',
+    nextDecisionAt: goal.pauseSource === 'owner' || unresolved.get(goal.agentId).ownerHeld ? null : unresolved.get(goal.agentId).retryAt ?? null,
+    reason: autoRecovery && goal.pauseSource !== 'owner' && !unresolved.get(goal.agentId).ownerHeld
+      ? 'Objective state or cleanup was not acknowledged. Automatic recovery will retry cleanup before any new action.'
+      : 'Objective state or cleanup was not acknowledged. Owner Resume must reconcile it.' } : clone(goal);
   const notify = goal => {
     if (!goal || !owned(goal.agentId)) return goal;
     if (terminal(goal)) expedited.delete(goal.goalId);
@@ -51,9 +59,27 @@ export function createWorldGoalController({ store, worldId, observe, decide, dis
   const commit = async (goal, patch, event, signal) => {
     signal?.throwIfAborted();
     assertOwned(goal.agentId);
+    if (patch.status === 'paused') {
+      const source = patch.pauseSource ?? ({ 'model-paused': 'model', 'budget-exhausted': 'system',
+        'outcome-unknown': 'uncertain', 'physical-receipt': 'uncertain', 'dispatch-interrupted': 'uncertain',
+        restored: 'uncertain', 'planning-failed': 'system', 'step-settled': 'system' }[event?.type] ?? 'owner');
+      const automatic = autoRecovery && source !== 'owner';
+      const state = goal.recovery ?? (automatic ? { windowIndex: 0, windowStartedAt: time(), stepBase: patch.steps ?? goal.steps, retryAt: null } : null);
+      const retryScheduledAt = automatic ? time() : null;
+      const retryAt = automatic ? retryScheduledAt + residentRecoveryDelay(random) : null;
+      patch = { ...patch, pauseSource: source, nextDecisionAt: retryAt,
+        ...(state ? { recovery: { ...state, retryAt, retryScheduledAt } } : {}) };
+    } else if (patch.status) {
+      patch = { ...patch, pauseSource: null,
+        ...((patch.recovery ?? goal.recovery) ? { recovery: { ...(patch.recovery ?? goal.recovery), retryAt: null, retryScheduledAt: null } } : {}) };
+    }
     return notify(await store.commit(scope(goal.agentId), {
       goalId: goal.goalId, expectedRevision: goal.revision, patch, ...(event ? { event } : {}) }, { signal }));
   };
+  function quarantine(agentId, details = {}) {
+    unresolved.set(agentId, { ...unresolved.get(agentId), ...details,
+      ...(autoRecovery ? { retryAt: time() + residentRecoveryDelay(random) } : {}) });
+  }
   function locked(agentId, work) {
     const previous = queues.get(agentId) ?? Promise.resolve();
     const next = previous.catch(() => {}).then(work); queues.set(agentId, next);
@@ -67,11 +93,12 @@ export function createWorldGoalController({ store, worldId, observe, decide, dis
   }
   function budgetReason(goal) {
     if (goal.startedAt !== null && time() < goal.startedAt) return 'The objective clock moved backwards; wait for the clock to recover.';
-    if (goal.deadlineAt !== null && time() >= goal.deadlineAt) return 'The ten-minute objective budget is exhausted.';
-    if (goal.steps >= goal.limits.maxSteps) return 'The eight-step objective budget is exhausted.';
+    if (deadline(goal) !== null && time() >= deadline(goal)) return 'The ten-minute objective window is exhausted.';
+    if (goal.steps - (goal.recovery?.stepBase ?? 0) >= goal.limits.maxSteps) return 'The eight-step objective window is exhausted.';
     if (goal.failures >= goal.limits.maxFailures) return 'Three consecutive objective attempts failed.';
     return '';
   }
+  const deadline = goal => goal.recovery ? goal.recovery.windowStartedAt + goal.limits.maxDurationMs : goal.deadlineAt;
   function arm() {
     if (closed || timer !== undefined) return;
     timer = setTimer(() => { timer = undefined; void tick().catch(() => {}).finally(arm); }, tickMs);
@@ -94,7 +121,11 @@ export function createWorldGoalController({ store, worldId, observe, decide, dis
       await locked(saved.agentId, async () => {
         if (!owned(saved.agentId)) return;
         const goal = await read(saved.agentId);
-        if (!terminal(goal)) await commit(goal, { status: 'paused', reason: 'Restored objective. Its owner must Resume to plan from fresh observations.' },
+        if (autoRecovery && goal?.status === 'paused' && (goal.pauseSource === 'owner' || goal.recovery?.retryAt !== null && goal.recovery?.retryAt !== undefined)) return;
+        if (!terminal(goal)) await commit(goal, { status: 'paused',
+          ...(autoRecovery ? { pauseSource: goal.pendingAction || goal.pendingDecision ? 'uncertain' : 'system' } : {}),
+          reason: autoRecovery ? 'Restored objective; cleanup and fresh observations will precede automatic recovery.'
+            : 'Restored objective. Its owner must Resume to plan from fresh observations.' },
           { type: 'restored', text: 'Pending work was not replayed.' });
       });
     }
@@ -158,18 +189,27 @@ export function createWorldGoalController({ store, worldId, observe, decide, dis
         if (goal.status !== 'paused') goal = await commit(goal, { status: 'paused', reason: 'Owner acknowledged interrupted objective state.' },
           { type: 'reconciled' }, input.signal);
       }
+      if (autoRecovery && goal.pendingAction && !unresolved.get(input.agentId)?.requestId) {
+        await stop(scope(input.agentId), { goalId: goal.goalId, requestId: goal.pendingAction.requestId, reason: 'Owner recovery' });
+      }
       // An interrupted decision may have consumed compute. Charge it once,
       // discard its unknown result, and never restart that same request.
       const steps = goal.steps + (goal.pendingDecision ? 1 : 0);
       const candidate = { ...goal, steps, failures: 0 };
-      const reason = budgetReason(candidate);
+      const reason = autoRecovery ? '' : budgetReason(candidate);
       if (reason) {
         const paused = await commit(goal, { status: 'paused', reason, steps, pendingDecision: null, pendingAction: null },
           { type: 'budget-exhausted', text: reason }, input.signal);
         unresolved.delete(input.agentId); notify(paused); return paused;
       }
       const at = time();
+      // An explicit Resume can renew the allowance immediately. Persist that
+      // owner intent first; automatic recovery must obey its saved cooldown.
+      if (autoRecovery && goal.recovery && goal.pauseSource !== 'owner') goal = await commit(goal,
+        { status: 'paused', pauseSource: 'owner', reason: 'Owner requested a fresh objective window.' }, { type: 'owner-recovery-requested' }, input.signal);
       const updated = await commit(goal, { status: 'ready', reason: '', failures: 0, steps,
+        ...(autoRecovery ? { recovery: { windowIndex: goal.recovery ? goal.recovery.windowIndex + 1 : 0,
+          windowStartedAt: at, stepBase: steps, retryAt: null } } : {}),
         ...(goal.startedAt === null ? { startedAt: at, deadlineAt: at + goal.limits.maxDurationMs } : {}),
         ...(input.requesterId !== undefined ? { requesterId: input.requesterId } : {}),
         pendingDecision: null, pendingAction: null, nextDecisionAt: at },
@@ -179,35 +219,46 @@ export function createWorldGoalController({ store, worldId, observe, decide, dis
   }
   async function control(input, status, reason, internal = false) {
     if (!internal) { await ready; if (closed) throw new Error('Objective controller is closed'); }
-    let captured;
-    await locked(input.agentId, async () => {
+    let captured, admitted = false;
+    // Fence recovery as soon as the owner asks, including while an earlier
+    // asynchronous cleanup still holds the per-resident storage queue.
+    controls.add(input.agentId);
+    controlCounts.set(input.agentId, (controlCounts.get(input.agentId) ?? 0) + 1);
+    try { await locked(input.agentId, async () => {
       if (internal && !owned(input.agentId)) return;
       captured = await read(input.agentId);
       if (internal) { if (!captured || captured.goalId !== input.goalId || terminal(captured)) { captured = null; return; } }
       else assertCurrent(captured, input);
       if (terminal(captured)) throw failure('This objective is already finished');
-      controls.add(input.agentId);
+      admitted = true;
+      if (autoRecovery) captured = await commit(captured, { status: 'paused',
+        pauseSource: !internal || captured.pauseSource === 'owner' ? 'owner' : 'system', reason },
+      { type: internal ? 'system-pause-requested' : 'owner-pause-requested' });
       if (active?.agentId === input.agentId) active.controller.abort(cancelled(reason));
     });
     if (!captured || terminal(captured)) return captured;
-    try {
       if (active?.agentId === input.agentId) await active.done.catch(() => {});
       await settling.get(input.agentId)?.done;
       const requestId = captured.pendingAction?.requestId ?? unresolved.get(input.agentId)?.requestId;
-      if (requestId) await stop(scope(input.agentId), { goalId: captured.goalId, requestId, reason });
+      const stopped = requestId ? await stop(scope(input.agentId), { goalId: captured.goalId, requestId, reason }) : undefined;
       const result = await locked(input.agentId, async () => {
         const current = await read(input.agentId);
         if (current.goalId !== captured.goalId) throw failure('Objective ownership changed during cancellation');
         return commit(current, { status, reason, pendingDecision: null, pendingAction: null,
+          ...(status === 'paused' ? { pauseSource: !internal || stopped === false || current.pauseSource === 'owner' ? 'owner' : 'system' } : {}),
           steps: current.steps + (current.pendingDecision ? 1 : 0), nextDecisionAt: null },
         { type: status === 'cancelled' ? 'owner-cancelled' : 'paused', text: reason });
       });
       unresolved.delete(input.agentId); notify(result); return result;
     } catch (error) {
-      if (owned(input.agentId)) unresolved.set(input.agentId, { requestId: captured.pendingAction?.requestId });
+      if (admitted && owned(input.agentId)) quarantine(input.agentId, { requestId: captured?.pendingAction?.requestId, ownerHeld: !internal });
       notify(heads.get(input.agentId));
       throw error;
-    } finally { controls.delete(input.agentId); }
+    } finally {
+      const remaining = (controlCounts.get(input.agentId) ?? 1) - 1;
+      if (remaining) controlCounts.set(input.agentId, remaining);
+      else { controlCounts.delete(input.agentId); controls.delete(input.agentId); }
+    }
   }
   const pause = input => control(input, 'paused', 'Paused by the owner.');
   const cancel = input => control(input, 'cancelled', 'Cancelled by the owner.');
@@ -229,9 +280,16 @@ export function createWorldGoalController({ store, worldId, observe, decide, dis
       const goal = await read(run.agentId);
       if (!goal || goal.goalId !== run.goalId || goal.status !== 'planning' || goal.pendingDecision?.id !== run.id) return;
       const steps = goal.steps + 1;
+      if (classifyInferenceAvailability(error)) {
+        await commit(goal, { status: 'waiting-for-model', pendingDecision: null,
+          reason: brief(error.message || 'Waiting for available model capacity.'), nextDecisionAt: time() + 30000 },
+        { type: 'waiting-for-model', requestId: run.id }); return;
+      }
       if (error?.committed) {
         // Preserve the pending attempt for explicit owner reconciliation.
-        await commit(goal, { status: 'paused', reason: 'The planning outcome is uncertain; owner Resume is required.' },
+        await commit(goal, { status: 'paused', reason: autoRecovery
+          ? 'The planning outcome is uncertain; automatic recovery will discard it and observe afresh.'
+          : 'The planning outcome is uncertain; owner Resume is required.' },
           { type: 'outcome-unknown', requestId: run.id }); return;
       }
       const failures = run.interrupted ? goal.failures : Math.min(goal.limits.maxFailures, goal.failures + 1);
@@ -245,7 +303,7 @@ export function createWorldGoalController({ store, worldId, observe, decide, dis
     const run = { agentId: goal.agentId, goalId: goal.goalId, id: crypto.randomUUID(), stage: 'planning', controller: new AbortController() };
     active = run;
     const timeout = setTimer(() => run.controller.abort(cancelled('Objective planning deadline exceeded')),
-      Math.max(1, Math.min(decisionTimeoutMs, goal.deadlineAt - time())));
+      Math.max(1, Math.min(decisionTimeoutMs, deadline(goal) - time())));
     run.done = (async () => {
       const prepared = await locked(run.agentId, async () => {
         const current = await read(run.agentId);
@@ -269,7 +327,7 @@ export function createWorldGoalController({ store, worldId, observe, decide, dis
       if (!await canRun(scope(run.agentId), { goal: clone(prepared) })) {
         run.interrupted = true; throw cancelled('The resident is busy with a higher-priority task');
       }
-      if (output?.status === 'waiting-for-model') {
+      if (['waiting-for-model', 'busy'].includes(output?.status)) {
         await locked(run.agentId, async () => {
           const current = await read(run.agentId);
           if (current?.status !== 'planning' || current.pendingDecision?.id !== run.id || controls.has(run.agentId)) return;
@@ -326,13 +384,14 @@ export function createWorldGoalController({ store, worldId, observe, decide, dis
           if (acknowledgement?.applied === false) throw failure('The world did not apply this objective action');
         } catch (error) {
           if (!owned(run.agentId)) throw error;
-          unresolved.set(run.agentId, { requestId: issued.pendingAction.requestId });
-          await stop(scope(run.agentId), { goalId: issued.goalId, requestId: issued.pendingAction.requestId, reason: 'Dispatch failed or interrupted' });
+          quarantine(run.agentId, { requestId: issued.pendingAction.requestId });
+          const stopped = await stop(scope(run.agentId), { goalId: issued.goalId, requestId: issued.pendingAction.requestId, reason: 'Dispatch failed or interrupted' });
           await locked(run.agentId, async () => {
             const current = await read(run.agentId);
             if (current?.goalId !== issued.goalId || current.pendingAction?.requestId !== issued.pendingAction.requestId) return;
             await commit(current, { status: run.interrupted ? 'ready' : 'paused', reason: run.interrupted
               ? 'Waiting for the conversation to finish.' : 'Physical dispatch was interrupted; Resume plans afresh.',
+            ...(stopped === false ? { status: 'paused', pauseSource: 'owner', reason: 'A newer movement command superseded this objective.' } : {}),
             nextDecisionAt: time() + 30000, pendingAction: null },
               { type: 'dispatch-interrupted', requestId: issued.pendingAction.requestId });
           });
@@ -342,7 +401,7 @@ export function createWorldGoalController({ store, worldId, observe, decide, dis
     })().catch(async error => {
       try { await settleFailure(run, error); }
       catch (persistenceError) { if (owned(run.agentId)) {
-        unresolved.set(run.agentId, { ...unresolved.get(run.agentId), error: persistenceError }); notify(heads.get(run.agentId));
+        quarantine(run.agentId, { error: persistenceError }); notify(heads.get(run.agentId));
       } }
     }).finally(() => { clearTimer(timeout); if (active === run) active = null; arm(); });
   }
@@ -377,7 +436,7 @@ export function createWorldGoalController({ store, worldId, observe, decide, dis
       physical = { goalId: goal.goalId, requestId: pending.requestId };
       try { accepted = await commit(goal, { lastReceipt: receipt, pendingAction: null, status: 'paused',
         reason: 'Physical outcome saved; settling its motor.' }, { type: 'physical-receipt', requestId: pending.requestId }); }
-      catch (error) { settling.get(agentId)?.resolve(); settling.delete(agentId); unresolved.set(agentId, { requestId: pending.requestId }); throw error; }
+      catch (error) { settling.get(agentId)?.resolve(); settling.delete(agentId); quarantine(agentId, { requestId: pending.requestId }); throw error; }
     }); } catch (error) {
       if (physical) {
         try { await stop(scope(agentId), { ...physical, reason: 'Physical receipt could not be saved' }); }
@@ -405,12 +464,69 @@ export function createWorldGoalController({ store, worldId, observe, decide, dis
         const reason = event.status === 'cancelled' || superseded ? 'A newer movement command superseded this objective. Resume when ready.'
           : budgetReason({ ...current, failures });
         await commit(current, { pendingAction: null, failures, status: reason || controls.has(agentId) ? 'paused' : 'ready',
+          ...(event.status === 'cancelled' || superseded || controls.has(agentId) ? { pauseSource: 'owner' } : {}),
           reason: reason || `Physical ${event.type}: ${event.status}.`, nextDecisionAt: time() },
         { type: 'step-settled', requestId });
       });
       return true;
-    } catch (error) { if (owned(agentId)) { unresolved.set(agentId, { requestId }); notify(heads.get(agentId)); } throw error; }
+    } catch (error) { if (owned(agentId)) { quarantine(agentId, { requestId }); notify(heads.get(agentId)); } throw error; }
     finally { settling.get(agentId)?.resolve(); settling.delete(agentId); arm(); }
+  }
+  async function recoverAutomatically(agentId) {
+    if (!autoRecovery || closed || controls.has(agentId) || settling.has(agentId) || active?.agentId === agentId || !owned(agentId)) return;
+    const cached = heads.get(agentId), unknown = unresolved.get(agentId);
+    if (!cached || terminal(cached) || cached.pauseSource === 'owner' || unknown?.ownerHeld
+        || time() < (unknown?.retryAt ?? cached.recovery?.retryAt ?? Infinity)) return;
+    try { await locked(agentId, async () => {
+      let goal = await read(agentId);
+      if (!goal || terminal(goal) || goal.pauseSource === 'owner' || controls.has(agentId) || closed) return;
+      const uncertain = unresolved.get(agentId);
+      if (goal.status !== 'paused') {
+        // A failed write may have left the last acknowledged row in planning or
+        // acting. Save uncertainty before attempting any recovery side effect.
+        await commit(goal, { status: 'paused', pauseSource: 'uncertain', reason: 'Interrupted checkpoint requires cleanup before a new objective window.' },
+          { type: 'recovery-checkpoint' });
+        unresolved.delete(agentId); return;
+      }
+      if (!goal.recovery || time() < goal.recovery.retryAt || goal.recovery.retryAt === null
+          || time() < (goal.startedAt ?? 0)) return;
+      const requestId = goal.pendingAction?.requestId ?? uncertain?.requestId;
+      const stopped = requestId ? await stop(scope(agentId), { goalId: goal.goalId, requestId, reason: 'Automatic recovery of previous request' }) : undefined;
+      assertOwned(agentId);
+      const latest = await read(agentId);
+      if (latest?.goalId !== goal.goalId || latest.revision !== goal.revision || controls.has(agentId) || closed) return;
+      // A restored world has no old live request to cancel. Only an explicit
+      // idle sensor report establishes that absence; a newer stop command is
+      // still deliberate movement control and must remain owner-held.
+      const observed = await observe(scope(agentId), { goal: clone(goal) }); assertOwned(agentId);
+      validateWorldIntent({ type: 'stop' }, { observed, current: observed, now: time() });
+      if (controls.has(agentId) || closed) return;
+      if (stopped === false && observed.self?.motion?.status !== 'idle') {
+        await commit(goal, { status: 'paused', pauseSource: 'owner', reason: 'A newer movement command superseded this objective.',
+          pendingAction: null, pendingDecision: null, steps: goal.steps + (goal.pendingDecision ? 1 : 0) },
+        { type: 'recovery-superseded', ...(requestId ? { requestId } : {}) });
+        unresolved.delete(agentId); return;
+      }
+      // Fresh observations confirm that this body still exists. They are never
+      // used to invent a milestone receipt for an unknown former action.
+      const steps = goal.steps + (goal.pendingDecision ? 1 : 0);
+      await commit(goal, { status: 'ready', failures: 0, steps, pendingDecision: null, pendingAction: null,
+        reason: 'Automatic recovery started a fresh objective window; previous requests were not replayed.', nextDecisionAt: time(),
+        recovery: { windowIndex: goal.recovery.windowIndex + 1, windowStartedAt: time(), stepBase: steps, retryAt: null } },
+      { type: 'window-restarted', ...(requestId ? { requestId } : {}) });
+      unresolved.delete(agentId);
+    }); } catch (error) {
+      if (!owned(agentId)) return;
+      quarantine(agentId, { error }); notify(heads.get(agentId));
+      // Preserve the truthful old checkpoint. If storage works, make the next
+      // cleanup retry durable too; otherwise the in-memory quarantine fences it.
+      try { await locked(agentId, async () => {
+        const goal = await read(agentId);
+        if (!terminal(goal) && goal.pauseSource !== 'owner') await commit(goal,
+          { status: 'paused', pauseSource: 'uncertain', reason: brief(`Recovery cleanup failed: ${error.message ?? error}`) },
+          { type: 'recovery-failed' });
+      }); } catch { /* Quarantine remains until a later acknowledged retry. */ }
+    }
   }
   async function tick() {
     await ready; if (closed) return;
@@ -418,8 +534,9 @@ export function createWorldGoalController({ store, worldId, observe, decide, dis
     ticking = (async () => {
       forgetLostOwnership();
       for (const goal of [...heads.values()]) {
-        if (!owned(goal.agentId) || terminal(goal) || goal.status === 'paused' || controls.has(goal.agentId) || unresolved.has(goal.agentId)) continue;
-        if (goal.deadlineAt !== null && time() >= goal.deadlineAt) {
+        if (!owned(goal.agentId) || terminal(goal) || controls.has(goal.agentId)) continue;
+        if (goal.status === 'paused' || unresolved.has(goal.agentId)) { await recoverAutomatically(goal.agentId); continue; }
+        if (deadline(goal) !== null && time() >= deadline(goal)) {
           await control({ agentId: goal.agentId, goalId: goal.goalId }, 'paused', 'The ten-minute objective budget is exhausted.', true);
         }
       }

@@ -1,6 +1,7 @@
 import { AGENT_TASKS, normalizeAgentTask, packAgentContext, routeAgentTask } from './AgentRouter.js';
 import { normalizeAgentRecord } from './AgentContracts.js';
 import { validateGeneratedMesh, normalizeGeneratedMeshDescriptor } from '../inference/GeneratedMeshArtifact.js';
+import { classifyInferenceAvailability } from '../inference/InferenceAvailability.js';
 
 const copy = (value) => structuredClone(value);
 const abortError = (reason = 'Agent task cancelled') => new DOMException(String(reason?.message ?? reason), 'AbortError');
@@ -21,6 +22,7 @@ export class AgentRuntime {
     Object.assign(this, { store, inference, router, maximumQueued, taskTimeoutMs });
     this.capabilities = AGENT_CAPABILITIES;
     this.listeners = new Set(); this.entries = new Map(); this.activities = new Map(); this.unsaved = new Map();
+    this.ownerControls = new Map();
     this.queue = []; this.active = null; this.closed = false;
   }
   #open() { if (this.closed) throw new Error('Agent runtime is closed'); }
@@ -28,31 +30,32 @@ export class AgentRuntime {
     for (const listener of this.listeners) { try { Promise.resolve(listener(copy(event))).catch(() => {}); } catch { /* UI callbacks cannot change execution. */ } }
   }
   #activity(id, value) { this.activities.set(id, value); this.#emit({ type: 'activity', agentId: id, activity: value }); }
+  #holdOwnerControl(id) {
+    this.ownerControls.set(id, (this.ownerControls.get(id) ?? 0) + 1);
+    return () => {
+      const remaining = this.ownerControls.get(id) - 1;
+      if (remaining) this.ownerControls.set(id, remaining); else this.ownerControls.delete(id);
+    };
+  }
   #view(head) {
     if (!head) return head;
+    head = normalizeAgentRecord(head);
     const activity = this.activities.get(head.agentId);
+    const unsaved = this.unsaved.get(head.agentId);
+    const recovering = !!unsaved || (activeOperation(head) && !this.entries.has(head.agentId));
+    const ownerHeld = head.pauseCause === 'owner' || unsaved?.change.head?.pauseCause === 'owner';
     return { ...head, ...(activity ? { activity: copy(activity) } : {}),
-      ...(activeOperation(head) && !this.entries.has(head.agentId) ? { recoveryRequired: true } : {}) };
+      ...(recovering ? { recoveryRequired: true, pauseCause: ownerHeld ? 'owner' : 'automatic' } : {}) };
   }
   #assertSaved(id) {
     if (this.unsaved.has(id)) throw failure('Agent changes are not saved. Resume to retry saving before another action.', 'ERR_AGENT_UNSAVED');
   }
+  #preserveOwnerPause(id) {
+    const pending = this.unsaved.get(id);
+    if (pending) pending.change.head = { ...pending.change.head, status: 'paused', pauseCause: 'owner' };
+  }
   async list(options) { this.#open(); return (await this.store.list(options)).map((head) => this.#view(head)); }
   async get(id) { this.#open(); return this.#view(await this.store.get(id)); }
-  async #consecutiveFailures(id) {
-    let count = 0;
-    for (let after; ;) {
-      const page = await this.store.events(id, { after, limit: 100 });
-      for (const event of page) {
-        if (event.ownerResumed === true) count = 0;
-        else if (event.type === 'failed') count++;
-        else if (event.type !== 'request' && event.type !== 'edited') count = 0;
-      }
-      if (page.length < 100) break;
-      after = page.at(-1).sequence;
-    }
-    return count;
-  }
   events(id, options) { this.#open(); return this.store.events(id, options); }
   getAttachment(id, attachmentId) { this.#open(); return this.store.getAttachment(id, attachmentId); }
   subscribe(listener) { this.#open(); this.listeners.add(listener); return () => this.listeners.delete(listener); }
@@ -105,6 +108,7 @@ export class AgentRuntime {
   }
   run(id, options = {}) {
     this.#open(); this.#assertSaved(id);
+    if (this.ownerControls.has(id)) throw failure('Wait for the owner control change to finish', 'ERR_AGENT_BUSY');
     if (this.entries.has(id)) throw failure('This agent already has a queued or active task', 'ERR_AGENT_BUSY');
     if (this.queue.length >= this.maximumQueued) throw failure('Agent task queue is full', 'ERR_AGENT_QUEUE_FULL');
     const input = normalizeAgentTask(options);
@@ -115,13 +119,17 @@ export class AgentRuntime {
       dispatched: false, route: null };
     entry.promise = new Promise((resolve, reject) => Object.assign(entry, { resolve, reject }));
     entry.promise.catch(() => {}); // Cancellation can settle before the UI attaches its handler.
-    entry.timer = setTimeout(() => controller.abort(abortError('Agent task deadline exceeded')), this.taskTimeoutMs);
+    entry.timer = setTimeout(() => {
+      entry.deadlineExceeded = true;
+      controller.abort(abortError('Agent task deadline exceeded'));
+    }, this.taskTimeoutMs);
     entry.queuedAbort = () => {
       const index = this.queue.indexOf(entry);
       if (index < 0) return;
       this.queue.splice(index, 1); this.entries.delete(id); clearTimeout(entry.timer);
       signal.removeEventListener('abort', entry.queuedAbort);
-      this.#activity(id, { status: 'paused' }); entry.reject(abortError(signal.reason));
+      // A superseded queued turn never ran and must not pause its resident.
+      this.#activity(id, { status: 'waiting' }); entry.reject(abortError(signal.reason));
     };
     signal.addEventListener('abort', entry.queuedAbort, { once: true });
     this.entries.set(id, entry); this.queue.push(entry);
@@ -223,58 +231,93 @@ export class AgentRuntime {
           return { agentId: id, requestId, head: saved, result, route: actualRoute,
             ...(imageId ? { imageAttachmentId: imageId } : {}) };
         } catch (error) {
+          // Older/custom adapters may omit the execution marker on residency
+          // loss. The runtime knows generation was dispatched; expose that
+          // uncertainty to callers before any availability/retry classification.
+          if (entry.dispatched && error.code === 'ERR_MODEL_RESIDENCY_INACTIVE' && !error.committed) {
+            error = Object.assign(new Error(error.message, { cause: error }), error, { name: error.name, committed: true });
+          }
           if (!this.unsaved.has(id)) {
             // Acceptance by a peer is not generation. This explicit preflight
             // rejection guarantees no output; generic committed errors do not.
             const rejectedInput = error.code === 'ERR_MODEL_CONTEXT_BUDGET' && !entry.outputStarted && !combined.aborted;
-            const status = rejectedInput ? 'failed' : error.committed ? 'outcome-unknown' : combined.aborted ? 'cancelled' : 'failed';
-            // Each caller must submit a new task: readiness never replays the
-            // failed one. A durable three-failure streak requires owner Resume.
-            let nextStatus = 'paused';
-            if (status === 'failed') {
-              try { if (await this.#consecutiveFailures(id) < 2) nextStatus = 'waiting'; }
-              catch { /* Missing history cannot justify automatic recovery. */ }
-            }
+            const availability = !entry.outputStarted && !combined.aborted ? classifyInferenceAvailability(error) : null;
+            const preempted = combined.aborted && !entry.ownerCancelled && !entry.deadlineExceeded;
+            // Residency can be lost during a local generation. Readiness may
+            // recover, but the completed/unfinished outcome remains uncertain.
+            const uncertain = error.committed || (entry.dispatched && error.code === 'ERR_MODEL_RESIDENCY_INACTIVE');
+            const status = rejectedInput ? 'failed' : uncertain ? 'outcome-unknown'
+              : combined.aborted ? 'cancelled' : availability ? 'waiting' : 'failed';
+            // Errors enter an automatic cooldown owned by the caller's scheduler.
+            // Contention and human turn supersession are not resident failures.
+            // Readiness always requires a fresh request, never an old input replay.
+            const nextStatus = availability || preempted ? 'waiting' : 'paused';
+            const pauseCause = nextStatus === 'paused' ? entry.ownerCancelled ? 'owner' : 'automatic' : null;
             const text = String(error.message ?? error).slice(0, 2048);
             try {
-              await this.#save(id, saved, { head: { ...saved, status: nextStatus },
-                ...(prepared ? { operation: { id: requestId, status, ...(entry.route ? { route: entry.route } : {}) } } : {}),
+              await this.#save(id, saved, { head: { ...saved, status: nextStatus, pauseCause },
+                ...(prepared ? { operation: { id: requestId, status: status === 'waiting' ? 'cancelled' : status,
+                  ...(entry.route ? { route: entry.route } : {}) } } : {}),
                 event: { type: status, operationId: requestId, text, ...(entry.route ? { route: entry.route } : {}),
+                  ...(availability ? { waiting: availability.kind, code: availability.code } : {}),
+                  ...(preempted ? { superseded: true } : {}),
                   ...(!prepared ? { dispatched: false } : {}) } });
             } catch { /* #save preserves the failed checkpoint for explicit reconciliation. */ }
             if (!this.unsaved.has(id)) {
               entry.failureHandled = true;
-              this.#activity(id, { status: nextStatus, error: text, ...(entry.route ? { route: entry.route } : {}) });
+              this.#activity(id, { status: nextStatus, pauseCause, ...(availability ? { waiting: availability.kind } : {}),
+                error: text, ...(entry.route ? { route: entry.route } : {}) });
             }
           }
           throw error;
         }
       }, { signal });
     } catch (error) {
-      if (!this.unsaved.has(id) && !entry.failureHandled) this.#activity(id, { status: 'paused', error: String(error.message ?? error).slice(0, 2048) });
+      if (!this.unsaved.has(id) && !entry.failureHandled) this.#activity(id, {
+        status: error.code === 'ERR_AGENT_BUSY' || classifyInferenceAvailability(error) ? 'waiting' : 'paused',
+        error: String(error.message ?? error).slice(0, 2048) });
       throw error;
     }
   }
-  async cancel(id) {
+  async cancel(id, { automatic = false } = {}) {
+    if (typeof automatic !== 'boolean') throw new TypeError('Invalid automatic cancellation flag');
     const entry = this.entries.get(id);
     if (!entry) return false;
-    this.#activity(id, { status: 'cancelling', requestId: entry.requestId, ...(entry.route ? { route: entry.route } : {}) });
-    entry.controller.abort(abortError());
-    let cleanupError;
-    if (entry.dispatched) try { await this.inference.cancel?.(entry.requestId); } catch (error) { cleanupError = error; }
-    await entry.promise.catch(() => {});
-    if (cleanupError) throw cleanupError;
-    return true;
+    const release = automatic ? () => {} : this.#holdOwnerControl(id);
+    try {
+      entry.ownerCancelled ||= !automatic;
+      this.#activity(id, { status: 'cancelling', requestId: entry.requestId, ...(entry.route ? { route: entry.route } : {}) });
+      entry.controller.abort(abortError());
+      let cleanupError;
+      if (entry.dispatched) try { await this.inference.cancel?.(entry.requestId); } catch (error) { cleanupError = error; }
+      await entry.promise.catch(() => {});
+      if (!automatic) this.#preserveOwnerPause(id);
+      if (cleanupError) throw cleanupError;
+      if (!automatic && !this.unsaved.has(id)) {
+        await this.store.withRun(id, async ({ head, signal }) => {
+          if (head.status === 'paused' && head.pauseCause === 'owner') return;
+          await this.#save(id, head, { head: { ...head, status: 'paused', pauseCause: 'owner' },
+            event: { type: 'paused', text: 'Agent task cancelled by owner.' } }, signal);
+          this.#activity(id, { status: 'paused', pauseCause: 'owner' });
+        });
+      }
+      return true;
+    } finally { release(); }
   }
   async pause(id) {
-    this.#open(); await this.cancel(id); this.#assertSaved(id);
-    return this.store.withRun(id, async ({ head }) => {
-      if (activeOperation(head)) throw failure('Resume must acknowledge this interrupted operation before it can be changed', 'ERR_AGENT_RECOVERY_REQUIRED');
-      const paused = await this.#save(id, head, { head: { ...head, status: 'paused' }, event: { type: 'paused', text: 'Agent paused' } });
-      this.#activity(id, { status: 'paused' }); return paused;
-    });
+    this.#open(); const release = this.#holdOwnerControl(id);
+    try {
+      await this.cancel(id); this.#preserveOwnerPause(id); this.#assertSaved(id);
+      return await this.store.withRun(id, async ({ head }) => {
+        if (activeOperation(head)) throw failure('Resume must acknowledge this interrupted operation before it can be changed', 'ERR_AGENT_RECOVERY_REQUIRED');
+        const paused = await this.#save(id, head, { head: { ...head, status: 'paused', pauseCause: 'owner' }, event: { type: 'paused', text: 'Agent paused' } });
+        this.#activity(id, { status: 'paused', pauseCause: 'owner' }); return paused;
+      });
+    } finally { release(); }
   }
-  async resume(id, { signal } = {}) {
+  resume(id, options = {}) { return this.#ready(id, { ...options, automatic: false }); }
+  recoverReady(id, options = {}) { return this.#ready(id, { ...options, automatic: true }); }
+  async #ready(id, { signal, expectedRevision, automatic } = {}) {
     this.#open();
     if (this.entries.has(id)) throw failure('Wait for cleanup before resuming', 'ERR_AGENT_BUSY');
     return this.store.withRun(id, async ({ head, signal: lockSignal }) => {
@@ -282,24 +325,33 @@ export class AgentRuntime {
       combined.throwIfAborted();
       if (head.authority.hostId !== this.store.hostId) throw failure('This agent belongs to a different local installation', 'ERR_AGENT_AUTHORITY');
       const pending = this.unsaved.get(id);
+      if (expectedRevision !== undefined && head.revision !== expectedRevision) throw failure('Agent changed before recovery', 'ERR_AGENT_REVISION');
+      if (automatic && (this.ownerControls.has(id) || normalizeAgentRecord(head).pauseCause === 'owner'
+          || pending?.change.head?.pauseCause === 'owner')) {
+        throw failure('Only the owner may resume this deliberately paused agent', 'ERR_AGENT_OWNER_PAUSED');
+      }
+      if (automatic && !pending && !activeOperation(head) && ['waiting', 'completed'].includes(head.status)) {
+        this.#activity(id, { status: 'waiting' }); return head;
+      }
       let next;
       if (pending) {
         const changed = head.revision !== pending.expectedRevision;
         const change = changed ? { head, event: { type: 'stale-discarded', text: 'Unsaved stale changes discarded; the newer saved identity and context were preserved.' },
           ...(activeOperation(head) ? { operation: { ...head.pendingOperation, status: 'outcome-unknown' } } : {}) } : copy(pending.change);
-        change.head.status = 'waiting';
+        change.head.status = 'waiting'; change.head.pauseCause = null;
         // An unsaved dispatch intent must never become runnable after reconciliation.
         if (['prepared', 'dispatched'].includes(change.operation?.status)) {
           if (head.pendingOperation?.id === change.operation.id) change.operation.status = 'outcome-unknown';
           else { delete change.operation; change.event = { type: 'cancelled', text: 'Unsent task discarded while retrying an unsaved checkpoint.' }; delete change.attachments; }
         }
-        change.event = { ...change.event, ownerResumed: true };
+        change.event = { ...change.event, ...(automatic ? { automaticallyRecovered: true } : { ownerResumed: true }) };
         next = await this.store.commit(id, { expectedRevision: head.revision, ...change }, { signal: combined });
         this.unsaved.delete(id);
       } else {
-        next = await this.#save(id, head, { head: { ...head, status: 'waiting' },
+        next = await this.#save(id, head, { head: { ...head, status: 'waiting', pauseCause: null },
           ...(activeOperation(head) ? { operation: { ...head.pendingOperation, status: 'outcome-unknown' } } : {}),
-          event: { type: activeOperation(head) ? 'outcome-unknown' : 'resumed',
+          event: { type: activeOperation(head) ? 'outcome-unknown' : automatic ? 'recovered' : 'resumed',
+            ...(automatic ? { automaticallyRecovered: true } : { ownerResumed: true }),
             text: activeOperation(head) ? 'Interrupted operation acknowledged; no task was replayed.' : 'Ready for a new direct task; no task was started.' } }, combined);
       }
       this.#activity(id, { status: 'waiting' }); this.#emit({ type: 'changed', agentId: id, head: next }); return next;
@@ -309,7 +361,7 @@ export class AgentRuntime {
     if (this.disposing) return this.disposing;
     this.closed = true;
     this.disposing = (async () => {
-      const results = await Promise.allSettled([...this.entries.keys()].map((id) => this.cancel(id)));
+      const results = await Promise.allSettled([...this.entries.keys()].map((id) => this.cancel(id, { automatic: true })));
       this.listeners.clear();
       const errors = results.filter((result) => result.status === 'rejected').map((result) => result.reason);
       if (errors.length) { this.disposing = null; throw new AggregateError(errors, 'Agent cleanup is incomplete'); }

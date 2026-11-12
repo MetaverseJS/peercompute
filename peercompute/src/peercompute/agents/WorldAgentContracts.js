@@ -47,6 +47,7 @@ export function normalizeAgentEmbodiments(input) {
     if (!/^#[a-f0-9]{6}$/i.test(binding.color ?? '') || typeof binding.shared !== 'boolean') throw new Error('Invalid agent body settings');
     if (binding.respondToWorldChat !== undefined && typeof binding.respondToWorldChat !== 'boolean') throw new Error('Invalid world chat preference');
     if (binding.initiateConversations !== undefined && typeof binding.initiateConversations !== 'boolean') throw new Error('Invalid conversation initiative preference');
+    if (binding.autonomous !== undefined && typeof binding.autonomous !== 'boolean') throw new Error('Invalid autonomous reflection preference');
     if (binding.selfModifiable !== undefined && typeof binding.selfModifiable !== 'boolean') throw new Error('Invalid self-modification preference');
     if (binding.allowCloning !== undefined && typeof binding.allowCloning !== 'boolean') throw new Error('Invalid resident cloning preference');
     if (binding.shareMemories !== undefined && typeof binding.shareMemories !== 'boolean') throw new Error('Invalid resident memory-sharing preference');
@@ -59,6 +60,7 @@ export function normalizeAgentEmbodiments(input) {
       ...(binding.movement === undefined ? {} : { movement: binding.movement }) };
     if (binding.standingGoal !== undefined) result.standingGoal = normalizeStandingSocialGoal(binding.standingGoal);
     if (binding.selfModifiable !== undefined) result.selfModifiable = binding.selfModifiable;
+    if (binding.autonomous !== undefined) result.autonomous = binding.autonomous;
     if (binding.appearancePrompt !== undefined) {
       if (typeof binding.appearancePrompt !== 'string' || binding.appearancePrompt.includes('\0')
           || utf8.encode(binding.appearancePrompt).length > 2048) throw new Error('Invalid appearance prompt');

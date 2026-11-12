@@ -7,6 +7,7 @@ export const AGENT_LIMITS = Object.freeze({ headBytes: 64 * 1024, eventBytes: 12
   operations: 256, attachmentBytes: 4 * 1024 * 1024, attachmentCount: 64,
   attachmentTotalBytes: 64 * 1024 * 1024, exportBytes: 12 * 1024 * 1024 });
 const statuses = new Set(['paused', 'running', 'waiting', 'completed', 'error']);
+const pauseCauses = new Set(['owner', 'automatic']);
 export const AGENT_OPERATION_STATUSES = Object.freeze(['prepared', 'dispatched', 'completed', 'failed', 'cancelled', 'outcome-unknown']);
 export const activeAgentOperation = (operation) => ['prepared', 'dispatched'].includes(operation?.status);
 const encoder = new TextEncoder();
@@ -71,9 +72,13 @@ export function normalizeAgentRecord(input) {
   for (const key of ['createdAt', 'updatedAt']) if (!Number.isSafeInteger(input[key]) || input[key] < 0) throw new TypeError('Invalid agent timestamp');
   const pendingOperation = input.pendingOperation == null ? null : normalizeAgentOperation(input.pendingOperation);
   if (pendingOperation && !activeAgentOperation(pendingOperation)) throw new TypeError('Only active operations may be pending');
+  if (input.pauseCause != null && !pauseCauses.has(input.pauseCause)) throw new TypeError('Invalid agent pause cause');
+  // Old paused records do not prove an automatic failure. Keep them under owner
+  // control; active work interrupted by reload is reconciled by the runtime.
+  const pauseCause = input.status === 'paused' ? input.pauseCause ?? 'owner' : null;
   const record = { schema: AGENT_SCHEMA, agentId: input.agentId, agentKind: 'general', ...fields,
     authority: { kind: 'local', hostId: input.authority.hostId, epoch: 0 }, revision: input.revision,
-    status: input.status, createdAt: input.createdAt, updatedAt: input.updatedAt, pendingOperation };
+    status: input.status, pauseCause, createdAt: input.createdAt, updatedAt: input.updatedAt, pendingOperation };
   return boundedAgentJson(record, AGENT_LIMITS.headBytes, 'head').value;
 }
 export function normalizeAgentEvent(input) {

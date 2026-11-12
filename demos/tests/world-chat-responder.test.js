@@ -61,6 +61,31 @@ test('unavailable queues without dispatch; availability changes from its own res
   assert.equal(f.publications[0][1].signal.aborted, false);
 });
 
+test('two residents wait through contested inference and each answer the same human once', async t => {
+  let firstBusy = true;
+  const calls = [], output = [];
+  const f = fixture(t, { retryMs: 10, respond: async (resident, incoming) => {
+    calls.push([resident.agentId, incoming.id]);
+    if (resident.agentId === 'ada' && firstBusy) { firstBusy = false; throw Object.assign(Error('Peer is busy'), { code: 'ERR_INFERENCE_BUSY' }); }
+    return `Hello from ${resident.agentId}`;
+  }, publish: async message => output.push(message) });
+  f.bodies.push(body('bea')); f.responder.receive(message('hello', { text: 'Hello' }));
+  await until(() => output.length === 2);
+  assert.deepEqual(output.map(x => x.agentId).sort(), ['ada', 'bea']);
+  assert(calls.every(([, id]) => id === 'hello'));
+  assert.equal(f.statuses.filter(x => x.status === 'error' || x.status === 'cancelled').length, 0);
+  assert(f.statuses.some(x => x.status === 'waiting'));
+});
+
+test('typed deferral preserves a conversation turn; publication failure is never retried', async t => {
+  let attempts = 0, publishes = 0;
+  const f = fixture(t, { retryMs: 10, respond: async () => ++attempts < 4 ? { status: 'waiting', reason: 'Queue full' } : 'Ready',
+    publish: async () => { publishes++; throw Object.assign(Error('Delivery unknown'), { code: 'ERR_INFERENCE_BUSY' }); } });
+  f.responder.receive(message('wait'));
+  await until(() => publishes === 1); await delay(30);
+  assert.equal(attempts, 4); assert.equal(publishes, 1);
+});
+
 test('cooldown preserves only the latest request and drains after the bounded interval', async t => {
   const f = fixture(t, { cooldownMs: 25 });
   f.responder.receive(message('first')); await until(() => f.publications.length === 1);

@@ -123,18 +123,23 @@ function fixture({ retained = false, retainedRecords = [], catalogInfo, connecte
 function registryFixture(options = {}) {
   return fixture({ ...options, configureRuntime(runtime, calls) {
     const fallback = runtime.service; let selected = fallback, sequence = 0;
-    const registry = new ResidentModelRegistry({ artifactStore: runtime.store,
+    const registry = new ResidentModelRegistry({ artifactStore: runtime.store, recovery: options.recovery,
       async createService({ manifestCid }) {
         let status = { status: 'idle' };
         return { getStatus: () => status,
           async loadModel() { status = { status: 'ready', manifestCid, sessionId: `registry-${++sequence}` }; return { workerId: sequence }; },
+          async generate() { calls.push(`registry-generate:${manifestCid}`); return { text: 'Recovered model response' }; },
           async dispose() { calls.push(`cleanup:${manifestCid}`); await options.cleanup?.(manifestCid); status = { status: 'idle' }; },
         };
       } });
+    registry.subscribe(event => { if (event.type === 'recovered' && selected === event.previousService) selected = event.service; });
     Object.defineProperty(runtime, 'service', { get: () => selected });
     runtime.managesArtifactUses = true;
     runtime.getServiceForModel = key => registry.getService(key);
     runtime.getResidentModelStates = () => registry.list();
+    runtime.subscribeResidentModels = listener => registry.subscribe(listener);
+    runtime.stopResidentRecovery = key => registry.stopRecovery(key);
+    runtime.checkResidentRecovery = () => registry.checkRecovery();
     runtime.load = async (key, loadOptions) => {
       calls.push(`load:${key}`); const result = await registry.load(key, loadOptions);
       selected = registry.getService(key); return result;
@@ -174,6 +179,45 @@ test('stored reload acknowledges an idle cancelled registry entry before loading
   assert.equal(f.runtime.getServiceForModel(secondCid), preserved);
   assert.equal((await f.callbacks.getLocalState()).hostedModels.length, 2);
   assert(!f.calls.some(call => ['import', 'import-hub', 'fetch-peer'].includes(call)));
+  await f.runtime.dispose();
+});
+
+test('recovered retained residents restore console admission and peer hosting without imports or prompt replay', async () => {
+  const f = registryFixture({ retained: true, recovery: { pollMs: 100_000 } });
+  await f.controller.initialize(); await f.runtime.loadStoredModel(cid);
+  const original = f.runtime.service;
+  const status = original.getStatus();
+  Object.assign(status, { status: 'lost', loss: { recoverable: true, manifestCid: cid, sessionId: status.sessionId } });
+  assert.equal(f.callbacks.getLocalState().hostedModels.length, 0);
+  await f.runtime.checkResidentRecovery();
+  assert.notEqual(f.runtime.service, original);
+  assert.equal(f.runtime.listInferenceTargets().filter(entry => entry.local).length, 1);
+  assert.equal(f.callbacks.getLocalState().hostedModels.length, 1);
+  assert.equal(f.calls.filter(call => call === 'use').length, 1);
+  assert(!f.calls.includes('release-use'));
+  assert(!f.calls.some(call => ['import', 'import-hub', 'fetch-peer'].includes(call) || call.startsWith('registry-generate:')));
+  assert.equal((await f.runtime.generate(`local:${cid}`, { prompt: 'A new request' })).text, 'Recovered model response');
+  await f.runtime.unload(cid); await f.runtime.checkResidentRecovery();
+  assert.equal(f.runtime.listResidentModels().length, 0);
+  await f.runtime.dispose();
+});
+
+test('deleting a model during recovery disarms replacement and removes even a temporarily sessionless entry', async () => {
+  let releaseCleanup, cleanupStarted, holdCleanup = false;
+  const cleanup = new Promise(resolve => { releaseCleanup = resolve; });
+  const started = new Promise(resolve => { cleanupStarted = resolve; });
+  const f = registryFixture({ retained: true, recovery: { pollMs: 100_000 }, cleanup: async () => {
+    if (holdCleanup) { cleanupStarted(); await cleanup; }
+  } });
+  await f.controller.initialize(); await f.runtime.loadStoredModel(cid);
+  const status = f.runtime.service.getStatus();
+  Object.assign(status, { status: 'lost', loss: { recoverable: true, manifestCid: cid, sessionId: status.sessionId } });
+  holdCleanup = true; const recovering = f.runtime.checkResidentRecovery(); await started;
+  const deleting = f.runtime.deleteStoredModel(cid);
+  holdCleanup = false; releaseCleanup(); await recovering; await deleting;
+  assert.equal(f.records.has(cid), false); assert.equal(f.runtime.listResidentModels().length, 0);
+  await f.runtime.checkResidentRecovery(); assert.equal(f.runtime.getServiceForModel(cid), null);
+  assert.equal(f.calls.filter(call => call === `load:${cid}`).length, 1);
   await f.runtime.dispose();
 });
 
@@ -320,7 +364,7 @@ test('a selected peer with a full cached queue refreshes capacity once without s
     await f.controller.initialize(); f.peer.hosts = [selected];
     const request = f.runtime.generate(`peer:${cid}`, { prompt: 'Describe leaves.' });
     if (remainsFull) {
-      await assert.rejects(request, { code: 'ERR_INFERENCE_NO_MODEL' });
+      await assert.rejects(request, { code: 'ERR_INFERENCE_BUSY' });
       assert(!f.calls.includes('remote'));
     } else assert.equal((await request).route.manifestCid, cid);
     assert.equal(f.calls.filter((call) => call === 'refresh').length, 1);

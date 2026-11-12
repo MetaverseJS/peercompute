@@ -48,6 +48,7 @@ async function boot() {
     window.start = async () => {
       const bodies = new Map(); window.bodyMap = bodies;
       host = installWorldAgents({ worldId: 'cubechat:test', worldLabel: 'CubeChat', socialOptions: window.socialOptions ?? {}, goalOptions: { tickMs: 100 },
+        oodaOptions: window.oodaOptions ?? { enabled: false },
         worldKnowledge: CUBECHAT_GUIDE_FACTS.join(' '),
         ...(window.defaultGuide ? { defaultResident: cubeGuidePreset('cubechat:test') } : {}),
         publishWorldMessage: async (input, options) => {
@@ -71,7 +72,7 @@ async function boot() {
           getContext: (body) => ({ position: [...body.position], ...window.fixtureScene }), focus: () => {},
           setAppearance: (key, image) => calls.push(['face', key, image]),
           ...(window.embodiedFixture ? {
-            observe: key => ({ self: { id: `resident:${bodies.get(key)?.ownerPeerId}:${bodies.get(key)?.agentId}`, position: [1, 3, 5] }, participants: window.fixtureParticipants ?? [{ id: 'human:owner', peerId: 'owner', kind: 'human', name: 'Owner', position: [25, 3, 5], distance: 24 }], requesterId: 'human:owner', obstacles: [] }),
+            observe: key => ({ self: { id: `resident:${bodies.get(key)?.ownerPeerId}:${bodies.get(key)?.agentId}`, position: [1, 3, 5], ...(window.fixtureMotion ? { motion: window.fixtureMotion } : {}) }, participants: window.fixtureParticipants ?? [{ id: 'human:owner', peerId: 'owner', kind: 'human', name: 'Owner', position: [25, 3, 5], distance: 24 }], requesterId: 'human:owner', obstacles: [] }),
             setIntent: (key, intent) => { calls.push(['intent', key, intent]); window.lastIntent = { key, ...intent }; },
             setMovement: (key, mode) => calls.push(['movement', key, mode]),
             subscribeOutcomes: listener => { window.physicalOutcome = listener; return () => { window.physicalOutcome = null; }; },
@@ -92,6 +93,7 @@ async function boot() {
           const imageCandidate = { ...candidate, task: 'text-to-image', runtime: 'onnx-diffusion', outputModalities: ['image'] };
           const agents = new AgentRuntime({ store, inference: { listCandidates: async ({ task }) => {
             if (window.waitPreflight && task === 'text-generation') await new Promise(resolve => { window.finishPreflight = resolve; });
+            if (window.noTextProvider && task === 'text-generation') window.missingProviderChecks = (window.missingProviderChecks ?? 0) + 1;
             return window.noTextProvider && task === 'text-generation' ? [] : [task === 'text-to-image' ? imageCandidate : candidate];
           },
             generate: async (_candidate, input, { signal }) => {
@@ -108,6 +110,13 @@ async function boot() {
                 return { text: JSON.stringify(window.fixtureIntentDecision ?? { intent: null }), finishReason: 'stop' };
               }
               calls.push(['generate', input]);
+              if (window.worldGenerationLoss && input.prompt.includes('public world-chat')) {
+                throw Object.freeze(Object.assign(new Error('Custom adapter lost resident session after dispatch'), { code: 'ERR_MODEL_RESIDENCY_INACTIVE' }));
+              }
+              if (window.busyWorldRequests > 0 && input.prompt.includes('public world-chat')) {
+                window.busyWorldRequests--;
+                throw Object.assign(new Error('Peer model queue is full'), { code: 'ERR_INFERENCE_BUSY' });
+              }
               if (input.messages?.[0]?.content.startsWith(WORLD_GOAL_INSTRUCTIONS)
                   && input.messages[0].content.includes(WORLD_GOAL_OBSERVATIONS_MARKER)) {
                 calls.push(['objective-generation']);
@@ -603,9 +612,142 @@ test('world-chat without a capable model does not pause the resident or create a
     await host.spawn({ name: 'Ada', respondToWorldChat: true }); window.noTextProvider = true;
     host.receiveWorldMessage({ peerId: 'human', id: 'one', name: 'Human', text: 'Hello' });
   });
-  await page.waitForFunction(() => view.status?.startsWith('World chat:'));
-  const result = await page.evaluate(async () => ({ head: (await agents.list())[0], calls }));
+  await page.waitForFunction(() => window.missingProviderChecks >= 2);
+  const result = await page.evaluate(async () => ({ head: (await agents.list())[0], calls,
+    events: await agents.events((await agents.list())[0].agentId) }));
   assert.notEqual(result.head.status, 'paused'); assert.equal(result.calls.filter(c => c[0] === 'generate').length, 0);
+  assert.equal(result.events.some(event => event.type === 'request' || event.type === 'failed'), false);
+  await page.evaluate(() => { window.noTextProvider = false; });
+  await page.waitForFunction(() => calls.some(call => call[0] === 'public-message'));
+  assert.equal(await page.evaluate(() => calls.filter(call => call[0] === 'public-message').length), 1);
+});
+
+test('two real residents answer one world hello after contested admission without pausing either', async t => {
+  const page = await fixture(t);
+  const ids = await page.evaluate(async () => {
+    const a = await host.spawn({ name: 'Ada', respondToWorldChat: true });
+    const b = await host.spawn({ name: 'Bea', respondToWorldChat: true });
+    window.busyWorldRequests = 1;
+    host.receiveWorldMessage({ peerId: 'human', id: 'contested-hello', name: 'Human', text: 'Hello both residents' });
+    return [a.agentId, b.agentId];
+  });
+  await page.waitForFunction(() => calls.filter(call => call[0] === 'public-message').length >= 2);
+  const result = await page.evaluate(async ids => ({
+    generated: calls.filter(call => call[0] === 'generate').map(call => call[1]),
+    published: calls.filter(call => call[0] === 'public-message').map(call => call[1]),
+    heads: await Promise.all(ids.map(id => agents.get(id))), events: await Promise.all(ids.map(id => agents.events(id))),
+  }), ids);
+  assert.equal(result.generated.length, 3);
+  assert(result.generated.every(input => input.prompt.includes('Hello both residents')));
+  assert.deepEqual(result.published.map(message => message.agentId).sort(), [...ids].sort());
+  assert(result.heads.every(head => head.status !== 'paused' && head.pauseCause === null));
+  assert.equal(result.events.flat().filter(event => event.type === 'waiting').length, 1);
+  assert.equal(result.events.flat().filter(event => event.type === 'failed').length, 0);
+  assert.equal(result.events.flat().filter(event => event.type === 'result').length, 2);
+});
+
+test('a new world hello supersedes a held turn for two residents without stale speech or paused heads', async t => {
+  const page = await fixture(t);
+  const ids = await page.evaluate(async () => {
+    const a = await host.spawn({ name: 'Ada', respondToWorldChat: true });
+    const b = await host.spawn({ name: 'Bea', respondToWorldChat: true });
+    window.holdWorldGeneration = true;
+    host.receiveWorldMessage({ peerId: 'human', id: 'older-hello', name: 'Human', text: 'Obsolete hello' });
+    return [a.agentId, b.agentId];
+  });
+  await page.waitForFunction(() => typeof window.finishWorldGeneration === 'function');
+  await page.evaluate(() => {
+    host.receiveWorldMessage({ peerId: 'human', id: 'current-hello', name: 'Human', text: 'Current hello for both' });
+    window.holdWorldGeneration = false; window.fixtureAnswer = 'Reply to the current hello.'; finishWorldGeneration();
+  });
+  await page.waitForFunction(() => calls.filter(call => call[0] === 'public-message').length >= 2, null, { timeout: 15000 });
+  const result = await page.evaluate(async ids => ({
+    generated: calls.filter(call => call[0] === 'generate').map(call => call[1]),
+    published: calls.filter(call => call[0] === 'public-message').map(call => call[1]),
+    heads: await Promise.all(ids.map(id => agents.get(id))),
+  }), ids);
+  assert.equal(result.generated.filter(input => input.prompt.endsWith('Obsolete hello')).length, 1);
+  assert.equal(result.generated.filter(input => input.prompt.endsWith('Current hello for both')).length, 2);
+  assert.deepEqual(result.published.map(message => message.agentId).sort(), [...ids].sort());
+  assert(result.published.every(message => message.text === 'Reply to the current hello.'));
+  assert(result.heads.every(head => head.status !== 'paused' && head.pauseCause === null));
+});
+
+test('world chat never replays uncertain custom-adapter execution after resident readiness recovers', async t => {
+  const page = await fixture(t);
+  const id = await page.evaluate(async () => {
+    const head = await host.spawn({ name: 'Ada', respondToWorldChat: true });
+    window.worldGenerationLoss = true;
+    host.receiveWorldMessage({ peerId: 'human', id: 'uncertain-hello', name: 'Human', text: 'Do this once' });
+    return head.agentId;
+  });
+  await page.waitForFunction(() => host.getStatus().bodies.some(body => body.pauseCause === 'automatic'));
+  const failed = await page.evaluate(async id => ({ head: await agents.get(id), operations: await agents.store.operations(id) }), id);
+  assert.equal(failed.head.status, 'paused'); assert.equal(failed.operations.at(-1).status, 'outcome-unknown');
+  await page.evaluate(async id => { window.worldGenerationLoss = false; await agents.recoverReady(id); }, id);
+  await page.waitForTimeout(1300);
+  assert.equal(await page.evaluate(() => calls.filter(call => call[0] === 'generate').length), 1);
+  assert.equal(await page.evaluate(() => calls.filter(call => call[0] === 'public-message').length), 0);
+  await page.evaluate(() => host.receiveWorldMessage({ peerId: 'human', id: 'fresh-hello', name: 'Human', text: 'A new independent hello' }));
+  await page.waitForFunction(() => calls.some(call => call[0] === 'public-message'));
+  assert.equal(await page.evaluate(() => calls.filter(call => call[0] === 'generate').length), 2);
+});
+
+test('host reflects during continuous follow without interrupting a one-shot move', async t => {
+  const page = await fixture(t);
+  await page.evaluate(async () => {
+    await host.dispose(); window.embodiedFixture = true;
+    window.fixtureMotion = { type: 'move-to', status: 'moving' };
+    window.oodaAt = Date.now(); window.oodaOptions = { now: () => window.oodaAt, tickMs: 10, initialDelayMs: 0 };
+    window.fixtureAnswer = '{"decision":"wait","reflection":"Keep following and observe."}';
+    await start(); await host.spawn({ name: 'Follower', autonomous: true });
+    window.oodaAt += 31000; // Let the deliberate owner-spawn quiet period expire.
+  });
+  await page.waitForTimeout(150);
+  assert.equal(await page.evaluate(() => calls.filter(call => call[0] === 'generate').length), 0);
+  await page.evaluate(() => { window.fixtureMotion = { type: 'follow', status: 'moving' }; window.oodaAt += 6000; });
+  await page.waitForFunction(() => calls.some(call => call[0] === 'generate'));
+  await page.waitForFunction(() => host.getStatus().ooda.residents.some(body => body.status === 'reflecting'));
+  const result = await page.evaluate(() => ({ generated: calls.filter(call => call[0] === 'generate'), intents: calls.filter(call => call[0] === 'intent') }));
+  assert.equal(result.generated.length, 1); assert.equal(result.intents.length, 0);
+  assert.match(JSON.stringify(result.generated[0]), /current follow task/);
+});
+
+test('host cooldown recovers an automatic error despite another queued hello while preserving an owner pause', async t => {
+  const page = await fixture(t);
+  const ids = await page.evaluate(async () => {
+    await host.dispose(); window.embodiedFixture = true; window.oodaAt = Date.now();
+    window.oodaOptions = { now: () => window.oodaAt, random: () => 0, tickMs: 10, initialDelayMs: 180000 };
+    await start();
+    const a = await host.spawn({ name: 'Recoverable', respondToWorldChat: true });
+    const b = await host.spawn({ name: 'Waiting' });
+    const c = await host.spawn({ name: 'Owner paused' }); await agents.pause(c.agentId);
+    window.worldGenerationLoss = true;
+    host.receiveWorldMessage({ peerId: 'human', id: 'lost-once', name: 'Human', text: 'One uncertain task' });
+    return [a.agentId, b.agentId, c.agentId];
+  });
+  await page.waitForFunction(id => host.getStatus().bodies.find(body => body.agentId === id)?.pauseCause === 'automatic', ids[0]);
+  await page.evaluate(async ids => {
+    await host.edit({ key: 'local:' + ids[1], respondToWorldChat: true });
+    window.worldGenerationLoss = false; window.noTextProvider = true;
+    host.receiveWorldMessage({ peerId: 'human', id: 'pending-hello', name: 'Human', text: 'Wait for a model' });
+  }, ids);
+  await page.waitForFunction(() => window.missingProviderChecks >= 2);
+  const before = await page.evaluate(async ids => {
+    const state = host.getStatus().ooda.residents.find(body => body.agentId === ids[0]);
+    window.oodaAt = state.nextAt - 1; return { nextAt: state.nextAt, heads: await Promise.all(ids.map(id => agents.get(id))) };
+  }, ids);
+  await page.waitForTimeout(50);
+  assert.equal(await page.evaluate(async id => (await agents.get(id)).pauseCause, ids[0]), 'automatic');
+  await page.evaluate(nextAt => { window.oodaAt = nextAt; }, before.nextAt);
+  await page.waitForFunction(id => host.getStatus().bodies.find(body => body.agentId === id)?.pauseCause === null, ids[0]);
+  const result = await page.evaluate(async ids => ({ heads: await Promise.all(ids.map(id => agents.get(id))),
+    operations: await agents.store.operations(ids[0]), generated: calls.filter(call => call[0] === 'generate'),
+    published: calls.filter(call => call[0] === 'public-message'), missingChecks: window.missingProviderChecks }), ids);
+  assert.equal(result.heads[0].status, 'waiting'); assert.equal(result.heads[0].pendingOperation, null);
+  assert.equal(result.heads[1].pauseCause, null); assert.equal(result.heads[2].pauseCause, 'owner');
+  assert.equal(result.heads[2].status, 'paused'); assert.equal(result.operations.at(-1).status, 'outcome-unknown');
+  assert.equal(result.generated.length, 1); assert.equal(result.published.length, 0); assert(result.missingChecks >= 2);
 });
 
 test('public resident text arriving before its body is anchored only to its authenticated owner once', async t => {

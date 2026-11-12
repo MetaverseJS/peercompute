@@ -86,6 +86,17 @@ test('stale revisions are ignored and clearing state preserves a dirty objective
   assert.equal(await page.locator('[data-goal-field="receipt"]').innerText(), 'No physical result yet');
 });
 
+test('owner can hold an automatically recovering task paused without cancelling its plan', async t => {
+  const page = await fixture(t);
+  await page.evaluate(() => controls.setStatus({ ...snapshot, status: 'paused', pauseSource: 'system', reason: 'Retrying shortly' }));
+  assert.match(await page.locator('[data-goal-field="status"]').innerText(), /Recovering automatically/);
+  await action(page, 'Pause').click();
+  assert.equal(await page.evaluate(() => calls.at(-1).kind), 'pause');
+  await page.evaluate(() => controls.setStatus({ ...snapshot, revision: 4, status: 'paused', pauseSource: 'owner' }));
+  assert.equal(await action(page, 'Pause').isVisible(), false);
+  assert.equal(await action(page, 'Resume').isVisible(), true);
+});
+
 test('completed status distinguishes model assessment from verified physical outcome and allows a fresh objective', async t => {
   const page = await fixture(t); await page.evaluate(() => controls.setStatus({ ...snapshot, status: 'completed',
     currentStep: 'Finished considering the scene', modelAssessment: 'I think this satisfies the objective.',

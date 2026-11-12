@@ -132,7 +132,7 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
       loadTimeoutMs: 300_000, generationTimeoutMs: 300_000 });
     activeService = service;
     for (const candidate of [service, ggufService, diffusionService]) trackService(candidate);
-    residents = new ResidentModelRegistry({ artifactStore: store, maximumResidents: residentModelSlots,
+    residents = new ResidentModelRegistry({ artifactStore: store, maximumResidents: residentModelSlots, recovery: {},
       async createService({ manifest, runtimeOptions }) {
         const kind = manifest.model?.runtime;
         if (kind === 'llama.cpp') await checkGgufCapabilities();
@@ -155,6 +155,9 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
         }
         claimedServices.add(candidate); return candidate;
       } });
+    residents.subscribe(event => {
+      if (event.type === 'recovered' && activeService === event.previousService) activeService = event.service;
+    });
     if (networkConnection.networkReady) networkConnection.startArtifacts();
   } catch (error) {
     networkTelemetry.dispose();
@@ -206,6 +209,8 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
     getServiceForModel(cid) { return residents.getService(cid)
       ?? [...auxiliaryServices.values()].find((candidate) => candidate.getStatus().manifestCid === cid) ?? null; },
     getResidentModelStates: () => residents.list(),
+    subscribeResidentModels: (listener) => residents.subscribe(listener),
+    stopResidentRecovery: (cid) => residents.stopRecovery(cid),
     selectResidentModel(cid) {
       const candidate = residents.getService(cid);
       if (candidate?.getStatus().status !== 'ready') throw new Error('The selected model is not ready');

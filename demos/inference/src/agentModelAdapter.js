@@ -1,8 +1,9 @@
 import { routeInferenceTask } from '../../../peercompute/src/peercompute/inference/InferenceRouter.js';
+import { classifyInferenceAvailability, waitForInferenceAvailability } from '../../../peercompute/src/peercompute/inference/InferenceAvailability.js';
 
 /** Agents share the console's manager-owned services; this adapter owns no workers or model loads. */
 export function createAgentModelAdapter(runtime) {
-  return {
+  const adapter = {
     async listCandidates({ mode = 'local-only', task, signal, refresh = true } = {}) {
       signal?.throwIfAborted();
       if (!['local-only', 'network-assisted'].includes(mode)) throw new Error('Unknown agent inference mode');
@@ -26,7 +27,7 @@ export function createAgentModelAdapter(runtime) {
       if (mode === 'local-only') return candidates;
       if (task) {
         try { routeInferenceTask({ task, mode: 'local', candidates }); return candidates; }
-        catch (error) { if (error.code !== 'ERR_INFERENCE_NO_MODEL') throw error; }
+        catch (error) { if (!classifyInferenceAvailability(error)) throw error; }
       }
       let refreshed = true;
       if (refresh) {
@@ -36,6 +37,11 @@ export function createAgentModelAdapter(runtime) {
       signal?.throwIfAborted();
       if (refreshed) candidates.push(...runtime.listInferenceTargets().filter((entry) => entry.local === false && entry.available));
       return candidates;
+    },
+    waitForCandidate({ mode = 'local-only', task, signal, onWaiting, timeoutMs, pollMs } = {}) {
+      return waitForInferenceAvailability({ signal, onWaiting, timeoutMs, pollMs,
+        select: async ({ signal }) => routeInferenceTask({ task, mode: mode === 'local-only' ? 'local' : 'mixed',
+          candidates: await adapter.listCandidates({ mode, task, signal, refresh: true }) }) });
     },
     generate(candidate, input, options = {}) {
       options.signal?.throwIfAborted();
@@ -51,4 +57,5 @@ export function createAgentModelAdapter(runtime) {
     },
     cancel: (requestId) => runtime.cancel(requestId),
   };
+  return adapter;
 }

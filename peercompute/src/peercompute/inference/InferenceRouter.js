@@ -20,15 +20,17 @@ export function routeInferenceTask({ task, mode = 'local', candidates = [], inpu
       || !Array.isArray(inputModalities) || inputModalities.some((value) => !['text', 'image', 'audio'].includes(value))) {
     throw new Error('Invalid inference routing policy');
   }
-  const eligible = candidates.filter((candidate) => {
-    if (!hasInferenceCapacity(candidate, task, inputModalities) || !supportsTask(candidate, task)
+  const compatible = candidates.filter((candidate) => {
+    if (candidate?.available !== true || !supportsTask(candidate, task)
         || inputModalities.some((value) => !candidate.modalities.includes(value))
         || typeof candidate.manifestCid !== 'string' || !candidate.manifestCid
         || typeof candidate.key !== 'string' || !candidate.key || typeof candidate.runtime !== 'string'
         || ![true, false].includes(candidate.local)
         || (mode === 'local' && !candidate.local) || (mode === 'peers' && candidate.local)) return false;
-    return true;
+    return !Array.isArray(candidate.hosts) || candidate.hosts.some(host => supportsTask({ ...candidate, ...host }, task)
+      && inputModalities.every(modality => (host.modalities ?? candidate.modalities)?.includes(modality)));
   });
+  const eligible = compatible.filter(candidate => hasInferenceCapacity(candidate, task, inputModalities));
   eligible.sort((a, b) => Number(!a.local) - Number(!b.local)
     || Number(Boolean(a.busy)) - Number(Boolean(b.busy))
     || Number(a.task !== task) - Number(b.task !== task)
@@ -38,7 +40,8 @@ export function routeInferenceTask({ task, mode = 'local', candidates = [], inpu
   if (!eligible.length) throw Object.assign(new Error(mode === 'local'
     ? 'No compatible local model has available inference capacity.'
     : mode === 'peers' ? 'No compatible peer model has available inference capacity.'
-      : 'No compatible local model or peer host has available inference capacity.'), { code: 'ERR_INFERENCE_NO_MODEL' });
+      : 'No compatible local model or peer host has available inference capacity.'),
+    { code: compatible.length ? 'ERR_INFERENCE_BUSY' : 'ERR_INFERENCE_NO_MODEL' });
   const candidate = structuredClone(eligible[0]);
   return { candidate, route: { kind: 'baseline', target: candidate.key, manifestCid: candidate.manifestCid,
     runtime: candidate.runtime, modelName: candidate.name ?? candidate.manifestCid, local: candidate.local,

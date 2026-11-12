@@ -73,16 +73,16 @@ export function createResidentGoalControls({ key, name = 'Resident', onAssignGoa
     form.hidden = !canStart(); form.style.display = form.hidden ? 'none' : 'flex'; input.disabled = locked;
     start.disabled = locked || !canStart() || !validDraft() || typeof onAssignGoal !== 'function';
     start.textContent = pending === 'assign' ? 'Starting…' : 'Start';
-    pause.hidden = !current || status === 'paused' || terminal.has(status);
+    pause.hidden = !current || status === 'paused' && !current.automaticPause || terminal.has(status);
     resume.hidden = status !== 'paused'; cancel.hidden = !current || terminal.has(status);
     pause.disabled = locked || typeof onPauseGoal !== 'function'; resume.disabled = locked || typeof onResumeGoal !== 'function';
     cancel.disabled = locked || typeof onCancelGoal !== 'function';
     pause.textContent = pending === 'pause' ? 'Pausing…' : 'Pause'; resume.textContent = pending === 'resume' ? 'Resuming…' : 'Resume';
     cancel.textContent = pending === 'cancel' ? 'Cancelling…' : 'Cancel';
-    summary.textContent = `Objective · ${current ? labels[status] : 'Not assigned'}`;
+    summary.textContent = `Objective · ${current?.automaticPause ? 'Recovering automatically' : current ? labels[status] : 'Not assigned'}`;
     element.dataset.goalStatus = status ?? 'idle';
     objective.hidden = !current; objective.textContent = objectiveText(current?.objective);
-    put('status', current ? labels[status] : 'No objective assigned');
+    put('status', current?.automaticPause ? 'Recovering automatically' : current ? labels[status] : 'No objective assigned');
     put('step', short(current?.currentStep, 240));
     const receipt = current?.lastReceipt;
     put('receipt', receipt && Object.hasOwn(actions, receipt.type) && Object.hasOwn(outcomes, receipt.status)
@@ -109,6 +109,7 @@ export function createResidentGoalControls({ key, name = 'Resident', onAssignGoa
     if (current && snapshot?.goalId === current.goalId && snapshot.revision < current.revision) return;
     const changed = current?.goalId !== snapshot?.goalId || current?.revision !== snapshot?.revision;
     current = snapshot ? { goalId: snapshot.goalId, revision: snapshot.revision, status: snapshot.status,
+      automaticPause: snapshot.status === 'paused' && ['system', 'model', 'uncertain'].includes(snapshot.pauseSource),
       objective: objectiveText(snapshot.objective), currentStep: short(snapshot.currentStep, 240), reason: short(snapshot.reason),
       modelAssessment: short(snapshot.modelAssessment), planView: planPresentation(snapshot), lastReceipt: snapshot.lastReceipt ? { type: snapshot.lastReceipt.type,
         status: snapshot.lastReceipt.status, reason: short(snapshot.lastReceipt.reason, 240) } : null } : null;
@@ -119,7 +120,7 @@ export function createResidentGoalControls({ key, name = 'Resident', onAssignGoa
   async function invoke(kind, callback) {
     if (disposed || !enabled || pending || typeof callback !== 'function') return;
     if (kind === 'assign' ? !canStart() || !validDraft() : !current || terminal.has(current.status)
-      || (kind === 'resume' ? current.status !== 'paused' : kind === 'pause' && current.status === 'paused')) return;
+      || (kind === 'resume' ? current.status !== 'paused' : kind === 'pause' && current.status === 'paused' && !current.automaticPause)) return;
     const payload = kind === 'assign' ? { key, objective: input.value.trim() }
       : { key, goalId: current.goalId, expectedRevision: current.revision };
     pending = kind; error = ''; update();
