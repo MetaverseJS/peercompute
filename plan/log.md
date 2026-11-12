@@ -62549,3 +62549,15 @@ startup/shutdown race separately; no source attribution is established yet.
 - All requested implementation and relevant validation are complete. Preparing
   the local checkpoint with staged guard/whitespace review; final source identity,
   freshness and attempt receipt are persisted through ICC after commit. No push.
+
+### 2026-11-11T19:36:51-09:00 — avatar image drop confirmed after refresh
+
+- User first reported CubeChat not recognizing dragged images; initial explicit
+  clock receipt was2026-11-11T19:34:50-09:00. Read current shared image intake,
+  CubeWorldUi bindings, previous preview harness, plan/log and clean Git state.
+  Explained the owned resident message textbox target and asked about source/URL.
+- User then suggested reloading and confirmed “ya I needed to refresh.” Exact
+  delivery timestamps are unavailable; heading is this record's clock receipt.
+  This resolves the report as an already-open previous build. No additional
+  implementation, browser run, server, deployment or model inference was started.
+  Existing attachment test/preview evidence remains applicable; no code changed.
