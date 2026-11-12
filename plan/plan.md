@@ -2370,3 +2370,7 @@ unchanged. Promote the verified internal preview; no Pages publication requested
 qualified TripoSR Q8 packages. Hunyuan3D-2mini and Hunyuan3D-2.1 need their own
 adapter and browser/runtime qualification; no better arbitrary HF model is a
 drop-in replacement today. This is research context, not an authorized new slice.
+IDOL is another evaluation candidate: its native PyTorch pipeline generates
+Gaussian-splat PLY, so integration additionally requires validated splat results
+and rendering alongside the current GLB path. Native published VRAM measurements
+do not establish WebGPU support. No implementation or benchmark authorized yet.
