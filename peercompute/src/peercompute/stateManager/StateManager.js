@@ -13,6 +13,7 @@ import { DataState } from './DataState.js';
 import { LocalArtifactCache } from './LocalArtifactCache.js';
 import { ArtifactStore } from '../artifacts/ArtifactStore.js';
 import { AgentRecordStore } from '../agents/AgentRecordStore.js';
+import { WorldKnowledgeStore } from '../agents/WorldKnowledgeStore.js';
 import { WorldMemoryStore } from '../agents/WorldMemoryStore.js';
 import { WorldGoalStore } from '../agents/WorldGoalStore.js';
 import { WorldStandingGoalStore } from '../agents/WorldStandingGoalStore.js';
@@ -96,6 +97,7 @@ export class StateManager {
     this.persistenceFailed = false;
     this.agentRecordStores = new Map();
     this.worldMemoryStores = new Map();
+    this.worldKnowledgeStores = new Map();
     this.worldGoalStores = new Map();
     this.worldStandingGoalStores = new Map();
   }
@@ -258,6 +260,20 @@ export class StateManager {
   }
 
   getWorldMemoryStore(name = 'default') { return this.worldMemoryStores.get(name) || null; }
+
+  /** Evidence-backed local knowledge; sharing requires an explicit profile grant. */
+  createWorldKnowledgeStore(options = {}) {
+    if (this.destroyed) throw new Error('StateManager is destroyed');
+    const name = options.name || 'default';
+    if (this.worldKnowledgeStores.has(name)) throw new Error(`World knowledge store ${name} is already registered`);
+    const store = new WorldKnowledgeStore({ ...options, name, onDestroy: closed => {
+      if (this.worldKnowledgeStores.get(name) === closed) this.worldKnowledgeStores.delete(name);
+      options.onDestroy?.(closed);
+    } });
+    this.worldKnowledgeStores.set(name, store); return store;
+  }
+
+  getWorldKnowledgeStore(name = 'default') { return this.worldKnowledgeStores.get(name) || null; }
 
   /** Owner-local objectives are durable checkpoints, never replicated state. */
   createWorldGoalStore(options = {}) {
@@ -1020,6 +1036,7 @@ export class StateManager {
       // Agent runners acknowledge cancellation before private journals close.
       for (const store of [...this.agentRecordStores.values()]) await cleanup(() => store.destroy());
       for (const store of [...this.worldMemoryStores.values()]) await cleanup(() => store.destroy());
+      for (const store of [...this.worldKnowledgeStores.values()]) await cleanup(() => store.destroy());
       for (const store of [...this.worldGoalStores.values()]) await cleanup(() => store.destroy());
       for (const store of [...this.worldStandingGoalStores.values()]) await cleanup(() => store.destroy());
       // Local artifact bytes live outside Yjs but remain owned by this manager.

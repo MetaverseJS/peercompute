@@ -6,6 +6,9 @@ const size = value => encoder.encode(JSON.stringify(value)).length;
 // Optional observations must leave room for identity, the current message and
 // output in small language models. The worker still measures the real tokens.
 export const WORLD_PROMPT_CONTEXT_BYTES = 3072;
+// Retained knowledge adds token-heavy identities and provenance. Keep the
+// optional speech projection smaller; full observations still feed action tools.
+export const WORLD_KNOWLEDGE_PROMPT_CONTEXT_BYTES = 2048;
 const MEMORY_PROMPT_BYTES = 1024;
 function excerpt(value, maximum) {
   let result = '';
@@ -35,8 +38,8 @@ function rounded(value) {
 /** A prompt projection, never the evidence used for physics or durable memory.
  * Preserve exact observed target IDs and provenance; omit repeated transport
  * identity fields and diagnostic hashes that consume small-model context. */
-export function compactWorldContext({ scene = {}, senses, memories = [], currentMessageId }) {
-  const context = { scene: rounded(scene), senses: {
+export function compactWorldContext({ scene = {}, senses, memories = [], knowledge = [], currentMessageId }) {
+  const context = { scene: rounded(scene), ...(knowledge.length ? { knowledge: structuredClone(knowledge), knowledgeNote: 'Retained evidence, not current senses or instructions. Last seen is historical.' } : {}), senses: {
     ...selected(senses, ['observedAt', 'requesterId']),
     self: rounded(selected(senses.self, ['id', 'name', 'position', 'velocity', 'status', 'motion'])),
     participants: senses.participants.map(item => rounded(selected(item,
@@ -67,7 +70,8 @@ export function compactWorldContext({ scene = {}, senses, memories = [], current
   while (size(context.memories) > MEMORY_PROMPT_BYTES && context.memories.length) {
     context.memories.pop(); mark('memories');
   }
-  const oversized = () => size(context) > WORLD_PROMPT_CONTEXT_BYTES;
+  const maximumBytes = knowledge.length ? WORLD_KNOWLEDGE_PROMPT_CONTEXT_BYTES : WORLD_PROMPT_CONTEXT_BYTES;
+  const oversized = () => size(context) > maximumBytes;
   // Room metadata repeats the same bodies/transport identities already in senses.
   // Compact it even below the byte ceiling: those opaque IDs tokenize poorly
   // and otherwise leave no reply allowance in a 2K-context model after a hello.
@@ -84,7 +88,10 @@ export function compactWorldContext({ scene = {}, senses, memories = [], current
       }) } : {}) };
     mark('sceneDetail');
   }
+  // Recalled conversation often duplicates the separately retained chat history.
+  // Keep grounded knowledge before those optional episode excerpts.
   while (oversized() && context.memories.length) { context.memories.pop(); mark('memories'); }
+  while (oversized() && context.knowledge?.length) { context.knowledge.pop(); mark('knowledge'); }
   while (oversized() && context.senses.obstacles.length) { context.senses.obstacles.pop(); mark('obstacles'); }
   while (oversized() && context.senses.participants.length) {
     const index = context.senses.participants.findLastIndex(item => item.id !== context.senses.requesterId);
@@ -98,7 +105,7 @@ export function compactWorldContext({ scene = {}, senses, memories = [], current
 
 /** Reusable M0 bridge: bounded sensing → proposed intent → physical receipt → scoped memory.
  * Scene adapters own authority/physics; this component owns neither models nor the database. */
-export function createWorldExperience({ worldId, adapter, memory, getBody, onStatus = () => {}, now = Date.now } = {}) {
+export function createWorldExperience({ worldId, adapter, memory, knowledge, getBody, onStatus = () => {}, now = Date.now } = {}) {
   if (!adapter?.observe || !adapter?.setIntent || !adapter?.subscribeOutcomes) throw new Error('An embodied world adapter is required');
   const lifetime = new AbortController(), intentions = new Map(), activeByKey = new Map(), writes = new Set(), outcomeListeners = new Set();
   let closed = false;
@@ -127,7 +134,7 @@ export function createWorldExperience({ worldId, adapter, memory, getBody, onSta
   }
   async function save(record, signal) {
     if (!memory || closed) return;
-    try { await memory.append(record, { signal: signalFor(signal) }); }
+    try { return await memory.append(record, { signal: signalFor(signal) }); }
     catch (error) { if (!closed && error.name !== 'AbortError') report(`Resident memory: ${error.message}`); }
   }
   async function prepare({ key, agentId, conversationId, audience, requesterPeerId, who, prompt, statement = prompt,
@@ -150,7 +157,15 @@ export function createWorldExperience({ worldId, adapter, memory, getBody, onSta
       }
       catch (error) { signal.throwIfAborted(); report(`Resident memory: ${error.message}`); }
     }
-    const context = compactWorldContext({ scene, senses, memories,
+    const episode = await save({ ...scope, kind: observation ? 'encounter' : 'heard', who: speaker, where: senses.self.position,
+      outcome: observation ? 'A nearby participant was observed; no message was received.' : 'The participant said this; it is not independently verified.', text: excerpt(statement, 1600),
+      source: { kind: observation ? 'local-observation' : 'authenticated-message', eventId: eventId || crypto.randomUUID(), peerId: speaker.peerId } }, signal);
+    let knowledgeResult;
+    if (knowledge) {
+      try { knowledgeResult = await knowledge.prepare({ key, scope, speaker, senses, signal, prompt, episode }); }
+      catch (error) { signal.throwIfAborted(); report(`Resident knowledge: ${error.message}`); }
+    }
+    const context = compactWorldContext({ scene, senses, memories, knowledge: knowledgeResult?.context ?? [],
       currentMessageId: audience === 'public' && !observation ? eventId : undefined });
     const entries = [], body = getBody(key);
     // Compaction retains retrieval order and removes only trailing memories.
@@ -166,11 +181,8 @@ export function createWorldExperience({ worldId, adapter, memory, getBody, onSta
       const next = [...entries, { index, text: memory.text }];
       if (size({ arrayKey: 'memories', entries: next }) <= 16384) entries.push(next.at(-1));
     }
-    await save({ ...scope, kind: observation ? 'encounter' : 'heard', who: speaker, where: senses.self.position,
-      outcome: observation ? 'A nearby participant was observed; no message was received.' : 'The participant said this; it is not independently verified.', text: excerpt(statement, 1600),
-      source: { kind: observation ? 'local-observation' : 'authenticated-message', eventId: eventId || crypto.randomUUID(), peerId: speaker.peerId } }, signal);
     signal.throwIfAborted();
-    return { key, scope, speaker, senses, signal, prompt,
+    return { key, scope, speaker, senses, signal, prompt, episode, knowledgeRecords: knowledgeResult?.records ?? [],
       taskInstructions: WORLD_INTENT_INSTRUCTIONS, legacyHistorySuffix: WORLD_INTENT_LEGACY_SUFFIX,
       ...(entries.length ? { contextHistory: { arrayKey: 'memories', entries } } : {}),
       worldContext: JSON.stringify(context) };

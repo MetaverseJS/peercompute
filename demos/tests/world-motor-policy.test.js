@@ -8,6 +8,18 @@ import { MOTOR_DYNAMICS as D, encodeMotorObservation, validateMotorBatch } from 
 import { PARAMETER_COUNT, referenceMotorAction, validateCheckpoint } from '../shared/agents/motor/policyReference.js';
 import { stepMotorState, evaluatePolicy } from '../shared/agents/motor/trainingEnvironment.js';
 
+test('fast human observations fit the scene sensor domain without changing normalized policy features', () => {
+  const observation = { relativePosition: [60, 0], velocity: [0, 0], targetVelocity: [50, -50], stopDistance: 10 };
+  const batch = validateMotorBatch([{ id: 'resident', observation }]);
+  assert.deepEqual(batch[0].observation.targetVelocity, [50, -50]);
+  assert.deepEqual(encodeMotorObservation(observation).input,
+    encodeMotorObservation({ ...observation, targetVelocity: [20, -20] }).input);
+  assert(referenceMotorAction(checkpoint.weights, observation).every(Number.isFinite));
+  for (const targetVelocity of [[50.01, 0], [0, -50.01], [Infinity, 0], [0, NaN]]) {
+    assert.throws(() => validateMotorBatch([{ id: 'resident', observation: { ...observation, targetVelocity } }]), /target velocity/);
+  }
+});
+
 test('checked-in policy is a finite reproducible learned checkpoint with held-out evidence', () => {
   validateCheckpoint(checkpoint);
   assert.equal(checkpoint.weights.length, PARAMETER_COUNT);

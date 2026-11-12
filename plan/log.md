@@ -62944,3 +62944,265 @@ startup/shutdown race separately; no source attribution is established yet.
   source changes, model execution, rebuild, push or Pages deployment for this
   discussion. Initial guessed glob/path reads missed files; resolved existing
   Humunculus HTML and live modules supplied the actual evidence.
+
+
+### 2026-11-12T20:39:01.378863+00:00 — grounded resident knowledge implementation authorized
+
+- User prompt: “ok go”. Exact delivery time is unavailable; timestamp above is
+  this durable receipt. Accepted the preceding people/named-places recommendation.
+  Internal previews first; no Pages rebuild or push for this slice.
+- Read current plans/log and live memory, conversation, goal, OODA, profile and
+  world UI code. ICC task resident-world-knowledge-20261112 created after full
+  reindex (120918ms) and Git-history refresh; source fresh at becdfc77.
+- Parallel scopes: durable knowledge/profile contracts, owner action admission,
+  reusable Mind modal; root integrates evidence, lifecycle, routing and tests.
+  Preflight initially flagged same_task despite disjoint paths (its CLI lacks
+  a plan-item argument). Before any edits, ended only unused root lease, ran all
+  four preflights, then published distinct plan-item leases; all PASS/published.
+- Implement scoped IndexedDB records with evidence, explicit uncertainty/age,
+  CAS corrections and persistent forgetting tombstones. Remember-place anchors
+  come from the incoming message observation, not model coordinates or a later
+  moving speaker. Reuse receipt-backed spatial plans for return navigation.
+- Keep public/private audience isolation, authenticated entity IDs, and explicit
+  history clone permissions. Version profile transfer for older peers. Mind
+  inspection stays available during inference; mutations retain owner authority.
+- Acceptance pending: reload persistence, actual-model remember/return with motor
+  arrival, races/forget/privacy/clone tests, desktop/mobile controls, exact internal
+  preview assets and SecretWorkshop. Evidence directory:
+  ~/.cache/peercompute-world-knowledge-20261112/.
+
+- Component implementation complete: StateManager-owned WorldKnowledgeStore and
+  contracts; profilev3/transportv4 with old-peer downgrade; grounded owner
+  classifier; WorldKnowledgeBridge/Context; WorldExperience evidence receipts;
+  goal/OODA recall; shared ResidentMindPanel and Cube/Earth entry points.
+- Tests: store/profile/native Chrome42pass; initial specialist35pass; full host/
+  reasoning157pass; UI/protocol93pass; bridge/StateManager8pass (overlapping suites,
+  not additive). Native host reload/clone/correct/forget and visitor exclusion pass.
+- Initial broad run150/157: four CubeUI assertions still expected pre-Nov12
+  autonomy/initiative defaults. git show HEAD confirms production already defaults
+  both on. Updated those stale expectations; new Mind busy/owner tests added.
+  Three new protocol tests used a1050-byte note above1024-byte contract; corrected
+  test data to840bytes, preserving >64KiB credited-transfer coverage. Earlier
+  bridge fixtures called nonexistent memory.list and expected decision.plan rather
+  than decision.milestones; fixed fixtures, then all8bridge checks passed.
+- Independent review found and corrected inherited-person UUID lookup, evidence
+  scope property-order comparison, ownership checks after await and during IDB
+  writes, bounded anchor validation, specialist short-reference mapping, pending
+  decision revision checks, and observation receipts retaining the named point.
+  Owner corrections now record reported evidence; new sightings cannot certify
+  previously reported/shared prose. Private-informed OODA reflections have their
+  own channel so later public speech cannot retrieve them.
+- Standalone Cube initialbuild18.16s and Earth24.50s pass. Owned candidate HTTPS
+ 5194 exactly matches its frozen HTML hash. Actual retained Qwen0.8(default2048
+  context) and Smol256 are hosted in an isolated test browser; no user model/cache
+  touched. First real remember action and native Mind desktop/mobile checks pass;
+  walk-away setup collided with an owned paused guide. Original run failure is
+  preserved; rerun changes only keyboard direction through open space. No model
+  output substitution or model-context enlargement. Final builds/preview and
+  real return receipt remain pending.
+
+- Native run2 exposed an actual sensor-domain mismatch: CubeAgentLayer permits
+  participant velocity components up to50, while motor admission rejected above20.
+  Normal keyboard acceleration hit20after~1second, invalidating the learned motor
+  batch. Aligned raw admission with existing50sensor bound; normalized features,
+  checkpoint and output speed/dynamics are unchanged.32motor regressions pass.
+  Run2 stopped its owned browser after the proven failure; no user browser touched.
+- Native run3 hit the actual2048token classifier budget:1558input+512reserved.
+  Its full conversational reply was1500characters and all tool instructions plus
+  duplicated avatar persona made the system message6194characters. Shortened
+  redundant owner/knowledge instructions and removed repeated persona/goals (the
+  completed reply already contains the design). Original message, completed reply,
+  observations and512output reservation remain intact.51focused classifier/avatar/
+  scale regressions pass; an exact failing-request peer replay and fresh movement
+  acceptance are next. These failures remain in live/acceptance-{1,2,3}.
+- Final privacy/UI29checks and finalcore/nativeIDB43checks pass. Mind desktop
+  centering now explicitly overrides CubeChat’s global margin reset. Public
+  speaking cycles cannot retrieve private-informed reflection channels. No Pages
+  files or published branches have changed.
+
+- 2026-11-12T21:14:36.775688+00:00 continued the same authorized slice.
+  Native acceptance4 preserved the exact remembered point, identity, revision,
+  audience and evidence across browser reload, and used actual WebGPU follow
+  dispatches during sustained keyboard movement. It then exposed a destructive
+  semantic mistake: Qwen0.8 selected remember-place for the distinct current
+  return request and replaced the destination. The original prompt was correctly
+  present with a fresh request ID; the output matched the instruction example.
+  Failed evidence is retained in live/acceptance-4. WorldKnowledgeBridge now
+  grants place creation only, never replacement through a model proposal; CAS
+  and semantic uniqueness also protect places omitted from bounded recall.
+  Added regression checks for both recalled and omitted existing destinations.
+  Action-classifier contrasts are being measured against the actual peer.
+- Exact previous budget failure replay passed on Qwen0.8 at1392inputtokens plus
+  the unchanged512output reservation, preserving full reply/observations and
+  user input. Core protocol review independently reran47cases successfully.
+  Cube final2 build19.14s and Earth final2 build28.12s passed serially, but neither
+  has been promoted while the return acceptance is unresolved.
+
+- 2026-11-12T21:24:08.865992+00:00 actual classifier contrasts reproduced
+  the wrong return action twice on Qwen0.8 with fresh request IDs. Replacing only
+  the concrete example name with a generic owner-supplied-name example yielded
+  null for the unchanged reply that asked what to do. A compact rewrite and
+  separately labeled synthetic positive-reply controls were also measured; the
+  tiny model copied placeholders or returned null. The compact rewrite was not
+  adopted. This favors instruction/example copying over stale message reuse.
+  New storage admission also requires the proposed name to occur in the unchanged
+  owner message, rejecting copied/invented labels. Creation-only+name guards pass
+  60 host/bridge checks; current generic classifier passes36focused checks.
+- The owned Qwen/Smol host closed cleanly. Separate Nemotron4B qualification uses
+  the explicitly owned /mnt/data2/peercompute-support-tests/nano-profile at its
+  original loopback origin5293; complete pinned cached CID was found without any
+  copy/download. No model/context overrides, user profile, or substituted output.
+  Native acceptance5 preserves the original two user messages and actual physics.
+  Final4 standalone Cube build14.67s and Earth build24.99s pass.
+- ICC full refresh85.769s completed; all derived stores fresh, only expected dirty
+  worktree notice. Whole authored guard passed with no warnings/violations or
+  rollback risks. Target production audit warns about existing stale/open tasks
+  and uncommitted files. The first readiness/oracle trace path was rejected by
+  MCP root restrictions; exact logs were copied with SHA256 receipts into the ICC
+  task evidence directory and retried. Generic oracle has no authored matching
+  target criteria, so its PASS is not functional acceptance. Readiness88 is blocked
+  by the generic scanner misreading passing negative-test names containing failed/
+  error as runtime failures; raw PASS counts remain available. No policy changes
+  or finding suppression.
+
+- 2026-11-12T21:36:16.481793+00:00 Nano acceptance5 reached reload but its
+  external keyboard setup measured distance from the destination rather than the
+  new randomized departure. Preserved that setup failure; corrected the fixture
+  to choose a normal strafe direction from actual heading/position, walk away and
+  brake with the opposite key, retaining the original arrival/range criteria.
+  Acceptance6 then reached return62.73units away after151real WebGPU follow
+  dispatches, but its first speech request hit the ordinary2048token ONNX budget.
+  The original system was4570characters; current33character prompt, prior turns
+  and512output allowance were intact. No classifier ran and no place changed.
+- WorldExperience now bounds the optional speech projection to2048bytes when
+  retained knowledge is present, keeps facts before duplicate episode excerpts,
+  and clones knowledge before pruning it. Full validated sensors and saved history
+  remain unchanged. Exact failed Nano request replay, replacing only that optional
+  projection, passed at1309input+512output=1821tokens with contextTruncated:false
+  and100475actual peer GPU dispatches. Prefix/current+prior messages were byte-
+  identical. The replay speech guessed old coordinates, so place recall now also
+  supplies rounded saved coordinates as data; physical tools still revalidate the
+  exact retained point. Historical person coordinates remain absent from recall.
+  Current67context/knowledge/OODA/goal tests and62host/OODA tests pass.
+- Cube final6 build16.43s and Earth final6 build22.83s pass. Acceptance7 is using
+  the exact final6 Cube bytes, stronger matching arrival-receipt/return-only-motor
+  evidence, the original messages and ordinary Nano defaults. Added the focused
+  npm run test:resident-knowledge command; no dependency/version changes.
+
+- 2026-11-12T21:46:06.458308+00:00 acceptance7 removed the context blocker
+  but Nano selected follow/speaker after promising a return journey. No goal was
+  created. Exact inputs confirmed live coordinates; speech also confused a guide
+  position with the saved point despite correct source data. Independent actual
+  replay reproduced follow; adding retained names did not fix it. A category-only
+  neural choice returned task at670inputtokens with the same message, completed
+  reply, observations and512output allowance. Adopted this general operation-then-
+  arguments split in WorldIntentDecision: only the chosen schema is exposed in
+  phase2, cross-operation results are rejected, and task/none/stop need no extra
+  call. No keyword routing or scripted desired decisions were added. Visitors
+  retain their bounded physical-only path; all authority/freshness/cancel checks
+  remain. Clarification-before-acting blocks effects; an ordinary follow-up
+  question after accepting an action does not inherently cancel that action.
+  Updated the explicit unit provider fixture for the new neural protocol.
+  38focused decision tests and52host tests pass; focused npm knowledge command
+  passes54tests. Acceptance8 runs against final7, not a changed test workload.
+- Separate no-inference native Mind qualification passed on the owned prior
+  profile: correction preserves exact position/scope and increments revision,
+  gains attributed reported/unverified evidence, survives reload, rejects stale
+  revisions, then native Forget survives reload while conversation history stays.
+  234asset hashes matched, desktop/mobile captures reviewed, zero recorded page/
+  console/HTTP/HF errors or inference calls. Initial UI harness used a wrong
+  journal event name (prompt instead of request); preserved before correcting
+  that selector. This UI result does not claim physical-return acceptance.
+
+- 2026-11-12T21:51:33.647782+00:00 acceptance8 PASSED and was independently
+  audited against raw requests and motor samples. Exact owner prompts were
+  Remember this as our meeting spot. / Take me back to our meeting spot.
+  All8model calls used the actual hosted Nano CID with no defaults override;
+  largest input+reservedoutput1937≤2048. The same private record survived reload.
+  Category selected task; planner selected l1 bound to the saved point, then
+  chose the saved destination action. Matching receipt
+  6391db1b-5f8a-4cdc-a92a-3b8e17e03bb2 has backend:webgpu and learned policy
+  sha256:98e9eb16dd4d68b3ff97307c5b3b4347a4258d6e48428b576f8a807ec3bf1aa5.
+  Started89.54units away,93return-only move-to samples, dispatches218→402,
+  distance traveled81.54; arrival7.9966 from exact target within unchanged radius8.
+  Objective completed with that receipt. Native correction/revision2/reported
+  evidence and Forget then passed while original conversation remained.
+  All168asset checks matched, no recorded browser/network/HF/cleanup errors.
+  Browser reload restores a spawn pose, so setup physically walked away again;
+  no pose teleport or synthesized model output was used. Conversational speech
+  still quoted a wrong coordinate and copied SHORT_REASON/SHORT_ASSESSMENT;
+  factual fluency is not qualified and never grants movement authority.
+- Final Cube build16.05s and Earth28.14s passed serially. Promoted their final7
+  roots atomically via promote-accepted-previews.mjs, preserving old immutable
+  asset hashes by verified hardlinks. check-accepted-previews.mjs passes actual
+  TLS HTML,82Cube/46Earthloaded JS/CSS hashes, reviewed startup screenshots,
+  both authenticated SecretWorkshop connections and clean browser teardown.
+  Existing user preview services remain live. No GitHub Pages files changed.
+- Files touched in this slice (source/test/doc path manifest also retained
+  outside the repo in authored-files-before-checkpoint.json):
+  - `demos/cubechat/README.md`
+  - `demos/cubechat/plan.md`
+  - `demos/cubechat/src/ui/CubeWorldUi.js`
+  - `demos/earth/README.md`
+  - `demos/shared/agents/WorldAgentHost.js`
+  - `demos/shared/agents/WorldConversationTurn.js`
+  - `demos/shared/agents/WorldExperience.js`
+  - `demos/shared/agents/WorldGoalDecision.js`
+  - `demos/shared/agents/WorldIntentDecision.js`
+  - `demos/shared/agents/WorldOodaDecision.js`
+  - `demos/shared/agents/WorldOodaResident.js`
+  - `demos/shared/agents/motor/motorContracts.js`
+  - `demos/shared/agents/worldAgentUi.js`
+  - `demos/tests/cubechat-native-ui.test.js`
+  - `demos/tests/world-agent-host.test.js`
+  - `demos/tests/world-conversation-turn.test.js`
+  - `demos/tests/world-experience.test.js`
+  - `demos/tests/world-intent-decision.test.js`
+  - `demos/tests/world-motor-policy.test.js`
+  - `demos/tests/world-ooda-decision.test.js`
+  - `package.json`
+  - `peercompute/src/peercompute/agents/AgentConversationService.js`
+  - `peercompute/src/peercompute/agents/ResidentProfile.js`
+  - `peercompute/src/peercompute/index.js`
+  - `peercompute/src/peercompute/stateManager/StateManager.js`
+  - `peercompute/tests/unit/agentConversation.test.js`
+  - `peercompute/tests/unit/residentProfile.test.js`
+  - `plan/branch/ipfs-large-files-model-inference.md`
+  - `plan/log.md`
+  - `plan/plan.md`
+  - `plan/tests.md`
+  - `demos/shared/agents/ResidentMindPanel.css`
+  - `demos/shared/agents/ResidentMindPanel.js`
+  - `demos/shared/agents/WorldKnowledgeBridge.js`
+  - `demos/shared/agents/WorldKnowledgeContext.js`
+  - `demos/shared/agents/WorldKnowledgeDecision.js`
+  - `demos/tests/resident-mind-panel.test.js`
+  - `demos/tests/world-knowledge-bridge.test.js`
+  - `demos/tests/world-knowledge-decision.test.js`
+  - `peercompute/src/peercompute/agents/WorldKnowledgeContracts.js`
+  - `peercompute/src/peercompute/agents/WorldKnowledgeStore.js`
+  - `peercompute/tests/unit/stateManagerWorldKnowledge.test.js`
+  - `peercompute/tests/unit/worldKnowledge.test.js`
+  - `peercompute/tests/unit/worldKnowledgeBrowser.test.js`
+- Commands include node --test on the listed focused test files; npm run
+  test:resident-knowledge; serial PEERCOMPUTE_PAGES_SHARED_RUNTIME=0 Vite builds
+  for CubeChat/Earth into external final7 roots; actual peer scripts host.mjs,
+  nano-host.mjs, knowledge-acceptance.mjs and diagnostic contrast scripts;
+  promote-accepted-previews.mjs/check-accepted-previews.mjs; ICC work/leases/
+  fullreindex/drift/freshness/guard/readiness/oracle/audit/task-plan/task-attempt;
+  git diff --check. All detailed logs, raw requests, screenshots, build hashes
+  and failure receipts remain in the task evidence directory.
+
+### 2026-11-12T22:05:28Z — self-directed resident default (follow-up steering)
+
+- User prompt: “also default movement profile for residents should be "self directed" which is not scripted and goes wherever the ooda loop decides it should do.” Exact delivery timestamp is unavailable; this is the durable receipt time.
+- Continue the authorized resident-knowledge slice; no Pages deployment or push. Default new residents, personal guides, clones and unset preferences to self-directed. Preserve explicitly saved stationary/follow/roam choices. OODA, owner chat and goals issue validated learned-motor intentions; this preference supplies no scripted wandering or fallback. Waiting is a valid OODA choice, and owner pauses remain respected.
+- ICC existing task updated with self-directed item; root and movement-adapter preflight/leases are nonoverlapping. Root changes contracts, host defaults, guide, UI, docs and their tests; worker owns motion adapter/helper and their tests.
+- Before editing, node --test demos/tests/cubechat-guide.test.js exposed an existing stale expectation: guide world-chat default asserted false although the shipped preset is true. Preserved guide-presteering-baseline.log; corrected that assertion to the existing behavior while adding movement-default coverage. No world-chat behavior changed.
+- Knowledge acceptance8 remains valid for its recorded final7 build; subsequent movement-default checks/builds are recorded separately. The full-report ICC parser hit its 20,000-event ceiling (20,913 dropped), so generic readiness/oracle are not acceptance proof. Raw native reports and independent reviews remain intact.
+
+- Follow-up verification: 110 host/native UI/guide/contract tests passed, followed by a final 46-case native UI rerun after the fallback change. Adapter/motion tests passed45/45; the initial44/45 run lacked a bounded Cannon floor in its new move-to fixture, and is retained as self-directed-adapter-tests-initial-fixture-failure.log. Only that fixture was corrected; production target validation was unchanged. Adapter evidence uses a controlled motor, not an additional neural-model qualification.
+- Follow-up files: WorldAgentContracts.js, WorldAgentHost.js, cubeGuide.js, CubeWorldUi.js, CubeAgentLayer.js, WorldResidentMotion.js; agentWorldContracts, cubechat-guide, cubechat-native-ui, world-agent-host, cubechat-agents and world-resident-motion tests; CubeChat README/plan and root plan/log/tests/branch files. Commands: node --test over those focused files; git diff --check; serial standalone Vite final8 builds (CubeChat15.75s, Earth31.29s).
+
+- Final8 internal previews promoted atomically, retaining existing immutable assets. Exact HTTPS HTML/assets, native desktop/mobile roster screenshots, Self directed guide/creation defaults, and authenticated SecretWorkshop connections passed at5176/5187 (82/46 assets, zero page/console/cleanup errors). Test browsers closed; no extra GPU model hosts were started. Evidence: self-directed-preview-promotion.json and self-directed-preview-check/report.json. Original final7 acceptance remains separately identified.
+- Final ICC evidence uses the existing concise acceptance8 summary and final8 preview report to avoid parsing thousands of repeated per-frame motor samples. The full24MB raw acceptance report, prior truncated readiness/oracle, and300s audit timeout remain preserved. Generic gates cannot establish task completion without the authored test and real-motion evidence above.

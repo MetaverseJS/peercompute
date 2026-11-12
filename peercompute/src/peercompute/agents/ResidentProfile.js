@@ -1,7 +1,9 @@
 import { normalizeResidentAvatar } from './ResidentAvatar.js';
 import { agentIdentifier, AGENT_LIMITS } from './AgentContracts.js';
 import { normalizeAgentFace, normalizeWorldPosition, worldAgentText } from './WorldAgentContracts.js';
+import { normalizeWorldKnowledgeRecord, worldKnowledgeArray, WORLD_KNOWLEDGE_LIMITS } from './WorldKnowledgeContracts.js';
 
+export const RESIDENT_KNOWLEDGE_PROFILE_SCHEMA = 'peercompute.resident-profile.v3';
 export const RESIDENT_AVATAR_PROFILE_SCHEMA = 'peercompute.resident-profile.v2';
 export const RESIDENT_PROFILE_SCHEMA = 'peercompute.resident-profile.v1';
 // The retained store is at most 4 MiB; allow bounded identity/template overhead.
@@ -44,8 +46,11 @@ function sharedMemory(input, sourceAgentId, worldId, includePrivate) {
 /** An explicit clone template; never an agent export or authority transfer. */
 export function normalizeResidentProfile(input, { worldId, includePrivate = false } = {}) {
   if (typeof includePrivate !== 'boolean') throw new TypeError('Invalid private resident memory permission');
-  if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(key => !fields.has(key) && !(input.schema === RESIDENT_AVATAR_PROFILE_SCHEMA && key === 'avatar'))
-      || ![RESIDENT_PROFILE_SCHEMA, RESIDENT_AVATAR_PROFILE_SCHEMA].includes(input.schema) || !/^#[a-f0-9]{6}$/i.test(input.color ?? '')) throw new TypeError('Invalid resident profile');
+  if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(key => !fields.has(key)
+      && !([RESIDENT_AVATAR_PROFILE_SCHEMA, RESIDENT_KNOWLEDGE_PROFILE_SCHEMA].includes(input.schema) && key === 'avatar')
+      && !(input.schema === RESIDENT_KNOWLEDGE_PROFILE_SCHEMA && key === 'knowledge'))
+      || ![RESIDENT_PROFILE_SCHEMA, RESIDENT_AVATAR_PROFILE_SCHEMA, RESIDENT_KNOWLEDGE_PROFILE_SCHEMA].includes(input.schema)
+      || !/^#[a-f0-9]{6}$/i.test(input.color ?? '')) throw new TypeError('Invalid resident profile');
   if (!Array.isArray(input.goals) || input.goals.length > 16) throw new TypeError('Invalid resident profile goals');
   if (input.face && Object.keys(input.face).some(key => !['sha256', 'width', 'height', 'channels'].includes(key))) throw new TypeError('Private face fields are not transferable');
   const profile = { schema: input.schema,
@@ -58,16 +63,24 @@ export function normalizeResidentProfile(input, { worldId, includePrivate = fals
     if (!Array.isArray(input.memories) || input.memories.length > RESIDENT_PROFILE_MEMORY_LIMITS.entries) throw new RangeError('Too many shared resident memories');
     profile.memories = input.memories.map(memory => sharedMemory(memory, profile.sourceAgentId, worldId, includePrivate));
   }
+  if (input.knowledge !== undefined) {
+    profile.knowledge = worldKnowledgeArray(input.knowledge, WORLD_KNOWLEDGE_LIMITS.perResident, 'shared snapshot').map(inputRecord => {
+      const record = normalizeWorldKnowledgeRecord(inputRecord);
+      if (record.agentId !== profile.sourceAgentId || (worldId !== undefined && record.worldId !== worldId)
+          || (record.audience === 'private' && !includePrivate)) throw new TypeError('Shared knowledge identity, audience or world mismatch');
+      return record;
+    });
+  }
   if (encoder.encode(JSON.stringify(profile)).length > RESIDENT_PROFILE_MAX_BYTES) throw new RangeError('Resident profile exceeds its byte budget');
   return profile;
 }
 
-export function createResidentProfile(head, worldId, { memories = [] } = {}) {
+export function createResidentProfile(head, worldId, { memories = [], knowledge = [] } = {}) {
   const binding = head?.embodiments?.find(item => item.worldId === worldId);
   if (!binding?.shared || binding.allowCloning !== true) {
     throw Object.assign(new Error('This resident is not available for cloning'), { code: 'ERR_AGENT_NOT_SHARED' });
   }
-  let shared;
+  let shared, sharedKnowledge;
   if (binding.shareMemories === true) {
     if (!Array.isArray(memories) || memories.length > RESIDENT_PROFILE_MEMORY_LIMITS.entries) throw new RangeError('Too many selected resident memories');
     shared = memories.map(memory => {
@@ -79,17 +92,28 @@ export function createResidentProfile(head, worldId, { memories = [] } = {}) {
         kind: memory.kind, when: memory.when,
         who: memory.who, where: memory.where, outcome: memory.outcome, text: memory.text, source: memory.source };
     });
+    sharedKnowledge = worldKnowledgeArray(knowledge, WORLD_KNOWLEDGE_LIMITS.perResident, 'selected snapshot').map(input => {
+      const record = normalizeWorldKnowledgeRecord(input);
+      if (record.agentId !== head.agentId || record.worldId !== worldId || (record.audience === 'private' && binding.sharePrivateMemories !== true)) {
+        throw new TypeError('Only this resident\'s explicitly shared world knowledge may be shared');
+      }
+      return record;
+    });
   }
-  return normalizeResidentProfile({ schema: binding.avatar ? RESIDENT_AVATAR_PROFILE_SCHEMA : RESIDENT_PROFILE_SCHEMA,
+  return normalizeResidentProfile({ schema: sharedKnowledge?.length ? RESIDENT_KNOWLEDGE_PROFILE_SCHEMA
+    : binding.avatar ? RESIDENT_AVATAR_PROFILE_SCHEMA : RESIDENT_PROFILE_SCHEMA,
     ...(binding.avatar ? { avatar: binding.avatar } : {}), sourceAgentId: head.agentId,
     name: head.identity.name, instructions: head.identity.instructions, goals: head.goals,
     appearancePrompt: binding.appearancePrompt ?? '', color: binding.color,
-    ...(binding.face ? { face: normalizeAgentFace(binding.face) } : {}), ...(shared ? { memories: shared } : {}) },
+    ...(binding.face ? { face: normalizeAgentFace(binding.face) } : {}), ...(shared ? { memories: shared } : {}),
+    ...(sharedKnowledge?.length ? { knowledge: sharedKnowledge } : {}) },
   { worldId, includePrivate: binding.shareMemories === true && binding.sharePrivateMemories === true });
 }
 
-/** Old clone peers receive their original schema without a mesh reference. */
-export function legacyResidentProfile(input) {
-  const { avatar, ...profile } = input;
-  return { ...profile, schema: RESIDENT_PROFILE_SCHEMA };
+/** Capability-negotiated downgrade; old peers receive neither new knowledge
+ * fields nor an unsupported schema. Avatar-capable peers retain their mesh. */
+export function legacyResidentProfile(input, { avatars = false } = {}) {
+  const { avatar, knowledge, ...profile } = input;
+  return { ...profile, ...(avatars && avatar ? { avatar } : {}),
+    schema: avatars && avatar ? RESIDENT_AVATAR_PROFILE_SCHEMA : RESIDENT_PROFILE_SCHEMA };
 }

@@ -23,6 +23,16 @@ test('public body whitelist never includes private instructions, memory, caption
   assert.deepEqual(Object.keys(body).sort(), ['agentId', 'color', 'name', 'position', 'status']);
   assert.throws(() => normalizePublicAgent({ ...body, name: 'é'.repeat(121) }));
 });
+
+test('self-directed movement persists as a local preference without migrating legacy or explicit modes', () => {
+  for (const movement of ['self-directed', 'stationary', 'follow', 'roam']) {
+    const value = normalizeAgentInput({ name: 'Ada', embodiments: [{ ...binding, movement }] });
+    assert.equal(value.embodiments[0].movement, movement);
+    assert.equal('movement' in normalizePublicAgent({ ...value.embodiments[0], agentId: 'a', name: 'Ada', status: 'idle' }), false);
+  }
+  assert.equal('movement' in normalizeAgentInput({ name: 'Legacy', embodiments: [binding] }).embodiments[0], false);
+  assert.throws(() => normalizeAgentInput({ name: 'Invalid', embodiments: [{ ...binding, movement: 'random-autonomy' }] }));
+});
 test('visitor channels isolate complete turns from both private console and other visitors', () => {
   const events = ['owner', 'visitor-a', 'visitor-b', undefined].flatMap((conversationId, i) => [
     { type: 'request', operationId: String(i), conversationId, text: `question-${i}` },

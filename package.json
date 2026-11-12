@@ -136,6 +136,7 @@
     "test:resident-navigation:browser": "node demos/tests/world-navigation-browser.mjs",
     "test:network-telemetry": "node --test peercompute/tests/unit/networkTelemetry.test.js demos/netviz/tests/observedNetwork.test.js demos/tests/model-telemetry.test.js",
     "test:resident-motor": "node --test demos/tests/world-motor-policy.test.js demos/tests/world-motor-service.test.js",
+    "test:resident-knowledge": "node --test peercompute/tests/unit/worldKnowledge.test.js peercompute/tests/unit/worldKnowledgeBrowser.test.js peercompute/tests/unit/stateManagerWorldKnowledge.test.js peercompute/tests/unit/residentProfile.test.js demos/tests/world-knowledge-bridge.test.js demos/tests/world-knowledge-decision.test.js demos/tests/resident-mind-panel.test.js",
     "test:resident-experience": "node --test demos/tests/world-intent.test.js demos/tests/world-experience.test.js demos/tests/world-agent-host.test.js demos/tests/world-chat-responder.test.js",
     "test:resident-social": "node --test demos/tests/world-social-initiative.test.js demos/tests/world-social-intent.test.js demos/tests/social-protocol.test.js demos/tests/room-chat.test.js demos/tests/world-chat-responder.test.js demos/tests/world-conversation-context.test.js demos/tests/world-experience.test.js"
   },

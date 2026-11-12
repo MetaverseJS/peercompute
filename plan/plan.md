@@ -2480,3 +2480,28 @@ and retained-worker reload passed separately. Preserve explicit owner pauses and
 unloads; legacy unclassified pauses may need one manual Resume. Existing MPM
 numerical drift remains outside this resident slice. Full evidence and limitations
 are recorded in log.md; the final documentation receipt stays local.
+
+
+November12 — authorized next Humunculus slice: persistent grounded knowledge of
+people and named places. Reuse existing scoped episodes and spatial objectives;
+add evidence/age-aware recall, owner Mind inspect/correct/forget controls, and
+explicitly permitted clone inheritance. First acceptance is remember a meeting
+spot, reload, and return with a physical arrival receipt. Internal previews only.
+
+
+November12 grounded knowledge slice accepted: private StateManager-owned people/
+place records, scoped recall in speech/OODA/goals, owner Mind correction/forgetting
+and permitted clone inheritance are implemented. Real peer Nano4B remembered a
+point across reload and navigated back using a matching learned-WebGPU arrival
+receipt. Neural operation selection is separated from argument generation;
+small-model budget and mistaken-overwrite guards are covered. Internal5176/5187
+previews pass exact assets, visual startup and SecretWorkshop checks. Preserve
+the documented model-quality/identity/bounded-retention limits; no Pages push.
+
+November12 follow-up: default resident movement is Self directed. New residents,
+guides, clones and unset preferences use model/OODA intentions without scripted
+roaming; explicit stored movement choices and owner pauses remain respected.
+
+Self-directed follow-up is implemented and verified on internal final8 previews;
+focused tests and desktop/mobile controls passed. Pending user review, keep this
+slice local and preserve the published Pages build.

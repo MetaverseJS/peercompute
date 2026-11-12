@@ -289,3 +289,6 @@ export const DEFAULT_CONFIG = {
     networkProfile: null
   }
 };
+
+export { WorldKnowledgeStore } from './agents/WorldKnowledgeStore.js';
+export { normalizeWorldKnowledgeRecord, worldKnowledgeStatus, WORLD_KNOWLEDGE_LIMITS } from './agents/WorldKnowledgeContracts.js';

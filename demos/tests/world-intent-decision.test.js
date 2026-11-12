@@ -131,7 +131,94 @@ test('action selection sees the completed reply as bounded data while preserving
   await generateWorldIntentDecision({ inference, head: head('local-only'), message: 'Design a robot', reply, observed: observation() });
   assert.equal(input.messages.length, 2); assert.equal(input.messages[0].role, 'system');
   assert(input.messages[0].content.includes(JSON.stringify(reply)));
-  assert.match(input.messages[0].content, /asked a question.*intent.*null/);
+  assert.match(input.messages[0].content, /asked for clarification before acting.*intent.*null/);
   assert.equal(input.messages[1].content, 'Design a robot'); assert.equal(input.prompt, 'Design a robot');
   await assert.rejects(generateWorldIntentDecision({ inference, head: head('local-only'), message: 'Design a robot', reply: {}, observed: observation() }));
+});
+
+test('remembered places are an explicit capability resolved from the incoming turn while motion remains fresh', () => {
+  const original = observation(); original.self.position = [0, 3, 0];
+  const current = structuredClone(original); current.participants[1].position = [100, 3, 0];
+  const raw = '{"knowledge":{"type":"remember-place","name":"Meeting spot","anchor":"speaker"}}';
+  const projection = projectWorldIntentRequest('Remember this as our meeting spot.', current,
+    { allowKnowledge: true, knowledgeObserved: original, allowTask: true });
+  original.participants[1].position = [999, 3, 0]; original.self.intentRevision++;
+  const action = projection.resolve(raw).knowledge;
+  assert.deepEqual(action.position, [0, 3, 40]); assert.equal(action.intentRevision, 4);
+  assert.equal(action.source.id, 'human:visitor');
+  assert.deepEqual(projection.resolve(follow), { intent: { type: 'follow', targetId: 'human:visitor', stopDistance: 10 } });
+  assert.deepEqual(projection.resolve('{"task":true}'), { task: true });
+  assert.throws(() => projectWorldIntentRequest('Remember here', current).resolve(raw));
+  assert.throws(() => projectWorldIntentRequest('Remember here', current,
+    { allowKnowledge: true, knowledgeObserved: original }).resolve(raw), 'Changed resident command invalidates knowledge proposal');
+  for (const text of [raw.replace('"speaker"', '"human:visitor"'), raw.replace('"anchor":', '"position":[0,3,40],"anchor":'),
+    raw.slice(0, -1) + ',"task":true}']) assert.throws(() => projection.resolve(text));
+});
+
+test('knowledge selection uses managed local-only routing and preserves both current message and completed reply', async () => {
+  let selected, input, count = 0;
+  const inference = { listCandidates: async () => [candidate(false), candidate(true)],
+    generate: async (route, value) => { selected = route; input = value; return { text: ++count === 1 ? '{"action":"remember-place"}'
+      : '{"knowledge":{"type":"remember-place","name":"Meeting spot","anchor":"speaker"}}' }; } };
+  const original = observation(); original.self.position = [0, 3, 0];
+  const current = structuredClone(original); current.participants[1].position = [90, 3, 0];
+  const result = await generateWorldIntentDecision({ inference, head: head('local-only'), message: 'Remember this as our meeting spot.',
+    reply: 'I will remember this place.', observed: current, knowledgeObserved: original, allowKnowledge: true });
+  assert.equal(selected.local, true); assert.deepEqual(result.knowledge.position, [0, 3, 40]);
+  assert.equal(count, 2);
+  assert.match(input.messages[0].content, /knowledgeAtRequest/);
+  assert.match(input.messages[0].content, /when that message arrived/);
+  assert.match(input.messages[0].content, /I will remember this place/);
+  assert.equal(input.messages[1].content, 'Remember this as our meeting spot.');
+  assert.doesNotMatch(input.messages[0].content, /human:visitor|PRIVATE_.*_SENTINEL/);
+});
+
+
+test('all-tools classification retains a long completed reply without repeating persona and goals', async () => {
+  const reply = 'I will remember the meeting spot and recognize it when you ask me to return. '.repeat(22);
+  const resident = head('local-only'); resident.identity.instructions = 'PERSONALITY_SENTINEL '.repeat(90);
+  resident.goals = ['GOAL_SENTINEL '.repeat(70)];
+  let input;
+  const observed = observation(); observed.self.position = [0, 3, 0];
+  await generateWorldIntentDecision({ inference: { listCandidates: async () => [candidate(true)],
+    generate: async (_candidate, request) => { input = request; return { text: '{"action":"none"}' }; } },
+    head: resident, message: 'Remember this as our meeting spot.', reply, observed,
+    allowTask: true, allowAvatar: true, allowObject: true, allowKnowledge: true });
+  assert.equal(input.messages.at(-1).content, 'Remember this as our meeting spot.');
+  assert(input.messages[0].content.includes(JSON.stringify(reply)));
+  assert.doesNotMatch(input.messages[0].content, /PERSONALITY_SENTINEL|GOAL_SENTINEL/);
+  assert.match(input.messages[0].content, /Allowed action values: none, task, follow, approach, look-at, stop, remember-place, object, avatar/);
+  for (const schema of ['"task":true', '"object":', '"avatar":', '"knowledge":']) assert(!input.messages[0].content.includes(schema));
+});
+
+test('neural category admission routes a journey directly without exposing competing argument examples', async () => {
+  const calls = [], prompt = 'Take me back to our meeting spot.', reply = 'I will begin the journey.';
+  const result = await generateWorldIntentDecision({ inference: { listCandidates: async () => [candidate(false)],
+    generate: async (route, input) => { calls.push({ route, input }); return { text: '{"action":"task"}' }; } },
+    head: head('network-assisted'), message: prompt, reply, observed: observation(), allowTask: true, allowObject: true, allowAvatar: true });
+  assert.deepEqual(result, { task: true }); assert.equal(calls.length, 1); assert.equal(calls[0].route.local, false);
+  assert.equal(calls[0].input.prompt, prompt); assert.equal(calls[0].input.messages.at(-1).content, prompt);
+  assert(calls[0].input.messages[0].content.includes(JSON.stringify(reply))); assert.equal(calls[0].input.maxNewTokens, 512);
+});
+
+test('category capabilities, malformed selections, cancellation and cross-operation arguments fail closed', async () => {
+  for (const text of ['{"action":"task"}', '{"action":"avatar"}', '{"action":"follow","targetId":"speaker"}', '{}', 'null', 'x'.repeat(513)]) {
+    let calls = 0;
+    await assert.rejects(generateWorldIntentDecision({ inference: { listCandidates: async () => [candidate(true)],
+      generate: async () => { calls++; return { text }; } }, head: head('local-only'), message: 'Remember here',
+      observed: observation(), allowObject: true }), { code: 'ERR_WORLD_INTENT_DECISION' });
+    assert.equal(calls, 1);
+  }
+  for (const action of ['follow', 'object']) {
+    let calls = 0;
+    await assert.rejects(generateWorldIntentDecision({ inference: { listCandidates: async () => [candidate(true)],
+      generate: async () => ({ text: ++calls === 1 ? JSON.stringify({ action }) : '{"task":true}' }) },
+      head: head('local-only'), message: 'Visit the park', observed: observation(), allowTask: true, allowObject: true }), { code: 'ERR_WORLD_INTENT_DECISION' });
+    assert.equal(calls, 2);
+  }
+  const controller = new AbortController(); let calls = 0;
+  await assert.rejects(generateWorldIntentDecision({ inference: { listCandidates: async () => [candidate(true)],
+    generate: async () => { calls++; controller.abort(); return { text: '{"action":"follow"}' }; } },
+    head: head('local-only'), message: 'Follow me', observed: observation(), allowTask: true, signal: controller.signal }), { name: 'AbortError' });
+  assert.equal(calls, 1);
 });

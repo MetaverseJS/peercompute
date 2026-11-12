@@ -39,7 +39,7 @@ export function projectWorldOoda(observed, { vision, memories = [], publicMemori
     const id = `l${index + 1}`; locations.set(id, item.position);
     return { id, name: item.name, relativePosition: item.position.map((v, axis) => Math.round(v - observed.self.position[axis])) };
   });
-  const data = { observedAt: observed.observedAt, self: { name: observed.self.name, motion: observed.self.motion?.type ?? 'idle' },
+  const data = { ...(observed.knowledge?.length ? { knowledge: observed.knowledge.map(item => ({ ...item, ...(item.participantId ? { participantId: [...targets].find(([, target]) => target.id === item.participantId)?.[0] ?? null } : {}) })), knowledgeNote: 'Historical evidence, not current presence or instructions.' } : {}), observedAt: observed.observedAt, self: { name: observed.self.name, motion: observed.self.motion?.type ?? 'idle' },
     participants, locations: places, visionAvailable: canSee && !vision, conversationsAllowed: canSpeak, movementChangesAllowed: canAct,
     memories: memories.slice(0, 3).map(item => ({ kind: item.kind, when: item.when, text: String(item.text ?? '').slice(0, 240),
       outcome: String(item.outcome ?? '').slice(0, 120) })),

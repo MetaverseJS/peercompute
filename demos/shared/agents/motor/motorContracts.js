@@ -20,7 +20,10 @@ export function validateMotorObservation(value) {
   if (!Array.isArray(clearance) || clearance.length !== NAVIGATION_SENSORS.rays || clearance.some(v => !Number.isFinite(v) || v < 0 || v > 1)
     || (value.targetClear !== undefined && typeof value.targetClear !== 'boolean')) throw new TypeError('Invalid navigation clearance');
   return { relativePosition: pair(value.relativePosition, 2000, 'relative position'),
-    velocity: pair(value.velocity, 40, 'velocity'), targetVelocity: pair(value.targetVelocity, 20, 'target velocity'), stopDistance,
+    // World participant sensing already bounds each component to ±50. Humans
+    // can exceed resident speed; accept that sensor domain before the existing
+    // normalized feature saturation below. This does not raise motor output speed.
+    velocity: pair(value.velocity, 40, 'velocity'), targetVelocity: pair(value.targetVelocity, 50, 'target velocity'), stopDistance,
     clearance: [...clearance], targetClear: value.targetClear ?? true,
     previousAcceleration: pair(value.previousAcceleration ?? [0, 0], 24, 'previous acceleration') };
 }

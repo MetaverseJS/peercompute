@@ -32,6 +32,28 @@ test('follow obeys stand-off distance, obstacles and conversation pauses without
   assert.throws(() => motor.step({ position: [0, NaN, 0], dt: 1 }), /bounded/);
 });
 
+test('self-directed never chooses scripted motion and discards a previous roam destination', () => {
+  const motion = new WorldResidentMotion({ key: 'Ada', position: [0, 3, 0], mode: 'roam' });
+  motion.step({ position: [0, 3, 0], dt: 1 / 60 });
+  assert(motion.destination, 'explicit roam selected a destination');
+  const seed = motion.seed;
+  motion.setMode('self-directed');
+  assert.equal(motion.destination, null);
+  for (let index = 0; index < 200; index++) {
+    // A separate motor may have moved the body; never pull it back to the
+    // scripted anchor or toward the owner's current position.
+    const position = [index, 3, -index], target = [index + 50, 3, 80];
+    const next = motion.step({ position, target, dt: index % 2 ? 90 : 1 / 60 });
+    assert.deepEqual(next, position); assert.notEqual(next, position);
+  }
+  assert.equal(motion.seed, seed); assert.equal(motion.destination, null);
+  motion.setMode('follow');
+  assert(motion.step({ position: [0, 3, 0], target: [100, 3, 0], dt: 1 })[0] > 0);
+  const unspecified = new WorldResidentMotion({ key: 'unspecified', position: [0, 3, 0] });
+  assert.equal(unspecified.mode, 'self-directed');
+  assert.deepEqual(unspecified.step({ position: [0, 3, 0], target: [100, 3, 0], dt: 90 }), [0, 3, 0]);
+});
+
 test('repeated player creation reuses one collider and one existing renderer body', () => {
   const physics = new PhysicsWorld();
   const first = physics.createPlayerBody('human', { x: 1, y: 3, z: 2 });

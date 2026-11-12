@@ -7,9 +7,10 @@ import { AgentRuntime } from '../../peercompute/src/peercompute/agents/AgentRunt
 import { createWorldExperience } from '../shared/agents/WorldExperience.js';
 import { createWorldConversationTurns } from '../shared/agents/WorldConversationTurn.js';
 import { WORLD_INTENT_LEGACY_SUFFIX } from '../shared/agents/WorldIntent.js';
+import { projectWorldKnowledgeRequest } from '../shared/agents/WorldKnowledgeDecision.js';
 
 function deferred() { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; }
-async function fixture(t) {
+async function fixture(t, { clock = () => 1000 } = {}) {
   const held = new Set(), store = new AgentRecordStore({ indexedDBImpl: new IDBFactory(), keyRange: IDBKeyRange,
     lockManager: { async request(name, options, callback) {
       if (held.has(name)) return callback(null); held.add(name);
@@ -30,7 +31,7 @@ async function fixture(t) {
     requesterId: 'human:visitor', participants: [{ id: 'human:visitor', peerId: 'visitor', kind: 'human', name: 'Visitor', position: [20, 3, 0] }] };
   const adapter = { observe: () => structuredClone(senses), subscribeOutcomes: () => () => {},
     setIntent(key, intent) { actions.push({ key, ...intent }); senses.self.intentRevision++; senses.self.motion = { type: intent.type, status: 'moving', ...(intent.targetId ? { targetId: intent.targetId } : {}) }; } };
-  const experience = createWorldExperience({ worldId: 'cube:test', adapter, getBody: () => body, now: () => 1000,
+  const experience = createWorldExperience({ worldId: 'cube:test', adapter, getBody: () => body, now: clock,
     memory: { append: async event => episodes.push(event), retrieve: async scope => episodes.filter(event => event.conversationId === scope.conversationId) } });
   const f = { store, agents, inference, body, senses, speech, answers, actions, episodes, decisions, experience,
     decide: async () => ({ intent: null }) };
@@ -67,6 +68,70 @@ test('one journaled speech turn retains history and strips only the exact old sc
   assert.deepEqual(events.slice(before.length).map(event => [event.type, event.text]),
     [['request', 'What is here?'], ['result', 'Reply 1'], ['request', 'What changed?'], ['result', 'Reply 2']]);
   assert.equal(f.decisions.length, 2); assert.deepEqual(f.actions, []);
+});
+
+test('place memory proposals retain the incoming speaker position after speech and never fabricate persistence', async t => {
+  const f = await fixture(t, { clock: Date.now }), started = deferred(), release = deferred();
+  const generate = f.inference.generate;
+  f.inference.generate = async (...args) => { started.resolve(); await release.promise; return generate(...args); };
+  f.decide = async options => {
+    assert.equal(options.allowKnowledge, true);
+    assert.deepEqual(options.observed.participants[0].position, [90, 3, 0]);
+    assert.deepEqual(options.knowledgeObserved.participants[0].position, [20, 3, 0]);
+    return { knowledge: projectWorldKnowledgeRequest(options.knowledgeObserved)
+      .resolve({ type: 'remember-place', name: 'Meeting spot', anchor: 'speaker' }) };
+  };
+  const running = f.run('Remember this as our meeting spot.', { allowKnowledge: true }); await started.promise;
+  f.senses.participants[0].position = [90, 3, 0]; release.resolve();
+  const result = await running;
+  assert.equal(result.text, 'Reply 1'); assert.equal(result.applied, false);
+  assert.deepEqual(result.knowledge.action.position, [20, 3, 0]);
+  assert.equal(result.knowledge.residentRevision, (await f.agents.get(f.body.agentId)).revision);
+  assert.match(result.knowledge.requestId, /^[0-9a-f-]{36}$/);
+  assert.deepEqual(f.actions, []);
+  assert.deepEqual((await f.agents.events(f.body.agentId)).filter(event => ['request', 'result'].includes(event.type)).map(event => event.text),
+    ['Remember this as our meeting spot.', 'Reply 1']);
+  assert.equal(f.episodes.filter(item => item.kind === 'composed-reply').length, 1);
+});
+
+test('a decision provider cannot change the frozen memory evidence or admit a memory without owner capability', async t => {
+  for (const scenario of ['changed-coordinates', 'changed-source', 'no-capability']) {
+    const f = await fixture(t, { clock: Date.now });
+    f.decide = async options => {
+      const snapshot = options.knowledgeObserved ?? options.observed;
+      const action = projectWorldKnowledgeRequest(snapshot).resolve({ type: 'remember-place', name: 'Meeting spot', anchor: 'speaker' });
+      if (scenario === 'changed-coordinates') {
+        snapshot.participants[0].position = [999, 3, 0]; action.position = [999, 3, 0];
+      }
+      if (scenario === 'changed-source') action.source.id = 'human:intruder';
+      return { knowledge: action };
+    };
+    const result = await f.run('Remember here.', { allowKnowledge: scenario !== 'no-capability' });
+    assert.equal(result.knowledge, undefined); assert.match(result.text, /Action not started/);
+    assert.deepEqual(f.actions, []);
+  }
+});
+
+test('cancelled, edited, paused and stale memory proposals preserve speech without returning storage authority', async t => {
+  for (const scenario of ['cancel', 'edit', 'pause', 'stale']) {
+    const f = await fixture(t, { clock: scenario === 'stale' ? () => Date.now() - 120001 : Date.now });
+    const started = deferred(), release = deferred(), controller = new AbortController();
+    f.decide = async options => {
+      started.resolve(); await release.promise;
+      return { knowledge: projectWorldKnowledgeRequest(options.knowledgeObserved)
+        .resolve({ type: 'remember-place', name: 'Meeting spot', anchor: 'speaker' }, { now: options.knowledgeObserved.observedAt }) };
+    };
+    const running = f.run('Remember this place.', { allowKnowledge: true, signal: controller.signal });
+    running.catch(() => {}); await started.promise;
+    if (scenario === 'cancel') controller.abort();
+    if (scenario === 'edit') await f.agents.update(f.body.agentId, { name: 'Changed' });
+    if (scenario === 'pause') await f.agents.pause(f.body.agentId);
+    release.resolve();
+    if (scenario === 'cancel') await assert.rejects(running, { name: 'AbortError' });
+    else { const result = await running; assert.equal(result.knowledge, undefined); assert.match(result.text, /Action not started/); }
+    assert.deepEqual(f.actions, []);
+    assert.equal((await f.agents.events(f.body.agentId)).filter(event => event.type === 'result').length, 1);
+  }
 });
 
 test('an explicit declined reply settles without an action and a different next turn uses its own prompt', async t => {

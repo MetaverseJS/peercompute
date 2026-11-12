@@ -103,6 +103,7 @@ async function fixture(t, { mobile = false, enabled = true } = {}) {
         if (window.holdEdit) await hold('edit');
         residents = residents.map(agent => agent.key === input.key ? { ...agent, ...input } : agent); ui.setAgents(residents);
       },
+      onMind: async input => { calls.push({ type: 'mind', key: input.key, focused: input.returnFocus === document.activeElement }); },
       onClone: async input => { calls.push({ type: 'clone', input }); if (window.failClone) throw Error('Cloning permission changed'); },
       onAppearance: async input => {
         calls.push({ type: 'appearance', ...input });
@@ -527,12 +528,12 @@ test('Residents is one accessible roster with owner-only movement/recovery/remov
   await dialog.getByRole('textbox', { name: 'Physical appearance', exact: true }).fill('  A friendly blue robot face  ');
   assert.equal(await dialog.getByRole('textbox', { name: 'Physical appearance', exact: true }).getAttribute('maxlength'), '1000');
   assert.equal(await dialog.getByRole('checkbox', { name: 'Respond to world chat', exact: true }).isChecked(), false);
-  assert.equal(await dialog.getByRole('combobox', { name: 'Movement', exact: true }).inputValue(), 'stationary');
+  assert.equal(await dialog.getByRole('combobox', { name: 'Movement', exact: true }).inputValue(), 'self-directed');
   await dialog.getByRole('button', { name: 'Place resident', exact: true }).click();
   await dialog.waitFor({ state: 'hidden' });
   const created = await page.evaluate(() => calls.find(call => call.type === 'spawn').input);
-  assert.deepEqual(created, { name: 'New resident', instructions: '', allowCloning: true, shareMemories: true, sharePrivateMemories: false, initiateConversations: false, selfModifiable: false, movement: 'stationary', goals: ['Listen', 'Help visitors'], appearancePrompt: 'A friendly blue robot face', respondToWorldChat: false, localOnly: false, shared: true });
-  assert.deepEqual(await page.evaluate(() => calls.filter(call => call.type === 'movement').at(-1)), { type: 'movement', key: 'local:new', mode: 'stationary' });
+  assert.deepEqual(created, { name: 'New resident', instructions: '', allowCloning: true, shareMemories: true, sharePrivateMemories: false, initiateConversations: true, autonomous: true, selfModifiable: false, movement: 'self-directed', goals: ['Listen', 'Help visitors'], appearancePrompt: 'A friendly blue robot face', respondToWorldChat: false, localOnly: false, shared: true });
+  assert.deepEqual(await page.evaluate(() => calls.filter(call => call.type === 'movement').at(-1)), { type: 'movement', key: 'local:new', mode: 'self-directed' });
   assert.equal(await page.evaluate(() => ui.getTarget()), 'local:new');
   await openResidents(page);
   assert.match(await dialog.locator('[data-agent-key="local:new"]').innerText(), /Appearance saved/);
@@ -669,7 +670,7 @@ test('owner profile editor saves appearance, identity, policy and clone consent 
   await editor.getByRole('checkbox',{name:'Include private conversations',exact:true}).check();
   await editor.getByRole('button',{name:'Save resident',exact:true}).click();await editor.waitFor({state:'hidden'});
   const saved=await page.evaluate(()=>calls.find(c=>c.type==='edit').input);
-  assert.deepEqual(saved,{key:'local:ada',name:'Ada updated',instructions:'Be curious',goals:['Meet visitors','Learn shapes'],appearancePrompt:'A green cube face',movement:'follow',localOnly:true,shared:true,respondToWorldChat:true,initiateConversations:false,selfModifiable:false,allowCloning:true,shareMemories:true,sharePrivateMemories:true});
+  assert.deepEqual(saved,{key:'local:ada',name:'Ada updated',instructions:'Be curious',goals:['Meet visitors','Learn shapes'],appearancePrompt:'A green cube face',movement:'follow',localOnly:true,shared:true,respondToWorldChat:true,initiateConversations:false,autonomous:true,selfModifiable:false,allowCloning:true,shareMemories:true,sharePrivateMemories:true});
   await roster.getByRole('button',{name:'Clone Ada updated',exact:true}).click();
   assert.deepEqual(await page.evaluate(()=>calls.find(c=>c.type==='clone').input),{key:'local:ada'});
 });
@@ -728,13 +729,13 @@ test('owner can revoke private history without changing public history; unrelate
  const request=await page.evaluate(()=>calls.filter(c=>c.type==='edit').at(-1).input);assert.equal(request.sharePrivateMemories,false);assert.equal(Object.hasOwn(request,'shareMemories'),false);
 });
 
-test('resident initiation defaults off, is independent from world replies, and resets for the next creation', async t => {
+test('resident initiation defaults on, is independent from world replies, and resets for the next creation', async t => {
   const page = await fixture(t); await openResidents(page);
   const dialog = page.getByRole('dialog', { name: 'Residents', exact: true });
   await dialog.locator('summary').filter({ hasText: 'Place a resident' }).click();
   const initiate = dialog.getByRole('checkbox', { name: 'Initiate conversations', exact: true });
   const respond = dialog.getByRole('checkbox', { name: 'Respond to world chat', exact: true });
-  assert.equal(await initiate.isChecked(), false); assert.equal(await respond.isChecked(), false);
+  assert.equal(await initiate.isChecked(), true); assert.equal(await respond.isChecked(), false);
   assert.equal(await dialog.getByRole('checkbox', { name: 'Share resident history', exact: true }).isChecked(), true);
   assert.equal(await dialog.getByRole('checkbox', { name: 'Include private conversations', exact: true }).isChecked(), false);
   assert.match(await dialog.innerText(), /someone is nearby and a model is available/);
@@ -745,7 +746,7 @@ test('resident initiation defaults off, is independent from world replies, and r
   await dialog.waitFor({ state: 'hidden' });
   const saved = await page.evaluate(() => calls.find(call => call.type === 'spawn').input);
   assert.equal(saved.initiateConversations, true); assert.equal(saved.respondToWorldChat, false);
-  await openResidents(page); assert.equal(await initiate.isChecked(), false);
+  await openResidents(page); assert.equal(await initiate.isChecked(), true);
 });
 
 test('owner explicitly enables and revokes initiative while legacy residents remain off', async t => {
@@ -954,7 +955,7 @@ test('standing social creation is opt-in, preserves custom fields, and resets fo
   await roster.getByRole('button', { name: 'Place resident', exact: true }).click(); await roster.waitFor({ state: 'hidden' });
   const saved = await page.evaluate(() => calls.find(call => call.type === 'spawn').input);
   assert.deepEqual(saved.standingGoal, { id: 'social-goal-v1', enabled: true, objective: 'Introduce yourself to visitors.', target: 'new-players' });
-  assert.equal(saved.selfModifiable, true); assert.equal(saved.initiateConversations, false); assert.equal(saved.respondToWorldChat, false);
+  assert.equal(saved.selfModifiable, true); assert.equal(saved.initiateConversations, true); assert.equal(saved.respondToWorldChat, false);
   await openResidents(page); assert.equal(await panel.evaluate(element => element.open), false);
   assert.equal(await self.isChecked(), false); await panel.locator('summary').click();
   assert.equal(await enabled.isChecked(), false);
@@ -1121,4 +1122,15 @@ test('private reply model labels remain inert and bounded across mobile redraws 
   assert.equal(await log.locator('article p').innerText(), 'Public words');
   await page.evaluate(() => ui.select(residents[0]));
   assert.equal(await labels.count(), 2);
+});
+
+
+test('Mind inspection is owner-only and remains available during inference', async t => {
+  const page = await fixture(t); await openResidents(page);
+  const roster = page.getByRole('dialog', { name: 'Residents', exact: true });
+  assert.equal(await roster.locator('[data-agent-key="peer:remote"]').getByRole('button', { name: /Inspect mind/ }).count(), 0);
+  await page.evaluate(() => ui.setBusy(true));
+  const mind = roster.getByRole('button', { name: 'Inspect mind of Ada', exact: true });
+  assert.equal(await mind.isEnabled(), true); await mind.click();
+  assert.deepEqual(await page.evaluate(() => calls.find(call => call.type === 'mind')), { type: 'mind', key: 'local:ada', focused: true });
 });

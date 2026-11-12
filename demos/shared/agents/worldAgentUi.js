@@ -17,7 +17,7 @@ const checkbox = (label, checked = false) => {
 
 /** Accessible scene conversation controls. No model execution or storage ownership. */
 export function createWorldAgentUi({ worldLabel = 'World', container = document.body,
-  onSpawn, onSelect, onSend, onModels, onVoice, onRecord, onCancel, onClose, onRemove, onResume, onOpen } = {}) {
+  onSpawn, onSelect, onSend, onModels, onVoice, onRecord, onCancel, onClose, onRemove, onResume, onOpen, onMind } = {}) {
   const root = element('div', undefined, 'pc-world-agent-ui');
   const launcher = button('Agents'); launcher.className = 'pc-world-agent-launcher';
   const dialog = element('dialog', undefined, 'pc-world-agent-dialog');
@@ -46,9 +46,9 @@ export function createWorldAgentUi({ worldLabel = 'World', container = document.
   const agentName = element('h3', 'Select an agent cube');
   const metadata = element('p', 'Choose a cube in the scene or an agent from the list.', 'pc-world-agent-note');
   const ownerActions = element('div', undefined, 'pc-world-agent-actions');
-  const resume = button('Resume'), remove = button('Remove body');
+  const resume = button('Resume'), remove = button('Remove body'), mind = button('Mind');
   remove.title = 'Remove this cube from the world. Its saved identity and conversation history remain.';
-  ownerActions.append(resume, remove);
+  ownerActions.append(mind, resume, remove);
   const recovery = element('p', '', 'pc-world-agent-note'); recovery.hidden = true;
   const messages = element('div', undefined, 'pc-world-agent-messages');
   messages.setAttribute('role', 'log'); messages.setAttribute('aria-label', 'Agent conversation'); messages.setAttribute('aria-live', 'polite');
@@ -102,6 +102,7 @@ export function createWorldAgentUi({ worldLabel = 'World', container = document.
     ownerActions.hidden = !owned;
     remove.hidden = !owned; remove.disabled = blocked || pending || active() || capturing() || typeof onRemove !== 'function';
     resume.hidden = !owned || !paused(); resume.disabled = blocked || pending || active() || capturing() || typeof onResume !== 'function';
+    mind.hidden = !owned || typeof onMind !== 'function'; mind.disabled = blocked || !owned;
     resume.textContent = selected?.recoveryRequired ? 'Acknowledge and resume' : 'Resume';
     recovery.hidden = !paused();
     recovery.textContent = selected?.recoveryRequired
@@ -210,6 +211,7 @@ export function createWorldAgentUi({ worldLabel = 'World', container = document.
   });
   models.addEventListener('click', () => { if (!models.disabled) void invoke(onModels); });
   remove.addEventListener('click', () => { if (selected?.local && !remove.disabled) void invoke(onRemove, selected.key, { mutation: true }); });
+  mind.addEventListener('click', () => { if (selected?.local && !mind.disabled) void invoke(onMind, { key: selected.key, returnFocus: mind }); });
   resume.addEventListener('click', () => { if (selected?.local && !resume.disabled) void invoke(onResume, selected.key, { mutation: true }); });
   cancel.addEventListener('click', async () => {
     if (cancel.disabled) return;

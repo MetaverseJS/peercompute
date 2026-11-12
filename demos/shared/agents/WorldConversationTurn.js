@@ -2,6 +2,7 @@ import { normalizeWorldAvatarAction } from './WorldAvatarAction.js';
 import { generateWorldIntentDecision } from './WorldIntentDecision.js';
 import { normalizeWorldObjectAction } from './WorldObjectAction.js';
 import { residentDeclinedAction, residentReplyModelLabel } from './WorldReplyDisposition.js';
+import { validateWorldKnowledgeAction } from './WorldKnowledgeDecision.js';
 
 const aborted = reason => new DOMException(reason, 'AbortError');
 const changed = () => new Error('The resident or conversation changed before the action could start.');
@@ -70,9 +71,14 @@ export function createWorldConversationTurns({ agents, experience, signal: paren
       else delete observed.requesterId;
       const decisionSignal = AbortSignal.any([entry.signal, entry.decision.signal]);
       const decision = await decideIntent({ inference: agents.inference, head, message: entry.message,
-        reply: text, observed, signal: decisionSignal, allowTask: entry.allowTask, allowObject: entry.allowObject, allowAvatar: entry.allowAvatar });
+        reply: text, observed, signal: decisionSignal, allowTask: entry.allowTask, allowObject: entry.allowObject, allowAvatar: entry.allowAvatar,
+        allowKnowledge: entry.allowKnowledge, knowledgeObserved: structuredClone(entry.knowledgeObserved) });
       await headFor(entry);
       decisionSignal.throwIfAborted();
+      if (entry.allowKnowledge && decision?.knowledge && Object.keys(decision).length === 1) {
+        return { ...result, knowledge: { action: validateWorldKnowledgeAction(decision.knowledge, { observed: entry.knowledgeObserved }),
+          residentRevision: entry.revision, requestId: crypto.randomUUID() } };
+      }
       if (entry.allowAvatar && decision?.avatar && Object.keys(decision).length === 1) {
         return { ...result, avatar: { action: normalizeWorldAvatarAction(decision.avatar), residentRevision: entry.revision,
           requestId: crypto.randomUUID() } };
@@ -97,7 +103,7 @@ export function createWorldConversationTurns({ agents, experience, signal: paren
     }
   }
   function run({ key, agentId, turn, prompt, message = prompt, conversationId, worldContext, taskInstructions,
-    maxNewTokens = 512, signal, valid = () => true, allowTask = false, allowObject = false, allowAvatar = false } = {}) {
+    maxNewTokens = 512, signal, valid = () => true, allowTask = false, allowObject = false, allowAvatar = false, allowKnowledge = false } = {}) {
     const combined = AbortSignal.any([lifetime.signal, ...(parentSignal ? [parentSignal] : []), ...(signal ? [signal] : [])]);
     combined.throwIfAborted();
     const previous = active.get(key);
@@ -105,6 +111,7 @@ export function createWorldConversationTurns({ agents, experience, signal: paren
     previous?.decision.abort(aborted('A newer message superseded this pending action.'));
     const entry = { key, agentId, turn, prompt, message, conversationId, worldContext, taskInstructions, maxNewTokens, valid,
       allowTask: allowTask === true, allowObject: allowObject === true, allowAvatar: allowAvatar === true,
+      allowKnowledge: allowKnowledge === true, knowledgeObserved: allowKnowledge === true ? structuredClone(turn?.senses) : undefined,
       signal: combined, phase: 'speech', decision: new AbortController() };
     active.set(key, entry);
     entry.promise = execute(entry, previous).finally(() => {

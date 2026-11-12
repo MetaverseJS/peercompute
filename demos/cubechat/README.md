@@ -497,3 +497,49 @@ To remove placed 3D objects, open **☰ → Objects**, select them, then choose
 **Delete selected**. This lists objects placed by this device in the current
 room. Their shared instances disappear from other peers; other hosts manage
 their own objects. This does not remove residents, avatars or inference models.
+
+
+### Remembered people and places
+
+Tell an owned resident **“Remember this as our meeting spot.”** It can name the
+speaker’s observed position at that message, then use **“Take me back to our
+meeting spot”** as a normal spatial objective, including after reload. The model
+chooses a grounded anchor; it cannot supply arbitrary coordinates. Movement
+rechecks the walking surface, obstacles and range and confirms arrival through
+the motor. A saved location is not a guarantee that it remains reachable.
+The name must appear in your message. Naming a place cannot overwrite an existing
+destination; use a different name for a different point.
+
+Open **☰ → Residents → Mind** beside Edit to inspect remembered places and
+identity-based encounters, correct a label/note or forget an entry. Corrections
+are owner reports, not newly observed facts. Last-seen positions are historical.
+People are matched by authenticated peer identity, never by display name; a
+returning visitor with a new peer identity remains a separate encounter.
+Forget removes the knowledge entry and blocks delayed recreation; original
+conversation history and already-saved movement tasks remain separate.
+
+Knowledge stays in this device’s IndexedDB, scoped by resident, world and
+conversation. Public speech can use public knowledge; private knowledge and
+reflections informed by it stay out of public-speaking cycles. Clones inherit
+knowledge only under the existing history/private-history sharing choices.
+Shared modules provide durable evidence, bounded recall, model admission and
+Mind controls; world adapters continue to own sensing and movement. This is
+memory-guided adaptation, not neural weight training or a global world map.
+The complete remember/reload/return workflow was verified using peer-hosted
+Nemotron Nano4B and the learned WebGPU motor. Task status and physical receipts
+establish movement; conversational coordinates or promises can still be wrong.
+Small models can miss an action or copy an example: the 0.8B Qwen test did not
+reliably follow this workflow. Storage guards reject invented names and replacement
+destinations. Forgetting retains a small tombstone to prevent delayed recreation;
+the bounded store currently allows 256 records per resident/world, including
+those tombstones.
+
+Run `npm run test:resident-knowledge` from the repository root for the focused
+store, native IndexedDB, clone-profile, grounded-action and Mind UI checks.
+
+New residents, personal guides and clones default to **Self directed** movement.
+With **Reflect and pursue goals automatically** enabled, their OODA loop chooses
+when and where to move through the learned motor. They wait when no action is
+chosen; this profile does not script roaming. Owner chat and saved objectives
+can still direct movement. Choose a profile in Residents or Edit resident;
+existing explicit preferences remain saved.

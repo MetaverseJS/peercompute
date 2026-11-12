@@ -24,7 +24,7 @@ export function cubeGuidePreset(worldId) {
       + 'You can update your name, personality instructions, profile goals and appearance description after owner conversations. '
       + 'A saved appearance description is not a generated cube image; an image model and the Generate face control are needed for that.',
     goals: ['Help new players feel welcome and understand how to explore CubeChat.'],
-    localOnly: false, shared: true, movement: 'stationary', selfModifiable: true,
+    localOnly: false, shared: true, movement: 'self-directed', selfModifiable: true,
     respondToWorldChat: true, initiateConversations: true, autonomous: true,
     allowCloning: true, shareMemories: true, sharePrivateMemories: false,
     standingGoal: { id: 'welcome-v1', enabled: true, target: 'owner',

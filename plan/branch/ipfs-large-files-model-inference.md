@@ -1745,3 +1745,23 @@ and retained-worker reload passed separately. Preserve explicit owner pauses and
 unloads; legacy unclassified pauses may need one manual Resume. Existing MPM
 numerical drift remains outside this resident slice. Full evidence and limitations
 are recorded in log.md; the final documentation receipt stays local.
+
+
+November12 user “ok go” authorizes the proposed persistent resident knowledge
+slice. Ground named places in actual incoming observations and familiarity in
+authenticated identity; preserve audiences, owner authority and clone grants.
+Use existing movement plans and receipts. Add reusable Mind controls; qualify
+actual remember/reload/return on internal previews before a local checkpoint.
+No new Pages publication is included.
+
+
+2026-11-12 grounded resident knowledge is implemented and accepted on internal
+CubeChat/Earth previews. Persistent scoped people/places, owner Mind controls,
+clone permissions and neural action-category routing reuse the existing host,
+goal planner and learned motor. Actual Nano4B remember/reload/return and native
+Mind correction/forget pass. Preserve documented model limits and failed trials.
+This slice is a local checkpoint; Pages and origin publication are not included.
+
+Follow-up steering: make Self directed the default movement profile. No random
+wandering or scripted path is supplied by this preference; OODA/goal decisions
+use the existing learned motor. Preserve explicit saved movement choices.

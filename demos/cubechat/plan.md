@@ -681,3 +681,43 @@ the final shared-prompt14-case rerun also passes (scopes overlap).
 The bounded live semantic-planner probe saw no remote text candidate and sent no
 requests; real LLM size choice remains unqualified. Exact internal desktop/mobile
 preview, Objects UI and authenticated SecretWorkshop connection pass. No Pages push.
+
+
+### Grounded knowledge — November12
+
+Authorized people/named-place slice uses StateManager-owned WorldKnowledgeStore
+with scope/audience/identity, revision checks, evidence and persistent forgetting.
+WorldKnowledgeBridge projects bounded relevant context and validates remembered
+places against fresh world geometry; WorldKnowledgeDecision admits owner-only
+names from frozen incoming observations. Existing WorldGoalController and learned
+motor remain responsible for task execution and physical arrival receipts.
+
+Mind is a reusable owner modal beside Edit. It supports label/note correction and
+forgetting, keeps inspection usable during inference, and fences late UI results.
+Correction adds an attributed owner report without pretending to observe the
+changed prose. Public/private reflection channels remain separate when optional
+private knowledge is used. Profilev3 and transportv4 carry explicitly permitted
+clone knowledge; older endpoints receive their supported profile without new
+fields.
+
+Acceptance8 passes with real peer-hosted Nemotron Nano4B at its normal2048token
+context: the named point survives reload, the original return prompt creates a
+plan targeting that exact point, and the learned WebGPU motor completes it with
+a matching arrival receipt. Return starts89.54units away and arrives7.9966units
+from the target within the existing8unit stopping radius. Native Mind correction
+and Forget pass, including reload and preserved conversation history. Separate
+encrypted clone/profile, cancellation, scope/CAS and native IndexedDB gates pass.
+
+Action routing now chooses an operation neurally before requesting only that
+operation's arguments. Small-context speech keeps grounded knowledge before
+duplicated optional episode excerpts. Place naming is create-only and grounded
+in the current owner's text. Earlier Qwen0.8 failures and Nano budget/admission
+failures remain recorded. This does not qualify arbitrary model decisions or
+conversational factual accuracy; use physical task receipts for completion.
+Internal CubeChat5176 and Earth5187 are updated with exact assets, visual startup
+and authenticated SecretWorkshop checks. No docs/Pages build or push.
+
+Self-directed movement follow-up: new residents, guides, clones and missing
+preferences use Self directed. Selecting it releases previous follow/roam
+commands; model-selected actions run the learned motor. Same-profile refreshes
+must preserve active intentions, and explicit saved profiles remain unchanged.

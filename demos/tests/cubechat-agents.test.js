@@ -535,10 +535,103 @@ test('saved movement changes apply once while unchanged thinking updates preserv
  assert(result.moving[2]>1);assert.equal(result.intent,'live');assert.equal(result.cleared,true);assert.deepEqual(result.velocity,[0,0,0]);
 });
 
+test('missing and explicit self-directed preferences stay inert until an intention; explicit roam remains opt-in', async t => {
+  const page = await fixture(t);
+  const result = await page.evaluate(async () => {
+    const cases = [];
+    layer.setMotor(controlledMotor);
+    for (const movement of [undefined, 'self-directed']) {
+      layer.upsert({ ...base, movement });
+      const entry = layer.entries.get(base.key), step = entry.motion.step.bind(entry.motion);
+      let scriptedSteps = 0;
+      entry.motion.step = input => { scriptedSteps++; return step(input); };
+      await advance(180);
+      cases.push({ movement: entry.movement, mode: entry.motion.mode, position: layer.getPosition(base.key),
+        scriptedSteps, intentCount: layer.motor.intents.size, calls: motorCalls.length });
+      layer.remove(base.key);
+    }
+    layer.upsert({ ...base, movement: 'roam' });
+    await advance(60);
+    const roaming = layer.getPosition(base.key), body = layer.entries.get(base.key).body;
+    layer.upsert({ ...base, movement: 'self-directed' });
+    const cleared = layer.entries.get(base.key).motion.destination === null;
+    await advance(120);
+    return { cases, roaming, stopped: layer.getPosition(base.key), velocity: body.velocity.toArray(), cleared };
+  });
+  for (const value of result.cases) assert.deepEqual(value, { movement: 'self-directed', mode: 'self-directed',
+    position: [0, 3, 0], scriptedSteps: 0, intentCount: 0, calls: 0 });
+  assert(Math.hypot(result.roaming[0], result.roaming[2]) > 1, 'explicit roam still moves');
+  assert.deepEqual(result.stopped, result.roaming); assert.deepEqual(result.velocity, [0, 0, 0]);
+  assert.equal(result.cleared, true);
+});
+
+test('selecting self-directed cancels pending follow and rejects its late motor result', async t => {
+  const page = await fixture(t);
+  const result = await page.evaluate(async () => {
+    layer.upsert({ ...base, movement: 'follow' });
+    const outcomes = []; layer.subscribeOutcomes(value => outcomes.push(value));
+    let release;
+    layer.setMotor({ infer: requests => new Promise(resolve => {
+      release = () => resolve({ results: requests.map(({ id }) => ({ id, acceleration: [12, 12] })) });
+    }) });
+    for (let i = 0; i < 6; i++) { physics.world.step(1 / 60); layer.afterPhysics(1 / 60); }
+    await Promise.resolve();
+    const job = layer.motor.pending, previousRevision = layer.observe(base.key).self.intentRevision;
+    layer.upsert({ ...base, movement: 'self-directed' });
+    const aborted = job.controller.signal.aborted;
+    release(); await job.done; await advance(120);
+    return { aborted, outcomes, position: layer.getPosition(base.key), commands: layer.motor.commands.size,
+      intents: layer.motor.intents.size, revision: layer.observe(base.key).self.intentRevision, previousRevision,
+      velocity: layer.entries.get(base.key).body.velocity.toArray() };
+  });
+  assert.equal(result.aborted, true); assert(result.outcomes.some(value => value.type === 'follow' && value.status === 'cancelled'));
+  assert.deepEqual(result.position, [0, 3, 0]); assert.deepEqual(result.velocity, [0, 0, 0]);
+  assert.equal(result.commands, 0); assert.equal(result.intents, 0); assert(result.revision > result.previousRevision);
+});
+
+test('self-directed model follow and move-to survive same-preference body refreshes', async t => {
+  const page = await fixture(t);
+  const result = await page.evaluate(async () => {
+    shell.gridSize = 200;
+    const floor = new CANNON.Body({ mass: 0, shape: new CANNON.Plane() });
+    floor.quaternion.setFromEuler(-Math.PI / 2, 0, 0); physics.world.addBody(floor);
+    participants[0].position = [0, 3, 60]; layer.setMotor(controlledMotor);
+    const cases = [];
+    for (const type of ['follow', 'move-to']) {
+      layer.upsert(base);
+      const entry = layer.entries.get(base.key), body = entry.body;
+      entry.motion.step = () => { throw Error('Self-directed must not invoke scripted motion'); };
+      layer.setIntent(base.key, { type, requestId: type,
+        ...(type === 'follow' ? { targetId: 'human:owner-peer' } : { position: [40, 3, 0] }) });
+      const intent = layer.motor.intents.get(base.key), revision = entry.intentRevision;
+      await advance(30); const before = layer.getPosition(base.key);
+      for (const status of ['thinking', 'speaking', 'idle']) {
+        // Omitted and explicit defaults denote the same preference. The saved
+        // spawn pose in these refreshes must not move the live physics body.
+        layer.upsert({ ...base, status, movement: 'self-directed', name: 'Renamed Ada' });
+        layer.upsert({ ...base, status });
+        await advance(20);
+      }
+      cases.push({ type, before, after: layer.getPosition(base.key), sameBody: entry.body === body,
+        sameIntent: layer.motor.intents.get(base.key) === intent, revisionUnchanged: entry.intentRevision === revision,
+        preference: entry.movement, status: layer.getResidentMotorStatus(base.key), calls: motorCalls.length });
+      layer.remove(base.key);
+    }
+    return cases;
+  });
+  for (const value of result) {
+    assert.equal(value.sameBody, true); assert.equal(value.sameIntent, true); assert.equal(value.revisionUnchanged, true);
+    assert.equal(value.preference, 'self-directed'); assert.equal(value.status.type, value.type); assert(value.calls > 0);
+    const axis = value.type === 'follow' ? 2 : 0;
+    assert(value.after[axis] > value.before[axis] + 2, 'the controlled motor keeps applying the chosen intention');
+  }
+});
+
 test('a failed managed motor halts once without repeatedly requesting an unsupported controller', async t=>{
  const page=await fixture(t);
  const result=await page.evaluate(async()=>{
-  layer.upsert({...base,movement:'stationary'});let requests=0;const outcomes=[];layer.subscribeOutcomes(value=>outcomes.push(value));
+  layer.upsert({...base,movement:'self-directed'});let requests=0;const outcomes=[];layer.subscribeOutcomes(value=>outcomes.push(value));
+  layer.entries.get(base.key).motion.step=()=>{throw Error('No scripted fallback is allowed');};
   layer.setMotor({infer:async()=>{requests++;throw Error('WebGPU unavailable');}});
   layer.setIntent(base.key,{type:'follow',targetId:'human:owner-peer'});await advance(360);
   return {requests,position:layer.getPosition(base.key),failures:outcomes.filter(e=>e.status==='failed').length};

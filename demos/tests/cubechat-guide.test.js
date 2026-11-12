@@ -8,7 +8,8 @@ test('personal guide has owner-targeted welcome and private owner co-creation en
   assert.equal(guide.standingGoal.target, 'owner');
   assert.equal(guide.standingGoal.enabled, true);
   assert.equal(guide.selfModifiable, true);
-  assert.equal(guide.respondToWorldChat, false);
+  assert.equal(guide.respondToWorldChat, true);
+  assert.equal(guide.movement, 'self-directed');
   assert.equal(guide.sharePrivateMemories, false);
   assert.match(guide.instructions, /one short question at a time/);
   assert.match(guide.instructions, /not a generated cube image/);

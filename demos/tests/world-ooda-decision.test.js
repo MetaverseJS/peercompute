@@ -109,3 +109,25 @@ test('Unicode goals stay within memory query bytes and public greeting receipts 
   const projection = projectWorldOoda(observed(), { publicMemories: f.state.requests[0].publicMemories });
   assert.equal(projection.data.recentPublicEvents[0].participant, 'Bea');
 });
+
+
+test('private knowledge and its reflections stay out of cycles allowed to publish public speech', async () => {
+  const requests = [], reads = [], writes = [];
+  const f = fixture({ knowledge: { observe: async input => { requests.push(input); return input.observed; }, assertCurrent: async () => {} },
+    memory: { retrieve: async input => { reads.push(input); return []; }, append: async record => writes.push(record) },
+    decide: async () => ({ decision: 'wait', reflection: 'A private thought.' }) });
+  f.state.current.embodiments[0].initiateConversations = false; await f.run();
+  assert.equal(requests[0].audience, 'private'); assert.equal(writes[0].conversationId, 'resident-private-reflection');
+  assert.equal(reads[0].conversationId, 'resident-private-reflection');
+  requests.length = reads.length = writes.length = 0;
+  f.state.current.embodiments[0].initiateConversations = true; await f.run();
+  assert.equal(requests[0].audience, 'public'); assert.equal(writes[0].conversationId, 'resident-reflection');
+  assert(!reads.some(input => input.conversationId === 'resident-private-reflection'));
+});
+
+test('forgetting source knowledge during inference prevents OODA movement and publication', async () => {
+  const f = fixture({ knowledge: { observe: async input => input.observed,
+    assertCurrent: async () => { throw new DOMException('Knowledge changed', 'AbortError'); } },
+    decide: async () => ({ decision: 'act', intent: { type: 'stop' }, reflection: 'Old memory' }) });
+  await assert.rejects(f.run(), { name: 'AbortError' }); assert.deepEqual(f.state.intents, []); assert.deepEqual(f.state.published, []);
+});

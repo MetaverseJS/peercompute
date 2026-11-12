@@ -52,7 +52,7 @@ export function normalizeAgentEmbodiments(input) {
     if (binding.allowCloning !== undefined && typeof binding.allowCloning !== 'boolean') throw new Error('Invalid resident cloning preference');
     if (binding.shareMemories !== undefined && typeof binding.shareMemories !== 'boolean') throw new Error('Invalid resident memory-sharing preference');
     if (binding.sharePrivateMemories !== undefined && typeof binding.sharePrivateMemories !== 'boolean') throw new Error('Invalid resident private-memory-sharing preference');
-    if (binding.movement !== undefined && !['stationary', 'follow', 'roam'].includes(binding.movement)) throw new Error('Invalid resident movement preference');
+    if (binding.movement !== undefined && !['self-directed', 'stationary', 'follow', 'roam'].includes(binding.movement)) throw new Error('Invalid resident movement preference');
     const result = { worldId, position: normalizeWorldPosition(binding.position), color: binding.color, shared: binding.shared,
       respondToWorldChat: binding.respondToWorldChat ?? false, initiateConversations: binding.initiateConversations ?? false,
       allowCloning: binding.allowCloning ?? false, shareMemories: binding.shareMemories ?? false,

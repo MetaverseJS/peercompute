@@ -5306,3 +5306,52 @@ and retained-worker reload passed separately. Preserve explicit owner pauses and
 unloads; legacy unclassified pauses may need one manual Resume. Existing MPM
 numerical drift remains outside this resident slice. Full evidence and limitations
 are recorded in log.md; the final documentation receipt stays local.
+
+
+November12 resident knowledge acceptance: IndexedDB reopen/CAS/forget tombstones;
+identity collisions; private/public recall and clone grants; incoming-position
+anchoring while a speaker moves; stale/cancelled proposals; named-place grounding
+and geometry revalidation; owner Mind correction/forget and desktop/mobile modal
+lifecycle. Actual peer model must select remember and return without substituted
+actions, and movement must finish with a motor receipt after reload. Existing
+conversation/goal/OODA/profile suites remain regression gates. Internal previews
+only; results will be appended after execution.
+
+
+November12 grounded knowledge acceptance results:
+- `npm run test:resident-knowledge`:54pass, including real browser IndexedDB
+  reopen/cross-tab CAS and Mind UI.
+- Decision suite38pass; finalhost52pass; context/goal/OODA67pass; earlier
+  encrypted protocol/UI93pass, core/StateManager43pass, motor32pass. These
+  scopes overlap and are not a combined test count.
+- Native `live/acceptance-8/report.json`: exact original owner prompts, genuine
+  peer Nano4B at2048context, unchanged recorded place after reload, neural
+  category/task/plan/action decisions and real learned-WebGPU return receipt.
+  89.54unit starting separation, arrival7.9966 within radius8,93return-only motor
+  samples, dispatches218→402. Eight real peer calls; largest input+output budget
+  1937/2048.168asset hashes match, no recorded browser/network/HF errors.
+- Native Mind correction/forget plus reload separately pass234asset checks and
+  preserve conversation history, with zero inference. Final5176/5187 internal
+  previews pass82/46loaded JS/CSS hashes and authenticatedSecretWorkshop.
+- Keep earlier failed trials and exact prompt contrasts. Qwen0.8 is not
+  qualified for reliable action choice. Nano speech may still quote wrong
+  coordinates or copy schema explanation placeholders; physical receipts, not
+  prose, establish completion. Earth-specific navigation is not newly qualified.
+Evidence root: ~/.cache/peercompute-world-knowledge-20261112/.
+
+Self-directed follow-up validation covers persisted/default movement preferences,
+new guide/clone defaults, native roster creation/editing, no scripted motion
+without an intention, cancellation on switching profiles, and preservation of
+model-issued intentions across status/body refreshes. Existing explicit modes,
+owner pauses and missing-motor errors remain covered without scripted fallback.
+
+Self-directed results: 110 combined host/UI/guide/contract tests, final46 native
+UI cases, and45 adapter/motion cases passed (overlapping scopes). Initial bounded
+floor omission in the new move-to fixture is retained with its failed result.
+Serial final8 CubeChat/Earth builds passed. Adapter tests use controlled motor
+output and do not add another real-model qualification beyond acceptance8.
+
+Final8 internal preview verification passed exact HTTPS assets (82 CubeChat,
+46 Earth), native desktop/mobile Self directed controls, new guide default and
+authenticated SecretWorkshop connectivity, with no page/console/cleanup errors.
+No GitHub Pages files were rebuilt or published for this slice.

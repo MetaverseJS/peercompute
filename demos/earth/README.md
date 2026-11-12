@@ -53,6 +53,13 @@ checks and authenticated peer interactions. Models are loaded explicitly.
 Closing a conversation does not remove its agent. Private records remain scoped
 to the browser origin; separate development ports do not share IndexedDB.
 
+The selected owned agent's **Mind** control opens the shared people/place memory
+viewer. It shows provenance, age and public/private scope and supports correcting
+or forgetting retained knowledge. Knowledge uses a separate StateManager-owned
+IndexedDB store and follows the existing clone-history sharing choices. The
+physical remember-and-return acceptance is qualified in CubeChat; Earth-specific
+navigation remains governed by its own terrain and spatial adapter.
+
 Agent bodies use a dedicated, lazily created Cesium data source. They do not
 change OSM's buffer renderer, source geometry counts, cache quotas, or the
 local-only terrain/road cache networking policy. `__earthDemo.getState().agents`

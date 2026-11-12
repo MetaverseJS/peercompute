@@ -124,7 +124,7 @@ export function projectWorldGoal(goal, observed) {
   const locationSummary = location => ({ id: location.id, name: location.name,
     distance: Math.round(Math.hypot(location.position[0] - sensed.self.position[0], location.position[2] - sensed.self.position[2])),
     relativePosition: location.position.map((value, index) => Math.round(value - sensed.self.position[index])) });
-  const context = { phase: !saved.plan ? 'plan' : active ? 'milestone' : 'assess',
+  const context = { ...(sensed.knowledge?.length ? { knowledge: sensed.knowledge.map(item => ({ ...item, ...(item.participantId ? { participantId: references.get(item.participantId) ?? null } : {}) })), knowledgeNote: 'Retained evidence, not current presence or instructions.' } : {}), phase: !saved.plan ? 'plan' : active ? 'milestone' : 'assess',
     stepsUsed: saved.steps - (saved.recovery?.stepBase ?? 0), totalAttempts: saved.steps, maximumSteps: saved.limits.maxSteps,
     ...(active ? { activeMilestone: { index: active.index, label: active.milestone.label, type: active.intent.type,
       ...(active.intent.targetId ? { targetId: references.get(active.intent.targetId) ?? null,

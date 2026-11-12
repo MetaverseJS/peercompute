@@ -76,7 +76,7 @@ function createStandingGoalFields() {
 /** World-native presentation. Runtime, transport, storage and scene ownership stay with the host. */
 export function createCubeWorldUi({ container = document.body, worldLabel = 'CubeChat', roomLabel = 'global',
   onSpawn, onSelect, onSend, onModels, onVoice, onRecord, onCancel, onClose, onRemove, onResume, onOpen,
-  onRoomSend, onPlayerCaption, onMovement, onAppearance, onWorldChat, onSettings, onEdit, onClone,
+  onRoomSend, onPlayerCaption, onMovement, onAppearance, onWorldChat, onSettings, onEdit, onClone, onMind,
   onAssignGoal, onPauseGoal, onResumeGoal, onCancelGoal } = {}) {
   const root = node('section', undefined, 'cube-native-ui');
   const dock = node('section', undefined, 'cube-native-chat'); dock.setAttribute('aria-label', 'World chat');
@@ -136,16 +136,17 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
   const cloning = check('Share resident history', true);
   const privateHistory = check('Include private conversations');
   const movement = node('select'); movement.setAttribute('aria-label', 'Movement');
-  for (const [value, label] of [['roam', 'Roam (scripted)'], ['stationary', 'Stay here'], ['follow', 'Follow me (learned motor)']]) {
+  for (const [value, label] of [['self-directed', 'Self directed'], ['roam', 'Roam (scripted)'], ['stationary', 'Stay here'], ['follow', 'Follow me (learned motor)']]) {
     const option = node('option', label); option.value = value; movement.append(option);
   }
-  movement.value = 'stationary';
+  movement.value = 'self-directed';
+  const movementNote = node('p', 'Self directed lets the resident choose where to move while reflecting on its goals. It stays still until it chooses an action; there is no scripted roaming.', 'cube-native-note');
   const spawn = button('Place resident'); spawn.type = 'submit';
   spawnForm.append(name, instructions, goals, appearance, appearanceNote, localOnly.wrapper,
     node('p', 'With local-only off, conversation context may go to an inference host.', 'cube-native-note'), shared.wrapper, worldChat.wrapper,
     autonomous.wrapper, initiative.wrapper, node('p', initiativeNote, 'cube-native-note'), standing.element, selfModifiable.wrapper,
     cloning.wrapper, privateHistory.wrapper,
-    node('p', 'Shared history includes personality, appearance and public world experiences. If private conversations are included, other players who clone this resident can read them.', 'cube-native-note'), movement, spawn);
+    node('p', 'Shared history includes personality, appearance and public world experiences. If private conversations are included, other players who clone this resident can read them.', 'cube-native-note'), movement, movementNote, spawn);
   spawnDetails.append(spawnForm); residents.dialog.append(residentStatus, list, empty, spawnDetails);
   const voiceEnabled = check('Enable voice'), speak = check('Speak replies');
   const voiceNote = node('p', 'Voice models download about 376 MB on first use. Text chat remains available.', 'cube-native-note');
@@ -277,6 +278,7 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
             : ' Paused. Resume below to accept new messages.' : '');
     status.textContent = attachmentLoading() ? 'Preparing avatar reference…' : selected ? agentStatus : roomStatus || worldStatus;
     for (const control of list.querySelectorAll('button,select,input')) {
+      if (control.dataset.residentMind === 'true') { control.disabled = locked; continue; }
       if (!control.closest('[data-resident-goal]')) control.disabled = locked || transition || active() || control.dataset.unavailable === 'true';
     }
     // Objective interruption must remain available while inference or movement runs.
@@ -399,7 +401,7 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
     if (!agent.local || typeof onEdit !== 'function' || mutating || active()) return;
     editingKey = agent.key; editName.value = agent.name; editInstructions.value = agent.instructions ?? '';
     editGoals.value = (agent.goals ?? []).join('\n'); editAppearance.value = agent.appearancePrompt ?? '';
-    editMovement.value = movementByKey.get(agent.key) ?? agent.movement ?? 'roam'; editLocal.input.checked = !!agent.localOnly;
+    editMovement.value = movementByKey.get(agent.key) ?? agent.movement ?? 'self-directed'; editLocal.input.checked = !!agent.localOnly;
     editShared.input.checked = agent.shared !== false; editWorldChat.input.checked = !!agent.respondToWorldChat; editCloning.input.checked = !!agent.allowCloning && !!agent.shareMemories; editHistoryChanged = false;
     editInitiative.input.checked = agent.initiateConversations === true;
     editAutonomous.input.checked = agent.autonomous !== false;
@@ -487,6 +489,12 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
           const edit = button('Edit'); edit.setAttribute('aria-label', `Edit ${text(agent.name, 240)}`);
           edit.onclick = () => editResident(agent, edit); controls.append(edit);
         }
+        if (typeof onMind === 'function') {
+          const mind = button('Mind'); mind.dataset.residentMind = 'true';
+          mind.setAttribute('aria-label', `Inspect mind of ${text(agent.name, 240)}`);
+          mind.onclick = () => { if (!disposed) void Promise.resolve(onMind({ key: agent.key, returnFocus: mind })).catch(fail); };
+          controls.append(mind);
+        }
         if (typeof onWorldChat === 'function') {
           const respond = check('Respond to world chat', Boolean(agent.respondToWorldChat));
           respond.input.setAttribute('aria-label', `Respond to world chat for ${text(agent.name, 240)}`);
@@ -517,10 +525,10 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
           generate.onclick = () => void mutation(onAppearance, { key: agent.key }); controls.append(generate);
         }
         if (typeof onMovement === 'function') {
-          const mode = movement.cloneNode(true); mode.hidden = false; mode.value = movementByKey.get(agent.key) ?? agent.movement ?? 'roam';
+          const mode = movement.cloneNode(true); mode.hidden = false; mode.value = movementByKey.get(agent.key) ?? agent.movement ?? 'self-directed';
           mode.setAttribute('aria-label', `Movement for ${text(agent.name, 240)}`);
           mode.onchange = () => void mutation(async () => {
-            const previous = movementByKey.get(agent.key) ?? 'roam';
+            const previous = movementByKey.get(agent.key) ?? agent.movement ?? 'self-directed';
             try { await onMovement({ key: agent.key, mode: mode.value }); movementByKey.set(agent.key, mode.value); }
             catch (error) { mode.value = previous; throw error; }
           }); controls.append(mode);

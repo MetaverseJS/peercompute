@@ -8,7 +8,7 @@ import { plaintext } from '@libp2p/plaintext';
 import { yamux } from '@libp2p/yamux';
 import { identify } from '@libp2p/identify';
 import { multiaddr } from '@multiformats/multiaddr';
-import { AgentConversationService, AGENT_CONVERSATION_PROTOCOL, AGENT_PROFILE_PROTOCOL, AGENT_AVATAR_PROFILE_PROTOCOL } from '../../src/peercompute/agents/AgentConversationService.js';
+import { AgentConversationService, AGENT_CONVERSATION_PROTOCOL, AGENT_PROFILE_PROTOCOL, AGENT_AVATAR_PROFILE_PROTOCOL, AGENT_KNOWLEDGE_PROFILE_PROTOCOL } from '../../src/peercompute/agents/AgentConversationService.js';
 import { createResidentProfile, RESIDENT_PROFILE_MAX_BYTES } from '../../src/peercompute/agents/ResidentProfile.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
@@ -434,7 +434,7 @@ test('profiles cannot cross plaintext connections and no legacy execution fallba
   await assert.rejects(client.service.requestProfile(owner.node.peerId.toString(), { agentId: 'ada' }), { code: 'ERR_PEER_CONNECTION_DEADLINE' });
   assert.equal(owner.received.length, 0);
   const [modern, legacy] = await fixture(t); profilePeers(modern, legacy); legacy.agents = [{ ...body(), cloneable: true }];
-  await legacy.node.unhandle(AGENT_PROFILE_PROTOCOL); await legacy.node.unhandle(AGENT_AVATAR_PROFILE_PROTOCOL);
+  await legacy.node.unhandle(AGENT_PROFILE_PROTOCOL); await legacy.node.unhandle(AGENT_AVATAR_PROFILE_PROTOCOL); await legacy.node.unhandle(AGENT_KNOWLEDGE_PROFILE_PROTOCOL);
   await assert.rejects(modern.service.requestProfile(legacy.node.peerId.toString(), { agentId: 'ada' }), { code: 'ERR_AGENT_UNREACHABLE' });
   assert.equal(legacy.received.length, 0);
 });
@@ -486,14 +486,59 @@ test('actual Noise v2 transfers a multi-megabyte full snapshot with all scoped p
   assert.equal(client.service.outbound.size, 0);
 });
 
-async function profileWire(client, owner) {
+async function profileWire(client, owner, protocol = AGENT_PROFILE_PROTOCOL) {
   const connection = client.node.getConnections().find(value => value.remotePeer.equals(owner.node.peerId));
-  const stream = await connection.newStream(AGENT_PROFILE_PROTOCOL), io = channel(stream), signal = AbortSignal.timeout(5000);
+  const stream = await connection.newStream(protocol), io = channel(stream), signal = AbortSignal.timeout(5000);
   const input = { ...envelope(client, owner), type: 'profile' }; delete input.prompt;
   await io.write(input, signal); const header = await io.read(signal);
   return { stream, io, signal, input, header,
     credit: offset => io.write({ ...input, type: 'profile-credit', agentId: undefined, offset }, signal) };
 }
+
+function profileWithKnowledge(count = 1) {
+  const head = profileHead(); Object.assign(head.embodiments[0], { shareMemories: true, sharePrivateMemories: true });
+  const scope = { agentId: 'ada', worldId: 'earthgrid:global', audience: 'private', conversationId: 'owner-private' };
+  return createResidentProfile(head, scope.worldId, { knowledge: Array.from({ length: count }, (_, i) => ({
+    ...scope, id: `place-${i}`, revision: 1, kind: 'place', subjectType: 'place', subjectId: `meeting-${i}`,
+    label: 'Meeting spot', note: 'Private observation. '.repeat(40), position: [i, 3, i], confidence: 'observed',
+    createdAt: 1000, updatedAt: 1000, lastSeenAt: 1000,
+    evidence: [{ ...scope, episodeId: `episode-${i}`, eventId: `event-${i}`, when: 1000,
+      sourceKind: 'local-observation', provenance: 'observed' }] })) });
+}
+
+test('knowledge-only profiles roundtrip encrypted and downgrade without new fields on an older endpoint', { timeout: 15000 }, async t => {
+  const [client, owner] = await fixture(t); profilePeers(client, owner);
+  owner.agents = [{ ...body(), cloneable: true, sharesMemories: true, sharesPrivateMemories: true }];
+  const expected = profileWithKnowledge(); owner.getProfile = () => expected;
+  assert.deepEqual(await client.service.requestProfile(owner.node.peerId.toString(), { agentId: 'ada' }), expected);
+  await owner.node.unhandle(AGENT_KNOWLEDGE_PROFILE_PROTOCOL);
+  const legacy = await client.service.requestProfile(owner.node.peerId.toString(), { agentId: 'ada' });
+  assert.equal(legacy.knowledge, undefined); assert.deepEqual(legacy.memories, []);
+  assert.equal(legacy.schema, 'peercompute.resident-profile.v1');
+});
+
+test('private knowledge sharing revocation during export blocks a profile with no episodes', { timeout: 15000 }, async t => {
+  const [client, owner] = await fixture(t); profilePeers(client, owner);
+  owner.agents = [{ ...body(), cloneable: true, sharesMemories: true, sharesPrivateMemories: true }];
+  let release; owner.getProfile = async () => { await new Promise(resolve => { release = resolve; }); return profileWithKnowledge(); };
+  const pending = client.service.requestProfile(owner.node.peerId.toString(), { agentId: 'ada' });
+  await until(() => release); owner.agents[0].sharesPrivateMemories = false; release();
+  await assert.rejects(pending, { code: 'ERR_AGENT_NOT_SHARED' });
+});
+
+test('persisted grant revocation stops a knowledge-only transfer between credited chunks', { timeout: 15000 }, async t => {
+  const [client, owner] = await fixture(t); profilePeers(client, owner);
+  owner.agents = [{ ...body(), cloneable: true, sharesMemories: true, sharesPrivateMemories: true }];
+  let granted = true;
+  owner.service.getProfilePermissions = async () => ({ cloneable: true, sharesMemories: true, sharesPrivateMemories: granted });
+  const profile = profileWithKnowledge(80); assert(Buffer.byteLength(JSON.stringify(profile)) > 65536); owner.getProfile = () => profile;
+  const wire = await profileWire(client, owner, AGENT_KNOWLEDGE_PROFILE_PROTOCOL);
+  assert.equal(wire.header.includesPrivate, true);
+  await wire.credit(0); const first = await wire.io.read(wire.signal); await wire.io.rpc.read({ signal: wire.signal });
+  granted = false; await wire.credit(first.byteLength);
+  const rejected = await wire.io.read(wire.signal); assert.equal(rejected.code, 'ERR_AGENT_NOT_SHARED');
+  wire.stream.abort(new Error('Test complete')); await until(() => owner.service.inbound.size === 0);
+});
 
 test('private sharing revocation during export callback is enforced before any history is sent', { timeout: 15000 }, async t => {
   const [client, owner] = await fixture(t); profilePeers(client, owner);
@@ -537,7 +582,7 @@ test('malformed credit, cancelled credit wait and profile deadline terminate wit
 
 test('v2 receiver rejects oversized declarations, malformed chunks and corrupted profile digests', { timeout: 15000 }, async t => {
   const [client, owner] = await fixture(t); profilePeers(client, owner);
-  await owner.node.unhandle(AGENT_PROFILE_PROTOCOL); await owner.node.unhandle(AGENT_AVATAR_PROFILE_PROTOCOL);
+  await owner.node.unhandle(AGENT_PROFILE_PROTOCOL); await owner.node.unhandle(AGENT_AVATAR_PROFILE_PROTOCOL); await owner.node.unhandle(AGENT_KNOWLEDGE_PROFILE_PROTOCOL);
   const profile = createResidentProfile(profileHead(), 'earthgrid:global'), payload = new TextEncoder().encode(JSON.stringify(profile));
   for (const fault of ['oversize', 'chunk', 'digest']) {
     await owner.node.handle(AGENT_PROFILE_PROTOCOL, async (stream) => {
@@ -562,7 +607,7 @@ test('v2 receiver rejects oversized declarations, malformed chunks and corrupted
 
 test('v2 profile transfers never downgrade to a legacy eight-memory profile endpoint', { timeout: 15000 }, async t => {
   const [client, owner] = await fixture(t); profilePeers(client, owner);
-  await owner.node.unhandle(AGENT_PROFILE_PROTOCOL); await owner.node.unhandle(AGENT_AVATAR_PROFILE_PROTOCOL); let legacyCalls = 0;
+  await owner.node.unhandle(AGENT_PROFILE_PROTOCOL); await owner.node.unhandle(AGENT_AVATAR_PROFILE_PROTOCOL); await owner.node.unhandle(AGENT_KNOWLEDGE_PROFILE_PROTOCOL); let legacyCalls = 0;
   await owner.node.handle('/peercompute/world-agent-profiles/1.0.0', stream => { legacyCalls++; stream.abort(new Error('Legacy must not run')); });
   await assert.rejects(client.service.requestProfile(owner.node.peerId.toString(), { agentId: 'ada' }), { code: 'ERR_AGENT_UNREACHABLE' });
   assert.equal(legacyCalls, 0);
@@ -624,7 +669,7 @@ test('avatar profile v3 and real v2 fallback preserve clone permission without s
   owner.getProfile = () => createResidentProfile(head, 'earthgrid:global');
   const modern = await client.service.requestProfile(owner.node.peerId.toString(), { agentId: 'ada' });
   assert.deepEqual(modern.avatar, head.embodiments[0].avatar); assert.equal(modern.schema, 'peercompute.resident-profile.v2');
-  await owner.node.unhandle(AGENT_AVATAR_PROFILE_PROTOCOL);
+  await owner.node.unhandle(AGENT_AVATAR_PROFILE_PROTOCOL); await owner.node.unhandle(AGENT_KNOWLEDGE_PROFILE_PROTOCOL);
   const old = await client.service.requestProfile(owner.node.peerId.toString(), { agentId: 'ada' });
   assert.equal(old.avatar, undefined); assert.equal(old.schema, 'peercompute.resident-profile.v1'); assert.equal(old.name, head.identity.name);
   owner.agents[0].cloneable = false;

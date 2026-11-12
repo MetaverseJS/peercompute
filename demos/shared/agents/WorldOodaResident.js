@@ -11,7 +11,7 @@ function queryExcerpt(value) {
 
 /** Connect slow cognition to borrowed memory, inference, physical receipts and
  * the authenticated room-chat protocol. No raw camera frame enters storage. */
-export function createWorldOodaResident({ worldId, agents, experience, adapter, memory, getBody, owns,
+export function createWorldOodaResident({ worldId, agents, experience, adapter, memory, knowledge, getBody, owns,
   publish, conversationId, now = Date.now, decide = generateWorldOodaDecision, see = observeVision } = {}) {
   const bindingOf = head => head?.embodiments?.find(item => item.worldId === worldId);
   return async function deliberate({ resident, signal, isCurrent, stage }) {
@@ -24,7 +24,10 @@ export function createWorldOodaResident({ worldId, agents, experience, adapter, 
           || bindingOf(current)?.autonomous === false) throw new DOMException('Resident deliberation changed', 'AbortError');
     };
     await check();
-    const id = await conversationId(worldId, 'resident-reflection');
+    const canSpeak = !!publish && binding.shared && binding.initiateConversations === true;
+    // A reflection informed by owner-private knowledge must never be retrieved
+    // later by a cycle permitted to publish speech. Keep separate exact scopes.
+    const id = await conversationId(worldId, canSpeak ? 'resident-reflection' : 'resident-private-reflection');
     const scope = { worldId, agentId: head.agentId, audience: 'private', conversationId: id };
     let observed = experience.observe(key), memories = [], publicMemories = [];
     if (memory) {
@@ -32,8 +35,9 @@ export function createWorldOodaResident({ worldId, agents, experience, adapter, 
       publicMemories = await memory.retrieve({ ...scope, audience: 'public',
         conversationId: await conversationId(worldId, 'public-room'), query: '', limit: 3 }, { signal });
     }
+    const knowledgeAudience = canSpeak ? 'public' : 'private';
+    if (knowledge) observed = await knowledge.observe({ key, agentId: head.agentId, observed, audience: knowledgeAudience, query: head.goals.join(' '), signal });
     await check(); stage('orienting');
-    const canSpeak = !!publish && binding.shared && binding.initiateConversations === true;
     const options = { inference: agents.inference, head, memories, publicMemories, canSpeak,
       canAct: observed.self.motion?.type !== 'follow', canSee: typeof adapter.captureVision === 'function', signal };
     let decision = await decide({ ...options, observed });
@@ -56,12 +60,14 @@ export function createWorldOodaResident({ worldId, agents, experience, adapter, 
       }
       await check();
       observed = experience.observe(key);
+      if (knowledge) observed = await knowledge.observe({ key, agentId: head.agentId, observed, audience: knowledgeAudience, query: head.goals.join(' '), signal });
       if (vision) await remember('visual-interpretation', vision.description,
         'A vision model interpreted a resident-view frame; this is uncertain visual evidence, not verified physics.', vision.observedAt);
       stage('deciding');
       decision = await decide({ ...options, canSee: false, canAct: options.canAct && observed.self.motion?.type !== 'follow', observed, vision });
       await check();
     }
+    await knowledge?.assertCurrent(observed, { signal });
     await remember('reflection', decision.reflection, 'The resident reflected privately; this is a proposal, not a verified fact.');
     await check();
     if (decision.decision === 'wait') return { status: 'resting' };
@@ -69,6 +75,7 @@ export function createWorldOodaResident({ worldId, agents, experience, adapter, 
       if (!options.canAct || experience.observe(key).self.motion?.type === 'follow') {
         return { status: 'resting', reason: 'The current follow task keeps control of movement.' };
       }
+      await knowledge?.assertCurrent(observed, { signal });
       stage('acting');
       const turn = { key, scope, senses: observed, signal, speaker: { agentId: head.agentId, peerId: resident.ownerPeerId, name: head.identity.name } };
       await experience.applyIntent(turn, decision.intent, { requestId: crypto.randomUUID(), valid });
@@ -77,7 +84,7 @@ export function createWorldOodaResident({ worldId, agents, experience, adapter, 
     if (decision.decision !== 'speak' || !canSpeak) throw new Error('Unsupported resident deliberation');
     const target = experience.observe(key).participants.find(item => item.id === decision.targetId && item.distance < 60);
     if (!target) return { status: 'resting', reason: 'The participant moved away.' };
-    await check(); stage('speaking');
+    await check(); await knowledge?.assertCurrent(observed, { signal }); stage('speaking');
     const startedAt = now();
     const social = { rootId: crypto.randomUUID(), rootPeerId: resident.ownerPeerId, rootAgentId: head.agentId,
       targetPeerId: target.peerId || target.ownerPeerId, ...(target.agentId ? { targetAgentId: target.agentId } : {}),

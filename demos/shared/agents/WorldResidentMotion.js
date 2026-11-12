@@ -1,4 +1,4 @@
-const modes = new Set(['stationary', 'roam', 'follow']);
+const modes = new Set(['stationary', 'self-directed', 'roam', 'follow']);
 const point = (value) => {
   if (!Array.isArray(value) || value.length !== 3 || value.some((part) => !Number.isFinite(part) || Math.abs(part) > 1_000_000)) {
     throw new TypeError('Resident motion requires bounded coordinates');
@@ -8,7 +8,7 @@ const point = (value) => {
 
 /** Deterministic, ground-constrained steering. This is a scripted motor, not a learned policy. */
 export class WorldResidentMotion {
-  constructor({ key, position, mode = 'stationary', speed = 5, radius = 24, followDistance = 10 } = {}) {
+  constructor({ key, position, mode = 'self-directed', speed = 5, radius = 24, followDistance = 10 } = {}) {
     if (typeof key !== 'string' || !key || key.length > 300) throw new TypeError('A resident motion key is required');
     if (!Number.isFinite(speed) || speed <= 0 || speed > 20 || !Number.isFinite(radius) || radius < 1 || radius > 250
         || !Number.isFinite(followDistance) || followDistance < 6 || followDistance > 100) throw new RangeError('Invalid resident motion bounds');
@@ -33,7 +33,9 @@ export class WorldResidentMotion {
     if (!Number.isFinite(dt) || dt < 0) throw new TypeError('Resident timestep must be nonnegative');
     if (!Array.isArray(obstacles) || obstacles.length > 256) throw new RangeError('Too many resident obstacles');
     const occupied = obstacles.map(point);
-    if (this.mode === 'stationary' || status !== 'idle' || dt === 0) return current;
+    // Self-directed residents receive intentions from cognition. This scripted
+    // helper must not choose a destination or follow a supplied target for them.
+    if (this.mode === 'stationary' || this.mode === 'self-directed' || status !== 'idle' || dt === 0) return current;
     let destination;
     if (this.mode === 'follow') {
       if (!target) return current;

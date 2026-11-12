@@ -40,7 +40,7 @@ function normalizeDescriptor(value) {
   if (value.caption !== undefined && (typeof value.caption !== 'string' || value.caption.length > 4096)) {
     throw new TypeError('Invalid agent caption');
   }
-  if (value.movement !== undefined && !['roam', 'stationary', 'follow'].includes(value.movement)) throw new TypeError('Invalid resident movement preference');
+  if (value.movement !== undefined && !['roam', 'stationary', 'self-directed', 'follow'].includes(value.movement)) throw new TypeError('Invalid resident movement preference');
   return { key, agentId, ownerPeerId, name, color: value.color, status: value.status, local: value.local,
     position: normalizeCubeAgentPosition(value.position), caption: value.caption ?? '', shared: value.shared === true,
     ...(value.avatar ? { avatar: normalizeResidentAvatar(value.avatar) } : {}),
@@ -159,12 +159,14 @@ export class CubeAgentLayer {
   setMovement(key, mode, { restore = false } = {}) {
     const entry = this.entries.get(key);
     if (!entry?.descriptor.local) throw new Error('Only the resident owner can control movement');
-    if (!['stationary', 'follow', 'roam'].includes(mode)) throw new TypeError('Unknown movement mode');
+    if (!['stationary', 'self-directed', 'follow', 'roam'].includes(mode)) throw new TypeError('Unknown movement mode');
     if (mode === 'follow') {
       const owner = this.observe(key).participants.find(p => p.peerId === entry.descriptor.ownerPeerId && p.kind === 'human');
       if (!owner && !restore) throw new Error('The owner is not currently observed');
       this.motor.setIntent(key, { type: 'follow', targetId: owner?.id ?? `human:${entry.descriptor.ownerPeerId}` }, { restoredOwner: restore });
     } else if (mode === 'stationary') this.motor.setIntent(key, { type: 'stop' });
+    // Both modes cancel the previous command. Only explicit roam may choose a
+    // scripted destination; self-directed waits for a later model intention.
     else this.motor.clear(key);
     entry.motion.setMode(mode); entry.movement = mode;
     entry.intentRevision = ++this.intentRevision;
@@ -351,10 +353,11 @@ export class CubeAgentLayer {
   upsert(input) {
     if (this.closed) throw new Error('Agent layer is closed');
     const descriptor = normalizeDescriptor(input);
+    const movement = descriptor.movement ?? 'self-directed';
     let entry = this.entries.get(descriptor.key);
     if (!entry && this.entries.size >= this.maximumAgents) throw new RangeError('Too many visible agents');
     if (!entry) {
-      const motion = descriptor.local ? this.motionFactory({ key: descriptor.key, position: [...descriptor.position], mode: 'roam' }) : null;
+      const motion = descriptor.local ? this.motionFactory({ key: descriptor.key, position: [...descriptor.position], mode: movement }) : null;
       if (motion && (typeof motion.step !== 'function' || typeof motion.setMode !== 'function')) throw new TypeError('Resident motion must implement step and setMode');
       if (descriptor.local && !motion) throw new TypeError('Resident motion is required for the local owner');
       const mesh = new THREE.Mesh(this.geometry, new THREE.MeshStandardMaterial({ color: descriptor.color, emissive: descriptor.color, emissiveIntensity: 0.12 }));
@@ -366,7 +369,7 @@ export class CubeAgentLayer {
         shape: new CANNON.Box(new CANNON.Vec3(HALF_SIZE, HALF_SIZE, HALF_SIZE)) });
       if (descriptor.local) body.linearFactor.set(1, 0, 1);
       entry = { mesh, baseMaterial: mesh.material, faceMaterial: null, outline, body, descriptor: null, label: null, captionTimer: null,
-        target: [...descriptor.position], remoteStart: [...descriptor.position], remoteElapsed: 0, motion, movement: 'roam', intentRevision: ++this.intentRevision };
+        target: [...descriptor.position], remoteStart: [...descriptor.position], remoteElapsed: 0, motion, movement, intentRevision: ++this.intentRevision };
       Object.defineProperty(entry, 'caption', { get: () => this.entries.get(descriptor.key) === entry
         ? this.captions.entries.get(descriptor.key)?.sprite ?? null : null });
       this.group.add(mesh); this.physics.world.addBody(body); this.entries.set(descriptor.key, entry);
@@ -404,9 +407,9 @@ export class CubeAgentLayer {
     if (!previous || !descriptor.local) this.place(entry, livePosition);
     else entry.descriptor.position = [...livePosition];
     if (descriptor.local && descriptor.status === 'paused') this.motor.suspend(descriptor.key);
-    if (descriptor.local && descriptor.movement !== undefined && (previous?.movement !== descriptor.movement
-        || (descriptor.movement === 'follow' && previous?.ownerPeerId !== descriptor.ownerPeerId))) {
-      this.setMovement(descriptor.key, descriptor.movement, { restore: true });
+    if (descriptor.local && (!previous || (previous.movement ?? 'self-directed') !== movement
+        || (movement === 'follow' && previous.ownerPeerId !== descriptor.ownerPeerId))) {
+      this.setMovement(descriptor.key, movement, { restore: true });
     }
     this.captions.update();
     return descriptor.key;

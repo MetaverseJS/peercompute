@@ -37,11 +37,13 @@ async function boot() {
     const { AgentRuntime } = await import('/peercompute/src/peercompute/agents/AgentRuntime.js');
     const { AgentRecordStore } = await import('/peercompute/src/peercompute/agents/AgentRecordStore.js');
     const { WorldMemoryStore } = await import('/peercompute/src/peercompute/agents/WorldMemoryStore.js');
+    const { WorldKnowledgeStore } = await import('/peercompute/src/peercompute/agents/WorldKnowledgeStore.js');
     const { WorldGoalStore } = await import('/peercompute/src/peercompute/agents/WorldGoalStore.js');
     const { WorldStandingGoalStore } = await import('/peercompute/src/peercompute/agents/WorldStandingGoalStore.js');
     const { cubeGuidePreset, CUBECHAT_GUIDE_FACTS } = await import('/demos/cubechat/src/agents/cubeGuide.js');
     const { WORLD_GOAL_INSTRUCTIONS, WORLD_GOAL_OBSERVATIONS_MARKER } = await import('/demos/shared/agents/WorldGoalDecision.js');
-    const { WORLD_PHYSICAL_INTENT_INSTRUCTIONS, WORLD_CHAT_TASK_INSTRUCTIONS, WORLD_PHYSICAL_OBSERVATIONS_MARKER } = await import('/demos/shared/agents/WorldIntentDecision.js');
+    const { WORLD_PHYSICAL_INTENT_INSTRUCTIONS, WORLD_CHAT_TASK_INSTRUCTIONS, WORLD_PHYSICAL_OBSERVATIONS_MARKER,
+      WORLD_ACTION_CATEGORY_INSTRUCTIONS, WORLD_ACTION_ARGUMENT_INSTRUCTIONS } = await import('/demos/shared/agents/WorldIntentDecision.js');
     Object.assign(window, { calls: [], view: {}, speechChunks, worldConversationId });
     const candidate = { key: 'local', local: true, available: true, manifestCid: 'fixture', sessionId: 'fixture', runtime: 'transformers.js',
       task: 'text-generation', modalities: ['text'], outputModalities: ['text'] };
@@ -104,7 +106,13 @@ async function boot() {
                 if (window.profileError) throw Object.assign(new Error('Profile context is too large'), { code: 'ERR_MODEL_CONTEXT_BUDGET' });
                 return { text: JSON.stringify(window.fixtureProfilePatch ?? null), finishReason: 'stop' };
               }
-              if ([WORLD_PHYSICAL_INTENT_INSTRUCTIONS, WORLD_CHAT_TASK_INSTRUCTIONS].some(prefix => input.messages?.[0]?.content.startsWith(prefix))
+              if (input.messages?.[0]?.content.startsWith(WORLD_ACTION_CATEGORY_INSTRUCTIONS)) {
+                calls.push(['intent-decision', input]);
+                const value = window.fixtureIntentDecision ?? { intent: null };
+                return { text: JSON.stringify({ action: value.task ? 'task' : value.knowledge ? 'remember-place'
+                  : value.object ? 'object' : value.avatar ? 'avatar' : value.intent?.type ?? 'none' }), finishReason: 'stop' };
+              }
+              if ([WORLD_PHYSICAL_INTENT_INSTRUCTIONS, WORLD_CHAT_TASK_INSTRUCTIONS, WORLD_ACTION_ARGUMENT_INSTRUCTIONS].some(prefix => input.messages?.[0]?.content.startsWith(prefix))
                   && input.messages[0].content.includes(WORLD_PHYSICAL_OBSERVATIONS_MARKER)) {
                 calls.push(['intent-decision', input]);
                 return { text: JSON.stringify(window.fixtureIntentDecision ?? { intent: null }), finishReason: 'stop' };
@@ -146,8 +154,11 @@ async function boot() {
                 ...(input.task === 'text-to-image' ? { image: { width: 2, height: 2, channels: 4, data: new Uint8Array(16).fill(123) } } : {}) };
             }, cancel: async () => {} } });
           window.agents = agents;
-          const memories = new Map(), objectives = new Map(), standing = new Map();
-          const stateManager = { getWorldMemoryStore: name => memories.get(name),
+          const memories = new Map(), objectives = new Map(), standing = new Map(), knowledge = new Map();
+          const stateManager = { ...(window.knowledgeFixture ? {
+            getWorldKnowledgeStore: name => knowledge.get(name),
+            createWorldKnowledgeStore: options => { const value = new WorldKnowledgeStore(options); knowledge.set(options.name, value); window.knowledgeStore = value; return value; }
+          } : {}), getWorldMemoryStore: name => memories.get(name),
             createWorldMemoryStore: ({ name }) => { const memory = new WorldMemoryStore({ name }); memories.set(name, memory); window.episodeStore = memory; return memory; },
             getWorldGoalStore: name => objectives.get(name),
             createWorldGoalStore: options => { const value = new WorldGoalStore(options); objectives.set(options.name, value); window.objectiveStore = value; return value; },
@@ -158,7 +169,7 @@ async function boot() {
             service: { getStatus: () => ({ status: 'ready', manifestCid: 'fixture', sessionId: 'fixture' }) },
             store: { getManifest: async () => ({ model: imageCandidate }) }, refreshPeers: async () => {},
             dispose: async () => { await agents.dispose(); await store.destroy(); for (const memory of memories.values()) await memory.close();
-              for (const value of objectives.values()) await value.close(); for (const value of standing.values()) await value.destroy(); calls.push('runtime-dispose'); } };
+              for (const value of knowledge.values()) await value.destroy(); for (const value of objectives.values()) await value.close(); for (const value of standing.values()) await value.destroy(); calls.push('runtime-dispose'); } };
         },
         serviceFactory: (options) => { window.networkOptions = options; return {
           start: async () => calls.push('network-start'), close: async () => calls.push('network-close'),
@@ -259,6 +270,7 @@ test('scene lifecycle preserves identity/body/history across close and restart w
   assert.equal(result.initial.includes('prepare-voice'), false);
   assert.equal(result.afterClose.bodies.length, 1); assert.equal(result.afterClose.disposed, false);
   assert.equal(result.restored.bodies[0].agentId, result.id);
+  assert.equal(result.restored.bodies[0].movement, 'self-directed');
   assert.equal(result.messages[0].text, 'Remember this conversation');
   assert(result.cleanup.indexOf('network-close') < result.cleanup.indexOf('runtime-dispose'));
   assert(result.cleanup.indexOf('runtime-dispose') < result.cleanup.indexOf('adapter-dispose'));
@@ -784,6 +796,8 @@ test('owner edits persist identity and private history; local clones start new b
   assert.notEqual(result.clone.agentId, result.original); assert.equal(result.clone.identity.instructions, 'Be patient');
   assert.deepEqual(result.clone.goals, ['Listen']); assert.equal(result.clone.context.summary, '');
   assert.equal(result.clone.embodiments[0].respondToWorldChat, false); assert.equal(result.clone.embodiments[0].allowCloning, false);
+  assert.equal(result.clone.embodiments[0].movement, 'self-directed');
+  assert.equal(result.restored.find(body => body.agentId === result.original).movement, 'stationary');
   assert.equal(JSON.stringify(result.cloneEvents).includes('Private secret'), false);
   assert.equal(result.restored.length, 2);
 });
@@ -1324,4 +1338,35 @@ test('owner chat admits original task durably, pauses immediate control and neve
   assert(!result.visitorCalls[0][1].messages[0].content.includes('Classify the owner'));
   assert(result.events.some(e => e.type === 'request' && e.text === result.prompt));
   assert(!result.events.some(e => e.type === 'result' && e.text?.includes('task":true')));
+});
+
+test('owner remembered place persists across host restart, remains scoped and can be corrected and forgotten through Mind', async t => {
+  const page = await fixture(t);
+  const result = await page.evaluate(async () => {
+    await host.dispose(); window.embodiedFixture = true; window.knowledgeFixture = true; await start();
+    const head = await host.spawn({ name: 'Ada', shared: true, shareMemories: true, sharePrivateMemories: true, allowCloning: true });
+    const key = 'local:' + head.agentId;
+    window.fixtureIntentDecision = { knowledge: { type: 'remember-place', name: 'Meeting spot', anchor: 'speaker' } };
+    const reply = await host.send({ key, text: 'Remember this as our meeting spot.' });
+    const first = await host.listKnowledge({ key });
+    await host.dispose(); await start();
+    const restored = await host.listKnowledge({ key });
+    const place = restored.find(item => item.kind === 'place');
+    const clone = await host.clone({ key, name: 'A copy' });
+    const inherited = await host.listKnowledge({ key: 'local:' + clone.agentId });
+    await host.correctKnowledge({ key, id: place.id, expectedRevision: place.revision, patch: { note: 'Meet here tomorrow' } });
+    const corrected = (await host.listKnowledge({ key })).find(item => item.id === place.id);
+    await host.forgetKnowledge({ key, id: corrected.id, expectedRevision: corrected.revision });
+    const forgotten = await host.listKnowledge({ key });
+    window.fixtureIntentDecision = { knowledge: { type: 'remember-place', name: 'Visitor point', anchor: 'speaker' } };
+    const visitor = await networkOptions.respond({ agentId: head.agentId, prompt: 'Remember this point.', requesterPeerId: 'visitor', signal: new AbortController().signal });
+    return { reply, first, restored, inherited, corrected, forgotten, visitor, after: await host.listKnowledge({ key }) };
+  });
+  assert.match(result.reply.text, /Remembered place: Meeting spot/);
+  assert.deepEqual(result.restored, result.first);
+  assert.deepEqual(result.restored.find(item => item.kind === 'place').position, [25, 3, 5]);
+  assert(result.inherited.some(item => item.kind === 'place' && item.confidence === 'shared' && item.origin));
+  assert.equal(result.corrected.note, 'Meet here tomorrow');
+  assert(!result.forgotten.some(item => item.kind === 'place'));
+  assert(!result.after.some(item => item.label === 'Visitor point'));
 });

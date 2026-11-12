@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { compactWorldContext, createWorldExperience, WORLD_PROMPT_CONTEXT_BYTES } from '../shared/agents/WorldExperience.js';
+import { compactWorldContext, createWorldExperience, WORLD_PROMPT_CONTEXT_BYTES, WORLD_KNOWLEDGE_PROMPT_CONTEXT_BYTES } from '../shared/agents/WorldExperience.js';
 import { WORLD_INTENT_INSTRUCTIONS, WORLD_INTENT_LEGACY_SUFFIX } from '../shared/agents/WorldIntent.js';
 import { CubeAgentLayer } from '../cubechat/src/agents/CubeAgentLayer.js';
 
@@ -280,6 +280,26 @@ test('ordinary public hello omits duplicated room bodies even below the byte cei
   assert.equal(context.senses.self.id, senses.self.id); assert.equal(context.senses.requesterId, 'human:owner');
   assert.deepEqual(context.senses.participants, senses.participants);
   assert.deepEqual({ scene, senses }, before, 'Projection does not delete saved messages or physical observations');
+});
+
+test('knowledge speech projection leaves token headroom and retains grounded facts before duplicate episode excerpts', () => {
+  const senses = { self: { id: `resident:${'a'.repeat(52)}:mira`, name: 'Mira', position: [60, 3, 0] },
+    requesterId: `human:${'b'.repeat(52)}`, participants: [{ id: `human:${'b'.repeat(52)}`, name: 'Pat', position: [65, 3, 0] }], obstacles: [] };
+  const knowledge = [{ kind: 'place', name: 'Garden', confidence: 'observed', status: 'fresh', note: 'An owner-named observed point.' }];
+  const memories = Array.from({ length: 4 }, (_, index) => ({ kind: 'heard', when: index,
+    who: { peerId: 'b'.repeat(52), name: 'Pat' }, where: [65, 3, 0], text: 'Earlier conversation. '.repeat(20),
+    outcome: 'The participant said this; it is not independently verified.', source: { kind: 'authenticated-message' } }));
+  const scene = { demo: 'CubeChat', theme: 'tron', agent: senses.self, description: 'Optional scene detail. '.repeat(25) };
+  const before = structuredClone({ scene, senses, knowledge, memories });
+  const context = compactWorldContext({ scene, senses, knowledge, memories });
+  assert(new TextEncoder().encode(JSON.stringify(context)).length <= WORLD_KNOWLEDGE_PROMPT_CONTEXT_BYTES);
+  assert.deepEqual(context.knowledge, knowledge); assert(context.omitted.memories > 0);
+  assert.equal(context.senses.requesterId, senses.requesterId);
+  assert.deepEqual({ scene, senses, knowledge, memories }, before);
+  const crowded = Array.from({ length: 8 }, () => ({ ...knowledge[0], note: 'x'.repeat(300) }));
+  const snapshot = structuredClone(crowded);
+  const reduced = compactWorldContext({ scene, senses, knowledge: crowded });
+  assert(reduced.omitted.knowledge > 0); assert.deepEqual(crowded, snapshot, 'Projection never mutates retained knowledge input');
 });
 
 test('compaction keeps the actual CubeChat scene name and theme while retaining the exact current requester', () => {
