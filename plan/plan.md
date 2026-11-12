@@ -2411,3 +2411,17 @@ Final internal preview acceptance passes on desktop and mobile, including both
 world and model SecretWorkshop connections and exact served build hashes.
 Checkpoint this bounded slice locally; broader ICC baseline audit remains red
 for existing repository findings, with no policy suppression or public release.
+
+
+November11 release authorized, with avatar-height correction first. New uploaded
+reference avatars use saved physical-description hints and default to12units
+high (twice the6unit cube), converting verified geometry to existing persisted
+scale metadata. Explicit sizes/props/saved avatars preserve prior behavior.
+After scoped tests/render checks, rebuild full Pages set, verify all routes and
+SecretWorkshop, then publish and verify the exact public commit/assets.
+
+
+Avatar sizing and full staging acceptance pass:36focused +34renderer +82release
+checks;23routes,11SecretWorkshop connections and68reviewed captures. Site is
+630,687,954bytes; previous active hashes remain available. Publish accepted
+release with atomic fast-forward, then verify exact public commit/assets/routes.

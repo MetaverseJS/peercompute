@@ -10,6 +10,24 @@ export function normalizeWorldModelSize(value) {
   return value;
 }
 
+/** Convert a target height to the existing largest-dimension scale contract.
+ * Callers supply validated, untransformed mesh bounds. Proportions stay uniform. */
+export function worldModelSizeForHeight(bounds, height) {
+  normalizeWorldModelSize(height);
+  if (!Array.isArray(bounds?.min) || !Array.isArray(bounds?.max)
+      || bounds.min.length !== 3 || bounds.max.length !== 3
+      || [...bounds.min, ...bounds.max].some(value => !Number.isFinite(value))) {
+    throw new TypeError('Invalid avatar bounds');
+  }
+  const dimensions = bounds.max.map((value, axis) => value - bounds.min[axis]);
+  if (dimensions.some(value => value < 0) || dimensions[1] <= 0) throw new TypeError('Avatar mesh needs a positive height');
+  const size = height * Math.max(...dimensions) / dimensions[1];
+  if (!Number.isFinite(size) || size > WORLD_MODEL_SIZE.maximum) {
+    throw new RangeError('Avatar is too wide for this height. Use a smaller height or a taller reference image.');
+  }
+  return normalizeWorldModelSize(size);
+}
+
 // A conservative fallback for older planners which omit size. Explicit model
 // proposals win; this is a presentation estimate, never a physical measurement.
 const estimates = [

@@ -5217,3 +5217,32 @@ Final focused avatar/conversation/intent/mesh/object suite:68/68passes. Final
 UTF-8 failure-receipt host scope9/9passes and task-attribution scope3/3passes.
 Desktop/mobile internal native UI checks pass at1440x1000 and390x844 with no
 overflow or JS/console errors; exact final asset/network receipts are external.
+
+
+### Image avatar height and full Pages release — November11
+
+Use verified mesh bounds to convert target height into the retained max-extent
+size. Test non-square geometry, zero/invalid/excessive bounds, appearance body
+hints vs incidental small features, inferred-vs-explicit request identity,
+private appearance omission, owner CAS, peer reload and clone scale. Render a
+wide avatar beside a six-unit cube and measure height12 with grounded feet.
+Keep prior prop/explicit sizing tests. Full release uses canonical build:all,
+bounded release manifest/ORT pooling,23routes and11network routes, visual review,
+public commit/asset hashes and real SecretWorkshop connections. Preserve previous
+failed receipts and do not claim these startup checks as model-quality tests.
+
+
+Current sizing/release results:36focused tests,34renderer tests and82release
+checks pass. Actual retained SF3D chair and wide mesh both measure12units high
+beside cube6. Canonical site630,687,954bytes; all3064manifest file hashes match,
+all prior active assets retained, and211removed files are prior-retained outputs.
+Staging general19/19 and all11SecretWorkshop routes pass; remaining physics and
+public checks are recorded in log.md. Generated whole-diff guard failures remain
+reported separately from passing authored-source/whitespace checks.
+
+Staging acceptance completed:23unique routes plus4software physics presentation
+repeats,11authenticated SecretWorkshop routes,68independently reviewed captures,
+zero route error counters or generated model responses, allowned sessions closed.
+Hardware captures are diagnostic-only; software captures qualify visible physics
+scenes. Existing WXGlobe footer overlap and geography/camera/XR limits remain.
+Public verification follows publication; do not infer it from local staging.

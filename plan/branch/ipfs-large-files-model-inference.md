@@ -1695,3 +1695,9 @@ Keep changes reusable across world adapters and update internal previews only.
 Implemented and qualified with scoped tests and desktop/mobile internal preview.
 Keep historical failure reports and distinguish model-conditioned repetition
 from proven current-message/request isolation. No Pages or origin push.
+
+
+November11 user now authorizes full Pages publication. Before deployment, fix
+supplied-image avatar height using saved physical appearance, default two cubes
+tall. Preserve uniform proportions, grounded feet, identity, stored and peer
+scale. Already-saved sizes are not silently migrated; explicit sizes stay valid.

@@ -16,6 +16,7 @@ test('reference image bytes are copied and bounded, without interpreting the acc
   const image = { width: 1, height: 1, channels: 4, data: new Uint8Array([1,2,3,255]) };
   const input = ownerAvatarInput('Use this for your body', image); image.data.fill(0);
   assert.deepEqual([...input.image.data], [1,2,3,255]); assert.equal(input.exactPrompt, false);
+  assert.equal(input.action.size, undefined, 'Reference sizing waits for the saved appearance and generated bounds');
   assert.throws(() => ownerAvatarInput('', { ...image, width: 9999 }));
 });
 test('decline disposition is based on explicit resident speech, not the user request topic', () => {

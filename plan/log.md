@@ -62561,3 +62561,95 @@ startup/shutdown race separately; no source attribution is established yet.
   This resolves the report as an already-open previous build. No additional
   implementation, browser run, server, deployment or model inference was started.
   Existing attachment test/preview evidence remains applicable; no code changed.
+
+### 2026-11-11T20:07:44-09:00 — authorized deployment, then avatar height correction
+
+- User asked “can you deploy this?”; timestamp is first explicit clock receipt.
+  Began read-only release discovery and ICC entry. Before any build/push, user
+  requested fixing small supplied-image avatars, using physical description and
+  a default about twice cube height. First explicit correction receipt is
+  2026-11-11T20:10:40-09:00; exact delivery times unavailable.
+- ICC work initially refused stale index after the prior documentation commit;
+  refreshed full index/derived stores and Git history without stale overrides.
+  First preflight ran before composed work had persisted task.json and failed
+  task_metadata; retried after task persistence and both root/render preflights
+  passed. Non-overlapping leases published. Release review is read-only until
+  the size fix passes.
+- Found direct image inputs prematurely normalized to size6 and rendered by
+  largest dimension, so wide poses were shorter than a cube. Added reusable
+  worldModelSizeForHeight conversion and WorldAvatarScale local appearance hints.
+  New supplied-image avatars default to measured height12; miniature/giant/short/
+  tall body descriptions and explicit world-unit heights refine that estimate.
+  Distinguish body hints from small eyes or a giant sword. No extra model call.
+- WorldAvatarInput leaves image size unspecified; WorldResidentAvatars resolves
+  owner appearance after authority check, converts verified bounds to existing
+  persisted extent-size metadata, then follows existing CAS/pin/peer/clone flow.
+  Explicit sizes, props and already-saved avatars retain their recorded size.
+  No heuristic migration based on an ambiguous legacy name. Private description
+  stays out of the public artifact manifest. Idempotency distinguishes inferred
+  from explicit sizing. Zero-height/excessively wide meshes fail boundedly.
+- Changed WorldModelScale.js, new WorldAvatarScale.js, WorldAvatarInput.js,
+  WorldResidentAvatars.js and focused scale/input/avatar tests. Commands/results
+  and renderer/build/public receipts follow below. No deployment yet.
+
+- Size acceptance passes36/36 focused input/height/host/avatar/object tests and
+  34/34 CubeChat renderer tests. A first rendered-caption assertion compared
+  14.999999999999998 to15; corrected numerical tolerance, preserving geometry
+  expectation. Actual retained SF3D chair and wide fixture both measure height12
+  beside cube6 with grounded feet, no errors/requests; root inspected screenshot.
+  External visual receipt: ~/.cache/peercompute-avatar-scale-20261111/.
+- Independent review finds no size/authority/privacy/deduplication blocker.
+  Physical-description matching is intentionally local heuristic sizing, not
+  model interpretation. Saved old avatars preserve their recorded size; users
+  were told this before deployment. No new mesh inference was required for tests.
+- Started canonical `npm run build:all`, which rebuilds core and all15demos,
+  pools ORT WASM and retains one previous active release. Both remote refs remain
+  35bec9c52b7bb416567fdbd20694a2b8846938ee. Pages source remains main:/docs.
+  Fresh external route harness/guide seed prepared and independently checked;
+  allbrowser groups are headless and avoid model loads/user sessions. Build and
+  public acceptance remain pending, so nothing has been pushed yet.
+
+- Full canonical build passes: final site630,687,954bytes,2875active plus189retained
+  files.71static release tests and11pooling/retention tests pass (82total).
+  Independent full manifest verification hashes3064files with zero mismatches;
+  no previous active asset is missing. All211deleted files are exclusively
+  prior-retained generated assets, not source or prior-active files.
+- Initial whole-worktree guard crashes decoding a deleted binary during its
+  untracked-move check. After staging, guard runs and records policy failures
+  for211generated deletions and23,475deleted lines. Preserve both reports; do
+  not modify guard policy or call this a green gate. Authored-source guard and
+  staged whitespace check pass with zero violations/warnings. Generated cleanup
+  is the already-established bounded release process, independently verified
+  against old/new manifests; no authored functionality was deleted.
+- Standalone internal inference/CubeChat/Earth builds pass17.48/19.95/28.03seconds.
+  Updated only their external static-root pointers after retaining prior hashes;
+  all3exact TLS HTML/entryJS hashes match. Existing preview services stay up.
+- Staging general matrix passes19/19, all11network routes authenticate with
+  SecretWorkshop, zero page/console/HTTP/request/WebSocket/GPU-loss failures,
+  zero model responses and clean server/browser cleanup.52screenshots captured;
+  independent review ongoing. Hardware physics and software presentation checks
+  run serially next. Public push still waits for complete staging acceptance.
+
+- Complete staging acceptance passes:19general +4native hardware physics cover
+  all23unique routes, plus4separate software physics presentation checks. All11
+  network routes authenticate with SecretWorkshop; error counters/model responses
+  are zero and owned browsers/HTTPS servers/Xvfb are closed. Independent reviewer
+  inspected and hashed all68screenshots (52general,8hardware diagnostic-only,
+  8actual software scenes). No blocking visual issue; retain existing WXGlobe
+  mobile footer overlap/dense HUD notes and geodata/camera/XR scope limits.
+  Native hardware compositor screenshots are diagnostic-only; software captures
+  establish visible scenes. No numerical conservation or model-quality claim.
+- Ready to publish the accepted release. Source/main remains35bec9c5 until push;
+  normal atomic fast-forward only, no force or Pages source changes. Fresh ICC
+  index/memory and the existing baseline audit precede final checkpoint; final
+  public SHA/hash/route receipts will be recorded after actual publication.
+
+- Fresh ICC pre-publish reports completed: production audit retains12risks
+  (3high/7medium/2low), including independently-reviewed generated cleanup,
+  24baseline oversized files, baseline shell/Python findings and generic
+  NetViz/motorcycle fallback classifications. Readiness remains blocked0 with
+  no authored target oracle; this is not target-specific acceptance. Preserve
+  raw failures and freshness refusals, no suppressions or threshold changes.
+  Authored guard, whitespace, focused tests and complete staging acceptance
+  justify this bounded release. No validation command remains running at the
+  release checkpoint; remote main/feature still35bec9c5, normal atomic push next.

@@ -8,7 +8,9 @@ export const AVATAR_IMAGE_PROMPT = 'Use this image as your avatar.';
 export function ownerAvatarInput(text, image) {
   if (image != null) {
     const checked = validateImageInput(image);
-    return { action: normalizeWorldAvatarAction({ name: 'Reference avatar', prompt: AVATAR_IMAGE_PROMPT }),
+    // Leave size unspecified so the owner service can use the saved appearance
+    // and actual mesh height, rather than the generic six-unit object default.
+    return { action: { name: 'Reference avatar', prompt: AVATAR_IMAGE_PROMPT },
       image: { ...checked, data: new Uint8Array(checked.data) }, exactPrompt: false };
   }
   if (typeof text !== 'string') return null;

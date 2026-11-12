@@ -426,6 +426,14 @@ reference; remove it to return to ordinary conversation. This control is only
 available for residents owned by this device. Failed generation keeps the
 reference attached so you can retry after a provider is available.
 
+New reference-image avatars default to **12 world units tall**, about twice a
+normal cube. Their saved physical description can refine this: a miniature
+robot is shorter, a giant skeleton taller, and “18 world units tall” gives an
+explicit height. The app measures the generated geometry and scales uniformly,
+so wide poses do not accidentally become shorter. The resulting size survives
+peer display, reload and cloning; it does not need another language-model call.
+Existing saved avatars and explicitly chosen sizes retain their recorded scale.
+
 To supply the image generator's prompt yourself, type **Avatar prompt: a copper
 robot with blue eyes** or **Use this exact prompt: ...**. The text after the
 prefix goes unchanged to the image model; the language model does not rewrite

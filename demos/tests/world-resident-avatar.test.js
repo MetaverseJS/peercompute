@@ -157,8 +157,36 @@ test('avatar image inputs and exact-prompt mode participate in idempotency witho
   const changed = { ...image, data: image.data.slice() }; changed.data[0] ^= 255;
   await assert.rejects(f.generate(action, { requestId, image: changed }), /Conflicting/);
   await assert.rejects(f.generate(action, { requestId, image, exactPrompt: true }), /Conflicting/);
+  await assert.rejects(f.generate({ ...action, size: 6 }, { requestId, image }), /Conflicting/);
   await assert.rejects(f.generate({ reset: true }, { image }), /Reset/);
   await assert.rejects(f.generate(action, { exactPrompt: 'yes' }), /boolean/);
+});
+
+test('reference-image sizing uses saved appearance and survives peer display and cloning without leaking it', async t => {
+  const f = await fixture(t), head = await f.agents.get(f.head.agentId);
+  await f.agents.update(head.agentId, { embodiments: head.embodiments.map(binding => ({ ...binding, appearancePrompt: 'A giant copper robot with PRIVATE markings.' })) });
+  const result = await f.generate(action, { image: imageFixture() });
+  const manifest = await f.store.getManifest(result.avatar.artifactCid);
+  assert.equal(worldModelSizeFromManifest(manifest), 24);
+  assert.equal(JSON.stringify(manifest).includes('PRIVATE'), false);
+  assert.equal(f.adapter.prepared.at(-1).size, 24);
+  assert.deepEqual(f.calls.map(call => call.input.task), ['image-to-3d']);
+  const restored = sceneAdapter(), presenter = createWorldResidentAvatarPresenter({ runtime: f.runtime, adapter: restored, worldId });
+  t.after(() => presenter.dispose());
+  const sourceBody = { ...(await f.bodies())[0], local: false, key: `remote:${f.head.agentId}` };
+  presenter.sync([sourceBody]); await until(() => restored.visible.size === 1);
+  assert.equal(restored.prepared[0].size, 24);
+  const clone = await f.service.retainClone({ sourceBody, avatar: result.avatar, agentId: 'clone' });
+  const cloneManifest = await f.store.getManifest(clone.artifactCid);
+  assert.equal(worldModelSizeFromManifest(cloneManifest), 24); assert.deepEqual(cloneManifest.files, manifest.files);
+  const explicit = await f.generate({ ...action, size: 6 }, { image: imageFixture() });
+  assert.equal(worldModelSizeFromManifest(await f.store.getManifest(explicit.avatar.artifactCid)), 6);
+});
+
+test('reference images without physical description use twelve-unit measured height', async t => {
+  const f = await fixture(t), result = await f.generate(action, { image: imageFixture() });
+  assert.equal(worldModelSizeFromManifest(await f.store.getManifest(result.avatar.artifactCid)), 12);
+  assert.equal(f.adapter.prepared.at(-1).size, 12);
 });
 test('avatar size survives generation, retained reload, remote display and independently retained cloning without rewriting mesh bytes', async t => {
   const f = await fixture(t), first = await f.generate({ name: 'Car', prompt: 'A full-size blue car', size: 15 });

@@ -726,6 +726,55 @@ test('semantic avatar sizes preserve proportions, grounded feet, captions and th
   assert.equal(result.resetLabel, 7.5); assert.equal(result.resetCaptionBottom, 9); assert.equal(result.bodyCount, 2);
 });
 
+test('image avatar target height is measured against the six-unit cube even when the mesh is wider than tall', async t => {
+  const page = await fixture(t);
+  const result = await page.evaluate(async () => {
+    const { encodeGeneratedMesh } = await import('/peercompute/src/peercompute/inference/GeneratedMeshArtifact.js');
+    const { worldModelSizeForHeight } = await import('/demos/shared/world/WorldModelScale.js');
+    const { prepareGeneratedMeshView, fitGeneratedMeshView } = await import('/demos/shared/world/GeneratedMeshView.js');
+    const geometry = new THREE.BoxGeometry(4, 2, 2);
+    const mesh = encodeGeneratedMesh({ positions: geometry.attributes.position.array, indices: new Uint32Array(geometry.index.array) });
+    geometry.dispose();
+    const size = worldModelSizeForHeight(mesh.bounds, 12);
+    const avatar = { kind: 'generated-mesh', artifactCid: 'bafkreihd7nlvbwjkdustvo23a7jo44x6lc26n7pob5bsqtyutvwen26spe' };
+    const measurements = [];
+    for (const local of [true, false]) {
+      const key = local ? base.key : 'remote:agent-height';
+      layer.upsert({ ...base, key, local, caption: 'Twice as tall' });
+      const entry = layer.entries.get(key), body = entry.body, root = entry.mesh;
+      root.updateWorldMatrix(true, true);
+      const cubeBounds = new THREE.Box3().setFromBufferAttribute(root.geometry.attributes.position).applyMatrix4(root.matrixWorld);
+      layer.upsert({ ...base, key, local, avatar, caption: 'Twice as tall' });
+      const prepared = await layer.prepareAvatar(mesh, { size }); prepared.commit(key, { avatar });
+      root.updateWorldMatrix(true, true);
+      const bounds = new THREE.Box3().setFromObject(entry.avatarView.group), center = bounds.getCenter(new THREE.Vector3());
+      const point = project(center.toArray());
+      measurements.push({ local, cubeHeight: cubeBounds.max.y - cubeBounds.min.y,
+        dimensions: bounds.getSize(new THREE.Vector3()).toArray(), ground: bounds.min.y,
+        renderedHeight: entry.avatarView.renderedHeight, label: entry.label.getWorldPosition(new THREE.Vector3()).y,
+        captionBottom: entry.caption.position.y - entry.caption.scale.y / 2,
+        pick: layer.pick(point.x, point.y), key, sameBody: entry.body === body && entry.mesh === root,
+        collision: body.shapes[0].halfExtents.toArray() });
+      // Explicit older extent sizes retain their original meaning.
+      const old = await layer.prepareAvatar(mesh, { size: 6 }); old.commit(key, { avatar });
+      measurements.at(-1).explicitHeight = entry.avatarView.renderedHeight;
+      layer.remove(key);
+    }
+    const prop = await prepareGeneratedMeshView(mesh);
+    let propHeight;
+    try { propHeight = fitGeneratedMeshView(prop, 6); } finally { prop.dispose(); }
+    return { size, measurements, propHeight, bodyCount: physics.world.bodies.length };
+  });
+  assert.equal(result.size, 24); assert.equal(result.propHeight, 3); assert.equal(result.bodyCount, 1);
+  for (const value of result.measurements) {
+    assert.equal(value.cubeHeight, 6); assert.equal(value.renderedHeight, value.cubeHeight * 2);
+    assert.deepEqual(value.dimensions, [24, 12, 12]); assert.equal(value.ground, 0);
+    assert(Math.abs(value.label - 13.5) < 1e-9); assert(Math.abs(value.captionBottom - 15) < 1e-9);
+    assert.equal(value.pick, value.key); assert.equal(value.sameBody, true);
+    assert.deepEqual(value.collision, [3, 3, 3]); assert.equal(value.explicitHeight, 3);
+  }
+});
+
 test('placed objects use the same uniform size and stay grounded above uneven terrain', async t => {
   const page = await fixture(t);
   const result = await page.evaluate(async () => {
