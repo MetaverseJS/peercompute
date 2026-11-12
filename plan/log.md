@@ -62653,3 +62653,24 @@ startup/shutdown race separately; no source attribution is established yet.
   Authored guard, whitespace, focused tests and complete staging acceptance
   justify this bounded release. No validation command remains running at the
   release checkpoint; remote main/feature still35bec9c5, normal atomic push next.
+
+- 2026-11-11T20:44:53-09:00 release completion receipt: committed5cef8af7 and atomically
+  fast-forwarded main and feature/ipfs-artifacts-webgpu. GitHub Pages reports
+  exact5cef8af7df74aee447a08e9d081568aeaf0e6d5a built at05:36:24UTC.
+  Independent public verification passes119HTTP/MIME/SHA256checks covering
+  97,712,238bytes. Public general19/19, native physics4/4 and separate software
+  presentation4/4 pass:23unique routes and11authenticated SecretWorkshop routes.
+  Zero page/console/HTTP/request/WebSocket/GPU-loss counters or model responses;
+  owned browser/server/Xvfb cleanup is clean. All68public screenshots independently
+  inspected and hashed, with no new visual regression. Evidence is external at
+  ~/.cache/peercompute-pages-avatar-audit-20261111/public-summary.json,
+  public-byte-verification.json and public-review.json.
+- Public MPM monitor displayed momentum drift5.59e5 at mass1000. Investigated
+  instead of hiding the warning: previous accepted public35bec9c5 receipt shows
+  the same warning5.64e5/mass1000, and physics source has no release diff. Preserve
+  numerical limitation; startup/render PASS does not establish conservation.
+  Existing WXGlobe footer overlap and geodata/camera/XR limitations remain.
+  No unrelated physics repair or threshold adjustment. All authorized publication
+  work is complete; this final documentation receipt stays local to avoid an
+  unnecessary second Pages build. Fresh ICC stores/history and durable task
+  receipt follow, preserving pre-publish baseline audit and generated-guard risks.

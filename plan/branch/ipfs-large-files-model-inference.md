@@ -1701,3 +1701,9 @@ November11 user now authorizes full Pages publication. Before deployment, fix
 supplied-image avatar height using saved physical appearance, default two cubes
 tall. Preserve uniform proportions, grounded feet, identity, stored and peer
 scale. Already-saved sizes are not silently migrated; explicit sizes stay valid.
+
+Completed November11 publication at5cef8af7: supplied-image avatars default to
+two-cube height with saved appearance hints, and the full demo set is live on
+Pages after independent public byte, route, network and visual checks. Existing
+saved sizes stay intact. Final receipt is local documentation only; no second
+build is necessary.

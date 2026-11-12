@@ -5246,3 +5246,12 @@ zero route error counters or generated model responses, allowned sessions closed
 Hardware captures are diagnostic-only; software captures qualify visible physics
 scenes. Existing WXGlobe footer overlap and geography/camera/XR limits remain.
 Public verification follows publication; do not infer it from local staging.
+
+Public acceptance at5cef8af7 passes119HTTP/MIME/hash checks,19general routes,
+4native physics routes and4software presentation repeats:23unique routes,
+11authenticated SecretWorkshop routes,68reviewed screenshots, zero recorded
+browser/network/GPU-loss errors and clean owned-resource teardown. Existing MPM
+headless momentum drift is confirmed against prior35bec9c5 public evidence;
+numerical conservation remains unqualified. No model inference was performed
+for this deployment. External public-summary.json and public-review.json retain
+full evidence and limitations.

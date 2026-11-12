@@ -2425,3 +2425,11 @@ Avatar sizing and full staging acceptance pass:36focused +34renderer +82release
 checks;23routes,11SecretWorkshop connections and68reviewed captures. Site is
 630,687,954bytes; previous active hashes remain available. Publish accepted
 release with atomic fast-forward, then verify exact public commit/assets/routes.
+
+
+November11 full release published at5cef8af7. Public119asset checks,23routes,
+11SecretWorkshop connections and68independent visual reviews pass. New supplied-
+image avatars default to12units high with physical-description hints; explicit
+and already-saved sizes remain unchanged. Existing MPM numerical drift and
+WXGlobe footer overlap remain documented; release smoke is not a conservation
+or model-quality qualification. This deployment task is complete.
