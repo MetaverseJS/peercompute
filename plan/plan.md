@@ -2365,3 +2365,8 @@ Implementation and two-peer acceptance pass: stored semantic sizes, uniform
 grounded rendering, scaled picking/labels, clone/reload continuity and mobile
 Objects batch deletion with remote withdrawal. Existing collision bodies stay
 unchanged. Promote the verified internal preview; no Pages publication requested.
+
+3D compatibility clarification (2026-11-11): current execution admits only the
+qualified TripoSR Q8 packages. Hunyuan3D-2mini and Hunyuan3D-2.1 need their own
+adapter and browser/runtime qualification; no better arbitrary HF model is a
+drop-in replacement today. This is research context, not an authorized new slice.
