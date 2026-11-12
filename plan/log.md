@@ -62879,3 +62879,37 @@ startup/shutdown race separately; no source attribution is established yet.
   verification will independently match successful Pages workflow head_sha via
   publicGitHubAPI plus exact deployed HTTP/MIME/SHA bytes. Original verifier and
   failed API result remain distinguished; no public deployment claimed yet.
+
+
+### 2026-11-12T11:02:37Z — continuous cognition release accepted
+
+- Completed the crash-resumption request and its existing deployment authorization.
+  Source and full demo build committed as3abaf23bd0949433b1dbaf9d1294706d2c8b0ee7;
+  atomic SSH push fast-forwarded origin/main and origin/feature/ipfs-artifacts-webgpu.
+  GitHub Pages workflow43204110479 succeeded for that exact commit. The public
+  verifier independently passed119HTTP/MIME/SHA checks covering97,733,292bytes.
+- Public browser qualification passes19general and4native physics routes, plus
+ 4software physics presentation repeats:23unique routes,11authenticated
+  SecretWorkshop routes and68independently reviewed/hash-checked captures.
+  No page/console/HTTP/request/WebSocket/GPU-loss errors or unexpected model
+  requests. All owned browsers, temporary servers and Xvfb instances are closed;
+  existing Tailscale preview services remain available. Final receipt:
+  ~/.cache/peercompute-resident-ooda-20261111/pages/final-release-qa-receipt.json.
+- Native headless physics captures remain diagnostic-only; software captures
+  establish visible scenes. Existing MLS-MPM headless momentum drift is visible
+  on public Pages and remains numerically unqualified, as in prior releases.
+  Existing narrow physics control overlap and other previously documented
+  camera/XR/geodata limitations are unchanged. Small-model dialogue quality is
+  distinct from the passing actual current-turn, social, vision and recovery tests.
+- Final ICC full reindex121seconds and Git history refresh passed. Content-based
+  source-drift check reports zero changed paths and SOURCE_EQUIVALENT_MOVED after
+  the release commit. Authored guard passes197policydeletedlines; whole generated
+  diff remains a preserved failure for bounded old-asset rotation. Production
+  audit retains12baseline risks; generic readiness0/blocked and generic completion
+  oracle do not measure the actual target. No audit policy was suppressed or
+  rewritten; scoped real execution and release receipts supply acceptance evidence.
+- Legacy paused records without pause provenance remain owner-held to avoid
+  overriding deliberate pauses; users may resume those once. New automatic
+  failures recover without replay; owner pause/unload remains authoritative.
+- This final receipt is a local documentation checkpoint only. Published code and
+  assets remain the fully verified3abaf23b; no second Pages build is needed.

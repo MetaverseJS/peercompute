@@ -5296,3 +5296,13 @@ Final standalone CubeChat/Earth previews also pass. Preserve the documented
 whole-generated-diff guard failure and existing numerical/device limitations;
 authored guard passes. Publish after final repository review, then verify public
 workflow commit, exact assets, full routes and screenshots independently.
+
+
+November12 release complete at3abaf23b on origin/main and the feature branch.
+Public acceptance passes119HTTP/MIME/hash checks,23unique demo routes,
+11authenticated SecretWorkshop routes and68reviewed screenshots. Actual peer
+hello/dialogue, model-selected resident POV vision/reflection, automatic recovery
+and retained-worker reload passed separately. Preserve explicit owner pauses and
+unloads; legacy unclassified pauses may need one manual Resume. Existing MPM
+numerical drift remains outside this resident slice. Full evidence and limitations
+are recorded in log.md; the final documentation receipt stays local.
