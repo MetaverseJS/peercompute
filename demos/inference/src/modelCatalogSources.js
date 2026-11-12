@@ -1,4 +1,5 @@
 import { GGUF_MODEL_CATALOG, ggufModelFileUrl } from '../../../peercompute/src/peercompute/artifacts/ggufModelCatalog.js';
+import { MESH_MODEL_CATALOG, meshModelFileUrl } from '../../../peercompute/src/peercompute/artifacts/meshModelCatalog.js';
 import { createGemma4ProjectorSource } from '../../../peercompute/src/peercompute/artifacts/gemma4ProjectorSource.js';
 import { matchesHubPackage } from './modelHubPackage.js';
 import { downloadModelFile } from './modelDownload.js';
@@ -8,6 +9,8 @@ import { downloadModelFile } from './modelDownload.js';
  * selecting a source. The ordinary importer still checks the resulting SHA/CID.
  */
 export function trustedCatalogSource(manifest) {
+  const mesh = Object.values(MESH_MODEL_CATALOG).find(candidate => matchesHubPackage(manifest, candidate));
+  if (mesh) return { sourceUrl: path => meshModelFileUrl(mesh.id, path) };
   const entry = Object.values(GGUF_MODEL_CATALOG).find((candidate) => candidate.model.ggufMedia
     && matchesHubPackage(manifest, candidate));
   if (!entry) return null;

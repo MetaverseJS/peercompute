@@ -84,6 +84,12 @@ export default {
   module: {
     rules: [
       {
+        // Match Vite's raw shader imports in the shared worker modules.
+        test: /\.wgsl$/i,
+        resourceQuery: /^\?raw$/,
+        type: 'asset/source',
+      },
+      {
         test: /\.css$/i,
         use: ['style-loader', 'css-loader'],
       },

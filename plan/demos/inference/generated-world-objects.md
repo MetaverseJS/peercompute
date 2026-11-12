@@ -50,8 +50,11 @@ receives only pixels, never an ignored text prompt or conversation history.
   preserves older text/vision/audio clients without offering them 3D operations.
 - Generated GLB has one static triangle mesh with embedded geometry and optional
   normals/colors; maximum 16 MiB, 100,000 vertices and 150,000 triangles. Reject
-  external URLs, extensions, animations, skins, textures, invalid indices,
+  external URLs, extensions, animations, skins, invalid indices,
   nonfinite coordinates and mismatched bounds/hashes before renderer access.
+  The SF3D extension admits bounded embedded PNG/JPEG albedo/normal textures
+  with checked UV/tangent attributes. Legacy inference v5 remains texture-free;
+  textured results use v6. See [SF3D](stable-fast-3d.md).
 - ArtifactStore retains the generated file and manifest. Agents/world state
   keep small references, not binary mesh data in prompts or journals.
 - World placement requires current ownership, unchanged resident revision and

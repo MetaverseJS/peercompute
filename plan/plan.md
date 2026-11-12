@@ -2378,3 +2378,16 @@ Stable Fast 3D follow-up: existing lyonsno/sf3d-webgpu implementation and
 needle-tools/SF3D-webgpu ONNX exports make SF3D a stronger near-term browser
 integration candidate. Evaluate output quality and textured-GLB support before
 choosing an adapter; neither export is currently admitted or tested here.
+
+SF3D integration authorized: use the complete pinned browser WGSL pipeline in a
+ComputeManager-owned worker with artifact-backed weights/grids, foreground
+removal and bounded textured GLB support. Qualify actual local/peer generation,
+cancel/unload and CubeChat prop/avatar persistence. Update internal previews
+after acceptance; no Pages deployment or push requested.
+
+SF3D native acceptance passes: opaque/cutout inputs, repeated local and encrypted
+peer generation, cancellation/reload, retained browser restart, and textured
+CubeChat props/avatars on two clients. Catalog qualified on NVIDIA16GiB;340
+focused regressions pass. Internal inference/CubeChat/Earth previews are updated;
+exact TLS build hashes, catalog desktop/mobile layout and SecretWorkshop Noise
+connection pass. No Pages push.

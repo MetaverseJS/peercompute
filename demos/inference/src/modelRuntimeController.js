@@ -388,6 +388,11 @@ export function attachModelRuntimeController(runtime, { catalog, now = Date.now,
     if (!runtime.unloadResidentModel) {
       options.onProgress?.({ stage: 'unload' }); signal.throwIfAborted();
       await unloadModel(); signal.throwIfAborted();
+    } else if (serviceFor(record.cid) && serviceFor(record.cid).getStatus().status !== 'ready') {
+      // A cancelled worker can be idle while its registry entry still owns the
+      // artifact-use lease. Acknowledge that entry's cleanup before reloading.
+      options.onProgress?.({ stage: 'unload' }); signal.throwIfAborted();
+      await unloadModel(record.cid); signal.throwIfAborted();
     }
     options.onProgress?.({ stage: 'load' }); signal.throwIfAborted();
     const result = await loadModel(record.cid, { ...options, signal });

@@ -67,6 +67,7 @@ export { ArtifactStore, ARTIFACT_IMPORT_PROFILE, ARTIFACT_MANIFEST_SCHEMA } from
 export { MODEL_ARTIFACT_CATALOG, modelArtifactFileUrl } from './artifacts/modelArtifactCatalog.js';
 export { GGUF_MODEL_CATALOG, ggufModelFileUrl } from './artifacts/ggufModelCatalog.js';
 export { MESH_MODEL_CATALOG, meshModelFileUrl } from './artifacts/meshModelCatalog.js';
+export { SF3D_MODEL_CATALOG } from './artifacts/sf3dModelCatalog.js';
 export {
   MODEL_COMPOSITION_SCHEMA,
   MODEL_COMPOSITION_LIMITS,

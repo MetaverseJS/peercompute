@@ -35,6 +35,7 @@
     "@helia/unixfs": "8.0.9",
     "@huggingface/transformers": "4.3.2",
     "@ipld/dag-pb": "4.2.0",
+    "@kaminos/webgpu-inference-kit": "0.1.60",
     "@libp2p/bootstrap": "^12.0.10",
     "@libp2p/circuit-relay-v2": "^4.1.2",
     "@libp2p/config": "1.1.40",

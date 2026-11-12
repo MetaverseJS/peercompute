@@ -11,7 +11,7 @@ test('retained alpha-only TripoSR manifests remain loadable without changing the
   assert.equal(evaluateModelCompatibility(current, { device }).code, 'memory_fit_unverified');
   assert.equal(findModelCatalogEntry(legacy), undefined);
   assert.equal(findModelCatalogEntry(current), current);
-  assert.equal(Object.values(MESH_MODEL_CATALOG).length, 1);
+  assert.equal(Object.values(MESH_MODEL_CATALOG).filter(entry => entry.model.pipeline === 'triposr').length, 1);
   const descriptor = { modelId: legacy.id, repository: legacy.repository, revision: legacy.revision,
     runtime: legacy.model.runtime, architecture: legacy.model.architecture, dtype: legacy.model.dtype,
     task: legacy.model.task, format: legacy.model.format };

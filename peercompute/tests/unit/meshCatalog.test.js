@@ -38,7 +38,7 @@ test('runtime cannot substitute graph, external data, preprocessing, or an unqua
 
 test('old retained alpha-only packages remain admitted without appearing twice in the catalog', () => {
   const legacy = LEGACY_MESH_PACKAGES[0];
-  assert.equal(Object.values(MESH_MODEL_CATALOG).length, 1);
+  assert.equal(Object.values(MESH_MODEL_CATALOG).filter(model => model.model.pipeline === 'triposr').length, 1);
   assert.equal(legacy.model.backgroundRemoval, undefined);
   const old = { schema: 'peercompute.artifact.manifest.v1', model: structuredClone(legacy.model),
     files: legacy.files.map(({ path, size, sha256 }) => ({ path, size, sha256, cid })) };

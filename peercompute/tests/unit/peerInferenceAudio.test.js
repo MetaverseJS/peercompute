@@ -9,7 +9,7 @@ import { identify } from '@libp2p/identify';
 import { CID } from 'multiformats/cid';
 import { sha256 } from 'multiformats/hashes/sha2';
 import { NetworkManager } from '../../src/peercompute/networkManager/NetworkManager.js';
-import { PEER_INFERENCE_PROTOCOL as CURRENT, PEER_INFERENCE_PROTOCOL_V4 as V4, PEER_INFERENCE_PROTOCOL_V3 as LEGACY_V3, PEER_INFERENCE_PROTOCOL_V2 as V2, channel, descriptor, generation,
+import { PEER_INFERENCE_PROTOCOL as CURRENT, PEER_INFERENCE_PROTOCOL_V5 as V5, PEER_INFERENCE_PROTOCOL_V4 as V4, PEER_INFERENCE_PROTOCOL_V3 as LEGACY_V3, PEER_INFERENCE_PROTOCOL_V2 as V2, channel, descriptor, generation,
   localState } from '../../src/peercompute/networkManager/inference/protocol.js';
 import { AUDIO_LIMITS, describeAudio, audioMetadata } from '../../src/peercompute/networkManager/inference/audioFrames.js';
 
@@ -88,6 +88,7 @@ test('current client negotiates a genuine v2-only stream and v2 requestors see o
   const [requester, host] = await fixture(t);
   host.state = { ...empty(), sharedModels: models, hostedModel: textModel, hostedModels: models };
   await host.node.unhandle(CURRENT);
+  await host.node.unhandle(V5);
   await host.node.unhandle(V4);
   await host.node.unhandle(LEGACY_V3);
   const directory = await requester.service.refresh();

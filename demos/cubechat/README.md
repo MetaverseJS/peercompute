@@ -271,7 +271,15 @@ animation, avatar replacement or terrain editing. It admits one generation at a
 time per host, up to 32 owned objects per room, and meshes no larger than 16 MiB,
 100,000 vertices or 150,000 triangles. The renderer rejects external resources and
 unsupported GLB features before loading. General Hugging Face 3D pipelines and
-Hunyuan3D-2.1 remain follow-up work; only the pinned TripoSR pipeline is admitted.
+Hunyuan3D-2.1 remain follow-up work. The pinned Stable Fast 3D pipeline adds
+static textured meshes with UVs, albedo and normal maps. Load **Stable Fast 3D**
+in Models locally or use an available peer host; the existing object/avatar
+tools route to its image-to-3D capability. Its package is about 2.18 GiB and
+requires more working GPU memory than TripoSR. Both use foreground removal;
+neither requires `shader-f16`. Textured meshes are validated before display and
+retain the same CID-based sharing, semantic size and reload behavior. Powered
+by Stability AI. See [SF3D](../../plan/demos/inference/stable-fast-3d.md) for
+runtime provenance, limits and qualification status.
 
 `WorldObjectAction`, `WorldGeneratedObjects`, `WorldGeneratedObjectNetwork` and
 `WorldGeneratedObjectPresenter` separate agent authority, model routing, artifact

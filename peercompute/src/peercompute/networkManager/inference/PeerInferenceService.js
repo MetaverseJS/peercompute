@@ -1,6 +1,6 @@
 import { MODEL_POLICY } from '../../inference/modelManifest.js';
 import { inferInferenceTask, supportsInferenceInput } from '../../inference/InferenceCapabilities.js';
-import { PEER_INFERENCE_PROTOCOL, PEER_INFERENCE_PROTOCOL_V4, PEER_INFERENCE_PROTOCOL_V3, PEER_INFERENCE_PROTOCOL_V2, PEER_INFERENCE_PROTOCOLS, isSpeechTask, supportsNativeMediaProtocol, PEER_INFERENCE_LIMITS as LIMITS, LEGACY_MAX_NEW_TOKENS, bytes, cid, integer,
+import { PEER_INFERENCE_PROTOCOL, PEER_INFERENCE_PROTOCOL_V5, PEER_INFERENCE_PROTOCOL_V4, PEER_INFERENCE_PROTOCOL_V3, PEER_INFERENCE_PROTOCOL_V2, PEER_INFERENCE_PROTOCOLS, isSpeechTask, supportsNativeMediaProtocol, supportsMeshProtocol, requiresTexturedMeshProtocol, PEER_INFERENCE_LIMITS as LIMITS, LEGACY_MAX_NEW_TOKENS, bytes, cid, integer,
   encryptedConnection, localState, generation, resultData, diffusionProgress, meshProgress, channel } from './protocol.js';
 import { monitorResultControls, describeResultImage, writeResultImage, readResultImage } from './imageResult.js';
 import { describeAudio, writeInputAudio, readInputAudio, writeResultAudio, readResultAudio } from './audioFrames.js';
@@ -200,7 +200,7 @@ export class PeerInferenceService {
     promise.then(finish, finish);
     return promise;
   }
-  async _openStream(peerId, signal, { audio = false, nativeMedia = false, mesh = false, backgroundRecovery = false } = {}) {
+  async _openStream(peerId, signal, { audio = false, nativeMedia = false, mesh = false, texturedMesh = false, backgroundRecovery = false } = {}) {
     const first = await this._connection(peerId, signal);
     const candidates = [...new Set([first, ...this._connections(peerId)])].slice(0, 4);
     const errors = [];
@@ -213,8 +213,9 @@ export class PeerInferenceService {
       const op = operation([this.controller.signal, signal], Math.min(2000, this.queryTimeoutMs / 2));
       let opening;
       try {
-        const protocols = mesh ? PEER_INFERENCE_PROTOCOL : nativeMedia ? [PEER_INFERENCE_PROTOCOL, PEER_INFERENCE_PROTOCOL_V4] : audio
-          ? [PEER_INFERENCE_PROTOCOL, PEER_INFERENCE_PROTOCOL_V4, PEER_INFERENCE_PROTOCOL_V3] : PEER_INFERENCE_PROTOCOLS;
+        const protocols = texturedMesh ? PEER_INFERENCE_PROTOCOL : mesh ? [PEER_INFERENCE_PROTOCOL, PEER_INFERENCE_PROTOCOL_V5]
+          : nativeMedia ? [PEER_INFERENCE_PROTOCOL, PEER_INFERENCE_PROTOCOL_V5, PEER_INFERENCE_PROTOCOL_V4] : audio
+            ? [PEER_INFERENCE_PROTOCOL, PEER_INFERENCE_PROTOCOL_V5, PEER_INFERENCE_PROTOCOL_V4, PEER_INFERENCE_PROTOCOL_V3] : PEER_INFERENCE_PROTOCOLS;
         opening = Promise.resolve(connection.newStream(protocols,
           { signal: op.signal, runOnLimitedConnection: true }));
         const stream = await withAbort(opening, op.signal);
@@ -347,7 +348,7 @@ export class PeerInferenceService {
       const input = generation(request);
       if (protocol === PEER_INFERENCE_PROTOCOL_V2 && isSpeechTask(input.task)) throw failure('Speech requires inference protocol v3');
       if (!supportsNativeMediaProtocol(protocol) && input.task === 'audio-text-to-text') throw failure('Native audio conversation requires inference protocol v4');
-      if (protocol !== PEER_INFERENCE_PROTOCOL && input.task === 'image-to-3d') throw failure('Mesh generation requires inference protocol v5');
+      if (!supportsMeshProtocol(protocol) && input.task === 'image-to-3d') throw failure('Mesh generation requires inference protocol v5 or newer');
       key = `${peerId}:${input.requestId}`;
       if (this.inbound.has(key) || this.inbound.size >= LIMITS.maximumInbound
           || [...this.inbound.values()].filter((entry) => entry.peerId === peerId).length >= LIMITS.maximumPerPeer) {
@@ -419,7 +420,7 @@ export class PeerInferenceService {
         op.signal.throwIfAborted();
         const isMesh = event.type === 'mesh-generation';
         if (input.task !== (isMesh ? 'image-to-3d' : 'text-to-image') || ++progressFrames > 32
-            || (isMesh && protocol !== PEER_INFERENCE_PROTOCOL)) throw failure('Invalid generation progress');
+            || (isMesh && !supportsMeshProtocol(protocol))) throw failure('Invalid generation progress');
         const progress = isMesh ? meshProgress(event) : diffusionProgress(event);
         written = written.then(() => io.write({ type: 'progress', requestId: input.requestId, progress }, op.signal));
         written.catch((error) => op.controller.abort(error));
@@ -430,7 +431,7 @@ export class PeerInferenceService {
       await written; op.signal.throwIfAborted();
       if (Boolean(result?.image) !== (input.task === 'text-to-image') || Boolean(result?.audio) !== (input.task === 'text-to-speech')
           || Boolean(result?.mesh) !== (input.task === 'image-to-3d')) throw failure('Inference output does not match hosted task');
-      const mesh = result.mesh ? validateGeneratedMesh(result.mesh) : null;
+      const mesh = result.mesh ? validateGeneratedMesh(result.mesh, { allowTextures: protocol === PEER_INFERENCE_PROTOCOL }) : null;
       const metadata = resultData({ ...result,
         ...(result.image ? { image: describeResultImage(result.image) } : {}),
         ...(mesh ? { mesh: normalizeGeneratedMeshDescriptor(mesh) } : {}),
@@ -487,7 +488,8 @@ export class PeerInferenceService {
         && supportsInferenceInput({ ...model, ...candidate }, input)
         && (!isSpeechTask(input.task) || candidate.protocol !== PEER_INFERENCE_PROTOCOL_V2)
         && (input.task !== 'audio-text-to-text' || supportsNativeMediaProtocol(candidate.protocol))
-        && (input.task !== 'image-to-3d' || candidate.protocol === PEER_INFERENCE_PROTOCOL)
+        && (input.task !== 'image-to-3d' || supportsMeshProtocol(candidate.protocol))
+        && (!requiresTexturedMeshProtocol(model) || candidate.protocol === PEER_INFERENCE_PROTOCOL)
         && (!(input.task === 'image-text-to-text' && candidate.task !== 'image-text-to-text') || supportsNativeMediaProtocol(candidate.protocol)));
       candidates.sort((a, b) => Number(a.busy) - Number(b.busy) || (a.queuedRequests ?? 0) - (b.queuedRequests ?? 0)
         || (a.busy ? 0 : b.idleForMs - a.idleForMs) || a.peerId.localeCompare(b.peerId));
@@ -499,7 +501,7 @@ export class PeerInferenceService {
         options.onProgress?.({ type: 'routing', requestId: input.requestId, ...route, route, busy: candidate.busy });
         const candidateInput = { ...input, ...(input.maxNewTokens === undefined ? {} : {
           maxNewTokens: Math.min(input.maxNewTokens, candidate.maxNewTokens ?? LEGACY_MAX_NEW_TOKENS) }) };
-        try { return await this._generateAt(candidate.peerId, candidateInput, options, op.signal, candidate.task ?? model.task); }
+        try { return await this._generateAt(candidate.peerId, candidateInput, options, op.signal, candidate.task ?? model.task, model.runtime); }
         catch (error) { lastError = error; if (error.committed || op.signal.aborted) throw error; }
       }
       throw lastError;
@@ -508,14 +510,15 @@ export class PeerInferenceService {
     try { return await task; }
     finally { this.operations.delete(task); this.outbound.delete(input.requestId); op.dispose(); }
   }
-  async _generateAt(peerId, input, options, signal, modelTask = input.task) {
+  async _generateAt(peerId, input, options, signal, modelTask = input.task, modelRuntime) {
     let stream, release; let committed = false;
     const abort = () => stream?.abort(aborted(signal));
     signal.addEventListener('abort', abort, { once: true });
     try {
       const nativeMedia = input.task === 'audio-text-to-text'
         || (input.task === 'image-text-to-text' && modelTask !== 'image-text-to-text');
-      const opened = await this._openStream(peerId, signal, { audio: isSpeechTask(input.task), nativeMedia, mesh: input.task === 'image-to-3d' });
+      const opened = await this._openStream(peerId, signal, { audio: isSpeechTask(input.task), nativeMedia,
+        mesh: input.task === 'image-to-3d', texturedMesh: requiresTexturedMeshProtocol({ runtime: modelRuntime }) });
       const { connection } = opened; stream = opened.stream; release = opened.release;
       const io = channel(stream);
       const header = { ...input, task: supportsNativeMediaProtocol(opened.protocol) ? input.task : modelTask,
@@ -555,7 +558,7 @@ export class PeerInferenceService {
         } else if (frame.type === 'progress') {
           const isMesh = frame.progress?.type === 'mesh-generation';
           if (input.task !== (isMesh ? 'image-to-3d' : 'text-to-image') || ++progressFrames > 32
-              || (isMesh && opened.protocol !== PEER_INFERENCE_PROTOCOL)) throw failure('Invalid generation progress');
+              || (isMesh && !supportsMeshProtocol(opened.protocol))) throw failure('Invalid generation progress');
           const progress = isMesh ? meshProgress(frame.progress) : diffusionProgress(frame.progress);
           await withAbort(options.onProgress?.({ ...progress, requestId: input.requestId, peerId }), signal);
         } else if (frame.type === 'result-image') {
@@ -565,8 +568,9 @@ export class PeerInferenceService {
           if (input.task !== 'text-to-speech' || audio) throw failure('Unexpected generated audio');
           audio = await readResultAudio(io, { audio: frame.audio, requestId: input.requestId, signal });
         } else if (frame.type === 'result-mesh') {
-          if (input.task !== 'image-to-3d' || mesh || opened.protocol !== PEER_INFERENCE_PROTOCOL) throw failure('Unexpected generated mesh');
-          mesh = await readResultMesh(io, { mesh: frame.mesh, requestId: input.requestId, signal });
+          if (input.task !== 'image-to-3d' || mesh || !supportsMeshProtocol(opened.protocol)) throw failure('Unexpected generated mesh');
+          mesh = await readResultMesh(io, { mesh: frame.mesh, requestId: input.requestId, signal,
+            allowTextures: opened.protocol === PEER_INFERENCE_PROTOCOL });
         } else if (frame.type === 'done') {
           const result = resultData(frame.result);
           if (input.task === 'automatic-speech-recognition' && bytes(result.text) > 8192) throw failure('Speech transcript exceeds its byte budget');

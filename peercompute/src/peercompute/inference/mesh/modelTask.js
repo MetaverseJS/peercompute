@@ -9,6 +9,8 @@ function requireManagedWorker() {
 }
 
 export function createMeshTaskHandler({ createEngine = createMeshEngine, assertWorker = requireManagedWorker,
+  validateManifest = validateMeshManifest, validateRuntimeAssets = validateMeshRuntimeAssets,
+  normalizeInput = normalizeMeshInput,
   baseUrl = globalThis.location?.href } = {}) {
   const sessions = new Map();
   const summary = entry => ({ sessionId: entry.sessionId, manifestCid: entry.manifestCid,
@@ -18,8 +20,8 @@ export function createMeshTaskHandler({ createEngine = createMeshEngine, assertW
     assertWorker(); validateSessionId(data?.sessionId); throwIfAborted(context.signal);
     if (data.command === 'load') {
       if (sessions.size) throw new Error('Unload the resident 3D model first');
-      const { manifest } = validateMeshManifest(data.manifest);
-      const runtimeAssets = validateMeshRuntimeAssets(data.runtimeAssets, baseUrl);
+      const { manifest } = validateManifest(data.manifest);
+      const runtimeAssets = validateRuntimeAssets(data.runtimeAssets, baseUrl);
       const entry = { sessionId: data.sessionId, manifestCid: data.manifestCid, manifest,
         status: 'loading', workerId: context.workerId, engine: null };
       sessions.set(data.sessionId, entry);
@@ -43,7 +45,7 @@ export function createMeshTaskHandler({ createEngine = createMeshEngine, assertW
     if (data.command !== 'generate') throw new Error('Unknown 3D model command');
     validateSessionId(data.requestId);
     if (entry.status !== 'ready' || entry.engine.lost) throw new Error('Model session lost: 3D model is not ready');
-    const input = normalizeMeshInput(data, entry.manifest);
+    const input = normalizeInput(data, entry.manifest);
     entry.status = 'generating';
     try {
       const result = await entry.engine.generate(input, { signal: context.signal, onProgress: context.emitProgress });

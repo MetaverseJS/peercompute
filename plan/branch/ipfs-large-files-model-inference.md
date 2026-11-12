@@ -1669,3 +1669,17 @@ including props and resident avatars. Shared bounded world-size metadata must
 survive peer fetch/reload/clone without altering GLB bytes. Follow-up asks how to
 delete clutter: expose existing owned object removal in a hamburger Objects modal.
 Continue internal previews only; preserve old manifests and older protocol peers.
+
+November11 SF3D request: integrate the complete Stable Fast 3D browser pipeline
+with managed worker/device ownership, retained IPFS packages and textured GLB
+outputs. Reuse CubeChat object/avatar placement, scale, identity and sharing.
+Qualify native browser generation and peer transfer; preserve existing TripoSR
+and reject unsupported outputs safely on older peers. Internal previews only.
+
+SF3D acceptance now passes on NVIDIA16GiB: real local/peer generation, opaque
+foreground removal, repeat requests, cancellation/reload, saved browser restart
+and CubeChat textured prop/avatar peer rendering.340focused tests pass. Preserve
+the documented earlier OOM/cache and discovery failures; broader device/network
+reliability is not inferred from this qualification. Internal preview verification
+passes for exact TLS builds, desktop/mobile catalog and SecretWorkshop Noise.
+Checkpoint locally; no public deployment or push.

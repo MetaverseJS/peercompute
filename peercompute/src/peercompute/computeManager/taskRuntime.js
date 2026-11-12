@@ -22,6 +22,9 @@ async function importTaskModule(modulePath) {
   if (modulePath === 'peercompute:mesh-inference') {
     return import('../inference/mesh/modelTask.js');
   }
+  if (modulePath === 'peercompute:sf3d-inference') {
+    return import('../inference/sf3dModelTask.js');
+  }
 
   return import(
     /* webpackChunkName: "compute-task" */

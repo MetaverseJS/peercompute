@@ -15,7 +15,7 @@ export async function writeResultMesh(io, { mesh, requestId, controls, signal })
   }
 }
 
-export async function readResultMesh(io, { mesh, requestId, signal }) {
+export async function readResultMesh(io, { mesh, requestId, signal, allowTextures = false }) {
   const metadata = normalizeGeneratedMeshDescriptor(mesh);
   const data = new Uint8Array(metadata.byteLength);
   await io.write({ type: 'result-credit', requestId, offset: 0 }, signal);
@@ -27,7 +27,7 @@ export async function readResultMesh(io, { mesh, requestId, signal }) {
     }
     data.set(frame.subarray(), offset); offset += frame.byteLength;
     // Invalid geometry or a digest mismatch never receives a final credit.
-    if (offset === data.byteLength) result = validateGeneratedMesh({ ...metadata, data });
+    if (offset === data.byteLength) result = validateGeneratedMesh({ ...metadata, data }, { allowTextures });
     await io.write({ type: 'result-credit', requestId, offset }, signal);
   }
   return result;

@@ -274,6 +274,7 @@ export class ModelInferenceService {
       if (healthError) throw healthError;
       throwIfAborted(item.operation.controller.signal);
       if (this.session !== item.session || item.session.status !== 'ready') throw new Error('Requested model is no longer ready');
+      item.dispatched = true;
       const result = await this.computeManager.submitTask({
         id: `${item.session.sessionId}-generate-${item.requestId}`,
         module: this.moduleUrl, exportName: 'handleModelTask', data: item.data,
@@ -288,17 +289,23 @@ export class ModelInferenceService {
       if (this.session !== item.session || item.session.status !== 'ready') throw new Error('Requested model is no longer ready');
       item.resolve(result);
     } catch (error) {
+      // Some trusted runtimes cancel by destroying their owned GPU device. Once
+      // dispatched, even an ordinary AbortError means that realm cannot serve
+      // another request. Queued/pre-admission cancellation never reaches it.
+      const retireAbortedRuntime = this.runtimeDefinition.terminateOnGenerationAbort === true
+        && item.dispatched && (item.operation.controller.signal.aborted || error?.name === 'AbortError');
       if (error?.code === 'ERR_MODEL_RESIDENCY_INACTIVE') {
         // Keep resident capacity quarantined until explicit unload acknowledges
         // termination, just as when a readiness query discovers the loss.
         this.#markUnavailable(item.session, error);
-      } else if (workerWasTerminated(error) || error?.code === 'ERR_COMPUTE_WORKER_TERMINATION_FAILED'
+      } else if (retireAbortedRuntime || workerWasTerminated(error) || error?.code === 'ERR_COMPUTE_WORKER_TERMINATION_FAILED'
           || /GPU device lost|Model session lost/.test(error?.message ?? '')) {
         item.session.status = 'lost';
         this.#rejectQueue('Model worker was lost');
         try {
           if (!workerWasTerminated(error)) {
-            await this.computeManager.terminateWorkerAffinity(item.session.affinityKey, { reason: 'Model session lost' });
+            await this.computeManager.terminateWorkerAffinity(item.session.affinityKey, {
+              reason: retireAbortedRuntime ? 'Model generation aborted and retired its device' : 'Model session lost' });
           }
           await this.#release(item.session);
           if (this.session === item.session) this.session = null;

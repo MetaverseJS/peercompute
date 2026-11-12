@@ -6,15 +6,19 @@ import { INFERENCE_TASKS } from '../../inference/InferenceCapabilities.js';
 import { audioMetadata, describeAudio } from './audioFrames.js';
 import { normalizeGeneratedMeshDescriptor } from '../../inference/GeneratedMeshArtifact.js';
 
-// v5 adds bounded, validated static mesh results. v4 separates conversational operations from a model's primary task, including
+// v6 admits bounded textured meshes. v5 retains the original static geometry
+// profile. v4 separates conversational operations from a model's primary task, including
 // native audio understanding. v3 retains multiple hosts and standalone speech;
 // v2 retains its original text/vision/image directory and single host.
-export const PEER_INFERENCE_PROTOCOL = '/peercompute/inference/5.0.0';
+export const PEER_INFERENCE_PROTOCOL = '/peercompute/inference/6.0.0';
+export const PEER_INFERENCE_PROTOCOL_V5 = '/peercompute/inference/5.0.0';
 export const PEER_INFERENCE_PROTOCOL_V4 = '/peercompute/inference/4.0.0';
 export const PEER_INFERENCE_PROTOCOL_V3 = '/peercompute/inference/3.0.0';
 export const PEER_INFERENCE_PROTOCOL_V2 = '/peercompute/inference/2.0.0';
-export const PEER_INFERENCE_PROTOCOLS = Object.freeze([PEER_INFERENCE_PROTOCOL, PEER_INFERENCE_PROTOCOL_V4, PEER_INFERENCE_PROTOCOL_V3, PEER_INFERENCE_PROTOCOL_V2]);
-export const supportsNativeMediaProtocol = (protocol) => [PEER_INFERENCE_PROTOCOL, PEER_INFERENCE_PROTOCOL_V4].includes(protocol);
+export const PEER_INFERENCE_PROTOCOLS = Object.freeze([PEER_INFERENCE_PROTOCOL, PEER_INFERENCE_PROTOCOL_V5, PEER_INFERENCE_PROTOCOL_V4, PEER_INFERENCE_PROTOCOL_V3, PEER_INFERENCE_PROTOCOL_V2]);
+export const supportsNativeMediaProtocol = (protocol) => [PEER_INFERENCE_PROTOCOL, PEER_INFERENCE_PROTOCOL_V5, PEER_INFERENCE_PROTOCOL_V4].includes(protocol);
+export const supportsMeshProtocol = (protocol) => [PEER_INFERENCE_PROTOCOL, PEER_INFERENCE_PROTOCOL_V5].includes(protocol);
+export const requiresTexturedMeshProtocol = (model) => model?.runtime === 'webgpu-sf3d';
 export const isSpeechTask = (task) => ['automatic-speech-recognition', 'text-to-speech'].includes(task);
 // Original v2 hosts omit this capability and reject requests above 256 tokens.
 export const LEGACY_MAX_NEW_TOKENS = 256;
@@ -69,8 +73,11 @@ export function descriptor(value) {
 }
 function legacyDescriptor(model, protocol) {
   if (protocol === PEER_INFERENCE_PROTOCOL || !model) return model;
-  if (model.task === 'image-to-3d') return null;
-  if (protocol === PEER_INFERENCE_PROTOCOL_V4) return model;
+  // A v5 client accepts arbitrary runtime names but cannot validate textured
+  // GLB. Omit only that runtime, preserving all compatible siblings.
+  if (requiresTexturedMeshProtocol(model)) return null;
+  if (model.task === 'image-to-3d' && !supportsMeshProtocol(protocol)) return null;
+  if (supportsNativeMediaProtocol(protocol)) return model;
   if (protocol === PEER_INFERENCE_PROTOCOL_V2 && isSpeechTask(model.task)) return null;
   // Older adapters understand vision only under its dedicated primary task and
   // PCM only as ASR. Keep the same model visible for its compatible text usage.

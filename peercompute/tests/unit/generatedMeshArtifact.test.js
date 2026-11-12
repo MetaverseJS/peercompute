@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ArtifactStore } from '../../src/peercompute/artifacts/ArtifactStore.js';
 import { encodeGeneratedMesh, validateGeneratedMesh, normalizeGeneratedMeshDescriptor,
-  retainGeneratedMesh, readGeneratedMesh, GENERATED_MESH_LIMITS } from '../../src/peercompute/inference/GeneratedMeshArtifact.js';
+  retainGeneratedMesh, readGeneratedMesh, getGeneratedMeshTextureSources, GENERATED_MESH_LIMITS } from '../../src/peercompute/inference/GeneratedMeshArtifact.js';
 
 const geometry = () => ({ positions: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]),
   indices: new Uint16Array([0, 1, 2]), colors: new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]) });
@@ -23,6 +23,64 @@ function mutateBinary(data, edit) {
   return next;
 }
 const rejects = (data, pattern) => assert.throws(() => validateGeneratedMesh({ data }), pattern ?? /Invalid generated mesh/u);
+const png = () => new Uint8Array(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGP4z8AARAwQCgAf7gP9i18U1AAAAABJRU5ErkJggg==', 'base64'));
+const textured = () => ({ ...geometry(), normals: new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]),
+  uvs: new Float32Array([0, 0, 1, 0, 0, 1]), tangents: new Float32Array([1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, -1]),
+  textures: { baseColor: { data: png(), mimeType: 'image/png' }, normal: { data: png(), mimeType: 'image/png' } } });
+
+test('embedded textured geometry preserves descriptors, exact bytes and the legacy admission boundary', async t => {
+  const mesh = encodeGeneratedMesh(textured()), again = encodeGeneratedMesh(textured());
+  assert.deepEqual(mesh, again);
+  const { data, ...descriptor } = mesh;
+  assert.deepEqual(normalizeGeneratedMeshDescriptor(mesh), descriptor);
+  const sources = getGeneratedMeshTextureSources(mesh);
+  assert.equal(sources.length, 2); assert.equal(sources[0].width, 2); assert.equal(sources[0].height, 2);
+  assert.deepEqual(sources[0].data, png()); sources[0].data.fill(0);
+  assert.equal(validateGeneratedMesh(mesh).sha256, mesh.sha256);
+  assert.throws(() => validateGeneratedMesh(mesh, { allowTextures: false }), /compatible peer/);
+  assert.equal(validateGeneratedMesh(encodeGeneratedMesh(geometry()), { allowTextures: false }).triangleCount, 1);
+  const store = new ArtifactStore({ persistent: false }); t.after(() => store.destroy());
+  const retained = await retainGeneratedMesh(store, mesh); await store.gc();
+  assert.deepEqual((await readGeneratedMesh(store, retained.artifactCid)).data, mesh.data);
+});
+
+test('textured profile rejects resource URLs, bad references, unsupported bindings and geometry misuse', () => {
+  const { data } = encodeGeneratedMesh(textured());
+  for (const mutate of [
+    g => { g.images[0].uri = 'https://attacker.invalid/texture.png'; },
+    g => { g.images[0].uri = 'blob:https://local.invalid/unowned'; },
+    g => { g.images[0].mimeType = 'image/svg+xml'; },
+    g => { g.images[0].bufferView = g.accessors[0].bufferView; },
+    g => { g.images[1].bufferView = g.images[0].bufferView; },
+    g => { g.images[0].extensions = { WEBP: {} }; },
+    g => { g.bufferViews[g.images[0].bufferView].target = 34962; },
+    g => { g.textures[0].source = 99; },
+    g => { g.textures[0].sampler = 99; },
+    g => { g.textures.push({ source: 0 }); },
+    g => { g.samplers[0].wrapS = -1; },
+    g => { g.materials[0].pbrMetallicRoughness.baseColorTexture.texCoord = 1; },
+    g => { g.materials[0].normalTexture.scale = 1e6; },
+    g => { delete g.meshes[0].primitives[0].attributes.NORMAL; },
+    g => { delete g.meshes[0].primitives[0].attributes.TEXCOORD_0; },
+    g => { g.accessors[g.meshes[0].primitives[0].attributes.TEXCOORD_0].type = 'VEC3'; }
+  ]) rejects(mutateJson(data, mutate));
+  for (const [attribute, component, value] of [['TEXCOORD_0', 0, -0.1], ['TEXCOORD_0', 1, NaN],
+    ['TANGENT', 0, 0], ['TANGENT', 3, 0]]) {
+    rejects(mutateBinary(data, (view, g) => {
+      const a = g.accessors[g.meshes[0].primitives[0].attributes[attribute]];
+      view.setFloat32(g.bufferViews[a.bufferView].byteOffset + 4 * component, value, true);
+    }));
+  }
+});
+
+test('aggregate texture pixel count is bounded independently of small encoded payload size', () => {
+  const image = png(), view = new DataView(image.buffer); view.setUint32(16, 2048); view.setUint32(20, 2048);
+  let crc = 0xffffffff;
+  for (const value of image.subarray(12, 29)) { crc ^= value; for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1)); }
+  view.setUint32(29, (crc ^ 0xffffffff) >>> 0);
+  const source = { data: image, mimeType: 'image/png' };
+  assert.throws(() => encodeGeneratedMesh({ ...textured(), textures: { baseColor: source, normal: source, metallicRoughness: source } }), /pixel limit/);
+});
 
 test('generated colored GLB is deterministic and derived metadata owns its checked bytes', () => {
   const first = encodeGeneratedMesh(geometry()), next = encodeGeneratedMesh(geometry());

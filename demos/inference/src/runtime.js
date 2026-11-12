@@ -142,7 +142,7 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
         if (!available(candidate) || (kind === 'llama.cpp' && runtimeOptions.ggufGpuLayers !== undefined)) {
           const assets = kind === 'llama.cpp' ? trustedGgufRuntimeAssets()
             : kind === 'onnx-diffusion' ? trustedDiffusionRuntimeAssets()
-              : kind === 'onnx-mesh' ? trustedMeshRuntimeAssets() : trustedRuntimeAssets(runtimeBaseUrl);
+              : ['onnx-mesh', 'webgpu-sf3d'].includes(kind) ? trustedMeshRuntimeAssets() : trustedRuntimeAssets(runtimeBaseUrl);
           candidate = await compute.createModelInferenceService({ artifactStore: store, runtime: kind,
             runtimeAssets: assets, resourceEstimate: modelMemoryEstimate, collectGpuEvidence, admissionOptions,
             ...(kind === 'llama.cpp' ? { runtimeOptions: { ...ggufRuntimeOptions,
@@ -335,7 +335,7 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
       const manifest = await store.getManifest(cid, { signal: options.signal });
       const isGguf = manifest.model?.runtime === 'llama.cpp';
       const isDiffusion = manifest.model?.runtime === 'onnx-diffusion';
-      if (!isGguf && !isDiffusion && !['transformers.js', 'transformers-speech', 'onnx-mesh'].includes(manifest.model?.runtime)) {
+      if (!isGguf && !isDiffusion && !['transformers.js', 'transformers-speech', 'onnx-mesh', 'webgpu-sf3d'].includes(manifest.model?.runtime)) {
         throw new Error('This package can be stored and hosted, but its model runtime is unavailable in this browser demo');
       }
       if (isGguf) {

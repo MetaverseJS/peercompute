@@ -8,6 +8,7 @@ import { createModelPreferences, DEFAULT_MODEL_ID } from '../../../demos/inferen
 import { SPEECH_MODEL_CATALOG } from '../../src/peercompute/inference/speech/speechCatalog.js';
 import { PEER_INFERENCE_LIMITS } from '../../src/peercompute/networkManager/inference/protocol.js';
 import { MODEL_POLICY } from '../../src/peercompute/inference/modelManifest.js';
+import { ResidentModelRegistry } from '../../src/peercompute/inference/ResidentModelRegistry.js';
 
 const cid = 'bafkreihbwk7mfabwdamnmxyntvhqc6oc6xyzhz42tjkkx4uh4syxcwp5ou';
 const model = { runtime: 'transformers.js', repository: 'test/model', revision: 'a'.repeat(40), task: 'image-text-to-text', modalities: ['text', 'image'] };
@@ -15,7 +16,7 @@ const manifest = { name: 'Test vision model', model, files: [{ size: 100 }] };
 const catalog = { test: { id: 'test', name: manifest.name, model, totalBytes: 100 } };
 const descriptor = { manifestCid: cid, modelId: 'test', name: manifest.name, ...model, totalBytes: 100 };
 
-function fixture({ retained = false, retainedRecords = [], catalogInfo, connected = true, failRelease = false, hooks = {}, modelInfo = model, now, preferences, multi = false } = {}) {
+function fixture({ retained = false, retainedRecords = [], catalogInfo, connected = true, failRelease = false, hooks = {}, modelInfo = model, now, preferences, multi = false, configureRuntime } = {}) {
   const calls = [], records = new Map(), published = new Set();
   const localManifest = { ...manifest, model: modelInfo };
   const record = { cid, manifest: localManifest, kind: 'manifest', pinned: true, status: 'complete' };
@@ -113,10 +114,85 @@ function fixture({ retained = false, retainedRecords = [], catalogInfo, connecte
     };
     runtime.dispose = async () => { await runtime.unloadResidentModel(); calls.push('dispose'); };
   }
+  configureRuntime?.(runtime, calls);
   const controller = attachModelRuntimeController(runtime, { catalog: catalogInfo ?? { test: { ...catalog.test, model: modelInfo } },
     ...(now ? { now } : {}), ...(preferences ? { preferences } : {}) });
   return { runtime, controller, calls, peer, published, records, get callbacks() { return callbacks; }, get released() { return released; } };
 }
+
+function registryFixture(options = {}) {
+  return fixture({ ...options, configureRuntime(runtime, calls) {
+    const fallback = runtime.service; let selected = fallback, sequence = 0;
+    const registry = new ResidentModelRegistry({ artifactStore: runtime.store,
+      async createService({ manifestCid }) {
+        let status = { status: 'idle' };
+        return { getStatus: () => status,
+          async loadModel() { status = { status: 'ready', manifestCid, sessionId: `registry-${++sequence}` }; return { workerId: sequence }; },
+          async dispose() { calls.push(`cleanup:${manifestCid}`); await options.cleanup?.(manifestCid); status = { status: 'idle' }; },
+        };
+      } });
+    Object.defineProperty(runtime, 'service', { get: () => selected });
+    runtime.managesArtifactUses = true;
+    runtime.getServiceForModel = key => registry.getService(key);
+    runtime.getResidentModelStates = () => registry.list();
+    runtime.load = async (key, loadOptions) => {
+      calls.push(`load:${key}`); const result = await registry.load(key, loadOptions);
+      selected = registry.getService(key); return result;
+    };
+    runtime.unloadResidentModel = async key => {
+      const result = await registry.unload(key);
+      if (selected.getStatus().status !== 'ready') selected = registry.list()
+        .map(entry => registry.getService(entry.manifestCid)).find(service => service.getStatus().status === 'ready') ?? fallback;
+      return result;
+    };
+    runtime.dispose = async () => registry.dispose();
+  } });
+}
+
+test('stored reload acknowledges an idle cancelled registry entry before loading and leaves other residents ready', async () => {
+  let releaseCleanup, cleanupStarted, waitForCleanup = false;
+  const cleanup = new Promise(resolve => { releaseCleanup = resolve; });
+  const started = new Promise(resolve => { cleanupStarted = resolve; });
+  const other = { cid: secondCid, kind: 'manifest', status: 'complete', pinned: true,
+    manifest: { ...manifest, name: 'Other resident', model: { ...model, repository: 'test/other' } } };
+  const f = registryFixture({ retained: true, retainedRecords: [other], cleanup: async key => {
+    if (key === cid && waitForCleanup) { cleanupStarted(); await cleanup; }
+  } });
+  await f.controller.initialize(); await f.runtime.loadStoredModel(cid); await f.runtime.loadStoredModel(secondCid);
+  const cancelled = f.runtime.getServiceForModel(cid), preserved = f.runtime.getServiceForModel(secondCid);
+  Object.assign(cancelled.getStatus(), { status: 'idle', manifestCid: null, sessionId: null });
+  assert.equal((await f.callbacks.getLocalState()).hostedModels.length, 1);
+  const loads = f.calls.filter(call => call === `load:${cid}`).length;
+  waitForCleanup = true;
+  const reloading = f.runtime.loadStoredModel(cid); await started;
+  assert.equal(f.calls.filter(call => call === `load:${cid}`).length, loads);
+  assert.equal(f.runtime.getServiceForModel(cid), cancelled);
+  assert.equal(preserved.getStatus().status, 'ready'); assert(!f.calls.includes(`cleanup:${secondCid}`));
+  releaseCleanup(); await reloading; waitForCleanup = false;
+  assert.notEqual(f.runtime.getServiceForModel(cid), cancelled);
+  assert.equal(f.runtime.getServiceForModel(cid).getStatus().status, 'ready');
+  assert.equal(f.runtime.getServiceForModel(secondCid), preserved);
+  assert.equal((await f.callbacks.getLocalState()).hostedModels.length, 2);
+  assert(!f.calls.some(call => ['import', 'import-hub', 'fetch-peer'].includes(call)));
+  await f.runtime.dispose();
+});
+
+test('failed registry cleanup blocks stored reload until acknowledged retry', async () => {
+  let failCleanup = true;
+  const f = registryFixture({ retained: true, cleanup: async () => { if (failCleanup) throw new Error('Cleanup not acknowledged'); } });
+  await f.controller.initialize(); await f.runtime.loadStoredModel(cid);
+  const stale = f.runtime.getServiceForModel(cid); stale.getStatus().status = 'cleanup-failed';
+  const loads = f.calls.filter(call => call === `load:${cid}`).length;
+  await assert.rejects(f.runtime.loadStoredModel(cid), /Cleanup not acknowledged/);
+  assert.equal(f.calls.filter(call => call === `load:${cid}`).length, loads);
+  assert.equal(f.runtime.getServiceForModel(cid), stale); assert(!f.calls.includes('release-use'));
+  assert.equal((await f.callbacks.getLocalState()).hostedModels.length, 0);
+  failCleanup = false; await f.runtime.loadStoredModel(cid);
+  assert.notEqual(f.runtime.getServiceForModel(cid), stale);
+  assert.equal(f.runtime.getServiceForModel(cid).getStatus().status, 'ready');
+  assert.equal(f.calls.filter(call => call === 'release-use').length, 1);
+  await f.runtime.dispose();
+});
 
 test('opening the console enables both preferences without fetching or loading weights', async () => {
   const f = fixture(); await f.controller.initialize();

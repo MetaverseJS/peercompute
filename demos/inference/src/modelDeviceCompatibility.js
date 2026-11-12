@@ -9,6 +9,7 @@ import { SPEECH_MODEL_CATALOG } from '../../../peercompute/src/peercompute/infer
 import { SPEECH_LIMITS } from '../../../peercompute/src/peercompute/inference/speech/runtimeDefinition.js';
 import { MESH_MODEL_CATALOG, LEGACY_MESH_PACKAGES } from '../../../peercompute/src/peercompute/artifacts/meshModelCatalog.js';
 import { MESH_RESOURCE_POLICY } from '../../../peercompute/src/peercompute/inference/mesh/runtimeDefinition.js';
+import { SF3D_RESOURCE_POLICY } from '../../../peercompute/src/peercompute/inference/sf3dRuntimeDefinition.js';
 
 const GiB = 1024 ** 3;
 const catalogs = [...Object.values(MODEL_CATALOG), ...Object.values(GGUF_MODEL_CATALOG),
@@ -16,7 +17,7 @@ const catalogs = [...Object.values(MODEL_CATALOG), ...Object.values(GGUF_MODEL_C
 const limitNames = ['maxBufferSize', 'maxStorageBufferBindingSize', 'maxComputeWorkgroupStorageSize',
   'maxComputeInvocationsPerWorkgroup', 'maxComputeWorkgroupSizeX', 'maxComputeWorkgroupSizeY',
   'maxComputeWorkgroupSizeZ', 'maxComputeWorkgroupsPerDimension'];
-const runtimes = new Set(['transformers.js', 'llama.cpp', 'onnx-diffusion', 'transformers-speech', 'onnx-mesh']);
+const runtimes = new Set(['transformers.js', 'llama.cpp', 'onnx-diffusion', 'transformers-speech', 'onnx-mesh', 'webgpu-sf3d']);
 export const VOICE_MODEL_LOAD_HINT = 'Load this speech model from Browse models, or use Enable voice in a world-agent window.';
 
 /** Resolve a catalog identity without choosing the first same-revision variant. */
@@ -90,6 +91,8 @@ export function modelMemoryEstimate(entryOrManifest) {
   if (model.runtime === 'onnx-diffusion') return { cpuBytes: 8 * GiB, gpuBytes: 8 * GiB };
   if (model.runtime === 'onnx-mesh') return { cpuBytes: MESH_RESOURCE_POLICY.minimumCpuBytes,
     gpuBytes: MESH_RESOURCE_POLICY.minimumGpuBytes };
+  if (model.runtime === 'webgpu-sf3d') return { cpuBytes: SF3D_RESOURCE_POLICY.minimumCpuBytes,
+    gpuBytes: SF3D_RESOURCE_POLICY.minimumGpuBytes };
   if (model.runtime === 'llama.cpp') {
     if (totalBytes === null) return { cpuBytes: 0, gpuBytes: 0 };
     const large = totalBytes > 4 * GiB;
@@ -187,7 +190,8 @@ function runtimeProblem({ model, files, totalBytes, trusted, descriptorOnly }) {
   if (model.runtime === 'transformers-speech') return null;
   const maximum = model.runtime === 'llama.cpp' ? 16 * GiB
     : model.runtime === 'onnx-diffusion' ? 3 * GiB
-      : model.runtime === 'onnx-mesh' ? MESH_RESOURCE_POLICY.maxModelBytes : modelResourcePolicy(model).maxModelBytes;
+      : model.runtime === 'onnx-mesh' ? MESH_RESOURCE_POLICY.maxModelBytes
+        : model.runtime === 'webgpu-sf3d' ? SF3D_RESOURCE_POLICY.maxModelBytes : modelResourcePolicy(model).maxModelBytes;
   if (!descriptorOnly && totalBytes !== null && totalBytes > maximum) return ['package_too_large',
     `Model package is ${(totalBytes / GiB).toFixed(2)} GiB; this runtime supports up to ${Number((maximum / GiB).toFixed(2))} GiB.`];
   if (model.runtime === 'transformers.js') {
@@ -217,7 +221,7 @@ function runtimeProblem({ model, files, totalBytes, trusted, descriptorOnly }) {
   } else {
     if (!trusted || (model.runtimeVersion !== trusted.model.runtimeVersion && !(model.runtime === 'llama.cpp' && trusted.model.runtimeVersion === undefined && model.runtimeVersion === '3.8.1')))
       return ['catalog_unsupported', 'This package is not in the approved local runtime catalog'];
-    if (model.runtime === 'onnx-mesh' && !sameValue(model, trusted.model))
+    if (['onnx-mesh', 'webgpu-sf3d'].includes(model.runtime) && !sameValue(model, trusted.model))
       return ['catalog_unsupported', '3D model profile differs from the qualified runtime catalog'];
     for (const key of model.runtime === 'onnx-diffusion'
       ? ['architecture', 'task', 'format', 'dtype', 'pipeline', 'width', 'height', 'steps', 'padTokenId', 'weightQuantization', 'modalities', 'outputModalities', 'requiredFeatures']
@@ -271,7 +275,8 @@ export function evaluateModelCompatibility(entry, { device, budgets = {} } = {})
   const required = new Set(details.model.requiredFeatures ?? []);
   const dtype = details.model.dtype;
   if (['llama.cpp', 'onnx-diffusion'].includes(details.model.runtime)
-      || (typeof dtype === 'string' ? [dtype] : Object.values(dtype ?? {})).some((type) => ['fp16', 'q4f16'].includes(type))) required.add('shader-f16');
+      || (details.model.runtime !== 'webgpu-sf3d'
+        && (typeof dtype === 'string' ? [dtype] : Object.values(dtype ?? {})).some((type) => ['fp16', 'q4f16'].includes(type)))) required.add('shader-f16');
   for (const feature of required) if (!features.has(feature)) {
     // Quantized GGUF weights still execute FP16 kernels in the pinned engine.
     const reason = feature === 'shader-f16' && details.model.runtime === 'llama.cpp'

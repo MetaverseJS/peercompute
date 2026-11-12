@@ -56,6 +56,7 @@ Safetensors diffusion LoRAs require a different backend. See the
 | ONNX diffusion | Image generation: pinned Stable Diffusion Turbo and DreamShaper 8 LCM exports |
 | Managed speech workers | Recognition with Moonshine Tiny; synthesis with Supertonic |
 | Managed ONNX mesh worker | Image-to-3D: pinned TripoSR Q8; used by CubeChat resident object tools |
+| Managed SF3D worker | Image-to-3D: pinned Stable Fast 3D with UVs, albedo and normal textures |
 
 Exact files and revisions live in the [ONNX catalog](../../peercompute/src/peercompute/inference/modelCatalog.js),
 [additional ONNX catalog](../../peercompute/src/peercompute/inference/additionalModelCatalog.js),
@@ -116,6 +117,17 @@ Older stored TripoSR packages still accept cutouts; load the current catalog
 package to use automatic background removal. Output is static colored geometry;
 rigging, animated avatars and Hunyuan3D are later work. See
 [generated objects](../../plan/demos/inference/generated-world-objects.md).
+
+**Stable Fast 3D · textured meshes (WebGPU)** adds a textured alternative with
+an approximately 2.18 GiB package. It also removes opaque backgrounds and does
+not require `shader-f16`; FP16 stored weights expand for FP32 GPU computation.
+Its 8 GiB RAM/GPU estimates are planning figures. Choose it in **Models**, load
+it and enable **Host inference** to make it available to CubeChat residents.
+The same resident object/avatar tools select a compatible image-to-3D provider.
+Textured peer results require inference protocol v6; older hosts keep their
+existing TripoSR support. Powered by Stability AI; licenses and notices are
+included with the catalog package. See the
+[SF3D integration and qualification record](../../plan/demos/inference/stable-fast-3d.md).
 
 ## Chat, images and voice
 

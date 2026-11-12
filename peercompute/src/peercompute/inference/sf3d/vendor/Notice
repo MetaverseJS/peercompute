@@ -1,0 +1,12 @@
+This Stability AI Model is licensed under the Stability AI Community License, Copyright © Stability AI Ltd. All Rights Reserved
+
+Powered by Stability AI.
+
+Stable Fast 3D originates with Stability AI. The WebGPU port is from
+lyonsno/sf3d-webgpu, commit 86b7b68109434ffc33218f5fb697c7057c2518f9.
+
+PeerCompute changed the port's asset loading, worker ownership, raw-image and
+texture encoding interfaces, cancellation checks, and allocation cleanup.
+The authored bounded artifact adapter streams the same checkpoint tensors and
+retains the original WGSL kernels. The model weights themselves are unchanged.
+See README.md for the exact integration changes and LICENSE.md for the license.

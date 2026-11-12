@@ -1344,7 +1344,7 @@ export class ComputeManager {
   async createModelInferenceService({ artifactStore, resourceBroker, resourceBudgets,
     runtime = 'transformers.js', admissionOptions = {}, ...options } = {}) {
     if (this.destroying) throw new Error('ComputeManager is shutting down');
-    if (!['transformers.js', 'llama.cpp', 'onnx-diffusion', 'transformers-speech', 'onnx-mesh'].includes(runtime)) throw new Error('Unsupported model execution runtime');
+    if (!['transformers.js', 'llama.cpp', 'onnx-diffusion', 'transformers-speech', 'onnx-mesh', 'webgpu-sf3d'].includes(runtime)) throw new Error('Unsupported model execution runtime');
     const lifecycle = this.workerLifecycleRevision;
     const [{ ModelInferenceService }, { ResourceLeaseBroker }, { ResidentModelAdmission }, runtimeDefinition] = await Promise.all([
       import('../inference/ModelInferenceService.js'),
@@ -1353,6 +1353,7 @@ export class ComputeManager {
       runtime === 'llama.cpp' ? import('../inference/gguf/runtimeDefinition.js').then((module) => module.ggufRuntimeDefinition)
         : runtime === 'onnx-diffusion' ? import('../inference/diffusion/runtimeDefinition.js').then((module) => module.diffusionRuntimeDefinition)
           : runtime === 'onnx-mesh' ? import('../inference/mesh/runtimeDefinition.js').then((module) => module.meshRuntimeDefinition)
+          : runtime === 'webgpu-sf3d' ? import('../inference/sf3dRuntimeDefinition.js').then((module) => module.sf3dRuntimeDefinition)
           : runtime === 'transformers-speech' ? import('../inference/speech/runtimeDefinition.js').then((module) => module.speechRuntimeDefinition) : null,
     ]);
     if (this.destroying || lifecycle !== this.workerLifecycleRevision) throw new Error('ComputeManager shutdown interrupted service creation');
@@ -1416,7 +1417,7 @@ export class ComputeManager {
   async submitTask(task) {
     if (!task) throw new Error('Task is required');
     const shutdownUnload = ['peercompute:model-inference', 'peercompute:gguf-inference',
-      'peercompute:diffusion-inference', 'peercompute:speech-inference', 'peercompute:mesh-inference'].includes(task.module) && task.data?.command === 'unload'
+      'peercompute:diffusion-inference', 'peercompute:speech-inference', 'peercompute:mesh-inference', 'peercompute:sf3d-inference'].includes(task.module) && task.data?.command === 'unload'
       && [...this.modelServices].some((service) => service.session?.affinityKey === task.affinityKey);
     if (this.destroying && !shutdownUnload) throw new Error('ComputeManager is shutting down');
     const submissionLifecycle = this.workerLifecycleRevision;

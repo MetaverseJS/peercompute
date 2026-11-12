@@ -5147,3 +5147,42 @@ Evidence: /home/cos/.cache/peercompute-resident-avatar-20261111/.
 - Bounded live planner probe found no remote text candidates and made no model
   requests. Semantic size choice by a real peer LLM remains unqualified; do not
   confuse the passing retained-mesh sizing check with new model inference.
+
+## November 11: Stable Fast 3D managed textured meshes
+
+- `sf3dModelService.test.js`: exact weights/grid/foreground/package admission,
+  FP32 compute without shader-f16, source URL and SHA binding, task cancellation.
+- `sf3dEngine.test.js`: bounded ranges, actual upstream progress vocabulary
+  through peer validation (32 frames), grid export roundoff, partial-load cleanup,
+  GPU scratch retirement/live byte evidence, cache preservation and disposal.
+  Orchestration tests verify existing DINO/two-stream retirement options and
+  phase output lifetimes; these do not substitute for numerical GPU execution.
+- `generatedMeshArtifact.test.js`, `generatedMeshTexture.test.js`, and
+  `demos/tests/generated-mesh-textures.test.js`: embedded PNG/JPEG/UV/PBR bounds,
+  hostile URLs and malformed geometry, real software-WebGL pixels and complete
+  bitmap/texture disposal on success, failure and cancellation.
+- Peer inference tests preserve v2–v5 behavior and prove v6 textured transfer
+  across real authenticated Noise streams. Older directories omit SF3D; stale
+  entries cannot downgrade execution or pass textured bytes through v5.
+- External native harness: `/home/cos/.cache/peercompute-sf3d-20261111/`.
+  Run2 exposed Vulkan OOM from disabled intermediate retirement; preserve that
+  receipt. Run3 generates a textured chair (59,928 vertices/19,976 triangles,
+  2,508,868 bytes,8,905 GPU dispatches,83.07seconds), with5.40GiB peak requested
+  buffers after the lifecycle correction. This excludes driver overhead and is
+  not a cross-device performance guarantee. Visual output inspected. Source
+  imports reused all existing files without new downloads. Cancellation then
+  exposed stale ready state; explicit session retirement and acknowledged stored
+  reload fix that lifecycle. Map/Set and module-private shader cache regressions
+  prevent scratch cleanup from destroying next-request uniforms.
+- Run7 passes repeated opaque local/peer generation with matching SHA and peer
+  cancellation/zero leases; its old page fails stored reload. Fresh run8 passes
+  cancellation, stored reload, peer generation and browser-restart regeneration
+  with source fetches blocked, matching SHA, zero browser errors and zero leases
+  after unload. Both test browsers and their server close.
+- `native-textures-3` passes actual CubeChat prop/avatar peer display and both
+  reloads, with screenshots. Preserve two initial discovery timeout receipts;
+  successful first discovery used diagnostic queries on existing connections.
+- Final combined affected suite passes340/340, including15engine and101model
+  controller tests. Native v6 transfer reports encrypted native transport;
+  do not describe that particular receipt as Noise. Exact preview verification
+  and final build receipts are recorded in log.md.
