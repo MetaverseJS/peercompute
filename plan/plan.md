@@ -1,5 +1,15 @@
 Instructions: This file contains high level goals for the project and a roadmap.
 
+November12 release: the complete demo set from resident tooling checkpoint
+9970f491 is built for main:/docs. All23 staged routes, desktop/mobile captures,
+11authenticated SecretWorkshop connections and release asset checks pass.
+User explicitly requested build, commit and Pages push; public verification
+follows the release commit.
+Resident inspection, grounded knowledge and retained object authoring are in
+scope; model repetition, semantic distance selection and receipt-consistent
+narration remain open. Existing-object acquire/carry/place remains the next
+manipulation slice.
+
 ## Project Overview:
 PeerCompute is a browser based p2p compute network library leveraging webGPU and built on top of libp2p.  Use cases for this would range from a networking library for player hosted online gaming, procedural world generation, large scale physics simulations,  backend for a metaverse network etc. 
 

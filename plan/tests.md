@@ -5421,3 +5421,23 @@ rather than96-unit ground, failing the unchanged >64criterion; subsequent model
 speech contradicted the true placed receipt. No context truncation, request retry
 or local GPU model was involved. Retain that failure as the next spatial/speech
 quality regression, not as a waived or passing gate.
+
+November12 Pages release validation: use the canonical build:all pipeline and
+its current-plus-previous asset retention. Verify all23 routes at desktop/mobile,
+native Cube/Earth Resident modal access, isolation/runtime WASM and authenticated
+SecretWorkshop connections using owned headless contexts. Keep guides paused
+and local-only; do not download/load inference models. Separate actual physics
+compute checks from reduced software-rendered presentation checks. Require
+public exact-byte checks and successful Pages workflow at the pushed commit.
+
+Release results:70unique helper/navigation/static checks pass; all15demo builds
+pass. Owned staged browser matrix passes19general+4native physics routes,
+with4separate reduced physics presentation runs. Cube/Earth inspector and model
+dialogs fit desktop/mobile;11network routes establish authenticated relay
+connections. Initial Earth Overview captured a transient fail-closed ownership
+read; a separate bounded run loaded real metadata after4.591s and captured the
+settled view. Preserve the initial screenshot. No page/console/network-request
+errors or unexpected model transfers; all owned resources close. Baseline MPM
+drift, optional backend/hardware features and model quality are not qualified by
+these release smoke tests. Evidence: external peercompute-pages-resident-release-
+20261112 reports; public checks are recorded after deployment.

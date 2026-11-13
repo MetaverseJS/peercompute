@@ -777,3 +777,10 @@ distance.” It also denied capability after receiving the real placed receipt.
 Keep model distance selection and receipt-consistent narration as open quality
 checks. They do not invalidate the confirmed object/CID, and must not trigger
 a second generation or erase the object.
+
+November12 Pages release: the full demo build includes the native Resident
+inspector, grounded knowledge, chat continuity and object-authoring changes.
+Staged desktop/mobile checks pass all inspector tabs and the model windows,
+with the owned guide paused and no inference-model startup. Real provider
+distance/narration/repetition limitations above remain open; release smoke
+does not rerun or supersede their qualification.

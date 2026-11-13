@@ -1788,3 +1788,9 @@ reply/display failure. The throne-to-castle manipulation example remains the nex
 acquire/carry/place slice. Investigate reported car-output repetition and task-
 controller waiting labels without changing physical permissions or deleting
 private conversation history. Internal previews only; Pages remains unchanged.
+
+November12 authorization update: user requests a full build, commit and GitHub
+Pages push of the current resident changes. Publish main:/docs and keep this
+feature branch aligned by normal fast-forward refs. Preserve the documented
+Qwen distance, narration and repetition limitations; no additional inference
+qualification is part of this release.
