@@ -622,3 +622,9 @@ orientation or authoritative world coordinates. This does not flatten an
 irregular generated base or add terrain-conforming geometry. Refresh both peers
 to use the new object-transform protocol; older peers omit revisions and sizes
 they cannot represent.
+
+Remote avatars and placed objects reuse verified artifact connections while
+loading their mesh blocks. Working providers take priority; an unavailable
+alternative no longer delays every block. Connection attempts remain bounded
+even while the viewer stays open. A first transfer still depends on discovery,
+connection quality and mesh size.

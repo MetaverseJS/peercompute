@@ -16,6 +16,14 @@ separate world-size profile, and ground their display on themed terrain. Keep
 mesh identity separate from revisioned transforms. This precedes the broader
 acquire/carry/place slice and must preserve shared updates and reload behavior.
 
+
+November13 bounded mesh-loading follow-up: authenticated artifact transfers now
+reuse open unrestricted connections, begin delivery before attempting unrelated
+providers, and keep a dial deadline alongside caller cancellation. Failed reads
+still fall back to another signed provider. Real three-peer mesh regression
+passes with zero unnecessary dials; original multi-minute delay is not fully
+attributed. Internal-preview validation only; no Pages publication requested.
+
 ## Project Overview:
 PeerCompute is a browser based p2p compute network library leveraging webGPU and built on top of libp2p.  Use cases for this would range from a networking library for player hosted online gaming, procedural world generation, large scale physics simulations,  backend for a metaverse network etc. 
 

@@ -1807,3 +1807,14 @@ assets. Internal previews/local commits first; no new publication requested.
   Cube/Earth/inference refreshed with exact assets and SecretWorkshop verified.
   No new Pages deployment or origin push; mesh-base flattening/carrying remain out
   of this bounded edit.
+
+## November13: bounded generated-mesh transfer latency
+
+The user requested a simple fix for delayed remote 3D loading. Preserve the
+provider-proof and CID verification boundaries. Reuse open trusted unrestricted
+artifact connections, prioritize those providers, start Bitswap after one usable
+provider, and fall back if its dial/read fails. Supply allowed signed address
+alternatives as one bounded dial; keep caller and shutdown cancellation active
+alongside the request deadline. Limited relay connections are not reusable for
+Bitswap. Leave the five-second discovery fan-out wait and mesh decoding unchanged.
+This is a local source/internal-preview slice, not a Pages release.

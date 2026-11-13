@@ -5488,3 +5488,28 @@ assets for Cube5176/Earth5187/inference5189. Desktop/mobile inspector viewport
 checks and encrypted SecretWorkshop connections pass; page/console/HTTP/download/
 cleanup errors0, no local model sessions. Browser resources closed. GitHubPages
 was not changed or requalified this slice.
+
+## November13: bounded artifact/mesh connection latency
+
+Run `node --test peercompute/tests/unit/ipfsArtifactTransport.test.js peercompute/tests/unit/modelNetworkConnection.test.js`: 33/33 pass.
+The pre-change regressions failed the held-dial deadline and recorded four
+unnecessary dials while a healthy artifact connection was already open. The
+post-change real three-peer fixture uses genuine dual-signed discovery and
+Noise/Bitswap, authenticates an unreachable provider plus the healthy provider,
+fetches the exact retained GLB/manifest bytes, and records zero extra dials.
+Loopback transfer timings are diagnostic only, not a WAN speed benchmark.
+
+Controlled transport-boundary cases cover live caller deadline, caller/shutdown
+abort, denied-address filtering, closing/limited/revoked connections, failed
+provider fallback, read-failure fallback and cancellation without further dials.
+Existing reseeding-after-origin-exit, privacy/publication, quota and lifecycle
+regressions remain passing. Evidence is outside Git under
+`/home/cos/.cache/peercompute-mesh-latency-20261113/`.
+
+Serial external Vite builds pass CubeChat/Earth/inference. Updated internal
+5176/5187/5189 previews pass exact HTML/entry hashes and owned headless startup:
+82/99/10 served JS/CSS hashes, encrypted SecretWorkshop connections, desktop/mobile
+resident inspector checks, zero page/console/HTTP/download/cleanup errors. No
+local model sessions or HF fetches. Representative CubeChat capture reviewed.
+This browser check covers startup/UI, while the signed mesh transfer is a real
+Node/WebSocket integration test; no new cross-device WAN latency claim.

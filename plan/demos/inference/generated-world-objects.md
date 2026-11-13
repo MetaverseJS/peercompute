@@ -255,3 +255,18 @@ with actual scene/occupancy validation, separate from avatars. Visible support
 uses actual mesh samples and rendered themed-plane triangles; it adjusts only
 presentation Y, preserving saved coordinates/yaw. Irregular mesh bases are not
 flattened or automatically rotated.
+
+### November13: avoid repeated connection waits
+
+A viewer now reuses an authenticated open unrestricted artifact connection for
+subsequent mesh blocks. Working providers take priority over stale alternatives;
+Bitswap starts without first dialing every provider. A failed dial/read still
+tries another signed provider. Dial deadlines remain active when the viewer
+supplies a lifecycle cancellation signal. Address filtering preserves the same
+trust policy, including rejecting unknown relays and insecure remote WebSockets.
+
+The real three-peer signed-discovery regression delivers and verifies the retained
+mesh with zero extra dials, versus four before this change. A held-dial regression
+confirms the configured deadline still fires with an uncancelled caller. These
+checks establish avoidable waits, not the sole cause or duration of the reported
+multi-minute delay. Discovery, bandwidth and mesh decoding can still take time.

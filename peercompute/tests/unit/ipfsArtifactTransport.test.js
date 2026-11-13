@@ -134,6 +134,62 @@ test('IPFS transport requires a StateManager-owned store and bounded requests', 
   assert.throws(() => new IpfsArtifactTransport({ store, peerAddresses: ['/ip4/127.0.0.1/tcp/1234/ws'] }), /peer-id/);
 });
 
+test('artifact dial keeps its deadline with a live caller signal and filters only denied alternatives', async (t) => {
+  const store = new ArtifactStore({ persistent: false });
+  t.after(() => store.destroy());
+  const peer = peerIdFromPublicKey((await generateKeyPair('Ed25519')).publicKey).toString();
+  const transport = new IpfsArtifactTransport({ store, trustedPeerIds: [peer], requestTimeoutMs: 30 });
+  transport.shutdown = new AbortController();
+  const caller = new AbortController();
+  const allowed = `/p2p/${peer}`;
+  const denied = `/ip4/192.0.2.1/tcp/80/ws/p2p/${peer}`;
+  let receivedTargets;
+  // Hold the connection boundary; the independent watchdog keeps this
+  // regression finite when the caller incorrectly disables the deadline.
+  transport.node = { status: 'started', libp2p: { dial: async (targets, { signal }) => {
+    receivedTargets = targets.map(String);
+    await new Promise((resolve, reject) => {
+      const finish = (error) => { clearTimeout(watchdog); signal.removeEventListener('abort', abort); reject(error); };
+      const abort = () => finish(signal.reason);
+      const watchdog = setTimeout(() => finish(new Error('Dial outlived its deadline')), 300);
+      signal.addEventListener('abort', abort, { once: true });
+      if (signal.aborted) abort();
+    });
+  } } };
+  await assert.rejects(transport.dial(allowed, { signal: caller.signal }), { name: 'TimeoutError' });
+  assert.equal(caller.signal.aborted, false);
+  await assert.rejects(transport.dial([denied, allowed], { signal: caller.signal }), { name: 'TimeoutError' });
+  assert.deepEqual(receivedTargets, [allowed], 'Denied addresses must never reach the dialer');
+  await assert.rejects(transport.dial([denied]), /explicitly trusted/);
+  const cancelled = transport.dial(allowed, { signal: caller.signal });
+  caller.abort(new Error('Viewer closed'));
+  await assert.rejects(cancelled, /Viewer closed/);
+  const stopped = transport.dial(allowed);
+  transport.shutdown.abort(new Error('Transport stopped'));
+  await assert.rejects(stopped, /Transport stopped/);
+});
+
+test('artifact connection reuse excludes untrusted, closed and limited relay connections', async (t) => {
+  const store = new ArtifactStore({ persistent: false });
+  t.after(() => store.destroy());
+  const peer = peerIdFromPublicKey((await generateKeyPair('Ed25519')).publicKey);
+  const transport = new IpfsArtifactTransport({ store, trustedPeerIds: [peer.toString()] });
+  const connection = { remotePeer: peer, status: 'open' };
+  transport.node = { status: 'started', libp2p: { getConnections: () => [connection] } };
+  assert.equal(transport.hasUsableConnection(peer.toString()), true);
+  connection.limits = { bytes: 1024 };
+  assert.equal(transport.hasUsableConnection(peer.toString()), false);
+  delete connection.limits;
+  connection.status = 'closing';
+  assert.equal(transport.hasUsableConnection(peer.toString()), false);
+  connection.status = 'open';
+  transport.trustedPeerIds.clear();
+  assert.equal(transport.hasUsableConnection(peer.toString()), false);
+  transport.authorizePeer(peer);
+  transport.node.status = 'stopped';
+  assert.equal(transport.hasUsableConnection(peer.toString()), false);
+});
+
 test('three real IPFS peers reseed verified file blocks after the origin exits', { timeout: 45000 }, async (t) => {
   t.mock.method(globalThis, 'fetch', () => { throw new Error('Public HTTP fallback is forbidden'); });
   const stores = ['a', 'b', 'c'].map((name) => new ArtifactStore({
@@ -326,6 +382,46 @@ test('interleaved artifact discovery rotates independent bounded peer batches', 
   await f.discovery.stop(); assert.equal(f.discovery.queryCursors.size, 0);
 });
 
+test('block delivery falls back across providers but stops immediately on cancellation', async (t) => {
+  const f = catalogFixture(), cid = catalogCID(801), connected = new Set(), calls = [];
+  t.after(() => f.discovery.stop());
+  const providers = Array.from({ length: 3 }, (_, index) => ({ ...f.discovery.scope,
+    cid, appPeerId: `app-${index}`, artifactPeerId: `artifact-${index}`, expiresAt: Date.now() + 60000,
+    addresses: [`address-${index}-a`, `address-${index}-b`] }));
+  // These records stand for already verified proofs; the three-node test below
+  // exercises the actual signatures, streams and file bytes.
+  f.discovery.providers.set(cid, new Map(providers.map((provider) => [provider.appPeerId, provider])));
+  f.discovery.manager.libp2p.getConnections = () => providers.map((provider) => ({ remotePeer: provider.appPeerId }));
+  f.transport.hasUsableConnection = (peer) => connected.has(peer);
+  f.transport.dial = async (addresses) => {
+    calls.push(addresses);
+    if (addresses[0] === 'address-0-a') throw new Error('Unreachable');
+    if (addresses[0] === 'address-2-a') connected.add('artifact-2');
+    // Provider 1 resolves a dial, but has no unrestricted Bitswap connection.
+  };
+  f.transport.fetchBlock = async () => { calls.push('read'); return new Uint8Array([17]); };
+  assert.deepEqual(await f.discovery.fetchBlock(cid), new Uint8Array([17]));
+  assert.deepEqual(calls, [...providers.map((provider) => provider.addresses), 'read']);
+
+  calls.length = 0; connected.clear(); connected.add('artifact-0');
+  let reads = 0;
+  f.transport.fetchBlock = async () => {
+    calls.push('read');
+    if (++reads === 1) throw new Error('Provider lost block');
+    return new Uint8Array([18]);
+  };
+  assert.deepEqual(await f.discovery.fetchBlock(cid), new Uint8Array([18]));
+  assert.deepEqual(calls, ['read', providers[1].addresses, providers[2].addresses, 'read']);
+
+  calls.length = 0; connected.clear();
+  const caller = new AbortController();
+  f.transport.dial = async (addresses) => {
+    calls.push(addresses); caller.abort(new Error('Viewer gone')); throw caller.signal.reason;
+  };
+  await assert.rejects(f.discovery.fetchBlock(cid, { signal: caller.signal }), /Viewer gone/);
+  assert.equal(calls.length, 1, 'Cancellation must not trigger another provider attempt');
+});
+
 test('NetworkManagers discover signed providers and expose only approved complete artifacts', { timeout: 30000 }, async (t) => {
   const managers = [];
   const appNodes = [];
@@ -335,7 +431,7 @@ test('NetworkManagers discover signed providers and expose only approved complet
     await Promise.allSettled(appNodes.map((node) => node.stop()));
     await Promise.allSettled(stores.map((store) => store.destroy()));
   });
-  for (let index = 0; index < 2; index++) {
+  for (let index = 0; index < 3; index++) {
     const applicationKey = await generateKeyPair('Ed25519');
     const app = withLibp2pLight(createHeliaLight(), {
       privateKey: applicationKey, addresses: { listen: ['/ip4/127.0.0.1/tcp/0/ws'] },
@@ -354,7 +450,7 @@ test('NetworkManagers discover signed providers and expose only approved complet
     stores.push(store);
     await manager.createArtifactTransport(store, localOptions);
   }
-  const [a, b] = managers;
+  const [a, b, stale] = managers;
   await b.libp2p.dial(a.libp2p.getMultiaddrs()[0]);
   const publicBytes = new Uint8Array(524301).fill(31);
   const approved = await stores[0].importFile(publicBytes);
@@ -392,9 +488,27 @@ test('NetworkManagers discover signed providers and expose only approved complet
   assert.equal(await stores[1].stat(savedMesh.artifactCid), undefined);
   assert.deepEqual(await b.findArtifactProviders(savedMesh.artifactCid), []);
   await a.announceArtifact(savedMesh.artifactCid);
+  // A second actual provider signs the same complete mesh, but its advertised
+  // artifact address is unreachable. Its application connection remains live.
+  await b.libp2p.dial(stale.libp2p.getMultiaddrs()[0]);
+  const duplicate = await retainGeneratedMesh(stores[2], mesh, { name: 'Fresh peer retained mesh' });
+  assert.equal(duplicate.artifactCid, savedMesh.artifactCid);
+  await stale.announceArtifact(savedMesh.artifactCid);
+  const staleTransport = stale.getArtifactTransport();
+  const peerInfo = staleTransport.getPeerInfo.bind(staleTransport);
+  staleTransport.getPeerInfo = () => ({ ...peerInfo(), addresses: [
+    `/ip4/127.0.0.1/tcp/1/ws/p2p/${peerInfo().peerId}`
+  ] });
   const meshProviders = await b.findArtifactProviders(savedMesh.artifactCid);
-  assert.equal(meshProviders.length, 1);
-  assert.equal(meshProviders[0].appPeerId, a.libp2p.peerId.toString());
+  assert.equal(meshProviders.length, 2);
+  // Put the genuine stale proof first deterministically, regardless of stream
+  // response timing. Both records were authenticated by the real discovery.
+  const known = b.artifactDiscovery.providers.get(savedMesh.artifactCid);
+  const healthy = known.get(a.libp2p.peerId.toString());
+  known.delete(healthy.appPeerId); known.set(healthy.appPeerId, healthy);
+  const receiver = b.getArtifactTransport(), dial = receiver.dial.bind(receiver), attempted = [];
+  receiver.dial = async (addresses, options) => { attempted.push(addresses); return dial(addresses, options); };
+  const started = performance.now();
   await stores[1].ensureLocal(savedMesh.artifactCid, {
     fetchBlock: (cid, options) => b.fetchArtifactBlock(cid, { ...options, artifactCid: savedMesh.artifactCid })
   });
@@ -402,6 +516,9 @@ test('NetworkManagers discover signed providers and expose only approved complet
   assert.deepEqual(receivedMesh.data, mesh.data);
   assert.equal(receivedMesh.sha256, mesh.sha256);
   assert.equal(receivedMesh.vertexCount, 3); assert.equal(receivedMesh.triangleCount, 1);
+  t.diagnostic(`Signed peer mesh verified in ${Math.round(performance.now() - started)}ms; extra dials: ${attempted.length}`);
+  assert.equal(attempted.length, 0, 'Use the existing healthy provider without dialing stale providers for every block');
+  receiver.dial = dial;
   assert.deepEqual(await b.findArtifactProviders(privateArtifact.cid), []);
   await a.announceArtifact(privateArtifact.cid);
   assert.equal((await b.findArtifactProviders(privateArtifact.cid)).length, 1);

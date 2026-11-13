@@ -330,6 +330,8 @@ export class ArtifactProviderDiscovery {
 
   async fetchBlock(cid, { artifactCid, signal } = {}) {
     if (this.closed) throw new Error('Artifact discovery is stopped');
+    signal = AbortSignal.any([this.controller.signal, ...(signal ? [signal] : [])]);
+    signal.throwIfAborted();
     const known = this.providers.get(canonicalCID(String(artifactCid || cid)));
     const connected = new Set(this.manager.libp2p.getConnections().map((connection) => connection.remotePeer.toString()));
     let providers = [...(known?.values() || [])].filter((provider) => provider.expiresAt > Date.now() + 5000
@@ -339,14 +341,29 @@ export class ArtifactProviderDiscovery {
       providers = await this.find(artifactCid || cid, { signal });
     }
     if (!providers.length) throw new Error(`No authenticated provider for artifact ${artifactCid || cid}`);
+    // A mesh spans many blocks. Reuse an authenticated working connection
+    // instead of retrying stale addresses (or optional upgrades) for each one.
+    providers.sort((a, b) => Number(this.transport.hasUsableConnection(b.artifactPeerId))
+      - Number(this.transport.hasUsableConnection(a.artifactPeerId)));
+    let failure;
     for (const provider of providers) {
-      const addresses = [...provider.addresses].sort((a, b) => Number(b.includes('/webrtc/')) - Number(a.includes('/webrtc/')));
-      for (const address of addresses) {
-        try { await this.transport.dial(address, { signal }); break; }
-        catch { signal?.throwIfAborted(); }
+      try {
+        signal.throwIfAborted();
+        if (!this.transport.hasUsableConnection(provider.artifactPeerId)) {
+          const addresses = [...provider.addresses].sort((a, b) => Number(b.includes('/webrtc/')) - Number(a.includes('/webrtc/')));
+          await this.transport.dial(addresses, { signal });
+          if (!this.transport.hasUsableConnection(provider.artifactPeerId)) {
+            throw new Error('No usable IPFS connection to the artifact provider');
+          }
+        }
+        // Start delivery now; an unrelated stale provider must not delay it.
+        return await this.transport.fetchBlock(cid, { signal });
+      } catch (error) {
+        signal.throwIfAborted();
+        failure = error;
       }
     }
-    return this.transport.fetchBlock(cid, { signal });
+    throw failure;
   }
 
   _forgetPeer(appPeerId) {

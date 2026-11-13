@@ -271,16 +271,27 @@ export class IpfsArtifactTransport {
     try { return await this.stopping; } finally { this.stopping = null; }
   }
 
+  hasUsableConnection(peerId) {
+    const peer = String(peerId);
+    // Bitswap excludes limited relay connections. Do not mistake those, or a
+    // connection still closing after revocation, for a usable transfer path.
+    return this.node?.status === 'started' && this.trustedPeerIds.has(peer)
+      && this.node.libp2p.getConnections().some((connection) => connection.status === 'open'
+        && connection.limits == null && connection.remotePeer.toString() === peer);
+  }
+
   async dial(addresses, { signal } = {}) {
     if (this.node?.status !== 'started') throw new Error('Artifact transport is not started');
-    const targets = (Array.isArray(addresses) ? addresses : [addresses]).map((address) => multiaddr(String(address)));
-    for (const target of targets) {
-      if (this._connectionGater().denyDialMultiaddr(target)) {
-        throw new Error(`Artifact address is not explicitly trusted: ${target}`);
-      }
-    }
+    const gate = this._connectionGater();
+    // A provider can advertise several alternatives, including an untrusted
+    // relay. Keep allowed alternatives without ever dialing a denied address.
+    const targets = (Array.isArray(addresses) ? addresses : [addresses])
+      .map((address) => multiaddr(String(address))).filter((target) => !gate.denyDialMultiaddr(target));
+    if (!targets.length) throw new Error('No artifact address is explicitly trusted');
     const connection = await this.node.libp2p.dial(targets, {
-      signal: AbortSignal.any([this.shutdown.signal, signal || AbortSignal.timeout(this.options.requestTimeoutMs)])
+      signal: AbortSignal.any([
+        this.shutdown.signal, AbortSignal.timeout(this.options.requestTimeoutMs), ...(signal ? [signal] : [])
+      ])
     });
     if (connection.remoteAddr.toString().includes('/webrtc/')) {
       await Promise.allSettled(this.node.libp2p.getConnections()
