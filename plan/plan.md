@@ -1,5 +1,13 @@
 Instructions: This file contains high level goals for the project and a roadmap.
 
+November13 placement follow-up: new generated objects should choose the nearest
+clear footprint when the requested spot is occupied. Reuse the navigation/world
+spatial constraints, account for existing meshes, and recheck before retention.
+Keep explicit target authority, world/range limits and resize-in-place checks.
+Geometry/retained replay pass204tests; the internal CubeChat preview is updated
+and its exact assets and SecretWorkshop connection are verified.
+This request does not include a new Pages publication.
+
 November13 release authorized: build and publish the complete demo set with
 persistent object sizing/ground contact and bounded peer mesh transfer waits
 (source cc044513). Validate staged and public Pages routes, retained assets and

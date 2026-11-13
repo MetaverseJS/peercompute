@@ -5534,3 +5534,34 @@ views, isolation and pooled WASM compile checks pass. Original general runner
 was interrupted after17passing routes; its incomplete aggregate stays preserved,
 owned process/port cleanup was verified and the final2routes pass independently.
 All completed route errors are zero. Public checks use smaller bounded batches.
+
+
+## November13: nearest clear generated-object footprints
+
+- `npm run test:resident-placement` now includes `nearest-placement` and
+  `nearest-placement-integration` alongside shared spatial references, object
+  admission, authority, retention, renderer, resizing and goal-controller tests.
+- Geometry acceptance: closest continuous feasible point, full model envelope,
+  existing meshes and collidable physics shapes, navigation clearance for small
+  objects, surface edges, range-circle boundary, overlapping blockers, narrow
+  gaps, exact-fit/degenerate domains, deterministic ties and bounded exhaustion.
+  Invalid targets/ownership/floors/sizes remain errors; resize never relocates.
+- Integration uses real Cannon, Three GLTFLoader, ArtifactStore and object heads,
+  with explicitly simulated model output. Verify a blocker before creation,
+  during inference and during byte persistence; exact saved/display/replay
+  positions; one mesh generation; fully blocked worlds leave no pinned/visible
+  object. Reopening uses a new renderer, as real application lifecycle requires.
+- Pre-change regression: two intended fallback cases fail with the reported
+  obstruction errors; fully blocked cases pass. Initial post-change11-case run
+  had two test-fixture reload failures from reusing a disposed renderer; fixing
+  that lifecycle yields11/11 without changing production admission. Full final
+  suite/build/internal-preview results follow in the implementation log.
+- External evidence: `/home/cos/.cache/peercompute-nearest-placement-20261113`.
+  This is placement/retention qualification, not new inference-quality or WAN
+  latency evidence. No Pages publication is included in this request.
+
+Final results:204/204canonical placement tests pass. Independent seeded geometric
+sampling450cases,6000strict old/new Cannon comparisons and2000range-disk cases
+pass with source-hash receipt. CubeChat external build passes; exact internal
+HTTPS startup verifies82assets, encrypted SecretWorkshop connection, mobile/
+desktop layout and zero browser/cleanup errors. No local inference loaded.

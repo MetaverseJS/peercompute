@@ -137,10 +137,16 @@ test('grounded renderer placement validates the actual existing mesh bounds thro
     assert.deepEqual(layer.getPlacement('agent', 6, target), [20, 0, 10]);
     const mesh = meshFixture(), retained = await retainGeneratedMesh(store, mesh, { provenance: { worldObject: placement } });
     const prepared = await layer.prepare(mesh); prepared.commit('local:object', { artifactCid: retained.artifactCid, placement });
-    assert.throws(() => layer.getPlacement('agent', 6, target), /overlaps a placed object/);
+    const relocated = layer.getPlacement('agent', 6, target);
+    assert(Math.abs(Math.hypot(relocated[0] - 20, relocated[2] - 10) - 6.5) < .001);
+    const bounds = new THREE.Box3().setFromObject(layer.entries.get('local:object').group);
+    const obstacles = [{ min: bounds.min.toArray(), max: bounds.max.toArray() }];
+    assert.deepEqual(spatial.validatePlacement('agent', relocated, 6, { obstacles }), relocated);
     const beside = { ...target, id: 'ground:27:10', position: [27, 3, 10] };
     assert.deepEqual(layer.getPlacement('agent', 6, beside), [27, 0, 10]);
-    assert.throws(() => layer.getPlacement('agent', 12, beside), /overlaps a placed object/);
+    const larger = layer.getPlacement('agent', 12, beside);
+    assert(Math.abs(larger[0] - 29.5) < .001); assert.equal(larger[2], 10);
+    assert.deepEqual(spatial.validatePlacement('agent', larger, 12, { obstacles }), larger);
     layer.remove('local:object');
     assert.deepEqual(layer.getPlacement('agent', 12, beside), [27, 0, 10]);
     world.removeBody(floor);

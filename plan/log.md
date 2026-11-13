@@ -63315,3 +63315,62 @@ arbitrary input length. Full stress evidence is preserved externally.
 - ICC scoped readiness93uses an unmatched generic oracle (runtime-event import warning); scoped production audit retains only older task-portfolio notices. Full generated guard reports intentional old-retained file deletion/minified surface findings; authored plan guard passes. These are preserved, not silently waived or represented as full-guard success. Exact inventory/retention/deletion ownership is the release-specific cleanup proof. Preparing local release checkpoint and ordinary atomic main/feature push after final visual review; exact SHA, workflow, public byte and browser receipts will live in this release evidence directory.
 - Independent staged visual review passes76screenshots across23routes, including the completed tail. No new blank-page or blocking layout finding. Existing dense mobile controls, Sneakywoods Settings/hint overlap and unconfigured optional geodata/camera/XR are retained limits; no new model or numerical qualification. All browser validation processes have completed; staged guards precede publication.
 - Release bookkeeping correction: the first staged-guard reader ran before its JSON file finished writing, raising JSONDecodeError; the surrounding stat command masked that exit and a local commit0879489a was started prematurely. Nothing was pushed. After both processes finished, soft-reset only that owned unpublished commit to its known parentcc044513, preserving all index/worktree content; rerun final staged guards and exact manifest checks before recreating the release checkpoint. Raw reports/commit receipt remain outside Git. No authored source or accepted build bytes changed.
+- 2026-11-13T19:37:29Z — prompt receipt (exact user-send timestamp unavailable):
+  user reports repeated blocked-footprint errors while generating3D models and
+  requests the nearest unblocked placement. Start clean at abb6f484 on
+  feature/ipfs-artifacts-webgpu, Node24.18.0. ICC codebase_work and CLI work
+  establish world-object-nearest-placement-20261113. Scoped preflight passes;
+  root integrate lease published. Native placement_audit traces exact Cannon
+  shape and mesh-envelope admission, navigation-center clearance, creation
+  rechecks and immutable retention. Current placement checks only one candidate;
+  late model-work/storage rechecks already exist. Implement bounded nearest-space
+  search for creation with strict resize unchanged, then validate actual
+  ArtifactStore/renderer receipts and an external CubeChat preview build.
+  Evidence: /home/cos/.cache/peercompute-nearest-placement-20261113.
+  No model loads, user browser/storage changes, Pages build or push requested.
+
+- Implementation checks: `node --test demos/tests/nearest-placement-integration.test.js`
+  reproduces the reported issue before source changes:2expected failures (placed
+  mesh and late physics blocker),2fully-blocked passes. Actual Cannon/Three/
+  ArtifactStore integration then passes11/11 with presentation tests. Initial
+  post-change fixture mistakenly reused a disposed real renderer on reload;
+  create a fresh layer for reopen, preserving production guards. No model
+  execution is implied by structural mesh fixture output. Updated Cube README,
+  generated-object/branch/high-level plans and test strategy. Added new tests to
+  `test:resident-placement`. Spatial agent holds a separate published lease;
+  read-only review independently checks seeded geometry against feasible samples.
+
+- Exact prompt for19:37:29Z receipt: “I am getting a repeted error about the
+  footprint being blocked.  when generating a 3d model. it should find the
+  nearest point where the footprint isn't blocked.” Independent review found
+  and prompted fixes for collapsed line/point domains and floating-point range
+  intersections. Preserve those failing probes in the external review evidence.
+  Seeded independent sampling covers450scenes against6561grid candidates each;
+  original-versus-new strict admission compares6000Cannon cases. These are
+  geometric regression checks, not proof of arbitrary model quality.
+
+- Final source: `CubeSpatialTargets.js` shares its existing envelope/shape rules
+  with new `demos/shared/world/nearestPlacement.js`. Best-first convex-region
+  subtraction finds continuous nearest clearance within the allowed rectangle
+  and160-unit range disk. Whole model dimensions, physical planes/AABBs,
+  navigation-center clearance and rendered props remain constraints. Existing
+  resizing stays fixed. Generation/retention production code needed no change:
+  its existing stage and beforeCommit rechecks consume the new resolver.
+- Validation: `npm run test:resident-placement` passed203/203, then204/204 after
+  the final stable circle-intersection regression. Focused geometry27/27;
+  independent final review38/38 (overlapping scope),450seeded scenes,6000strict
+  original-admission comparisons and2000disk/domain-invariance cases pass.
+  Exact source hashes and original failures are in review.json and its logs.
+  Earlier assertions for equal-distance direction and a narrow-gap fixture were
+  corrected to nearest distance/clearance and deterministic replay; no production
+  permission or acceptance threshold was relaxed.
+- `npm --prefix demos/cubechat run build -- --outDir
+  /home/cos/.cache/peercompute-nearest-placement-20261113/internal/cubechat-final1`
+  passes14.07s (existing chunk-size warning). External promotion retains prior
+  hashed assets and updates the CubeChat preview pointer atomically. Exact
+  HTTPS HTML/entry hashes and isolation headers pass at5176. Owned headless
+  `check-previews.mjs` passes82served asset hashes, desktop/mobile inspector
+  layout and actual encrypted SecretWorkshop connection; zero page/console/HTTP/
+  download/cleanup errors, no inference sessions. Screenshot reviewed and owned
+  browser closed. Existing preview server and user sessions/storage untouched.
+  No docs/Pages output or origin push. ICC final gates/local checkpoint follow.

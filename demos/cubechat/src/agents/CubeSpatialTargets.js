@@ -3,6 +3,7 @@ import { normalizeWorldGoalPosition } from '../../../../peercompute/src/peercomp
 import { NAVIGATION_SENSORS } from '../../../shared/agents/motor/navigationSensors.js';
 import { normalizeWorldObjectSize } from '../../../shared/world/WorldModelScale.js';
 import { normalizeWorldObjectTarget } from '../../../shared/agents/WorldObjectAction.js';
+import { nearestPlacement } from '../../../shared/world/nearestPlacement.js';
 
 export const CUBE_SPATIAL_LIMITS = Object.freeze({ maximumLegDistance: 160, maximumLocations: 12, maximumCoordinate: 1_000_000 });
 const fail = message => { const error = new Error(message); error.code = 'SPATIAL_TARGET_UNAVAILABLE'; throw error; };
@@ -38,7 +39,7 @@ export function createCubeSpatialTargets({ physics, getEntries, sensors, getBoun
     return { entry, floorHeight, spatial: { frame: 'planar-xz', bounds: { min: [...bounds.min], max: [...bounds.max] },
       maximumLegDistance: CUBE_SPATIAL_LIMITS.maximumLegDistance } };
   }
-  function validate(key, input, context = frame(key), { enforceRange = true } = {}) {
+  function validate(key, input, context = frame(key), { enforceRange = true, checkOccupancy = true } = {}) {
     const position = normalizeWorldGoalPosition(input), { entry, spatial } = context;
     if (position.some(value => Math.abs(value) > CUBE_SPATIAL_LIMITS.maximumCoordinate)) fail('Destination is outside this world');
     const planar = [position[0], position[2]];
@@ -46,7 +47,7 @@ export function createCubeSpatialTargets({ physics, getEntries, sensors, getBoun
     if (enforceRange && Math.hypot(position[0] - entry.body.position.x, position[2] - entry.body.position.z) > spatial.maximumLegDistance) {
       fail('Destination is beyond the current movement range');
     }
-    if (!sensors.sample(key, { kind: 'location', position }).destinationClear) fail('The destination is occupied or obstructed');
+    if (checkOccupancy && !sensors.sample(key, { kind: 'location', position }).destinationClear) fail('The destination is occupied or obstructed');
     return position;
   }
   function surfaceBounds() {
@@ -57,22 +58,16 @@ export function createCubeSpatialTargets({ physics, getEntries, sensors, getBoun
     }
     return bounds;
   }
-  /** Object size is its maximum dimension, so this square/height envelope is
-   * conservative before generation. It covers the entire uniformly fitted mesh,
-   * rather than pretending a castle has the six-unit resident footprint. */
-  function validatePlacement(key, input, size, { obstacles = [], transformExisting = false } = {}) {
-    normalizeWorldObjectSize(size);
-    // Resizing an authenticated existing object is not a navigation leg. The
-    // caller binds this permission to that object's fixed retained location.
-    const context = frame(key), position = validate(key, input, context, { enforceRange: !transformExisting }), bounds = surfaceBounds();
-    const half = size / 2, padding = NAVIGATION_SENSORS.margin;
-    const lower = [position[0] - half, context.floorHeight, position[2] - half];
-    const upper = [position[0] + half, context.floorHeight + size, position[2] + half];
-    if ([0, 2].some((axis, i) => lower[axis] < bounds.min[i] || upper[axis] > bounds.max[i])) {
-      fail('The object footprint is outside the placement surface');
-    }
-    const overlaps = (min, max) => upper[1] > min[1] && lower[1] < max[1]
-      && [0, 2].every(axis => upper[axis] + padding >= min[axis] && lower[axis] - padding <= max[axis]);
+  /** Local forbidden center regions, shared by strict checks and nearest-space
+   * search. Retain navigation's clearance for small props as well as the whole
+   * fitted mesh envelope; private collider identities never leave this module. */
+  function placementObstacles(context, size, obstacles) {
+    const half = size / 2, padding = NAVIGATION_SENSORS.margin, result = [];
+    const rectangle = (min, max, radius, message) => result.push({ message, planes: [
+      { normal: [1, 0], offset: max[0] + radius }, { normal: [-1, 0], offset: -min[0] + radius },
+      { normal: [0, 1], offset: max[2] + radius }, { normal: [0, -1], offset: -min[2] + radius }
+    ] });
+    const overlapsHeight = (min, max) => context.floorHeight + size > min[1] && context.floorHeight < max[1];
     const bodies = physics.world.bodies;
     if (bodies.length > 2048) fail('The local placement geometry limit was exceeded');
     const origin = new CANNON.Vec3(), rotation = new CANNON.Quaternion(), normal = new CANNON.Vec3();
@@ -89,54 +84,87 @@ export function createCubeSpatialTargets({ physics, getEntries, sensors, getBoun
         if (shape.type === CANNON.Shape.types.PLANE) {
           rotation.vmult(new CANNON.Vec3(0, 0, 1), normal);
           if (normal.y > .999999 && Math.abs(origin.y - context.floorHeight) < .01) continue;
-          const center = [(lower[0] + upper[0]) / 2, (lower[1] + upper[1]) / 2, (lower[2] + upper[2]) / 2];
-          const components = normal.toArray(), planeOrigin = origin.toArray();
-          const distance = center.reduce((sum, value, axis) => sum + (value - planeOrigin[axis]) * components[axis], 0);
-          const radius = components.reduce((sum, value, axis) => sum + Math.abs(value) * (upper[axis] - lower[axis]) / 2, 0);
-          if (Math.abs(distance) <= radius + padding) fail('The object footprint intersects world geometry');
+          const offset = normal.dot(origin) - normal.y * (context.floorHeight + half);
+          const radius = half * (Math.abs(normal.x) + Math.abs(normal.y) + Math.abs(normal.z)) + padding;
+          if (Math.hypot(normal.x, normal.z) < 1e-12) {
+            if (Math.abs(offset) <= radius) result.push({ planes: [], message: 'The object footprint intersects world geometry' });
+          } else result.push({ message: 'The object footprint intersects world geometry', planes: [
+            { normal: [normal.x, normal.z], offset: offset + radius },
+            { normal: [-normal.x, -normal.z], offset: -offset + radius }
+          ] });
           continue;
         }
         shape.calculateWorldAABB(origin, rotation, shapeMin, shapeMax);
         const min = shapeMin.toArray(), max = shapeMax.toArray();
         if (![...min, ...max].every(Number.isFinite) || min.some((value, axis) => value > max[axis])) fail('World placement geometry is unavailable');
-        if (overlaps(min, max)) fail('The object footprint is occupied or obstructed');
+        if (overlapsHeight(min, max)) rectangle(min, max, half + padding, 'The object footprint is occupied or obstructed');
+        if (body !== context.entry.body && shape.type === CANNON.Shape.types.BOX
+            && max[1] > context.entry.body.position.y - NAVIGATION_SENSORS.halfSize
+            && min[1] < context.entry.body.position.y + NAVIGATION_SENSORS.halfSize) {
+          rectangle(min, max, NAVIGATION_SENSORS.halfSize + padding, 'The destination is occupied or obstructed');
+        }
       }
     }
     if (!Array.isArray(obstacles) || obstacles.length > 128) fail('The placed object geometry limit was exceeded');
     for (const obstacle of obstacles) {
       const min = normalizeWorldGoalPosition(obstacle?.min), max = normalizeWorldGoalPosition(obstacle?.max);
       if (min.some((value, axis) => value > max[axis])) fail('Placed object geometry is unavailable');
-      if (overlaps(min, max)) fail('The object footprint overlaps a placed object');
+      if (overlapsHeight(min, max)) rectangle(min, max, half + padding, 'The object footprint overlaps a placed object');
+    }
+    return result;
+  }
+  /** Object size is its maximum dimension, so this square/height envelope is
+   * conservative before generation and covers the entire uniformly fitted mesh. */
+  function validatePlacement(key, input, size, { obstacles = [], transformExisting = false } = {}) {
+    normalizeWorldObjectSize(size);
+    // Existing-object transforms remain fixed in X/Z, regardless of range.
+    const context = frame(key), position = validate(key, input, context, { enforceRange: !transformExisting }), bounds = surfaceBounds();
+    const half = size / 2;
+    if ([0, 2].some((axis, i) => position[axis] - half < bounds.min[i] || position[axis] + half > bounds.max[i])) {
+      fail('The object footprint is outside the placement surface');
+    }
+    for (const obstacle of placementObstacles(context, size, obstacles)) {
+      if (obstacle.planes.every(({ normal, offset }) => normal[0] * position[0] + normal[1] * position[2] <= offset)) fail(obstacle.message);
     }
     return [position[0], context.floorHeight, position[2]];
   }
   return {
     validate,
     validatePlacement,
-    placement(key, size, target, options) {
+    placement(key, size, target, options = {}) {
       normalizeWorldObjectSize(size);
       const context = frame(key);
       let position;
       if (target === undefined) {
-        const bounds = surfaceBounds(), current = context.entry.body.position;
-        // Preserve the legacy nearby default. Explicit locations/participants
-        // below never clamp or silently choose a different destination.
-        position = [Math.min(bounds.max[0] - size, Math.max(bounds.min[0] + size, current.x + 6 + size / 2)),
-          context.floorHeight, Math.min(bounds.max[1] - size, Math.max(bounds.min[1] + size, current.z))];
+        const current = context.entry.body.position;
+        validate(key, current.toArray(), context, { checkOccupancy: false, enforceRange: !options.transformExisting });
+        position = [current.x + 6 + size / 2, context.floorHeight, current.z];
       } else {
         const chosen = normalizeWorldObjectTarget(target);
-        if (chosen.kind === 'location') position = chosen.position;
+        if (chosen.kind === 'location') position = validate(key, chosen.position, context,
+          { checkOccupancy: false, enforceRange: !options.transformExisting });
         else {
           const participant = getParticipants(key).find(person => person.id === chosen.id && ['human', 'resident'].includes(person.kind));
           if (!participant) fail('The placement participant is no longer observed');
-          position = normalizeWorldGoalPosition(participant.position);
+          position = validate(key, participant.position, context, { checkOccupancy: false, enforceRange: !options.transformExisting });
           // A participant reference means beside that body, not inside it.
-          // This is the same deterministic offset as the nearby default;
-          // there is no search for an alternative unrequested location.
+          // Authorize the observed participant first. This desired offset may
+          // move inward at an edge, without replacing the participant identity.
           position[0] += 6 + size / 2;
         }
       }
-      return validatePlacement(key, position, size, options);
+      if (options.transformExisting) return validatePlacement(key, position, size, options);
+      const surface = surfaceBounds(), walking = context.spatial.bounds, half = size / 2;
+      const bounds = { min: surface.min.map((value, axis) => Math.max(value + half, walking.min[axis])),
+        max: surface.max.map((value, axis) => Math.min(value - half, walking.max[axis])) };
+      if (bounds.min.some((value, axis) => value > bounds.max[axis])) fail('The object footprint is outside the placement surface');
+      const point = nearestPlacement({ target: [position[0], position[2]], bounds,
+        range: { center: [context.entry.body.position.x, context.entry.body.position.z], radius: context.spatial.maximumLegDistance },
+        obstacles: placementObstacles(context, size, options.obstacles ?? []) });
+      if (!point) fail('No clear placement fits nearby within the walking surface and movement range');
+      // Current geometry remains authoritative; this is also called again by
+      // the generation/retention pipeline before publishing the exact point.
+      return validatePlacement(key, [point[0], context.floorHeight, point[1]], size, options);
     },
     describe(key) {
       let context;

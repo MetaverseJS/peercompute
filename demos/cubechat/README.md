@@ -281,9 +281,15 @@ Successful output is a validated, self-contained GLB placed on the ground. Ask
 for a sensed destination or a remembered place, such as “generate a throne at
 our meeting spot,” or for placement beside an observed player. The resident uses
 the same location references as navigation; the host checks the floor, world
-bounds and the full object footprint against bodies and existing meshes. A
-requested destination that is unavailable fails visibly. Requests without a
-destination use nearby placement. Geometry and placement are retained together under an artifact CID
+bounds and the full object footprint against bodies and existing meshes. If the
+requested spot is occupied, creation finds the nearest clear footprint within
+the resident's placement range and the world surface. It rechecks after model
+work and before saving, so a moving player can change the final position without
+another generation. Missing participants, invalid destinations and a world with
+no fitting space still fail visibly. Requests without a destination start their
+search beside the resident. Resizing an existing object keeps its position and
+still rejects an obstructed enlargement. Geometry and the actual final placement
+are retained together under an artifact CID
 in local storage. Reloading the same browser origin restores them without running
 inference again. Connected room peers discover placement descriptors, fetch and
 verify the mesh through PeerCompute's artifact network, and display it in their

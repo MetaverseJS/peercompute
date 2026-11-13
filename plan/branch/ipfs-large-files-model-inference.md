@@ -1823,3 +1823,16 @@ November13 deployment follow-up: user explicitly authorizes Pages publication
 of this completed slice and the preceding object-transform fixes. Canonical
 full build, staged/public route and asset validation, normal main/feature
 fast-forward push; no backend/settings changes or new model qualification.
+## November13: nearest clear generated-object placement
+
+New objects should use the closest legal footprint to their requested anchor
+when occupied. Preserve participant identity and remembered-location authority,
+surface/range constraints, full object bounds and current navigation clearance.
+Recheck after model work and immediately before retaining the exact position.
+Existing object resizing remains fixed in place. Internal preview and local
+checkpoint only for this follow-up; no new publication requested.
+
+Nearest-placement checkpoint:204canonical tests and independent seeded geometry
+checks pass. Internal CubeChat5176serves the accepted external build; exact
+assets/desktop/mobile startup and SecretWorkshop connection pass. Retention uses
+the existing late rechecks; no new model generation or Pages release claimed.

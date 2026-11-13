@@ -189,15 +189,30 @@ model selects a request-local location (`lN`) or authenticated participant
 (`speaker`/`pN`); raw generated coordinates are never authority. A separate
 trusted target passes through `WorldConversationTurn` and `WorldAgentHost` to
 `WorldGeneratedObjects`. Render prompts describe the object only. Remembered
-places retain their original point and revision; moving participants are
+places retain their original anchor and revision; moving participants are
 observed again during generation and immediately before retention.
 
 `CubeSpatialTargets` validates the current bounded Cannon floor, navigation
 range, center clearance and conservative full-size object envelope. Actual
 physics shape bounds and rendered prop bounds prevent overlap. Explicit invalid
-destinations fail without falling back to nearby placement. The saved manifest,
+anchors fail; an occupied valid anchor now searches for the nearest clear
+footprint inside the surface and resident range. A reusable bounded planar
+solver orders convex free regions by their nearest feasible point, including
+the range-circle boundary, instead of using coarse rings. Tiny clearance avoids
+inclusive touching collisions. Full geometry and center-clearance checks remain
+authoritative. Missing owner/floor/participant, malformed bounds and invalid
+sizes do not become search requests. No space or exhausted search budget fails
+visibly. Strict resize validation never relocates an existing object. The saved manifest,
 visible object and receipt use the same final validated position. The geometry
 remains cosmetic; footprint admission does not add collision bodies.
+
+Creation reobserves before model dispatch, between stages and after mesh bytes
+are imported but before the pinned manifest is constructed. The same final
+position goes to retained provenance, the renderer and the receipt. Reload and
+request replay use that saved position, not a fresh search. Late collisions must
+not cause another image/mesh generation. This behavior is covered by actual
+Cannon/Three/ArtifactStore integration fixtures with simulated inference output;
+it is not a new model-quality or cross-device performance claim.
 
 Next todo: manipulate existing owned props. For “go get the throne and put it
 near the castle,” expose stable observed object IDs, resolve an authorized
