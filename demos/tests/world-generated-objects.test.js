@@ -50,6 +50,55 @@ test('exact requests deduplicate across active calls and reload; changed input c
   assert.equal((await restored.generate(input)).status, 'saved'); assert.equal(f.calls.length, 2);
   await assert.rejects(restored.generate({ ...input, action: { ...action, prompt: 'Different shape' } }), /Conflicting/);
 });
+
+test('renderer failure after retention returns a saved receipt and restores the exact object without another model request', async t => {
+  const f = await fixture(t), prepare = f.adapter.prepare.bind(f.adapter);
+  let rendererAvailable = false;
+  f.adapter.prepare = async (...args) => {
+    const prepared = await prepare(...args);
+    return { ...prepared, commit(...commitArgs) {
+      if (!rendererAvailable) throw new Error('World object display limit reached');
+      return prepared.commit(...commitArgs);
+    } };
+  };
+  const input = { agentId: 'agent', action, requestId: 'saved-display-failure', image: imageFixture() };
+  const pending = f.manager.generate(input), result = await pending;
+  assert.equal(result.status, 'saved'); assert.match(result.displayError, /display limit/);
+  assert.equal(f.manager.generate(input), pending, 'same acknowledged request does not regenerate');
+  assert.equal(f.calls.length, 1); assert.equal(f.adapter.visible.size, 0); assert.equal(f.adapter.prepared[0].released, true);
+  assert(f.states.some(event => event.status === 'saved' && /could not display/.test(event.message)));
+  assert.equal((await f.store.stat(result.artifactCid)).pinned, true);
+  const manifest = await f.store.getManifest(result.artifactCid);
+  assert.deepEqual(manifest.provenance.worldObject, result.placement);
+  assert.deepEqual(f.manager.list(), [{ artifactCid: result.artifactCid, placement: result.placement }]);
+  await f.store.gc(); assert.equal((await f.store.stat(manifest.files[0].cid)).status, 'complete');
+  await f.manager.dispose(); rendererAvailable = true;
+  const restored = f.create(); await restored.ready; await until(() => f.adapter.visible.size === 1);
+  assert.equal(f.calls.length, 1); assert.equal((await restored.generate(input)).status, 'saved');
+  assert.deepEqual([...f.adapter.visible.values()][0], { artifactCid: result.artifactCid, placement: result.placement });
+});
+
+test('cancellation at renderer commit preserves the retained receipt, with a bounded failure if display cannot complete', async t => {
+  for (const fails of [false, true]) {
+    const f = await fixture(t), controller = new AbortController(), prepare = f.adapter.prepare.bind(f.adapter);
+    f.adapter.prepare = async (...args) => {
+      const prepared = await prepare(...args);
+      return { ...prepared, commit(...commitArgs) {
+        controller.abort(new DOMException('Cancelled after storage committed', 'AbortError'));
+        if (fails) throw new Error('Display unavailable\0' + 'x'.repeat(2000));
+        return prepared.commit(...commitArgs);
+      } };
+    };
+    const result = await f.manager.generate({ agentId: 'agent', action, requestId: 'cancel-after-save',
+      image: imageFixture(), signal: controller.signal });
+    assert.equal(controller.signal.aborted, true);
+    assert.equal(result.status, fails ? 'saved' : 'placed');
+    if (fails) { assert(result.displayError.length <= 240); assert(!result.displayError.includes('\0')); assert(f.adapter.prepared[0].released); }
+    assert.equal((await f.store.stat(result.artifactCid)).pinned, true);
+    assert.deepEqual((await f.store.getManifest(result.artifactCid)).provenance.worldObject, result.placement);
+    assert.equal(f.calls.length, 1); assert.equal(f.manager.list().length, 1);
+  }
+});
 test('explicit source pixels route directly to the mesh provider and are copied before asynchronous dispatch', async t => {
   const f = await fixture(t), image = imageFixture();
   f.state.candidates = f.state.candidates.filter(value => value.task === 'image-to-3d');
@@ -103,4 +152,108 @@ test('deletion during a slow publication withdraws its late announcement and can
   assert.deepEqual(publications, [result.artifactCid]); assert.deepEqual(withdrawals, [result.artifactCid]);
   assert.equal((await f.store.stat(result.artifactCid)).pinned, false);
   await f.manager.syncNetwork(); assert.equal(publications.length, 1);
+});
+
+test('explicit destinations fail before generation when unsupported, absent or obstructed without falling back nearby', async t => {
+  const f = await fixture(t), placementTarget = { kind: 'participant', id: 'human:owner', observedAt: Date.now() };
+  await assert.rejects(f.manager.generate({ agentId: 'agent', action, placementTarget }), /does not support/);
+  assert.equal(f.calls.length, 0);
+  f.adapter.supportsGroundedPlacement = true;
+  f.adapter.getPlacement = () => { throw new Error('The requested participant has left'); };
+  await assert.rejects(f.manager.generate({ agentId: 'agent', action, placementTarget }), /participant has left/);
+  assert.equal(f.calls.length, 0); assert.equal(f.manager.list().length, 0);
+});
+
+test('participant placement reobserves after model work and disk writes; final position and CID restore exactly', async t => {
+  const f = await fixture(t), placementTarget = { kind: 'participant', id: 'human:owner', observedAt: Date.now() };
+  let current = [20, 0, 0]; const targets = [];
+  f.adapter.supportsGroundedPlacement = true;
+  f.adapter.getPlacement = (agentId, size, target) => { targets.push(structuredClone(target)); return [...current]; };
+  f.state.output = async input => {
+    if (input.task === 'text-to-image') return { image: imageFixture() };
+    current = [60, 0, 40]; return { mesh: meshFixture() };
+  };
+  const importFile = f.store.importFile.bind(f.store);
+  f.store.importFile = async (...args) => { const record = await importFile(...args); current = [80, 0, 50]; return record; };
+  const input = { agentId: 'agent', action, requestId: 'moving-target', placementTarget };
+  const pending = f.manager.generate(input); placementTarget.id = 'human:attacker';
+  const result = await pending;
+  assert(targets.length >= 3); assert(targets.every(target => target.id === 'human:owner'));
+  assert.deepEqual(result.placement.position, [80, 0, 50]);
+  const stored = await f.store.getManifest(result.artifactCid);
+  assert.deepEqual(stored.provenance.worldObject.position, result.placement.position);
+  assert.equal(f.calls.length, 2);
+  await f.manager.dispose(); const restored = f.create(); await restored.ready;
+  assert.deepEqual(restored.list()[0], { artifactCid: result.artifactCid, placement: result.placement });
+  assert.equal(f.calls.length, 2, 'restoration never regenerates the mesh or repositions a saved object');
+});
+
+test('a fixed remembered destination stays fixed and its identity participates in request deduplication', async t => {
+  const f = await fixture(t), placementTarget = { kind: 'location', id: 'knowledge:castle', position: [96, 3, 0],
+    observedAt: Date.now(), knowledgeId: 'castle', knowledgeRevision: 7 };
+  f.adapter.supportsGroundedPlacement = true;
+  f.adapter.getPlacement = (_id, _size, target) => [target.position[0], 0, target.position[2]];
+  const input = { agentId: 'agent', action, requestId: 'fixed', placementTarget };
+  const first = f.manager.generate(input);
+  assert.equal(f.manager.generate(input), first);
+  await assert.rejects(f.manager.generate({ ...input, placementTarget: { ...placementTarget, position: [32, 3, 0] } }), /Conflicting/);
+  await assert.rejects(f.manager.generate({ ...input, placementTarget: { ...placementTarget, knowledgeRevision: 8 } }), /Conflicting/);
+  placementTarget.position[0] = 12;
+  assert.deepEqual((await first).placement.position, [96, 0, 0]);
+});
+
+test('a destination blocked during model work or artifact persistence cannot become a pinned or visible object', async t => {
+  for (const phase of ['mesh', 'storage']) {
+    const f = await fixture(t); let blocked = false;
+    f.adapter.supportsGroundedPlacement = true;
+    f.adapter.getPlacement = () => { if (blocked) throw new Error('Destination became obstructed'); return [96, 0, 0]; };
+    const placementTarget = { kind: 'location', id: 'ground:96:0', position: [96, 3, 0], observedAt: Date.now() };
+    if (phase === 'mesh') f.state.output = async () => { blocked = true; return { mesh: meshFixture() }; };
+    else {
+      const original = f.store.importFile.bind(f.store);
+      f.store.importFile = async (...args) => { const record = await original(...args); blocked = true; return record; };
+    }
+    await assert.rejects(f.manager.generate({ agentId: 'agent', action, image: imageFixture(), placementTarget }), /obstructed/);
+    assert.equal(f.manager.list().length, 0); assert.equal(f.adapter.visible.size, 0);
+    const records = []; for await (const record of f.store.list()) records.push(record);
+    assert.equal(records.filter(record => record.pinned).length, 0);
+  }
+});
+
+test('selected remembered-place revision is checked before inference and again before retention', async t => {
+  const f = await fixture(t); let current = true, checked = 0;
+  f.adapter.supportsGroundedPlacement = true; f.adapter.getPlacement = () => [96, 0, 0];
+  const placementTarget = { kind: 'location', id: 'knowledge:castle', position: [96, 3, 0], observedAt: Date.now(), knowledgeId: 'castle', knowledgeRevision: 7 };
+  const manager = f.create({ assertPlacementCurrent: async input => {
+    checked++; assert.deepEqual(input.placementTarget, placementTarget);
+    if (!current) throw new DOMException('Remembered place changed', 'AbortError');
+  } }); await manager.ready;
+  current = false;
+  await assert.rejects(manager.generate({ agentId: 'agent', action, placementTarget }), { name: 'AbortError' });
+  assert.equal(f.calls.length, 0);
+  current = true;
+  const original = f.store.importFile.bind(f.store);
+  f.store.importFile = async (...args) => { const record = await original(...args); current = false; return record; };
+  await assert.rejects(manager.generate({ agentId: 'agent', action, image: imageFixture(), placementTarget }), { name: 'AbortError' });
+  assert(checked >= 3); assert.equal(manager.list().length, 0); assert.equal(f.adapter.visible.size, 0);
+  const records = []; for await (const record of f.store.list()) records.push(record);
+  assert.equal(records.filter(record => record.pinned).length, 0);
+});
+
+test('targeted object cancellation or ownership loss during persistence prevents a retained placement', async t => {
+  for (const reason of ['cancel', 'ownership']) {
+    const f = await fixture(t), controller = new AbortController();
+    f.adapter.supportsGroundedPlacement = true; f.adapter.getPlacement = () => [96, 0, 0];
+    const target = { kind: 'location', id: 'ground:96:0', position: [96, 3, 0], observedAt: Date.now() };
+    const original = f.store.importFile.bind(f.store);
+    f.store.importFile = async (...args) => { const record = await original(...args);
+      if (reason === 'cancel') controller.abort(); else f.state.owns = false;
+      return record;
+    };
+    await assert.rejects(f.manager.generate({ agentId: 'agent', action, placementTarget: target,
+      image: imageFixture(), signal: controller.signal }), reason === 'cancel' ? { name: 'AbortError' } : /ownership/);
+    assert.equal(f.manager.list().length, 0); assert.equal(f.adapter.visible.size, 0);
+    const records = []; for await (const record of f.store.list()) records.push(record);
+    assert.equal(records.filter(record => record.pinned).length, 0);
+  }
 });

@@ -14,6 +14,7 @@ import { LocalArtifactCache } from './LocalArtifactCache.js';
 import { ArtifactStore } from '../artifacts/ArtifactStore.js';
 import { AgentRecordStore } from '../agents/AgentRecordStore.js';
 import { WorldKnowledgeStore } from '../agents/WorldKnowledgeStore.js';
+import { ResidentDiagnosticsStore } from '../agents/ResidentDiagnosticsStore.js';
 import { WorldMemoryStore } from '../agents/WorldMemoryStore.js';
 import { WorldGoalStore } from '../agents/WorldGoalStore.js';
 import { WorldStandingGoalStore } from '../agents/WorldStandingGoalStore.js';
@@ -98,6 +99,7 @@ export class StateManager {
     this.agentRecordStores = new Map();
     this.worldMemoryStores = new Map();
     this.worldKnowledgeStores = new Map();
+    this.residentDiagnosticsStores = new Map();
     this.worldGoalStores = new Map();
     this.worldStandingGoalStores = new Map();
   }
@@ -274,6 +276,20 @@ export class StateManager {
   }
 
   getWorldKnowledgeStore(name = 'default') { return this.worldKnowledgeStores.get(name) || null; }
+
+  /** Owner-local diagnostics never enter replicated state or model context. */
+  createResidentDiagnosticsStore(options = {}) {
+    if (this.destroyed) throw new Error('StateManager is destroyed');
+    const name = options.name || 'default';
+    if (this.residentDiagnosticsStores.has(name)) throw new Error(`Resident diagnostics store ${name} is already registered`);
+    const store = new ResidentDiagnosticsStore({ ...options, name, onDestroy: closed => {
+      if (this.residentDiagnosticsStores.get(name) === closed) this.residentDiagnosticsStores.delete(name);
+      options.onDestroy?.(closed);
+    } });
+    this.residentDiagnosticsStores.set(name, store); return store;
+  }
+
+  getResidentDiagnosticsStore(name = 'default') { return this.residentDiagnosticsStores.get(name) || null; }
 
   /** Owner-local objectives are durable checkpoints, never replicated state. */
   createWorldGoalStore(options = {}) {
@@ -1037,6 +1053,7 @@ export class StateManager {
       for (const store of [...this.agentRecordStores.values()]) await cleanup(() => store.destroy());
       for (const store of [...this.worldMemoryStores.values()]) await cleanup(() => store.destroy());
       for (const store of [...this.worldKnowledgeStores.values()]) await cleanup(() => store.destroy());
+      for (const store of [...this.residentDiagnosticsStores.values()]) await cleanup(() => store.destroy());
       for (const store of [...this.worldGoalStores.values()]) await cleanup(() => store.destroy());
       for (const store of [...this.worldStandingGoalStores.values()]) await cleanup(() => store.destroy());
       // Local artifact bytes live outside Yjs but remain owned by this manager.

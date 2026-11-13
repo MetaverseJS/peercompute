@@ -76,7 +76,7 @@ function createStandingGoalFields() {
 /** World-native presentation. Runtime, transport, storage and scene ownership stay with the host. */
 export function createCubeWorldUi({ container = document.body, worldLabel = 'CubeChat', roomLabel = 'global',
   onSpawn, onSelect, onSend, onModels, onVoice, onRecord, onCancel, onClose, onRemove, onResume, onOpen,
-  onRoomSend, onPlayerCaption, onMovement, onAppearance, onWorldChat, onSettings, onEdit, onClone, onMind,
+  onRoomSend, onPlayerCaption, onMovement, onAppearance, onWorldChat, onSettings, onEdit, onClone, onMind, onInspect,
   onAssignGoal, onPauseGoal, onResumeGoal, onCancelGoal } = {}) {
   const root = node('section', undefined, 'cube-native-ui');
   const dock = node('section', undefined, 'cube-native-chat'); dock.setAttribute('aria-label', 'World chat');
@@ -85,11 +85,12 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
   chatBody.id = `cube-world-chat-${++sequence}`; launcher.setAttribute('aria-controls', chatBody.id);
   const chatHeader = node('header');
   const target = node('select'); target.setAttribute('aria-label', 'Chat with');
-  const collapse = button('Close chat'); chatHeader.append(target, collapse);
+  const inspectResident = button('Resident'), collapse = button('Close chat'); chatHeader.append(target, inspectResident, collapse);
   const scopeNote = node('p', '', 'cube-native-note');
   const messages = node('div', undefined, 'cube-native-messages'); messages.setAttribute('role', 'log');
   messages.setAttribute('aria-label', 'World conversation'); messages.setAttribute('aria-live', 'polite');
   const status = node('p', '', 'cube-native-status'); status.setAttribute('role', 'status');
+  const pendingNote = node('p', '', 'cube-native-note'); pendingNote.hidden = true; pendingNote.dataset.pendingConversation = '';
   const composer = node('form', undefined, 'cube-native-composer');
   const prompt = node('textarea'); prompt.rows = 2; prompt.setAttribute('aria-label', 'World message');
   const attach = button('+'); attach.setAttribute('aria-label', 'Attach avatar reference image');
@@ -107,7 +108,7 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
   const actions = node('div', undefined, 'cube-native-actions'); actions.append(resume, attach, send, talk, cancel, voiceButton);
   const taskStatus = createResidentTaskStatus({ onPauseGoal, onResumeGoal, onCancelGoal });
   const taskSnapshots = new Map();
-  composer.append(prompt, attachmentRow, imageFile, actions); chatBody.append(chatHeader, scopeNote, messages, taskStatus.element, status, composer);
+  composer.append(prompt, attachmentRow, imageFile, actions); chatBody.append(chatHeader, scopeNote, messages, taskStatus.element, status, pendingNote, composer);
   dock.append(launcher, chatBody);
 
   const makeDialog = (title) => {
@@ -168,9 +169,11 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
 
   let enabled = true, disposed = false, expanded = false, selected = null, hostKey = null;
   let agents = [], roomMessages = [], roomStatus = '', agentStatus = '', worldStatus = '', busy = false;
+  const worldChatStatuses = new Map(), agentStatuses = new Map();
   const navigationInspectors = new Map(), goalControls = new Map(), residentRows = new Map();
-  let sending = false, mutating = false, selecting = false, cancelling = false, modelOpening = false, closing;
+  let sending = false, mutating = false, selecting = false, cancelling = false, modelOpening = false, inspecting = false, closing;
   let sendDone, cancelDone, roomSendController, recordPending = false, recordIntent = false, recordEpoch = 0, voiceEpoch = 0;
+  let sendingKey = null, busyKey = null;
   let voiceState = { enabled: false, preparing: false, recording: false };
   let attachment = null, attachmentRead = null, imageTransferPending = false;
   const drafts = new Map(), histories = new Map(), movementByKey = new Map(), captionPrimed = new Set();
@@ -184,7 +187,7 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
   const fail = (error) => {
     if (disposed) return;
     const value = text(error?.message ?? error);
-    if (selected) agentStatus = value; else roomStatus = value;
+    if (selected) { agentStatus = value; agentStatuses.set(selected.key, value); } else roomStatus = value;
     residentStatus.textContent = voiceStatus.textContent = editStatus.textContent = value; update();
     if (editor.dialog.open) editor.dialog.scrollTop = 0;
   };
@@ -257,6 +260,8 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
     cancel.disabled = locked || cancelling || !active(); cancel.textContent = cancelling ? 'Cancelling…' : 'Cancel';
     voiceButton.disabled = locked || transition;
     collapse.disabled = !!closing; collapse.textContent = closing ? 'Closing…' : 'Close chat';
+    inspectResident.hidden = !selected || typeof onInspect !== 'function';
+    inspectResident.disabled = locked || inspecting || !selected;
     name.disabled = instructions.disabled = goals.disabled = appearance.disabled = localOnly.input.disabled = shared.input.disabled = worldChat.input.disabled = initiative.input.disabled = autonomous.input.disabled = cloning.input.disabled = movement.disabled = locked || mutating;
     standing.setDisabled(locked || mutating); selfModifiable.input.disabled = locked || mutating;
     for (const input of editForm.querySelectorAll('input,textarea,select,button')) input.disabled = locked || mutating || active();
@@ -276,9 +281,14 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
         + (paused() ? selected.local && selected.pauseCause === 'automatic' ? ' Recovering automatically in 1–3 minutes; the previous request will not replay.' : !selected.local ? ' Paused. Only its owner can resume it.'
           : selected.recoveryRequired ? ' Previous outcome unknown. Acknowledge and resume below; the old request will not replay.'
             : ' Paused. Resume below to accept new messages.' : '');
-    status.textContent = attachmentLoading() ? 'Preparing avatar reference…' : selected ? agentStatus : roomStatus || worldStatus;
+    status.textContent = attachmentLoading() ? 'Preparing avatar reference…' : selected ? agentStatuses.get(selected.key) ?? agentStatus
+      : [roomStatus || worldStatus, ...worldChatStatuses.values()].filter(Boolean).join('\n');
+    const pendingKey = sendingKey ?? busyKey;
+    pendingNote.hidden = !pendingKey || !(sending || busy);
+    pendingNote.textContent = pendingNote.hidden ? '' : `${pendingKey === 'room' ? 'Room message' : `Reply for ${text(agents.find(agent => agent.key === pendingKey)?.name ?? 'resident', 240)}`} is still pending. You can switch or close chat; Cancel stops the request.`;
     for (const control of list.querySelectorAll('button,select,input')) {
-      if (control.dataset.residentMind === 'true') { control.disabled = locked; continue; }
+      if (control.dataset.residentChat === 'true') { control.disabled = locked || transition; continue; }
+      if (control.dataset.residentMind === 'true' || control.dataset.residentInspect) { control.disabled = locked || inspecting; continue; }
       if (!control.closest('[data-resident-goal]')) control.disabled = locked || transition || active() || control.dataset.unavailable === 'true';
     }
     // Objective interruption must remain available while inference or movement runs.
@@ -338,9 +348,8 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
     if (key === currentKey()) { hideDialog(residents.dialog, false); open(); return; }
     selecting = true; rememberDraft(); update();
     try {
-      if (active()) await cancelWork();
       if (disposed) return;
-      if (key === 'room') select(null);
+      if (key === 'room') { await onSelect?.(null); select(null); }
       else {
         if (!agents.some(agent => agent.key === key)) throw new Error('This resident is no longer here.');
         await onSelect?.(key);
@@ -377,11 +386,8 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
     if (closing) return closing;
     if (disposed) return;
     cancelAvatarRead();
-    roomSendController?.abort(new DOMException('Room message cancelled', 'AbortError'));
-    closing = Promise.resolve().then(async () => { await onClose?.(); await sendDone; }).then(() => {
-      if (disposed) return;
-      rememberDraft(); expanded = false; hideDialog(voice.dialog, false);
-    }).catch(fail).finally(() => {
+    rememberDraft(); expanded = false; hideDialog(voice.dialog, false); update(); launcher.focus();
+    closing = Promise.resolve().then(() => onClose?.()).catch(fail).finally(() => {
       closing = null; update(); if (!disposed && !expanded) launcher.focus();
     });
     update(); return closing;
@@ -390,14 +396,22 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
     if (disposed || !enabled || modelOpening || closing || mutating || selecting) return;
     modelOpening = true; update();
     try {
-      if (active()) await cancelWork();
       if (disposed) return;
       hideDialog(residents.dialog, false); hideDialog(voice.dialog, false); signalOpen(); await onModels?.();
     } catch (error) { fail(error); }
     finally { modelOpening = false; update(); }
   }
   function openResidents({ returnFocus } = {}) { if (!disposed && enabled && !modelOpening) showDialog(residents.dialog, returnFocus); }
+  async function inspect(agent, returnFocus, tab = 'overview') {
+    if (disposed || !enabled || closing || inspecting || !agent || typeof onInspect !== 'function') return;
+    inspecting = true; rememberDraft(); update();
+    try { await onInspect({ key: agent.key, returnFocus, tab }); }
+    catch (error) { fail(error); }
+    finally { inspecting = false; update(); }
+  }
+  inspectResident.onclick = () => { if (!inspectResident.disabled) void inspect(selected, inspectResident); };
   function editResident(agent, opener) {
+    if (typeof onInspect === 'function') { void inspect(agent, opener, 'profile'); return; }
     if (!agent.local || typeof onEdit !== 'function' || mutating || active()) return;
     editingKey = agent.key; editName.value = agent.name; editInstructions.value = agent.instructions ?? '';
     editGoals.value = (agent.goals ?? []).join('\n'); editAppearance.value = agent.appearancePrompt ?? '';
@@ -446,7 +460,7 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
       const children = [], appendRow = (...nodes) => children.push(...nodes);
       appendRow(node('strong', text(agent.name, 240)), node('p', `${agent.local ? 'Local' : 'Peer'} · ${text(agent.status ?? 'idle', 32)}`, 'cube-native-note'));
       const controls = node('div', undefined, 'cube-native-actions');
-      const chat = button('Chat'); chat.setAttribute('aria-label', `Chat with ${text(agent.name, 240)}`); chat.onclick = () => void choose(agent.key); controls.append(chat);
+      const chat = button('Chat'); chat.dataset.residentChat = 'true'; chat.setAttribute('aria-label', `Chat with ${text(agent.name, 240)}`); chat.onclick = () => void choose(agent.key); controls.append(chat);
       if (agent.local) {
         if (typeof onAssignGoal === 'function') {
           let controls = goalControls.get(agent.key);
@@ -485,8 +499,9 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
           const note = node('p', `Profile: ${profileLabels[state] ?? 'Status unavailable'}.`, 'cube-native-note');
           note.dataset.profileStatus = state; appendRow(note);
         }
-        if (typeof onEdit === 'function') {
-          const edit = button('Edit'); edit.setAttribute('aria-label', `Edit ${text(agent.name, 240)}`);
+        if (typeof onEdit === 'function' || typeof onInspect === 'function') {
+          const edit = row.querySelector('[data-resident-inspect="edit"]') ?? button('Edit'); edit.setAttribute('aria-label', `Edit ${text(agent.name, 240)}`);
+          if (typeof onInspect === 'function') edit.dataset.residentInspect = 'edit';
           edit.onclick = () => editResident(agent, edit); controls.append(edit);
         }
         if (typeof onMind === 'function') {
@@ -541,6 +556,11 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
         const remove = button('Remove body'); remove.setAttribute('aria-label', `Remove body ${text(agent.name, 240)}`);
         remove.title = 'Keep the saved identity and history; remove its world body.'; remove.onclick = () => void mutation(onRemove, agent.key); controls.append(remove);
       }
+      if (typeof onInspect === 'function') {
+        const details = row.querySelector('[data-resident-inspect="details"]') ?? button('Details');
+        details.dataset.residentInspect = 'details'; details.setAttribute('aria-label', `Details for ${text(agent.name, 240)}`);
+        details.onclick = () => { void inspect(agent, details); }; controls.append(details);
+      }
       if (typeof onClone === 'function' && (agent.local || agent.cloneable === true)) {
         const clone = button('Clone'); clone.setAttribute('aria-label', `Clone ${text(agent.name, 240)}`);
         clone.title = 'Copies personality, appearance and the history this resident’s creator has chosen to share.';
@@ -578,9 +598,9 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
         || (snapshot?.key !== undefined && snapshot.key !== key)) return;
     navigationInspectors.get(key)?.setStatus(snapshot);
   }
-  function setMessages(next) {
-    if (disposed || !hostKey) return;
-    const previous = histories.get(hostKey) ?? [];
+  function setMessages(next, key = hostKey) {
+    if (disposed || typeof key !== 'string' || !key || key.length > 300) return;
+    const previous = histories.get(key) ?? [];
     const entries = (Array.isArray(next) ? next : []).slice(-32).map(item => {
       const modelLabel = item?.role === 'assistant' && typeof item.modelLabel === 'string' ? text(item.modelLabel, 240).trim() : '';
       return { role: ['user', 'assistant', 'system'].includes(item?.role) ? item.role : 'system', text: text(item?.text, 16000),
@@ -588,12 +608,12 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
     });
     let bytes = 128000;
     for (let index = entries.length - 1; index >= 0; index--) { entries[index].text = entries[index].text.slice(0, Math.max(0, bytes)); bytes -= entries[index].text.length; }
-    histories.set(hostKey, entries);
+    histories.set(key, entries);
     const last = entries.at(-1), old = previous.at(-1);
-    if (captionPrimed.has(hostKey) && last?.role === 'user' && (entries.length !== previous.length || old?.text !== last.text || old?.role !== last.role)) {
+    if (captionPrimed.has(key) && last?.role === 'user' && (entries.length !== previous.length || old?.text !== last.text || old?.role !== last.role)) {
       try { Promise.resolve(onPlayerCaption?.(last.text)).catch(fail); } catch (error) { fail(error); }
     }
-    captionPrimed.add(hostKey); if (selected?.key === hostKey) renderMessages();
+    captionPrimed.add(key); if (selected?.key === key) renderMessages();
   }
   function appendRoomMessage(message) {
     if (disposed || !message || typeof message.text !== 'string') return;
@@ -609,7 +629,7 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
     if (isRoom && (content.length > 1024 || encoder.encode(content).length > 2048)) { fail(new Error('Room messages can contain up to 1024 characters and 2048 UTF-8 bytes.')); return; }
     const roomController = isRoom ? new AbortController() : null;
     if (roomController) roomSendController = roomController;
-    sending = true; update();
+    sending = true; sendingKey = key; rememberDraft(); update();
     sendDone = Promise.resolve().then(() => {
       roomController?.signal.throwIfAborted();
       return isRoom ? onRoomSend({ text: content }, { signal: roomController.signal }) : onSend({ key, text: content,
@@ -617,12 +637,16 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
     })
       .then(result => {
         if (roomController?.signal.aborted || result?.delivery?.cancelled || result?.avatarFailed === true) return;
+        if (!disposed && (drafts.get(key) ?? '').trim() === typed) drafts.set(key, '');
         if (!disposed && currentKey() === key) {
           if (prompt.value.trim() === typed) { prompt.value = ''; drafts.set(key, ''); }
           if (image && attachment === image) clearAvatarAttachment();
         }
       })
-      .catch(fail).finally(() => { if (roomSendController === roomController) roomSendController = null; sending = false; sendDone = null; update(); if (!disposed && expanded && currentKey() === key && !prompt.disabled && !residents.dialog.open && !voice.dialog.open) prompt.focus(); });
+      .catch(error => {
+        if (disposed) return;
+        const value = text(error?.message ?? error); if (isRoom) roomStatus = value; else agentStatuses.set(key, value); update();
+      }).finally(() => { if (roomSendController === roomController) roomSendController = null; sending = false; sendingKey = null; sendDone = null; update(); if (!disposed && expanded && currentKey() === key && !prompt.disabled && !residents.dialog.open && !voice.dialog.open && !document.querySelector('dialog[open]')) prompt.focus(); });
     return sendDone;
   }
   composer.onsubmit = event => { event.preventDefault(); void sendMessage(); };
@@ -712,20 +736,34 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
   root.addEventListener('keydown', event => { if (expanded || residents.dialog.open || voice.dialog.open || editor.dialog.open) event.stopPropagation(); });
   root.addEventListener('focusin', signalOpen);
   root.addEventListener('focusout', () => queueMicrotask(() => {
-    if (disposed || !expanded || active() || closing || document.activeElement === document.body || root.contains(document.activeElement)) return;
+    if (disposed || !expanded || active() || closing || inspecting || document.activeElement === document.body || root.contains(document.activeElement)
+        || document.activeElement?.closest?.('dialog[open],[role="dialog"][aria-modal="true"]')) return;
     rememberDraft(); expanded = false; update();
   }));
   renderTargets(); renderMessages(); update();
   return { element: root, dialog: residents.dialog, open, close, openResidents, openModels, select, setAgents, setMessages,
     setGoalStatus, setNavigationStatus, isNavigationVisible: () => !disposed && enabled && residents.dialog.open && !editor.dialog.open && !voice.dialog.open,
-    appendMessage(role, value) { setMessages([...(histories.get(hostKey) ?? []), { role, text: value }]); },
+    appendMessage(role, value, key = hostKey) { setMessages([...(histories.get(key) ?? []), { role, text: value }], key); },
     appendRoomMessage,
     setRoomMessages(next) { roomMessages = []; for (const message of Array.isArray(next) ? next.slice(-64) : []) appendRoomMessage(message); if (!selected) renderMessages(); },
     setRoomLabel(value) { roomLabel = text(value, 80); renderTargets(); },
     setRoomStatus(value) { roomStatus = text(value); update(); },
+    setWorldChatStatus(key, value) {
+      if (disposed || typeof key !== 'string' || !key || key.length > 300) return;
+      const message = text(value);
+      if (message) { worldChatStatuses.set(key, message); if (worldChatStatuses.size > 64) worldChatStatuses.delete(worldChatStatuses.keys().next().value); }
+      else worldChatStatuses.delete(key);
+      update();
+    },
     setRoomDelivery(value) { roomStatus = text(typeof value === 'string' ? value : value?.message ?? value?.status); update(); },
-    setStatus(value) { agentStatus = text(value); if (!hostKey) worldStatus = agentStatus; residentStatus.textContent = voiceStatus.textContent = agentStatus; update(); },
-    setBusy(value) { busy = Boolean(value); update(); },
+    setStatus(value, key) {
+      const message = text(value);
+      if (typeof key === 'string') agentStatuses.set(key, message);
+      else { agentStatus = message; if (key === undefined && selected) agentStatuses.set(selected.key, message); if (!hostKey || key === null) worldStatus = message; }
+      if (key === undefined || key === selected?.key) residentStatus.textContent = voiceStatus.textContent = message;
+      update();
+    },
+    setBusy(value, key) { busy = Boolean(value); busyKey = busy ? key ?? busyKey ?? selected?.key ?? null : null; update(); },
     setVoiceStatus(value) {
       if (disposed) return;
       const before = voiceState.enabled;
@@ -743,7 +781,7 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
       clearAvatarAttachment(); void imageInput.dispose();
       roomSendController?.abort(new DOMException('Room chat closed', 'AbortError'));
       hideDialog(residents.dialog, false); hideDialog(voice.dialog, false); hideDialog(editor.dialog, false); root.remove();
-      drafts.clear(); histories.clear(); movementByKey.clear(); restores.clear(); captionPrimed.clear(); agents = []; roomMessages = [];
+      drafts.clear(); histories.clear(); movementByKey.clear(); restores.clear(); captionPrimed.clear(); worldChatStatuses.clear(); agentStatuses.clear(); agents = []; roomMessages = [];
       for (const inspector of navigationInspectors.values()) inspector.dispose(); navigationInspectors.clear();
       for (const controls of goalControls.values()) controls.dispose(); goalControls.clear(); residentRows.clear();
       taskStatus.dispose(); taskSnapshots.clear();

@@ -159,11 +159,12 @@ class CubeChat {
       onSelect: (key) => host?.openConversation(key)
     });
     const generatedObjectLayer = new CubeGeneratedObjectLayer({ scene: this.scene, physics: this.physics,
-      getResidentPosition: agentId => layer.getPosition(`local:${agentId}`) });
+      getResidentPosition: agentId => layer.getPosition(`local:${agentId}`),
+      resolvePlacement: (agentId, size, target, options) => layer.getObjectPlacement(`local:${agentId}`, size, target, options) });
     try {
       host = installWorldAgents({
         defaultResident: cubeGuidePreset(`cubechat:${this.currentRoom.roomId}`),
-        worldKnowledge: CUBECHAT_GUIDE_FACTS.join(' ') + ' Your owner may ask you to create a 3D object beside your cube. '
+        worldKnowledge: CUBECHAT_GUIDE_FACTS.join(' ') + ' Your owner may ask you to create a 3D object beside your cube, at observed clear ground or a remembered place, or beside an observed participant. '
           + 'Your owner may also ask you to become a robot/car or design your own avatar, or return to your original cube. '
           + 'This requires available text-to-image and image-to-3D models. An object exists only after a verified placement receipt.',
         worldId: `cubechat:${this.currentRoom.roomId}`,

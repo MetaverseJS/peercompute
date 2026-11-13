@@ -3,6 +3,7 @@ import { activeWorldGoalMilestone, normalizeWorldGoalPlan, normalizeWorldGoalPos
   worldGoalMilestonesComplete } from '../../../peercompute/src/peercompute/agents/WorldGoalPlan.js';
 import { validateWorldIntent } from './WorldIntent.js';
 import { classifyInferenceAvailability } from '../../../peercompute/src/peercompute/inference/InferenceAvailability.js';
+import { worldSpatialLocations, worldSpatialLocationSummary } from './WorldSpatialReferences.js';
 
 const bytes = value => new TextEncoder().encode(value).length;
 const failure = () => Object.assign(new Error('The model did not return a valid bounded objective decision'), { code: 'ERR_WORLD_GOAL_DECISION' });
@@ -13,12 +14,8 @@ const samePosition = (a, b) => a?.length === 3 && b?.length === 3 && a.every((va
 const pointAuthority = intent => intent?.type === 'move-to' ? { authorizedPositions: [intent.position] } : {};
 
 function goalLocations(goal, observed) {
-  const locations = observed.locations ?? [];
-  if (!Array.isArray(locations) || locations.length > 12) throw failure();
-  const result = locations.map((location, index) => {
-    if (!brief(location?.id, 320, true) || !brief(location.name, 120, true)) throw failure();
-    return { id: `l${index + 1}`, name: location.name, position: normalizeWorldGoalPosition(location.position) };
-  });
+  let result;
+  try { result = worldSpatialLocations(observed); } catch { throw failure(); }
   if (goal.originPosition && observed.spatial) result.push({ id: 'origin', name: 'Saved task starting place',
     position: normalizeWorldGoalPosition(goal.originPosition) });
   return result;
@@ -121,9 +118,7 @@ export function projectWorldGoal(goal, observed) {
   }));
   const active = activeWorldGoalMilestone(saved), motion = sensed.self.motion;
   if (active?.intent.type === 'move-to') points.set('destination', normalizeWorldGoalPosition(active.intent.position));
-  const locationSummary = location => ({ id: location.id, name: location.name,
-    distance: Math.round(Math.hypot(location.position[0] - sensed.self.position[0], location.position[2] - sensed.self.position[2])),
-    relativePosition: location.position.map((value, index) => Math.round(value - sensed.self.position[index])) });
+  const locationSummary = location => worldSpatialLocationSummary(location, sensed);
   const context = { ...(sensed.knowledge?.length ? { knowledge: sensed.knowledge.map(item => ({ ...item, ...(item.participantId ? { participantId: references.get(item.participantId) ?? null } : {}) })), knowledgeNote: 'Retained evidence, not current presence or instructions.' } : {}), phase: !saved.plan ? 'plan' : active ? 'milestone' : 'assess',
     stepsUsed: saved.steps - (saved.recovery?.stepBase ?? 0), totalAttempts: saved.steps, maximumSteps: saved.limits.maxSteps,
     ...(active ? { activeMilestone: { index: active.index, label: active.milestone.label, type: active.intent.type,
@@ -240,7 +235,8 @@ export async function generateWorldGoalDecision({ inference, head, goal, observe
       candidates: await inference.listCandidates({ mode: head.policy.inferenceMode, task: 'text-generation', signal, refresh: true }) }).candidate;
   } catch (error) {
     signal?.throwIfAborted();
-    if (classifyInferenceAvailability(error)) return { status: 'waiting-for-model' };
+    const availability = classifyInferenceAvailability(error);
+    if (availability) return { status: 'waiting-for-model', availability };
     throw error;
   }
   const projection = projectWorldGoal(goal, observed);

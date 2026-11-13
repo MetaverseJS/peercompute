@@ -14,7 +14,8 @@ function budgetError(inputTokens, contextTokens, reservedOutputTokens) {
 export function dropOldestGgufTurn(messages) {
   const first = messages.findIndex((message) => message.role === 'user');
   const next = messages.findIndex((message, index) => index > first && message.role === 'user');
-  if (first < 0 || next < 0) return null;
+  if (first < 0 || next < 0
+      || !messages.some((message, index) => index > first && index < next && message.role === 'assistant')) return null;
   return messages.filter((message, index) => index < first || index >= next || message.role === 'system');
 }
 

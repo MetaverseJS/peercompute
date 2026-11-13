@@ -721,3 +721,59 @@ Self-directed movement follow-up: new residents, guides, clones and missing
 preferences use Self directed. Selecting it releases previous follow/roam
 commands; model-selected actions run the learned motor. Same-profile refreshes
 must preserve active intentions, and explicit saved profiles remain unchanged.
+
+Resident inspector: consolidate profile/settings, goals/memory, routing and
+activity in a modal opened from resident chat and roster. Owner/host edits use
+revision checks; peers see only public body data. Keep diagnostic errors visible
+across automatic recovery and capture world-chat admission/execution/publication
+without feeding telemetry into model context. Investigate reported SKELETOR
+think→pause→resume with no public output; cause unconfirmed until reproduced.
+<!-- November 12 resident inspection follow-up -->
+Current acceptance additionally covers noncancelling chat navigation: close,
+switch to another resident/Room, keep moving, return to the original reply;
+explicit Cancel still waits for cleanup. Persona mixing must be tested against
+an actual peer with a named other-speaker quote, not attributed to cloning or
+stale prompts without request evidence. No Pages publication this slice.
+
+
+### Grounded object placement, then manipulation — November 12
+
+Current slice: share navigation destination observations and remembered places
+with the object argument resolver. Models choose observed location/participant
+references; the host resolves identity and validates the actual surface, bounds,
+current occupancy and object footprint. Explicit invalid destinations fail
+visibly instead of falling back beside the resident. Recheck after generation
+before retaining/publishing the actual placement. Existing untargeted requests
+retain nearby placement. Qualify a distant Castle Grayskull placement with actual
+model-selected destination and returned GLB/CID, separately from speech quality.
+
+Next todo: owned/authorized object manipulation, for example “go get the throne
+and put it near the castle.” Add stable object identities to sensed landmarks,
+then a persistent acquire → carry → place objective. Reserve the source object
+to prevent competing residents moving it; bind permission and placement revision
+to the operation. Require neural-motor arrival before acquisition, track the
+object relative to the resident while carrying, and release only at a validated
+destination. Retain receipts and idempotent progress across interruption; never
+turn a conversational completion claim into a teleport. Reuse immutable mesh
+CIDs while updating bounded placement state. Begin with host-owned props; peer
+permission/transfer is explicit, never inferred from visibility. Arm articulation,
+learned manipulation physics and unrestricted editing are later capabilities.
+
+Owner object requests now use object-only planning before character speech,
+followed by grounded validation, host execution and a verified outcome. Nonobject
+requests retain their existing speech-first checks. Preserve acknowledged saved
+objects on later cancellation, reply failure or renderer failure. Qualify actual
+semantic distance selection separately from retention/rendering success.
+
+Quality follow-up: qualify an explicit conversational generation profile across
+local and peer runtimes before changing deterministic decoding. Keep structured
+planners unchanged, preserve raw history, and report any degeneration guard
+explicitly. Current speaker attribution does not prove repetition is solved.
+
+November12 qualification: the real peer pipeline now saves/displays/restores
+a generated castle at its selected spatial reference. Distance intent is not
+fully qualified: Qwen2B selected32-unit rather than96-unit ground for “off in the
+distance.” It also denied capability after receiving the real placed receipt.
+Keep model distance selection and receipt-consistent narration as open quality
+checks. They do not invalidate the confirmed object/CID, and must not trigger
+a second generation or erase the object.

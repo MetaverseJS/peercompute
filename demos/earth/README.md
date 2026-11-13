@@ -214,6 +214,12 @@ masks.
 
 ## Validation
 
+Resident chat also exposes **Resident** details: the shared owner-editable
+profile, tasks/memory, cached model routes and private Activity log. Other hosts'
+residents expose only public information. Inspection does not run inference,
+load a model or fetch private peer history. Diagnostic records persist separately
+from conversation memory and preserve failures after automatic recovery.
+
 ```bash
 npm --prefix demos/earth test
 npm --prefix demos/earth run build

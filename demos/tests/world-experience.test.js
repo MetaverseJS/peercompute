@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { compactWorldContext, createWorldExperience, WORLD_PROMPT_CONTEXT_BYTES, WORLD_KNOWLEDGE_PROMPT_CONTEXT_BYTES } from '../shared/agents/WorldExperience.js';
+import { compactWorldContext, createWorldExperience, WORLD_PROMPT_CONTEXT_BYTES, WORLD_KNOWLEDGE_PROMPT_CONTEXT_BYTES, WORLD_PUBLIC_PROMPT_CONTEXT_BYTES } from '../shared/agents/WorldExperience.js';
 import { WORLD_INTENT_INSTRUCTIONS, WORLD_INTENT_LEGACY_SUFFIX } from '../shared/agents/WorldIntent.js';
 import { CubeAgentLayer } from '../cubechat/src/agents/CubeAgentLayer.js';
+import { packAgentContext } from '../../peercompute/src/peercompute/agents/AgentRouter.js';
 
 function fixture() {
   let observer, clock = 1000;
@@ -131,8 +132,51 @@ test('public prompts store only the attributed statement and never retrieve priv
 test('resident speakers resolve to their own observed body, not the human who hosts them', async () => {
   const f = fixture(); f.setParticipants([{ id: 'human:visitor', kind: 'human', peerId: 'visitor', name: 'Human' },
     { id: 'resident:visitor:bert', kind: 'resident', ownerPeerId: 'visitor', agentId: 'bert', name: 'Bert' }]);
-  const turn = await f.turn({ audience: 'public', who: { peerId: 'visitor', agentId: 'bert', name: 'Bert' } });
-  assert.equal(JSON.parse(turn.worldContext).senses.requesterId, 'resident:visitor:bert');
+  const turn = await f.turn({ audience: 'public', requesterIsOwner: true, who: { peerId: 'visitor', agentId: 'bert', name: 'Bert' } });
+  const context = JSON.parse(turn.worldContext);
+  assert.equal(context.senses.requesterId, 'resident:visitor:bert');
+  assert.deepEqual(context.currentSpeaker, { kind: 'resident', role: 'visitor', name: 'Bert' });
+  f.setParticipants([{ id: 'human:visitor', kind: 'human', peerId: 'visitor', name: 'Human' }]);
+  const unseen = JSON.parse((await f.turn({ audience: 'public', who: { peerId: 'visitor', agentId: 'bert', name: 'Bert' } })).worldContext);
+  assert.equal(unseen.senses.requesterId, undefined);
+  assert.deepEqual(unseen.currentSpeaker, context.currentSpeaker, 'An absent resident never becomes its hosting human');
+  await f.experience.dispose();
+});
+
+test('current speaker attribution does not adopt a nearby or recalled resident name', async () => {
+  const f = fixture(), prompt = 'What is this place?';
+  f.setParticipants([{ id: 'human:visitor', kind: 'human', peerId: 'visitor', name: 'Pat', position: [20, 3, 0] },
+    { id: 'resident:owner:other', kind: 'resident', ownerPeerId: 'owner', agentId: 'other', name: 'SKELETOR', position: [10, 3, 0] }]);
+  const remembered = { agentId: 'ada', worldId: 'cube:test', audience: 'public', conversationId: 'room', kind: 'heard',
+    who: { peerId: 'owner', agentId: 'other', name: 'SKELETOR' }, text: 'I enjoy this room.',
+    source: { kind: 'authenticated-message', eventId: 'public-example' } };
+  f.episodes.push(structuredClone(remembered));
+  const turn = await f.turn({ prompt, publicConversationId: 'room' }), context = JSON.parse(turn.worldContext);
+  assert.deepEqual(context.currentSpeaker, { kind: 'human', role: 'visitor', name: 'Pat' });
+  assert.equal(context.senses.requesterId, 'human:visitor');
+  assert.equal(context.memories[0].who.name, 'SKELETOR');
+  assert.equal(context.memories[0].text, remembered.text);
+  assert.deepEqual(f.episodes[0], remembered, 'Attribution never deletes or rewrites earlier speech');
+  assert.equal(f.actions.length, 0, 'Speaker labels grant no body action');
+  const messages = packAgentContext({ identity: { name: 'Ada' } }, { task: 'text-generation', prompt,
+    conversationId: turn.scope.conversationId, worldContext: turn.worldContext }, []).messages;
+  assert.deepEqual(messages.map(item => item.role), ['system', 'user']);
+  assert(messages.at(-1).content.endsWith(`Current request:\n${prompt}`));
+  assert.equal(turn.prompt, prompt);
+  await f.experience.dispose();
+});
+
+test('only explicit host authority labels an unseen human owner, without borrowing another visible name', async () => {
+  const f = fixture();
+  f.setParticipants([{ id: 'human:visitor', kind: 'human', peerId: 'visitor', name: 'Visible visitor' }]);
+  const turn = await f.turn({ requesterPeerId: 'owner', requesterIsOwner: true }), context = JSON.parse(turn.worldContext);
+  assert.deepEqual(context.currentSpeaker, { kind: 'human', role: 'owner' });
+  assert.equal(context.senses.requesterId, undefined, 'No observation is invented for an absent owner');
+  const ordinary = JSON.parse((await f.turn({ requesterPeerId: 'owner' })).worldContext);
+  assert.deepEqual(ordinary.currentSpeaker, { kind: 'human', role: 'visitor' }, 'Matching the hosting peer alone is not owner authority');
+  const claim = JSON.parse((await f.turn({ who: { peerId: 'visitor', name: 'Pat', role: 'owner' } })).worldContext);
+  assert.deepEqual(claim.currentSpeaker, { kind: 'human', role: 'visitor', name: 'Pat' });
+  assert.equal(f.actions.length, 0);
   await f.experience.dispose();
 });
 
@@ -175,6 +219,7 @@ test('unsolicited encounters never fabricate heard messages and distinguish deli
   const target = { id: 'human:visitor', peerId: 'visitor', name: 'Pat', kind: 'human' };
   const turn = await f.experience.prepareEncounter({ key: f.body.key, agentId: f.body.agentId, conversationId: 'public-room', target });
   assert.equal(f.episodes.at(-1).kind, 'encounter'); assert.equal(f.episodes.at(-1).source.kind, 'local-observation');
+  assert.equal(JSON.parse(turn.worldContext).currentSpeaker, undefined, 'An observed encounter is not a spoken request');
   assert.doesNotMatch(turn.worldContext, /Private secret/);
   await f.experience.rememberSocialDecision(turn, { decision: 'quiet' });
   assert.equal(f.episodes.at(-1).kind, 'social-quiet');
@@ -280,6 +325,45 @@ test('ordinary public hello omits duplicated room bodies even below the byte cei
   assert.equal(context.senses.self.id, senses.self.id); assert.equal(context.senses.requesterId, 'human:owner');
   assert.deepEqual(context.senses.participants, senses.participants);
   assert.deepEqual({ scene, senses }, before, 'Projection does not delete saved messages or physical observations');
+});
+
+test('public speech reserves headroom without knowledge while full sensing and current requester remain intact', () => {
+  const participants = Array.from({ length: 12 }, (_, index) => ({
+    id: `human:12D3KooWH89Fz7Ry4kU2LfPcJwVkG3wts16xL1MrMqMZsZbaJsQn${index}`, kind: 'human',
+    name: `Visitor ${index}`, position: [index * 3, 3, index * 8], relativePosition: [index * 3 - 20, 0, index * 8 - 50],
+    velocity: [0, 0, 0], distance: 50 + index,
+  }));
+  const senses = { observedAt: 1794528000000, requesterId: participants.at(-1).id,
+    self: { id: 'resident:owner:ada', name: 'Ada', position: [20, 3, 50], velocity: [0, 0, 0], status: 'idle' }, participants, obstacles: [] };
+  const scene = { kind: 'public-room-chat', world: 'CubeChat', messages: [
+    { id: 'current', peerId: 'visitor', name: 'Visitor', text: 'Hello' },
+  ] };
+  const before = structuredClone({ scene, senses });
+  const currentSpeaker = { kind: 'human', role: 'visitor', name: participants.at(-1).name };
+  const context = compactWorldContext({ scene, senses, currentMessageId: 'current', currentSpeaker });
+  assert(Buffer.byteLength(JSON.stringify(context)) <= WORLD_PUBLIC_PROMPT_CONTEXT_BYTES);
+  assert.deepEqual(context.currentSpeaker, currentSpeaker, 'Crowding cannot replace the current speaker with a remembered name');
+  assert(WORLD_PUBLIC_PROMPT_CONTEXT_BYTES < WORLD_PROMPT_CONTEXT_BYTES);
+  assert(context.omitted.participants > 0);
+  assert.deepEqual(context.senses.self, senses.self);
+  assert.deepEqual(context.senses.participants.find(item => item.id === senses.requesterId), participants.at(-1));
+  assert.deepEqual(context.scene.messages, [], 'The exact current speech remains solely in the user turn');
+  assert.deepEqual({ scene, senses }, before, 'Full observation and speech evidence is never rewritten');
+  const privateProjection = compactWorldContext({ scene: { demo: 'CubeChat' }, senses });
+  assert(Buffer.byteLength(JSON.stringify(privateProjection)) > WORLD_PUBLIC_PROMPT_CONTEXT_BYTES);
+  assert(Buffer.byteLength(JSON.stringify(privateProjection)) <= WORLD_PROMPT_CONTEXT_BYTES);
+});
+
+test('current speaker display stays bounded without copying transport IDs or authority-bearing fields', () => {
+  const senses = { self: { id: 'resident:owner:ada', position: [0, 3, 0] }, participants: [] };
+  const currentSpeaker = { kind: 'human', role: 'owner', name: `\0${'界'.repeat(1000)}`,
+    peerId: 'private-owner-id', agentId: 'not-a-speaker', goals: ['Not a request'] };
+  const context = compactWorldContext({ senses, currentSpeaker });
+  assert.deepEqual(Object.keys(context.currentSpeaker).sort(), ['kind', 'name', 'role']);
+  assert(Buffer.byteLength(context.currentSpeaker.name) <= 120);
+  assert(context.currentSpeaker.name.isWellFormed()); assert(!context.currentSpeaker.name.includes('\0'));
+  assert(Buffer.byteLength(JSON.stringify(context)) <= WORLD_PROMPT_CONTEXT_BYTES);
+  assert.throws(() => compactWorldContext({ senses, currentSpeaker: { kind: 'resident', role: 'owner' } }), /Invalid current speaker/);
 });
 
 test('knowledge speech projection leaves token headroom and retains grounded facts before duplicate episode excerpts', () => {

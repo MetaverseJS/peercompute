@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { IDBFactory } from 'fake-indexeddb';
 import { WorldGoalStore } from '../../peercompute/src/peercompute/agents/WorldGoalStore.js';
 import { createWorldGoalController } from '../shared/agents/WorldGoalController.js';
+import { generateWorldGoalDecision } from '../shared/agents/WorldGoalDecision.js';
+import { describeResidentTask } from '../shared/agents/ResidentTaskStatus.js';
 
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
 const act = targetId => ({ decision: 'act', intent: { type: 'approach', targetId }, reason: `Visit ${targetId}` });
@@ -136,6 +138,80 @@ test('no-model and busy capacity responses wait without consuming allowance or f
       assert.equal(goal.steps, 0); assert.equal(goal.failures, 0); f.advance(30000); }
     assert.equal(f.pending.length, 0);
   } finally { await f.close(); }
+});
+
+test('real routed full queues and missing models retain distinct evidence, then resume the same task when capacity returns', async t => {
+  let availability = 'busy', generated = 0;
+  const inference = { async listCandidates({ task, refresh }) {
+    assert.equal(task, 'text-generation'); assert.equal(refresh, true);
+    return availability === 'missing' ? [] : [{ key: 'peer:vision', manifestCid: 'vision-model', runtime: 'transformers',
+      local: false, available: true, task: 'image-text-to-text', modalities: ['text', 'image'], outputModalities: ['text'],
+      busy: availability === 'busy', queuedRequests: availability === 'busy' ? 2 : 0, queueCapacity: 2 }];
+  }, async generate(_selected, input) {
+    generated++;
+    return { text: JSON.stringify(input.maxNewTokens === 768 ? { decision: 'plan', milestones: [
+      { label: 'Visit Nova', type: 'approach', targetId: 'p1' }, { label: 'Return', type: 'approach', targetId: 'speaker' }] }
+      : act('p1')) };
+  } };
+  const f = await fixture({ planFirst: false, decide: (_scope, input) => generateWorldGoalDecision({ ...input,
+    inference, head: { policy: { inferenceMode: 'network-assisted' } } }) });
+  t.mock.method(Date, 'now', f.options.now);
+  try {
+    const assigned = await f.assign();
+    let result = await f.step();
+    assert.equal(result.status, 'waiting-for-model'); assert.equal(result.goalId, assigned.goalId);
+    assert.match(describeResidentTask(result), /Waiting for model capacity/);
+    assert.doesNotMatch(result.reason, /Waiting for a compatible loaded model/);
+    let evidence = JSON.parse(result.trace.at(-1).text);
+    assert.equal(evidence.kind, 'busy'); assert.equal(evidence.code, 'ERR_INFERENCE_BUSY');
+    assert.equal(evidence.message, 'No compatible local model or peer host has available inference capacity.');
+    assert.equal(result.steps, 0); assert.equal(result.failures, 0); assert.equal(generated, 0);
+    f.advance(29999); await f.step(); assert.equal(f.calls.length, 1);
+    availability = 'missing'; f.advance(1); result = await f.step();
+    assert.match(describeResidentTask(result), /Waiting for a compatible loaded model/);
+    evidence = JSON.parse((await f.store.get({ worldId: 'world', agentId: 'agent' })).trace.at(-1).text);
+    assert.equal(evidence.kind, 'model-unavailable'); assert.equal(evidence.code, 'ERR_AGENT_NO_MODEL');
+    assert.equal(result.steps, 0); assert.equal(result.failures, 0); assert.equal(generated, 0);
+    availability = 'ready'; f.advance(30000); result = await f.step();
+    assert.equal(result.status, 'ready'); assert.equal(result.goalId, assigned.goalId); assert.equal(result.steps, 1);
+    assert.equal(result.reason, ''); assert.equal(result.failures, 0);
+    result = await f.step(); assert.equal(result.status, 'acting'); assert.equal(f.pending.length, 1);
+    assert.equal(generated, 2); assert.equal(result.steps, 2); assert.equal(result.failures, 0);
+  } finally { await f.close(); }
+});
+
+test('dispatch readiness failures retain bounded recovery cause in durable task trace', async () => {
+  const message = 'Reloading resident model. ' + '\u0001🙂'.repeat(400);
+  const f = await fixture({ planFirst: false, decide: () => {
+    throw Object.assign(new Error(message), { code: 'ERR_MODEL_RESIDENCY_INACTIVE' });
+  } });
+  try {
+    await f.assign(); const result = await f.step();
+    assert.equal(result.status, 'waiting-for-model'); assert.match(result.reason, /^Waiting for model recovery/);
+    assert.match(result.reason, /Reloading resident model/);
+    const event = (await f.store.get({ worldId: 'world', agentId: 'agent' })).trace.at(-1);
+    assert.equal(event.type, 'waiting-for-model'); assert.equal(typeof event.requestId, 'string');
+    assert(new TextEncoder().encode(event.text).length <= 512);
+    assert(new TextEncoder().encode(result.reason).length <= 480);
+    const evidence = JSON.parse(event.text);
+    assert.equal(evidence.kind, 'recovering'); assert.equal(evidence.code, 'ERR_MODEL_RESIDENCY_INACTIVE');
+    assert.match(evidence.message, /^Reloading resident model/);
+    assert.equal(result.steps, 0); assert.equal(result.failures, 0);
+  } finally { await f.close(); }
+});
+
+test('legacy waits do not invent a missing model or discovery failure', async () => {
+  for (const output of [{ status: 'busy' }, { status: 'waiting-for-model' },
+    { status: 'waiting-for-model', availability: { kind: 'discovery-failed', code: 'UNKNOWN', message: 'Unverified network claim' } }]) {
+    const f = await fixture({ planFirst: false, decide: () => output });
+    try {
+      await f.assign(); const result = await f.step(), evidence = JSON.parse(result.trace.at(-1).text);
+      assert.equal(result.reason, output.status === 'busy' ? 'Waiting for model capacity.' : 'Waiting for model availability.');
+      assert.equal(evidence.kind, output.status === 'busy' ? 'busy' : 'unknown');
+      assert.equal(evidence.code, undefined); assert.equal(evidence.message, '');
+      assert.equal(result.steps, 0); assert.equal(result.failures, 0);
+    } finally { await f.close(); }
+  }
 });
 
 test('closing and reopening an automatically recovering controller never converts owner Pause into a system retry', async () => {

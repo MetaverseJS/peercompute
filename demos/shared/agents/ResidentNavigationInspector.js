@@ -2,7 +2,7 @@ const labels = Object.freeze({ idle: 'Learned controller idle', stopped: 'Stoppe
   detouring: 'Going around an obstacle', arrived: 'Reached stopping distance', blocked: 'Blocked',
   'target-lost': 'Target no longer visible', failed: 'Movement unavailable', paused: 'Paused' });
 const actions = Object.freeze({ approach: 'Approach', follow: 'Follow', 'look-at': 'Look at', stop: 'Stop',
-  roam: 'Roam (scripted)', stationary: 'Stay here' });
+  'move-to': 'Move to destination', roam: 'Roam (scripted)', stationary: 'Stay here' });
 const short = (value, maximum = 160) => typeof value === 'string' ? value.replace(/[\u0000-\u001f]/g, ' ').slice(0, maximum) : '';
 const finite = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1_000_000;
 const number = value => Number.isInteger(value) ? String(value) : value.toFixed(1);

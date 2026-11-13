@@ -1,17 +1,31 @@
 import * as THREE from 'three';
 import { prepareGeneratedMeshView, fitGeneratedMeshView } from '../../../shared/world/GeneratedMeshView.js';
 import { normalizeWorldObjectDescriptor, objectPosition, WORLD_OBJECT_LIMITS } from '../../../shared/agents/WorldObjectAction.js';
+import { normalizeWorldModelSize } from '../../../shared/world/WorldModelScale.js';
 
 /** Cosmetic objects, independent of resident cubes and their physics bodies. */
 export class CubeGeneratedObjectLayer {
-  constructor({ scene, physics, getResidentPosition }) {
+  constructor({ scene, physics, getResidentPosition, resolvePlacement }) {
     if (!scene?.scene?.isScene || typeof getResidentPosition !== 'function') throw new TypeError('Generated objects require a scene and resident positions');
     this.scene = scene; this.physics = physics; this.getResidentPosition = getResidentPosition;
+    this.resolvePlacement = resolvePlacement;
+    this.supportsGroundedPlacement = typeof resolvePlacement === 'function';
     this.group = new THREE.Group(); this.group.name = 'CubeChat generated objects'; scene.scene.add(this.group);
     this.entries = new Map(); this.closed = false;
 
   }
-  getPlacement(agentId, size) {
+  getPlacement(agentId, size, target) {
+    if (this.closed) throw new Error('Generated object renderer is closed');
+    normalizeWorldModelSize(size);
+    if (this.supportsGroundedPlacement) {
+      const obstacles = [...this.entries.values()].map(({ group }) => {
+        group.updateWorldMatrix(true, true);
+        const bounds = new THREE.Box3().setFromObject(group);
+        return { min: bounds.min.toArray(), max: bounds.max.toArray() };
+      });
+      return objectPosition(this.resolvePlacement(agentId, size, target, { obstacles }));
+    }
+    if (target !== undefined) throw new Error('Grounded object placement is unavailable in this world');
     const position = objectPosition(this.getResidentPosition(agentId));
     const half = Number.isFinite(this.scene.gridSize) ? this.scene.gridSize / 2 : 1000;
     const x = Math.min(half - size, Math.max(-half + size, position[0] + 6 + size / 2));

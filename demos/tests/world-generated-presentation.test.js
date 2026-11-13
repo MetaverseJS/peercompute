@@ -1,10 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
+import * as CANNON from 'cannon-es';
 import { ArtifactStore } from '../../peercompute/src/peercompute/artifacts/ArtifactStore.js';
 import { retainGeneratedMesh } from '../../peercompute/src/peercompute/inference/GeneratedMeshArtifact.js';
 import { createWorldGeneratedObjectPresenter } from '../shared/agents/WorldGeneratedObjectPresenter.js';
 import { CubeGeneratedObjectLayer } from '../cubechat/src/renderer/CubeGeneratedObjectLayer.js';
+import { createCubeSpatialTargets } from '../cubechat/src/agents/CubeSpatialTargets.js';
+import { createCubeNavigationSensors } from '../cubechat/src/agents/CubeNavigationSensors.js';
 import { WORLD_OBJECT_SCHEMA } from '../shared/agents/WorldObjectAction.js';
 import { meshFixture, worldId, sceneAdapter, deferred, tick, until } from './world-generated-fixtures.js';
 
@@ -105,11 +108,43 @@ test('real Three GLTFLoader displays the checked mesh at a bounded placement and
     const bounds = new THREE.Box3().setFromObject(group);
     assert.equal(bounds.min.y, placement.position[1]); assert.equal(Math.max(...bounds.getSize(new THREE.Vector3()).toArray()), placement.size);
     assert.deepEqual(layer.getPlacement('agent', 6), [9, 0, 0]);
+    assert.equal(layer.supportsGroundedPlacement, false);
+    assert.throws(() => layer.getPlacement('agent', 6, { kind: 'location', id: 'ground', position: [20, 3, 10], observedAt: 100 }), /unavailable/);
     let disposed = 0; group.traverse(object => { object.geometry?.addEventListener('dispose', () => disposed++); });
     layer.remove('local:object'); assert.equal(layer.entries.size, 0); assert.equal(disposed, 1);
     const cancelled = new AbortController(); cancelled.abort(); await assert.rejects(layer.prepare(mesh, { signal: cancelled.signal }), { name: 'AbortError' });
     const bad = { ...mesh, data: mesh.data.slice() }; bad.data[0] = 0;
     await assert.rejects(layer.prepare(bad), /Invalid generated mesh/);
+  } finally { layer.dispose(); await store.destroy(); }
+  assert.equal(scene.children.length, 0);
+});
+
+test('grounded renderer placement validates the actual existing mesh bounds through the shared spatial adapter', async () => {
+  const world = new CANNON.World(), physics = { world }, scene = new THREE.Scene();
+  const floor = new CANNON.Body({ mass: 0, shape: new CANNON.Plane() }); floor.quaternion.setFromEuler(-Math.PI / 2, 0, 0); world.addBody(floor);
+  const body = new CANNON.Body({ mass: 5, position: new CANNON.Vec3(0, 3, 0), shape: new CANNON.Box(new CANNON.Vec3(3, 3, 3)) }); world.addBody(body);
+  const entries = new Map([['agent', { body, descriptor: { local: true, agentId: 'agent' } }]]);
+  const sensors = createCubeNavigationSensors({ physics, getEntries: () => entries });
+  const spatial = createCubeSpatialTargets({ physics, sensors, getEntries: () => entries,
+    getBounds: () => ({ min: [-96.5, -96.5], max: [96.5, 96.5] }),
+    getSurfaceBounds: () => ({ min: [-100, -100], max: [100, 100] }), groundHeight: () => 0 });
+  const layer = new CubeGeneratedObjectLayer({ scene: { scene, gridSize: 200 }, physics,
+    getResidentPosition: () => body.position.toArray(), resolvePlacement: (...args) => spatial.placement(...args) });
+  const target = { kind: 'location', id: 'ground:20:10', position: [20, 3, 10], observedAt: 100 };
+  const store = new ArtifactStore({ persistent: false }); await store.open();
+  try {
+    assert.equal(layer.supportsGroundedPlacement, true);
+    assert.deepEqual(layer.getPlacement('agent', 6, target), [20, 0, 10]);
+    const mesh = meshFixture(), retained = await retainGeneratedMesh(store, mesh, { provenance: { worldObject: placement } });
+    const prepared = await layer.prepare(mesh); prepared.commit('local:object', { artifactCid: retained.artifactCid, placement });
+    assert.throws(() => layer.getPlacement('agent', 6, target), /overlaps a placed object/);
+    const beside = { ...target, id: 'ground:27:10', position: [27, 3, 10] };
+    assert.deepEqual(layer.getPlacement('agent', 6, beside), [27, 0, 10]);
+    assert.throws(() => layer.getPlacement('agent', 12, beside), /overlaps a placed object/);
+    layer.remove('local:object');
+    assert.deepEqual(layer.getPlacement('agent', 12, beside), [27, 0, 10]);
+    world.removeBody(floor);
+    assert.throws(() => layer.getPlacement('agent', 6, target), /supported planar/);
   } finally { layer.dispose(); await store.destroy(); }
   assert.equal(scene.children.length, 0);
 });

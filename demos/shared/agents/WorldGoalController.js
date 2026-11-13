@@ -21,6 +21,23 @@ function brief(value, maximum = 240) {
   return text;
 }
 
+// Keep the scheduler's existing bounded trace contract while retaining the
+// actual readiness evidence. A legacy bare wait cannot establish why no model
+// was selected, and a swallowed discovery error must not be guessed here.
+function availabilityWait(value, status) {
+  const classified = classifyInferenceAvailability(value);
+  const availability = { kind: classified?.kind ?? (status === 'busy' ? 'busy' : 'unknown'),
+    ...(classified ? { code: classified.code } : {}), message: brief(classified?.message) };
+  const label = { busy: 'Waiting for model capacity.', recovering: 'Waiting for model recovery.',
+    'model-unavailable': 'Waiting for a compatible loaded model.', unknown: 'Waiting for model availability.' }[availability.kind];
+  const reason = brief([label, availability.message].filter(Boolean).join(' '), 480);
+  // JSON escaping can expand a short error message beyond the trace byte cap.
+  while (new TextEncoder().encode(JSON.stringify(availability)).length > 512) {
+    availability.message = Array.from(availability.message).slice(0, -1).join('');
+  }
+  return { reason, text: JSON.stringify(availability) };
+}
+
 /** Bounded, receipt-driven owner objectives. Scheduling supplies opportunities;
  * the model chooses actions and the physical adapter establishes their outcomes.
  * Storage, inference, body authority and GPU workers are injected and borrowed. */
@@ -281,9 +298,10 @@ export function createWorldGoalController({ store, worldId, observe, decide, dis
       if (!goal || goal.goalId !== run.goalId || goal.status !== 'planning' || goal.pendingDecision?.id !== run.id) return;
       const steps = goal.steps + 1;
       if (classifyInferenceAvailability(error)) {
+        const wait = availabilityWait(error);
         await commit(goal, { status: 'waiting-for-model', pendingDecision: null,
-          reason: brief(error.message || 'Waiting for available model capacity.'), nextDecisionAt: time() + 30000 },
-        { type: 'waiting-for-model', requestId: run.id }); return;
+          reason: wait.reason, nextDecisionAt: time() + 30000 },
+        { type: 'waiting-for-model', text: wait.text, requestId: run.id }); return;
       }
       if (error?.committed) {
         // Preserve the pending attempt for explicit owner reconciliation.
@@ -328,12 +346,13 @@ export function createWorldGoalController({ store, worldId, observe, decide, dis
         run.interrupted = true; throw cancelled('The resident is busy with a higher-priority task');
       }
       if (['waiting-for-model', 'busy'].includes(output?.status)) {
+        const wait = availabilityWait(output.availability, output.status);
         await locked(run.agentId, async () => {
           const current = await read(run.agentId);
           if (current?.status !== 'planning' || current.pendingDecision?.id !== run.id || controls.has(run.agentId)) return;
           await commit(current, { status: 'waiting-for-model', pendingDecision: null,
-            reason: 'Waiting for a compatible loaded model.', nextDecisionAt: time() + 30000 },
-          { type: 'waiting-for-model', requestId: run.id });
+            reason: wait.reason, nextDecisionAt: time() + 30000 },
+          { type: 'waiting-for-model', text: wait.text, requestId: run.id });
         }); return;
       }
       // Validate injected results too; a test/provider callback cannot bypass the

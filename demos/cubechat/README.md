@@ -277,8 +277,13 @@ Older stored TripoSR packages require a cutout; load the current catalog package
 for generated opaque images. Segmentation, shape and color quality depend on the
 reference and models; reconstruction is not exact.
 
-Successful output is a validated, self-contained GLB placed on the ground beside
-the resident. Geometry and placement are retained together under an artifact CID
+Successful output is a validated, self-contained GLB placed on the ground. Ask
+for a sensed destination or a remembered place, such as “generate a throne at
+our meeting spot,” or for placement beside an observed player. The resident uses
+the same location references as navigation; the host checks the floor, world
+bounds and the full object footprint against bodies and existing meshes. A
+requested destination that is unavailable fails visibly. Requests without a
+destination use nearby placement. Geometry and placement are retained together under an artifact CID
 in local storage. Reloading the same browser origin restores them without running
 inference again. Connected room peers discover placement descriptors, fetch and
 verify the mesh through PeerCompute's artifact network, and display it in their
@@ -307,6 +312,9 @@ retention and room discovery from `CubeGeneratedObjectLayer`. Core
 `GeneratedMeshArtifact` helpers provide the reusable encoding, validation and
 storage boundary. Design and acceptance details live in
 [the generated-object plan](../../plan/demos/inference/generated-world-objects.md).
+Moving existing props, including “get the throne and put it near the castle,”
+is the next planned slice. Current placement does not provide carrying or object
+manipulation.
 
 ## Multiplayer Rooms
 Use the Settings menu to create or join public/private rooms. Private rooms derive their room ID from a password hash (no raw password is shared).
@@ -543,3 +551,48 @@ when and where to move through the learned motor. They wait when no action is
 chosen; this profile does not script roaming. Owner chat and saved objectives
 can still direct movement. Choose a profile in Residents or Edit resident;
 existing explicit preferences remain saved.
+
+### Resident details and troubleshooting
+
+Select a resident in chat and choose **Resident**, or choose **Edit** in the
+Residents list. The dedicated window shows its profile, movement, sharing and
+autonomy settings, saved task, remembered people/places, model routes and recent
+activity. It stays available while the resident is thinking. Owner edits preserve
+identity and history; a stale draft cannot overwrite a newer self-edit. Peer
+residents expose public information and an optional Clone action.
+
+The **Activity** tab keeps bounded diagnostic metadata in a separate local
+IndexedDB journal: room-message receipt, inference routing/failure, publication,
+OODA recovery and task state. Errors remain visible after automatic recovery.
+Expand an event for its request/message ID, model/peer and available context-token
+counts. This is not a transcript, is never model input, and is not cloned or
+advertised to peers. Existing saved inference failures also appear, so older
+failures can be inspected before this diagnostic journal has accumulated data.
+
+Room errors appear in Room chat independently of private-conversation status.
+A provider GPU loss, context overflow and an unavailable model are different
+failures; inspecting the actual event is more useful than inferring the cause
+from a pause. Optional public observations are bounded to leave more room for
+identity, the current message and the reply. This cannot guarantee that every
+personality fits every model or prevent a model from imitating quoted speech.
+
+Run `npm run test:resident-inspector` for owner/peer access, revision-safe editing,
+diagnostic persistence, error attribution and desktop/mobile UI regressions.
+
+You can close chat, move through the world, or switch between Room and residents
+while a reply is running. It stays with the original conversation; return there
+to read it. Sending remains serialized. **Cancel**, removing the resident, or
+leaving the world stops work explicitly; dismissing a chat only stops microphone
+capture. Opening model controls during a conversation asks you to wait rather
+than cancelling the reply.
+
+Owner requests to create world objects are planned and executed before the
+resident narrates the result. The receipt reports the actual saved CID and
+position; a later reply failure does not undo a saved object. If rendering fails
+after saving, the object is reported as saved with a display error. A resident
+still depends on a compatible reasoning, image and 3D provider for each stage.
+
+Task waiting reasons distinguish busy capacity, recovery and a missing compatible
+model. Unknown availability remains labeled unknown. The current speaker is
+identified separately from nearby residents and recalled speech; model-generated
+repetition can still occur and should not be mistaken for a verified action.

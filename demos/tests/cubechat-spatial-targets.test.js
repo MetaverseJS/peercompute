@@ -6,18 +6,20 @@ import { createCubeNavigationSensors } from '../cubechat/src/agents/CubeNavigati
 import { createWorldExperience } from '../shared/agents/WorldExperience.js';
 
 function fixture() {
-  const world = new CANNON.World(), entries = new Map(), physics = { world };
+  const world = new CANNON.World(), entries = new Map(), physics = { world }, participants = [];
   const floor = new CANNON.Body({ mass: 0, shape: new CANNON.Plane() }); floor.quaternion.setFromEuler(-Math.PI / 2, 0, 0); world.addBody(floor);
   const body = new CANNON.Body({ mass: 5, position: new CANNON.Vec3(0, 3, 0), shape: new CANNON.Box(new CANNON.Vec3(3, 3, 3)) }); world.addBody(body);
   entries.set('ada', { body, descriptor: { local: true, agentId: 'ada', ownerPeerId: 'owner' } });
   const sensors = createCubeNavigationSensors({ physics, getEntries: () => entries });
   const spatial = createCubeSpatialTargets({ physics, sensors, getEntries: () => entries,
-    getBounds: () => ({ min: [-120, -120], max: [120, 120] }), groundHeight: (x, z) => (x + z) / 10 });
+    getBounds: () => ({ min: [-120, -120], max: [120, 120] }), groundHeight: (x, z) => (x + z) / 10,
+    getParticipants: () => participants.map(person => ({ ...person, position: person.body.position.toArray() })) });
   const obstacle = (position, half = [3, 3, 3]) => {
     const box = new CANNON.Body({ mass: 0, position: new CANNON.Vec3(...position), shape: new CANNON.Box(new CANNON.Vec3(...half)) }); world.addBody(box); return box;
   };
-  return { world, entries, body, floor, sensors, spatial, obstacle };
+  return { world, entries, body, floor, sensors, spatial, obstacle, participants };
 }
+const locationTarget = (position, extra = {}) => ({ kind: 'location', id: 'observed-ground', position, observedAt: 100, ...extra });
 
 test('candidate perception samples real clear ground while keeping decorative height separate from physics', () => {
   const f = fixture(), before = f.body.position.toArray(), observed = f.spatial.describe('ada');
@@ -54,6 +56,71 @@ test('saved return anchors remain valid after candidate regeneration; current bl
   assert.equal(f.sensors.sample('ada', { kind: 'location', position: origin }).targetClear, false);
   f.world.removeBody(wall); f.obstacle([0, 3, 0]);
   assert.throws(() => f.spatial.validate('ada', origin), /occupied/);
+});
+
+test('object placement uses observed or remembered fixed ground and retains the legacy nearby default', () => {
+  const f = fixture(), observed = f.spatial.describe('ada');
+  const distant = observed.locations.find(item => item.distance === 96 && item.position[2] === 0);
+  assert.deepEqual(f.spatial.placement('ada', 6), [9, 0, 0]);
+  assert.deepEqual(f.spatial.placement('ada', 24, locationTarget(distant.position, { id: distant.id })), [96, 0, 0],
+    'authoritative planar floor replaces decorative scene height');
+  f.body.position.x = 80;
+  const saved = locationTarget([0, 3, 0], { id: 'saved-meeting', knowledgeId: 'meeting', knowledgeRevision: 2 });
+  assert.deepEqual(f.spatial.placement('ada', 12, saved), [0, 0, 0]);
+  f.obstacle([0, 3, 0]);
+  assert.throws(() => f.spatial.placement('ada', 12, saved), /occupied/);
+});
+
+test('object footprint checks the whole fitted envelope against bounds and geometry beyond resident clearance', () => {
+  const f = fixture(), target = locationTarget([32, 3, 0]);
+  const beside = f.obstacle([42, 3, 0]);
+  assert.deepEqual(f.spatial.validate('ada', target.position), target.position, 'six-unit resident center is clear');
+  assert.throws(() => f.spatial.placement('ada', 24, target), /footprint.*occupied/);
+  f.world.removeBody(beside);
+  const overhang = f.obstacle([32, 20, 0], [2, 1, 2]);
+  assert.deepEqual(f.spatial.placement('ada', 6, target), [32, 0, 0]);
+  assert.throws(() => f.spatial.placement('ada', 24, target), /footprint.*occupied/);
+  f.world.removeBody(overhang);
+  const sphere = new CANNON.Body({ mass: 0, position: new CANNON.Vec3(32, 3, 0), shape: new CANNON.Sphere(2) });
+  f.world.addBody(sphere);
+  assert.throws(() => f.spatial.placement('ada', 6, target), /footprint.*occupied/);
+  f.world.removeBody(sphere);
+  assert.throws(() => f.spatial.placement('ada', 48, locationTarget([112, 3, 0])), /footprint.*outside/);
+  assert.throws(() => f.spatial.placement('ada', 6, locationTarget([121, 3, 0])), /outside/);
+  assert.throws(() => f.spatial.placement('ada', 6, locationTarget([120, 3, 120])), /range/);
+  assert.throws(() => f.spatial.placement('ada', 6, locationTarget([0, 3, 0])), /footprint.*occupied/,
+    'the resident is an obstruction even though its navigation sensor excludes self');
+});
+
+test('participant placements follow the same authenticated current body and fail if it leaves or becomes obstructed', () => {
+  const f = fixture(), human = f.obstacle([30, 3, 0]);
+  f.participants.push({ id: 'human:owner', kind: 'human', peerId: 'owner', name: 'Owner', body: human });
+  const target = { kind: 'participant', id: 'human:owner', observedAt: 100 };
+  assert.deepEqual(f.spatial.placement('ada', 6, target), [39, 0, 0]);
+  human.position.set(60, 3, 0);
+  assert.deepEqual(f.spatial.placement('ada', 6, target), [69, 0, 0], 'post-generation resolution uses the moved participant');
+  const blocker = f.obstacle([69, 3, 0]);
+  assert.throws(() => f.spatial.placement('ada', 6, target), /occupied/);
+  f.world.removeBody(blocker); human.position.set(119, 3, 0);
+  assert.throws(() => f.spatial.placement('ada', 6, target), /outside/, 'explicit participant placement never clamps');
+  f.participants.length = 0;
+  assert.throws(() => f.spatial.placement('ada', 6, target), /no longer observed/);
+  f.participants.push({ id: 'human:imposter', kind: 'human', name: 'Owner', body: human });
+  assert.throws(() => f.spatial.placement('ada', 6, target), /no longer observed/, 'a matching name does not replace identity');
+});
+
+test('placed mesh bounds, supported floor and owner authority constrain placement before generation', () => {
+  const f = fixture(), target = locationTarget([32, 3, 0]);
+  assert.throws(() => f.spatial.placement('ada', 12, target, {
+    obstacles: [{ min: [36, 0, -2], max: [44, 10, 2] }]
+  }), /overlaps a placed object/);
+  assert.deepEqual(f.spatial.placement('ada', 6, target, {
+    obstacles: [{ min: [40, 0, -2], max: [44, 10, 2] }]
+  }), [32, 0, 0]);
+  f.entries.get('ada').descriptor.local = false;
+  assert.throws(() => f.spatial.placement('ada', 6, target), /owner/);
+  f.entries.get('ada').descriptor.local = true; f.world.removeBody(f.floor);
+  assert.throws(() => f.spatial.placement('ada', 6, target), /supported planar/);
 });
 
 test('private and rotated compound blockers constrain destinations without exposing their identity', () => {

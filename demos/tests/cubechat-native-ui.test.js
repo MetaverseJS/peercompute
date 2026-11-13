@@ -27,7 +27,7 @@ before(async () => {
 after(async () => {
   try { await browser?.close(); } finally { await server?.close(); if (cache) await rm(cache, { recursive: true, force: true }); }
 });
-async function fixture(t, { mobile = false, enabled = true } = {}) {
+async function fixture(t, { mobile = false, enabled = true, withInspector = false } = {}) {
   const context = await browser.newContext({ viewport: mobile ? { width: 390, height: 844 } : { width: 1200, height: 900 }, hasTouch: mobile });
   const page = await context.newPage(), errors = [], external = [];
   page.setDefaultTimeout(5000); page.on('pageerror', error => errors.push(error.message));
@@ -37,7 +37,7 @@ async function fixture(t, { mobile = false, enabled = true } = {}) {
   });
   t.after(async () => { await context.close(); assert.deepEqual(errors, []); assert.deepEqual(external, []); });
   await page.goto(origin + '/__cube_native_ui');
-  await page.evaluate(async ({ enabled, mobile }) => {
+  await page.evaluate(async ({ enabled, mobile, withInspector }) => {
     await import('/demos/cubechat/src/style.css');
     const { createCubeWorldUi } = await import('/demos/cubechat/src/ui/CubeWorldUi.js');
     const { PlayerController } = await import('/demos/cubechat/src/controls/input.js');
@@ -48,30 +48,42 @@ async function fixture(t, { mobile = false, enabled = true } = {}) {
       { key: 'local:paused', agentId: 'paused', local: true, name: 'Paused resident', status: 'paused', recoveryRequired: true }
     ];
     window.pending = {};
+    window.hostHistories = new Map();
     const hold = key => new Promise((resolve, reject) => { pending[key] = { resolve, reject }; });
+    const history = (key, rows) => { hostHistories.set(key, rows); ui.setMessages(rows, key); };
     window.ui = createCubeWorldUi({ roomLabel: 'Test room',
       onOpen() { calls.push({ type: 'open' }); player.clearInput(); },
-      onSelect: async key => { calls.push({ type: 'select', key }); ui.open(); ui.select(residents.find(row => row.key === key)); ui.setMessages([{ role: 'assistant', text: 'Saved ' + key }]); },
+      onSelect: async key => {
+        calls.push({ type: 'select', key });
+        if (pending.record) {
+          if (window.holdClose) await hold('close');
+          pending.record.resolve(); delete pending.record; ui.setVoiceStatus({ enabled: true, recording: false, preparing: false });
+        }
+        ui.open(); ui.select(residents.find(row => row.key === key));
+        if (key) history(key, hostHistories.get(key) ?? [{ role: 'assistant', text: 'Saved ' + key }]);
+      },
       onRoomSend: async ({ text }, { signal }) => {
         calls.push({ type: 'room-send', text }); if (window.failRoom) throw Error('Room delivery failed');
         if (window.holdRoom) {
           window.roomSignal = signal;
-          await new Promise(resolve => signal.addEventListener('abort', resolve, { once: true }));
-          calls.push({ type: 'room-aborted' });
-          if (window.holdRoomCleanup) await hold('room-cleanup');
-          if (window.resolveCancelledRoom) return { delivery: { cancelled: true, delivered: 1, total: 2 } };
-          signal.throwIfAborted();
+          await new Promise(resolve => { pending.room = { resolve }; signal.addEventListener('abort', resolve, { once: true }); });
+          if (signal.aborted) {
+            calls.push({ type: 'room-aborted' });
+            if (window.holdRoomCleanup) await hold('room-cleanup');
+            if (window.resolveCancelledRoom) return { delivery: { cancelled: true, delivered: 1, total: 2 } };
+            signal.throwIfAborted();
+          }
         }
         ui.appendRoomMessage({ id: 'own-' + calls.length, peerId: 'owner-peer', name: 'Me', text });
         ui.setRoomStatus('Delivered to 1 player.');
       },
       onSend: async input => {
         calls.push({ type: 'agent-send', ...input }); ui.setBusy(true);
-        ui.setMessages([{ role: 'user', text: input.text }]);
+        history(input.key, [{ role: 'user', text: input.text }]);
         try {
           if (window.failSend) throw Error('Avatar generation failed');
-          if (window.avatarFailed) { ui.setMessages([{ role: 'system', text: 'Avatar failed; reference retained' }]); return { avatarFailed: true }; }
-          if (window.holdReply) await hold('reply'); ui.setMessages([{ role: 'user', text: input.text }, { role: 'assistant', text: 'Controlled reply' }]);
+          if (window.avatarFailed) { history(input.key, [{ role: 'system', text: 'Avatar failed; reference retained' }]); return { avatarFailed: true }; }
+          if (window.holdReply) await hold('reply'); history(input.key, [{ role: 'user', text: input.text }, { role: 'assistant', text: 'Controlled reply' }]);
         }
         finally { ui.setBusy(false); }
       },
@@ -84,7 +96,7 @@ async function fixture(t, { mobile = false, enabled = true } = {}) {
       },
       onClose: async () => {
         calls.push({ type: 'close' }); if (window.holdClose) await hold('close');
-        pending.reply?.reject(new DOMException('Cancelled', 'AbortError')); delete pending.reply; ui.setBusy(false);
+        pending.record?.resolve(); delete pending.record; ui.setVoiceStatus({ enabled: true, recording: false, preparing: false });
       },
       onSpawn: async input => {
         calls.push({ type: 'spawn', input }); if (window.failSpawn) throw Error('Save failed');
@@ -104,6 +116,16 @@ async function fixture(t, { mobile = false, enabled = true } = {}) {
         residents = residents.map(agent => agent.key === input.key ? { ...agent, ...input } : agent); ui.setAgents(residents);
       },
       onMind: async input => { calls.push({ type: 'mind', key: input.key, focused: input.returnFocus === document.activeElement }); },
+      onInspect: withInspector ? async input => {
+        calls.push({ type: 'inspect', key: input.key, tab: input.tab, focused: input.returnFocus === document.activeElement });
+        const { createResidentInspectorPanel } = await import('/demos/shared/agents/ResidentInspectorPanel.js');
+        window.inspector ??= createResidentInspectorPanel({ onRead: async ({ key }) => {
+          const resident = residents.find(item => item.key === key);
+          return { ...resident, revision: 1, profile: resident.local ? { name: resident.name, instructions: 'A private identity', goals: [], summary: '' } : undefined,
+            permissions: { edit: resident.local } };
+        } });
+        inspector.open({ ...input, name: residents.find(item => item.key === input.key).name });
+      } : undefined,
       onClone: async input => { calls.push({ type: 'clone', input }); if (window.failClone) throw Error('Cloning permission changed'); },
       onAppearance: async input => {
         calls.push({ type: 'appearance', ...input });
@@ -125,7 +147,7 @@ async function fixture(t, { mobile = false, enabled = true } = {}) {
         residents = residents.map(row => row.key === key ? { ...row, status: 'idle', recoveryRequired: false } : row); ui.setAgents(residents);
       },
       onPlayerCaption: text => calls.push({ type: 'caption', text }),
-      onModels: async () => { calls.push({ type: 'models' }); },
+      onModels: async () => { calls.push({ type: 'models' }); if (window.failModels) throw Error('Wait for the current conversation'); },
       onVoice: async enabled => { calls.push({ type: 'voice', enabled }); if (window.holdVoice) await hold('voice'); ui.setVoiceStatus({ enabled, preparing: false, recording: false }); },
       onRecord: async input => {
         calls.push({ type: 'record', ...input });
@@ -145,7 +167,7 @@ async function fixture(t, { mobile = false, enabled = true } = {}) {
     ui.setAgents(residents); ui.setEnabled(enabled);
     window.canvasEnters = 0; document.querySelector('canvas').addEventListener('keydown', event => { if (event.key === 'Enter') canvasEnters++; });
     window.outsideClicks = 0; document.querySelector('#outside').onclick = () => outsideClicks++;
-  }, { enabled, mobile });
+  }, { enabled, mobile, withInspector });
   return page;
 }
 const prompt = page => page.getByRole('textbox', { name: 'World message', exact: true });
@@ -435,7 +457,7 @@ test('Room and resident drafts/history stay separate and private captions never 
   await selectAgent(page); assert.equal(await prompt(page).inputValue(), 'agent draft');
 });
 
-test('Room Cancel and Close abort their transport signal and wait for acknowledged cleanup without dropping drafts', async t => {
+test('Room Cancel aborts delivery explicitly while Close lets an in-flight delivery finish', async t => {
   const page = await fixture(t); await openChat(page);
   await page.evaluate(() => { holdRoom = true; holdRoomCleanup = true; });
   await prompt(page).fill('owned room request'); await page.keyboard.press('Enter'); await page.waitForFunction(() => Boolean(window.roomSignal));
@@ -443,35 +465,34 @@ test('Room Cancel and Close abort their transport signal and wait for acknowledg
   await page.waitForFunction(() => Boolean(pending['room-cleanup']));
   assert.equal(await page.evaluate(() => roomSignal.aborted), true);
   assert.equal(await page.getByRole('button', { name: 'Cancelling…', exact: true }).isDisabled(), true);
-  assert.equal(await prompt(page).isDisabled(), true);
   await page.evaluate(() => pending['room-cleanup'].resolve());
   await page.waitForFunction(() => !document.querySelector('[aria-label="World message"]').disabled);
   assert.equal(await prompt(page).inputValue(), 'owned room request');
-  assert.equal(await prompt(page).evaluate(element => document.activeElement === element), true);
-  await page.evaluate(() => { delete pending['room-cleanup']; roomSignal = null; resolveCancelledRoom = true; });
+  await page.evaluate(() => { delete pending['room-cleanup']; roomSignal = null; holdRoomCleanup = false; });
   await page.keyboard.press('Enter'); await page.waitForFunction(() => Boolean(window.roomSignal));
-  await page.getByRole('button', { name: 'Close chat', exact: true }).click();
-  await page.waitForFunction(() => Boolean(pending['room-cleanup']));
-  assert.equal(await prompt(page).isVisible(), true);
-  await page.evaluate(() => pending['room-cleanup'].resolve()); await prompt(page).waitFor({ state: 'hidden' });
-  await openChat(page); assert.equal(await prompt(page).inputValue(), 'owned room request');
-  assert.equal(await transcript(page).locator('article').count(), 0);
+  await page.getByRole('button', { name: 'Close chat', exact: true }).click(); await prompt(page).waitFor({ state: 'hidden' });
+  assert.equal(await page.evaluate(() => roomSignal.aborted), false);
+  await page.evaluate(() => pending.room.resolve()); await openChat(page);
+  await page.waitForFunction(() => !document.querySelector('[aria-label="World message"]').disabled);
+  assert.equal(await prompt(page).inputValue(), ''); assert.match(await transcript(page).innerText(), /owned room request/);
 });
 
-test('target change waits for cancellation cleanup, and failure retains the selected resident and draft', async t => {
-  const page = await fixture(t); await openChat(page); await selectAgent(page);
-  await page.evaluate(() => { holdReply = true; holdCancel = true; }); await prompt(page).fill('pending reply'); await page.keyboard.press('Enter');
+test('switching and closing preserve a held reply for its original resident without leaking into another chat', async t => {
+  const page = await fixture(t); await openChat(page); await prompt(page).fill('room draft');
+  await selectAgent(page, 'peer:remote'); await prompt(page).fill('peer draft'); await selectAgent(page);
+  await page.evaluate(() => { holdReply = true; }); await prompt(page).fill('pending reply'); await page.keyboard.press('Enter');
   await page.waitForFunction(() => Boolean(pending.reply)); await target(page).selectOption('room');
-  await page.waitForFunction(() => Boolean(pending.cancel));
-  assert.equal(await page.evaluate(() => ui.getTarget()), 'local:ada'); assert.equal(await target(page).isDisabled(), true);
-  await page.evaluate(() => pending.cancel.resolve()); await page.waitForFunction(() => ui.getTarget() === 'room');
-  await selectAgent(page); assert.equal(await prompt(page).inputValue(), 'pending reply');
-  await page.evaluate(() => { failCancel = true; holdCancel = false; }); await page.keyboard.press('Enter');
-  await page.waitForFunction(() => Boolean(pending.reply)); await target(page).selectOption('room');
-  await page.getByRole('status').filter({ hasText: 'Cleanup incomplete' }).first().waitFor();
-  assert.equal(await page.evaluate(() => ui.getTarget()), 'local:ada'); assert.equal(await target(page).inputValue(), 'local:ada');
-  await page.evaluate(() => { failCancel = false; }); await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.waitForFunction(() => ui.getTarget() === 'room'); assert.equal(await prompt(page).inputValue(), 'room draft');
+  assert.match(await page.locator('[data-pending-conversation]').innerText(), /Ada/);
+  await target(page).selectOption('peer:remote'); await page.waitForFunction(() => ui.getTarget() === 'peer:remote');
+  assert.equal(await prompt(page).inputValue(), 'peer draft'); assert.doesNotMatch(await transcript(page).innerText(), /pending reply/);
+  await page.getByRole('button', { name: 'Close chat', exact: true }).click(); await prompt(page).waitFor({ state: 'hidden' });
+  assert.deepEqual(await page.evaluate(() => calls.filter(call => call.type === 'cancel')), []);
+  await page.evaluate(() => pending.reply.resolve()); await openChat(page);
   await page.waitForFunction(() => !document.querySelector('[aria-label="World message"]').disabled);
+  assert.equal(await prompt(page).inputValue(), 'peer draft'); assert.doesNotMatch(await transcript(page).innerText(), /Controlled reply/);
+  await selectAgent(page); assert.match(await transcript(page).innerText(), /pending reply[\s\S]*Controlled reply/);
+  assert.equal(await prompt(page).inputValue(), '');
 });
 
 test('native cube chat resumes only owned residents, preserving drafts and waiting for saved recovery', async t => {
@@ -499,7 +520,7 @@ test('native cube chat resumes only owned residents, preserving drafts and waiti
   });
   await target(page).selectOption('peer:remote');
   assert.equal(await resume.isVisible(), false);
-  assert.match(await page.locator('.cube-native-chat-body > .cube-native-note').innerText(), /Only its owner can resume/);
+  assert.match(await page.locator('.cube-native-chat-body > .cube-native-note:not([data-pending-conversation])').innerText(), /Only its owner can resume/);
   assert.equal(await prompt(page).isDisabled(), true);
   await page.evaluate(() => [...document.querySelectorAll('.cube-native-chat button')].find(button => button.textContent === 'Resume').click());
   assert.equal(await page.evaluate(() => calls.filter(call => call.type === 'resume').length), 1);
@@ -507,7 +528,7 @@ test('native cube chat resumes only owned residents, preserving drafts and waiti
   await target(page).selectOption('local:paused');
   const acknowledge = page.locator('.cube-native-chat').getByRole('button', { name: 'Acknowledge and resume', exact: true });
   assert.equal(await acknowledge.isVisible(), true);
-  assert.match(await page.locator('.cube-native-chat-body > .cube-native-note').innerText(), /old request will not replay/);
+  assert.match(await page.locator('.cube-native-chat-body > .cube-native-note:not([data-pending-conversation])').innerText(), /old request will not replay/);
   await page.evaluate(() => { holdResume = false; failResume = true; }); await acknowledge.click();
   await page.locator('.cube-native-chat [role="status"]').filter({ hasText: 'Resume was not saved' }).waitFor();
   assert.equal(await prompt(page).isDisabled(), true); assert.equal(await acknowledge.isEnabled(), true);
@@ -541,18 +562,17 @@ test('Residents is one accessible roster with owner-only movement/recovery/remov
   await page.waitForFunction(() => ui.getTarget() === 'room');
 });
 
-test('Models awaits active cancellation, closes its own dialogs and keeps one composer', async t => {
+test('Models does not cancel active inference and surfaces the host wait reason', async t => {
   const page = await fixture(t); await openChat(page); await selectAgent(page);
-  await page.evaluate(() => { holdReply = true; holdCancel = true; }); await prompt(page).fill('running'); await page.keyboard.press('Enter');
-  await page.waitForFunction(() => Boolean(pending.reply));
-  await openResidents(page);
-  await page.evaluate(() => { void ui.openModels(); }); await page.waitForFunction(() => Boolean(pending.cancel));
-  assert.equal(await page.evaluate(() => calls.filter(call => call.type === 'models').length), 0);
-  await page.evaluate(() => pending.cancel.resolve()); await page.waitForFunction(() => calls.some(call => call.type === 'models'));
-  assert.equal(await page.getByRole('dialog', { name: 'Residents', exact: true }).isVisible(), false);
+  await page.evaluate(() => { holdReply = true; failModels = true; }); await prompt(page).fill('running'); await page.keyboard.press('Enter');
+  await page.waitForFunction(() => Boolean(pending.reply)); await openResidents(page);
+  await page.evaluate(() => ui.openModels()); await page.waitForFunction(() => calls.some(call => call.type === 'models'));
+  assert.deepEqual(await page.evaluate(() => calls.filter(call => call.type === 'cancel')), []);
+  assert.match(await page.locator('.cube-native-chat .cube-native-status').innerText(), /Wait for the current conversation/);
   assert.equal(await page.locator('.cube-native-composer textarea').count(), 1);
-  if (!await prompt(page).isVisible()) await openChat(page);
-  assert.equal(await prompt(page).inputValue(), 'running');
+  await page.evaluate(() => pending.reply.resolve());
+  await page.waitForFunction(() => !document.querySelector('[aria-label="World message"]').disabled);
+  assert.match(await transcript(page).innerText(), /Controlled reply/);
 });
 
 test('roster Chat reopens the current resident without losing its draft and modal gameplay keys remain owned by the UI', async t => {
@@ -585,9 +605,9 @@ test('Voice is explicit, pending permission can Stop, and switching to Room awai
   await page.getByRole('button', { name: 'Stop', exact: true }).click();
   await page.waitForFunction(() => !pending.record);
   await page.getByRole('button', { name: 'Talk', exact: true }).click(); await page.waitForFunction(() => Boolean(pending.record));
-  await page.evaluate(() => { holdCancel = true; }); await target(page).selectOption('room'); await page.waitForFunction(() => Boolean(pending.cancel));
+  await page.evaluate(() => { holdClose = true; }); await target(page).selectOption('room'); await page.waitForFunction(() => Boolean(pending.close));
   assert.equal(await page.evaluate(() => ui.getTarget()), 'local:ada');
-  await page.evaluate(() => pending.cancel.resolve()); await page.waitForFunction(() => ui.getTarget() === 'room');
+  await page.evaluate(() => pending.close.resolve()); await page.waitForFunction(() => ui.getTarget() === 'room');
   assert.equal(await page.evaluate(() => calls.filter(call => call.type === 'room-send').length), 0);
 });
 
@@ -607,11 +627,11 @@ test('voice preparation keeps text usable and long received Room messages are no
   assert.equal((await transcript(page).locator('[data-message-id="long"] p').innerText()).length, 2048);
 });
 
-test('chat close waits for cleanup and retains its draft; UI disposal never owns runtime cancellation', async t => {
+test('chat closes immediately while microphone cleanup finishes and retains its draft; disposal never cancels runtime', async t => {
   const page = await fixture(t); await openChat(page); await prompt(page).fill('retain draft');
   await page.evaluate(() => { holdClose = true; }); await page.keyboard.press('Escape');
   await page.waitForFunction(() => Boolean(pending.close));
-  assert.equal(await prompt(page).isVisible(), true); assert.equal(await page.getByRole('button', { name: 'Closing…', exact: true }).isDisabled(), true);
+  assert.equal(await prompt(page).isVisible(), false);
   await page.evaluate(() => pending.close.resolve()); await prompt(page).waitFor({ state: 'hidden' });
   await openChat(page); assert.equal(await prompt(page).inputValue(), 'retain draft');
   const count = await page.evaluate(() => calls.filter(call => ['cancel', 'close'].includes(call.type)).length);
@@ -816,6 +836,8 @@ test('local movement inspector shows measured navigation and retains expansion a
   assert.equal(await panel.locator('summary').evaluate(element=>element===document.activeElement),true);
   await page.evaluate(()=>ui.setNavigationStatus('local:ada',{key:'wrong-body',status:'failed',blockedReason:'WRONG_BODY'}));
   assert(!await panel.innerText().then(value=>value.includes('WRONG_BODY')));
+  await page.evaluate(()=>ui.setNavigationStatus('local:ada',{key:'local:ada',type:'move-to',status:'moving',distance:10}));
+  assert.equal(await panel.locator('[data-navigation-field="action"]').innerText(),'Move to destination');
   await roster.getByRole('button',{name:'Edit Ada',exact:true}).click();
   assert.equal(await page.evaluate(()=>ui.isNavigationVisible()),false);
   await page.keyboard.press('Escape');assert.equal(await page.evaluate(()=>ui.isNavigationVisible()),true);
@@ -1133,4 +1155,73 @@ test('Mind inspection is owner-only and remains available during inference', asy
   const mind = roster.getByRole('button', { name: 'Inspect mind of Ada', exact: true });
   assert.equal(await mind.isEnabled(), true); await mind.click();
   assert.deepEqual(await page.evaluate(() => calls.find(call => call.type === 'mind')), { type: 'mind', key: 'local:ada', focused: true });
+});
+
+test('resident chat opens the inspector during inference without cancelling work or losing its draft', async t => {
+  const page = await fixture(t, { withInspector: true }); await openChat(page);
+  const resident = page.getByRole('button', { name: 'Resident', exact: true }); assert.equal(await resident.count(), 0);
+  await selectAgent(page); await prompt(page).fill('Keep my draft and selected resident');
+  await page.evaluate(() => ui.setBusy(true)); assert.equal(await resident.isEnabled(), true); await resident.click();
+  const inspector = page.getByRole('dialog', { name: 'Resident · Ada', exact: true }); await inspector.waitFor();
+  assert.deepEqual(await page.evaluate(() => calls.filter(call => call.type === 'inspect')), [{ type: 'inspect', key: 'local:ada', tab: 'overview', focused: true }]);
+  assert.deepEqual(await page.evaluate(() => calls.filter(call => call.type === 'cancel')), []);
+  await inspector.getByRole('button', { name: 'Done', exact: true }).click();
+  assert.equal(await page.evaluate(() => document.activeElement.textContent), 'Resident');
+  assert.equal(await page.getByRole('button', { name: 'Close chat', exact: true }).isVisible(), true);
+  assert.equal(await prompt(page).inputValue(), 'Keep my draft and selected resident');
+  await page.evaluate(() => ui.setBusy(false)); assert.equal(await prompt(page).isEnabled(), true);
+  await prompt(page).evaluate(element => element.setSelectionRange(5, 10));
+  await resident.click(); await inspector.waitFor(); await inspector.getByRole('button', { name: 'Done', exact: true }).click();
+  assert.equal(await page.getByRole('button', { name: 'Close chat', exact: true }).isVisible(), true);
+  assert.deepEqual(await prompt(page).evaluate(element => [element.selectionStart, element.selectionEnd]), [5, 10]);
+});
+
+test('peer chat inspection remains available while busy and exposes only its public view', async t => {
+  const page = await fixture(t, { withInspector: true, mobile: true }); await openChat(page); await selectAgent(page, 'peer:remote');
+  await prompt(page).fill('Peer draft'); await page.evaluate(() => ui.setBusy(true));
+  await page.getByRole('button', { name: 'Resident', exact: true }).click();
+  const inspector = page.getByRole('dialog', { name: 'Resident · Peer resident', exact: true }); await inspector.waitFor();
+  await inspector.getByRole('tab', { name: 'Profile', exact: true }).click();
+  assert.equal(await inspector.getByRole('textbox').count(), 0); assert.doesNotMatch(await inspector.textContent(), /A private identity/);
+  await inspector.getByRole('button', { name: 'Done', exact: true }).click();
+  assert.equal(await prompt(page).inputValue(), 'Peer draft'); assert.equal(await target(page).inputValue(), 'peer:remote');
+  const bounds = await page.locator('.cube-native-chat-body > header').evaluate(element => [...element.children].map(child => {
+    const box = child.getBoundingClientRect(); return { x: box.x, right: box.right, screen: innerWidth };
+  }));
+  for (const box of bounds) { assert.ok(box.x >= 0); assert.ok(box.right <= box.screen); }
+});
+
+test('roster Edit delegates to inspector Profile and peer Details stays inspectable during inference', async t => {
+  const page = await fixture(t, { withInspector: true }); await openResidents(page);
+  const roster = page.getByRole('dialog', { name: 'Residents', exact: true });
+  await page.evaluate(() => ui.setBusy(true));
+  await roster.getByRole('button', { name: 'Edit Ada', exact: true }).click();
+  const inspector = page.getByRole('dialog', { name: 'Resident · Ada', exact: true }); await inspector.waitFor();
+  assert.equal(await inspector.getByRole('tab', { name: 'Profile', exact: true }).getAttribute('aria-selected'), 'true');
+  assert.equal(await page.getByRole('dialog', { name: 'Edit resident', exact: true }).count(), 0);
+  await page.evaluate(() => { ui.setAgents(residents.map(item => ({ ...item }))); ui.setAgents(residents); });
+  await inspector.getByRole('button', { name: 'Done', exact: true }).click();
+  assert.equal(await page.evaluate(() => document.activeElement.getAttribute('aria-label')), 'Edit Ada');
+  await roster.getByRole('button', { name: 'Details for Peer resident', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Resident · Peer resident', exact: true }).waitFor();
+  assert.equal(await page.evaluate(() => calls.filter(call => call.type === 'inspect').at(-1).key), 'peer:remote');
+});
+
+test('Room retains separate per-resident world-chat errors across private selection and transport updates', async t => {
+  const page = await fixture(t); await openChat(page); await selectAgent(page);
+  await page.evaluate(() => {
+    ui.setRoomStatus('Delivered to 2 players.'); ui.setStatus('Private conversation ready.');
+    ui.setWorldChatStatus('local:ada', 'Ada: no compatible model'); ui.setWorldChatStatus('local:paused', 'Paused resident: retry failed');
+  });
+  const status = page.locator('.cube-native-chat-body > [role="status"]');
+  assert.equal(await status.innerText(), 'Private conversation ready.');
+  await target(page).selectOption('room');
+  assert.match(await status.innerText(), /Delivered to 2 players\./); assert.match(await status.innerText(), /Ada: no compatible model/);
+  assert.match(await status.innerText(), /Paused resident: retry failed/);
+  await selectAgent(page); await page.evaluate(() => ui.setStatus('Another private reply.')); await target(page).selectOption('room');
+  assert.match(await status.innerText(), /Ada: no compatible model/);
+  await page.evaluate(() => { ui.setWorldChatStatus('local:ada', ''); ui.setRoomDelivery('Peer connection restored.'); });
+  assert.doesNotMatch(await status.innerText(), /Ada: no compatible/); assert.match(await status.innerText(), /Paused resident: retry failed/);
+  assert.match(await status.innerText(), /Peer connection restored/);
+  await page.evaluate(() => ui.setWorldChatStatus('local:paused', '')); assert.equal(await status.innerText(), 'Peer connection restored.');
 });

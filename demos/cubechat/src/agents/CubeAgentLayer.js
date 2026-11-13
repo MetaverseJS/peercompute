@@ -98,6 +98,9 @@ export class CubeAgentLayer {
     this.spatialTargets = createCubeSpatialTargets({ physics, getEntries: () => this.entries, sensors: this.navigationSensors,
       getBounds: () => Number.isFinite(this.scene.gridSize) && this.scene.gridSize > 7
         ? { min: [-this.scene.gridSize / 2 + 3.5, -this.scene.gridSize / 2 + 3.5], max: [this.scene.gridSize / 2 - 3.5, this.scene.gridSize / 2 - 3.5] } : null,
+      getSurfaceBounds: () => Number.isFinite(this.scene.gridSize) && this.scene.gridSize > 7
+        ? { min: [-this.scene.gridSize / 2, -this.scene.gridSize / 2], max: [this.scene.gridSize / 2, this.scene.gridSize / 2] } : null,
+      getParticipants: key => this.observeParticipants(key, { physical: true }).participants,
       groundHeight: (x, z) => this.groundHeight(x, z) });
     this.motor = new CubeResidentMotor({ getEntries: () => this.entries,
       observe: key => this.observeParticipants(key, { physical: true }),
@@ -183,6 +186,7 @@ export class CubeAgentLayer {
   getMotorStatus() { return this.motor.getStatus(); }
   getResidentMotorStatus(key) { return this.motor.getResidentStatus(key); }
   validateSpatialTarget(key, position) { return this.spatialTargets.validate(key, position); }
+  getObjectPlacement(key, size, target, options) { return this.spatialTargets.placement(key, size, target, options); }
 
   /** Shared participant admission; motor reads omit public obstacle/terrain work. */
   observeParticipants(key, { requesterPeerId, physical = false } = {}) {

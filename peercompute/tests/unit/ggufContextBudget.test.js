@@ -88,6 +88,28 @@ test('exact output reserve boundary fits and measured native capacity controls a
   assert.deepEqual(f.requests.map((request) => request.max_tokens), [1, 56, 1]);
 });
 
+test('GGUF fitting preserves current observation data with the current question and never drops unanswered fixed input', async () => {
+  const messages = [{ role: 'system', content: 'Resident identity' },
+    { role: 'user', content: 'Older question' }, { role: 'assistant', content: 'Older answer' },
+    { role: 'user', content: 'Attributed current world observations' }, { role: 'user', content: 'Current question' }];
+  const fixed = [messages[0], ...messages.slice(-2)], original = structuredClone(messages);
+  assert.deepEqual(dropOldestGgufTurn(messages), fixed); assert.equal(dropOldestGgufTurn(fixed), null);
+  for (const fits of [true, false]) {
+    const f = fixture({ preflight: ({ messages: input }) => measured(fits && input.length === fixed.length ? 120 : 300) });
+    await f.load();
+    if (fits) {
+      const result = await f.generate({ messages }); assert.equal(result.contextTruncated, true);
+      assert.equal(result.contextBudget.removedTurns, 1); assert.deepEqual(f.requests.at(-1).messages, fixed);
+    } else {
+      await assert.rejects(f.generate({ messages }), { code: 'ERR_MODEL_CONTEXT_BUDGET' });
+      assert.equal(f.requests.length, 2); assert(f.requests.every(request => request.stream === false));
+      assert.equal(f.progress.filter(event => event.type === 'token').length, 0);
+    }
+    assert.deepEqual(f.requests[1].messages, fixed); assert.deepEqual(messages, original);
+    await f.runtime({ command: 'unload', sessionId: 'session' });
+  }
+});
+
 test('native capacity padding is measured without rejecting a valid bounded load', async () => {
   const f = fixture({ requestedContextTokens: 64, contextTokens: 256, preflight: () => measured(100) });
   assert.equal((await f.load()).effectiveContextTokens, 256);

@@ -6,16 +6,17 @@ import { retainGeneratedMesh } from '../../../peercompute/src/peercompute/infere
 import { createWorldGeneratedObjectPresenter } from './WorldGeneratedObjectPresenter.js';
 import { WorldGeneratedObjectNetwork } from './WorldGeneratedObjectNetwork.js';
 import { WORLD_OBJECT_SCHEMA, WORLD_OBJECT_LIMITS, normalizeWorldObjectAction, normalizeWorldObjectPlacement,
-  normalizeWorldObjectDescriptor, worldObjectDescriptorFromManifest, objectText } from './WorldObjectAction.js';
+  normalizeWorldObjectDescriptor, worldObjectDescriptorFromManifest, objectText, objectPosition, normalizeWorldObjectTarget } from './WorldObjectAction.js';
 
 /** A world owns placement, an agent proposes, and managed model services compute.
  * The persistent object is one pinned manifest owning its exact generated GLB. */
 export function createWorldGeneratedObjects({ runtime, agents, adapter, worldId, ownerHostId, getNetwork,
-  isOwner, onStatus = () => {}, networkFactory = options => new WorldGeneratedObjectNetwork(options) }) {
+  isOwner, assertPlacementCurrent, onStatus = () => {}, networkFactory = options => new WorldGeneratedObjectNetwork(options) }) {
   objectText(worldId, 240, 'world'); objectText(ownerHostId, 128, 'host');
   if (!runtime?.store || !agents?.inference || !adapter?.prepare || !adapter?.getPlacement || typeof isOwner !== 'function') {
     throw new TypeError('Generated objects need retained artifacts, model routing and an owned scene');
   }
+  if (assertPlacementCurrent !== undefined && typeof assertPlacementCurrent !== 'function') throw new TypeError('Placement authority requires a callback');
   const lifetime = new AbortController(), local = new Map(), requests = new Map(), published = new Set();
   const operations = new Set(); let remote = [], network, syncing, closed = false, generating = false;
   const emit = event => { try { onStatus(event); } catch { /* Presentation is observational. */ } };
@@ -45,10 +46,12 @@ export function createWorldGeneratedObjects({ runtime, agents, adapter, worldId,
         || !head.embodiments?.some(binding => binding.worldId === worldId)) throw new Error('Resident ownership or settings changed before object placement');
     return head;
   }
-  function generate({ agentId, action, image: sourceImage, requestId = crypto.randomUUID(), expectedRevision, signal: callerSignal } = {}) {
+  function generate({ agentId, action, placementTarget, image: sourceImage, requestId = crypto.randomUUID(), expectedRevision, signal: callerSignal } = {}) {
     const proposal = normalizeWorldObjectAction(action);
+    const target = placementTarget === undefined ? undefined : normalizeWorldObjectTarget(placementTarget);
     const reference = sourceImage ? { ...validateImageInput(sourceImage), data: sourceImage.data.slice() } : null;
     const fingerprint = bytesToHex(sha256(new TextEncoder().encode(JSON.stringify({ agentId, proposal,
+      ...(target ? { placementTarget: target } : {}),
       ...(reference ? { image: { width: reference.width, height: reference.height, channels: reference.channels,
         sha256: bytesToHex(sha256(reference.data)) } } : {}) }))));
     const previous = requests.get(requestId);
@@ -58,6 +61,16 @@ export function createWorldGeneratedObjects({ runtime, agents, adapter, worldId,
     }
     if (generating) return Promise.reject(new Error('Wait for the current object generation or cancel it'));
     const signal = signalFor(callerSignal); signal.throwIfAborted();
+    const currentAuthority = async () => {
+      const head = await authority(agentId, expectedRevision, signal);
+      if (target) {
+        if (adapter.supportsGroundedPlacement !== true) throw new Error('This world does not support requested object destinations');
+        await assertPlacementCurrent?.({ agentId, placementTarget: structuredClone(target), signal });
+        await authority(agentId, expectedRevision, signal);
+      }
+      return head;
+    };
+    const position = () => objectPosition(adapter.getPlacement(agentId, proposal.size, target ? structuredClone(target) : undefined));
     generating = true;
     const work = track((async () => {
       await ready; const saved = [...local.values()].find(value => value.placement.requestId === requestId);
@@ -67,25 +80,47 @@ export function createWorldGeneratedObjects({ runtime, agents, adapter, worldId,
         show(); return { status: 'saved', ...saved };
       }
       if (local.size >= WORLD_OBJECT_LIMITS.perOwner) throw new Error('This host has reached 32 generated objects in this room');
-      const head = await authority(agentId, expectedRevision, signal);
+      const head = await currentAuthority();
+      position(); // Reject unavailable destinations before consuming model resources.
       const mesh = await generateWorldMesh({ inference: agents.inference, head, description: proposal.prompt,
-        name: proposal.name, image: reference, signal, assertCurrent: () => authority(agentId, expectedRevision, signal),
+        name: proposal.name, image: reference, signal, assertCurrent: async () => { await currentAuthority(); position(); },
         onEvent: event => emit({ agentId, ...event }) });
       const placement = normalizeWorldObjectPlacement({ schema: WORLD_OBJECT_SCHEMA, worldId, ownerHostId, agentId,
         objectId: requestId, requestId, requestHash: fingerprint, name: proposal.name,
-        position: adapter.getPlacement(agentId, proposal.size), size: proposal.size });
+        position: position(), size: proposal.size });
       let prepared;
       try {
         prepared = await presenter.prepare(mesh, { signal });
-        await authority(agentId, expectedRevision, signal);
+        await currentAuthority(); placement.position = position();
         emit({ agentId, status: 'saving', message: `Saving ${proposal.name} on this device…` });
         const record = await retainGeneratedMesh(runtime.store, mesh, { name: proposal.name,
-          provenance: { worldObject: placement }, signal, beforeCommit: () => authority(agentId, expectedRevision, signal) });
+          provenance: { worldObject: placement }, signal, beforeCommit: async () => {
+            await currentAuthority();
+            // Retention calls this after importing bytes but before constructing
+            // the pinned manifest. Reobserve people and geometry here; both the
+            // saved manifest and visible receipt use this exact final point.
+            placement.position = position();
+          } });
         // Acknowledged retention is the commit boundary. Later cancellation
         // cannot erase the saved object; restoration does not rerun generation.
         const descriptor = normalizeWorldObjectDescriptor({ artifactCid: record.artifactCid, placement });
         local.set(placement.objectId, descriptor);
-        presenter.commitLocal(descriptor, prepared); prepared = null;
+        try { presenter.commitLocal(descriptor, prepared); prepared = null; }
+        catch (error) {
+          // The mesh and final placement already belong to a pinned manifest.
+          // A full/lost renderer cannot turn that durable result into a failed
+          // generation or cause an identical request to regenerate the object.
+          let displayError = String(error?.message || 'Object display failed').replaceAll('\0', '').slice(0, 240).toWellFormed();
+          try { prepared?.dispose(); }
+          catch (cleanupError) {
+            displayError = `${displayError}; display cleanup: ${String(cleanupError?.message || 'failed')}`
+              .replaceAll('\0', '').slice(0, 480).toWellFormed();
+          }
+          prepared = null;
+          emit({ agentId, status: 'saved', message: `Saved ${proposal.name}, but could not display it: ${displayError}` });
+          void syncNetwork();
+          return { status: 'saved', ...descriptor, displayError };
+        }
         emit({ agentId, status: 'placed', message: `Placed ${proposal.name}. Shared with this room when connected.` });
         void syncNetwork(); return { status: 'placed', ...descriptor };
       } finally { prepared?.dispose(); }

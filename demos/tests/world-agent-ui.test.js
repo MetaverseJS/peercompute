@@ -59,7 +59,7 @@ async function fixture(t, options = {}) {
         try {
           if (fixtureOptions.pendingSend) await new Promise((resolve, reject) => Object.assign(window, { finishSend: resolve, failSend: reject }));
           if (fixtureOptions.failSend) throw new Error('No model is available for this agent');
-          ui.appendMessage('user', value.text); ui.appendMessage('assistant', 'A real host result goes here; this fixture does not run a model.');
+          ui.appendMessage('user', value.text, value.key); ui.appendMessage('assistant', 'A real host result goes here; this fixture does not run a model.', value.key);
         } finally { ui.setBusy(false); }
       },
       onModels: () => capture('models'),
@@ -83,6 +83,12 @@ async function fixture(t, options = {}) {
         if (fixtureOptions.failClose) throw new Error('Voice cleanup is incomplete');
       },
       onRemove: key => capture('remove', key), onResume: key => capture('resume', key),
+      onInspect: options.withInspector ? async input => {
+        capture('inspect', { key: input.key, tab: input.tab });
+        const { createResidentInspectorPanel } = await import('/demos/shared/agents/ResidentInspectorPanel.js');
+        window.inspector ??= createResidentInspectorPanel({ onRead: async ({ key }) => ({ ...heads.find(item => item.key === key), revision: 1, permissions: {} }) });
+        inspector.open({ ...input, name: heads.find(item => item.key === input.key).name });
+      } : undefined,
     });
     ui.setAgents(heads);
   }, options);
@@ -224,12 +230,11 @@ test('enabled voice defaults to spoken replies, Talk and Stop pass the selected 
   assert.equal(await page.evaluate(() => calls.find(call => call.type === 'send').value.voiceReply), false);
 });
 
-test('Escape waits for close cleanup and restores focus without removing the host or agent controls', async t => {
+test('Escape closes presentation before microphone cleanup finishes without removing agent controls', async t => {
   const page = await fixture(t, { pendingClose: true }); await open(page); await choose(page);
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => Boolean(window.finishClose));
-  assert.equal(await dialog(page).isVisible(), true);
-  assert.equal(await page.getByRole('button', { name: 'Closing…', exact: true }).isDisabled(), true);
+  assert.equal(await dialog(page).isVisible(), false);
   await page.evaluate(() => finishClose());
   await dialog(page).waitFor({ state: 'hidden' });
   assert.equal(await page.evaluate(() => document.activeElement.textContent), 'Agents');
@@ -239,11 +244,12 @@ test('Escape waits for close cleanup and restores focus without removing the hos
   for (let index = 0; index < 16; index++) { await page.keyboard.press('Tab'); assert.equal(await page.evaluate(() => ui.dialog.contains(document.activeElement)), true); }
 });
 
-test('failed close remains open for retry; disposing ignores late work and removes only this UI', async t => {
+test('microphone cleanup failure does not reopen a dismissed conversation and survives reopening', async t => {
   const page = await fixture(t, { failClose: true }); await open(page);
   await page.getByRole('button', { name: 'Close', exact: true }).click();
   await page.waitForFunction(() => document.querySelector('[role=status]').textContent.includes('cleanup is incomplete'));
-  assert.equal(await dialog(page).isVisible(), true);
+  assert.equal(await dialog(page).isVisible(), false);
+  await open(page); assert.match(await dialog(page).getByRole('status').innerText(), /cleanup is incomplete/);
   await page.evaluate(async () => { fixtureOptions.failClose = false; await ui.close(); ui.dispose(); ui.dispose(); ui.setStatus('Late callback'); ui.setAgents([]); });
   assert.equal(await page.locator('.pc-world-agent-ui').count(), 0);
   assert.equal(await page.locator('#outside').count(), 1);
@@ -300,4 +306,57 @@ test('reply model attribution is assistant-only plain text that survives redraw 
   assert.equal(await log.evaluate(node => node.scrollWidth <= node.clientWidth + 1), true);
   assert.equal(await dialog(page).evaluate(node => node.scrollWidth <= node.clientWidth + 1), true);
   assert.deepEqual(await page.evaluate(() => calls.filter(call => call.type === 'send')), []);
+});
+
+test('owner and peer conversations open resident inspection during inference without losing the composer', async t => {
+  const page = await fixture(t, { withInspector: true }); await open(page); await choose(page);
+  const prompt = dialog(page).getByRole('textbox', { name: 'Message to agent', exact: true });
+  await prompt.fill('Preserve this private draft'); await page.evaluate(() => ui.setBusy(true));
+  const resident = dialog(page).getByRole('button', { name: 'Resident', exact: true }); assert.equal(await resident.isEnabled(), true);
+  await resident.click();
+  const inspector = page.getByRole('dialog', { name: 'Resident · Ada', exact: true }); await inspector.waitFor();
+  await inspector.getByRole('button', { name: 'Done', exact: true }).click();
+  assert.equal(await prompt.inputValue(), 'Preserve this private draft'); assert.equal(await resident.evaluate(element => document.activeElement === element), true);
+  assert.deepEqual(await page.evaluate(() => calls.filter(call => ['cancel', 'close', 'send'].includes(call.type))), []);
+  await page.evaluate(() => { ui.setBusy(false); }); await choose(page, 'Bob'); await page.evaluate(() => ui.setBusy(true));
+  await resident.click(); await page.getByRole('dialog', { name: 'Resident · Bob', exact: true }).waitFor();
+  assert.deepEqual(await page.evaluate(() => calls.filter(call => call.type === 'inspect')), [
+    { type: 'inspect', value: { key: 'local:ada', tab: 'overview' } }, { type: 'inspect', value: { key: 'peer:bob', tab: 'overview' } }]);
+});
+
+test('world-chat diagnostics preserve failures for other residents and survive ordinary status updates', async t => {
+  const page = await fixture(t); await open(page);
+  await page.evaluate(() => {
+    ui.setWorldChatStatus('local:ada', 'Ada: waiting for a model'); ui.setWorldChatStatus('local:bea', 'Bea: response failed'); ui.setStatus('Connected.');
+  });
+  const status = dialog(page).getByRole('status'); assert.match(await status.innerText(), /Connected/); assert.match(await status.innerText(), /Ada: waiting/);
+  await page.evaluate(() => ui.setWorldChatStatus('local:ada', '')); assert.doesNotMatch(await status.innerText(), /Ada: waiting/);
+  assert.match(await status.innerText(), /Bea: response failed/);
+  await page.evaluate(() => ui.setWorldChatStatus('local:bea', '')); assert.equal(await status.innerText(), 'Connected.');
+});
+
+test('switching and closing retain a pending reply under the original resident and preserve other drafts', async t => {
+  const page = await fixture(t, { pendingSend: true }); await open(page); await choose(page, 'Bob');
+  const prompt = dialog(page).getByRole('textbox', { name: 'Message to agent', exact: true });
+  await prompt.fill('Bob draft'); await choose(page); await prompt.fill('Ada request'); await page.keyboard.press('Enter');
+  await page.waitForFunction(() => Boolean(window.finishSend));
+  await choose(page, 'Bob'); assert.equal(await prompt.inputValue(), 'Bob draft'); assert.equal(await prompt.isDisabled(), true);
+  assert.match(await page.locator('[data-pending-conversation]').innerText(), /Ada/);
+  await page.getByRole('button', { name: 'Close', exact: true }).click(); await dialog(page).waitFor({ state: 'hidden' });
+  assert.deepEqual(await page.evaluate(() => calls.filter(call => call.type === 'cancel')), []);
+  await page.evaluate(() => finishSend()); await open(page); await page.waitForFunction(() => !document.querySelector('[aria-label="Message to agent"]').disabled);
+  assert.equal(await prompt.inputValue(), 'Bob draft'); assert.doesNotMatch(await dialog(page).getByRole('log').innerText(), /Ada request/);
+  await choose(page); assert.match(await dialog(page).getByRole('log').innerText(), /Ada request[\s\S]*A real host result/);
+  assert.equal(await prompt.inputValue(), '');
+});
+
+test('a background request error is scoped to the original resident status', async t => {
+  const page = await fixture(t, { pendingSend: true }); await open(page); await choose(page);
+  await page.getByLabel('Message to agent', { exact: true }).fill('Ada request'); await page.keyboard.press('Enter');
+  await page.waitForFunction(() => Boolean(window.failSend)); await choose(page, 'Bob');
+  await page.evaluate(() => { ui.setStatus('Bob ready', 'peer:bob'); failSend(Error('Ada inference failed')); });
+  await page.waitForFunction(() => !document.querySelector('[aria-label="Message to agent"]').disabled);
+  assert.equal(await dialog(page).getByRole('status').innerText(), 'Bob ready');
+  await choose(page); assert.equal(await dialog(page).getByRole('status').innerText(), 'Ada inference failed');
+  assert.equal(await page.getByLabel('Message to agent', { exact: true }).inputValue(), 'Ada request');
 });

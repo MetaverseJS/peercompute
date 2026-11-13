@@ -1,5 +1,7 @@
 import { createWorldKnowledgeBridge } from './WorldKnowledgeBridge.js';
 import { createResidentMindPanel } from './ResidentMindPanel.js';
+import { createResidentInspectorPanel } from './ResidentInspectorPanel.js';
+import { createWorldResidentInspector } from './WorldResidentInspector.js';
 import { createWorldResidentAvatars } from './WorldResidentAvatars.js';
 import { createWorldExperience } from './WorldExperience.js';
 import { createWorldConversationTurns } from './WorldConversationTurn.js';
@@ -53,7 +55,9 @@ const defaultAudio = async (options) => (await import('./speech/WorldAudio.js'))
 const statusOf = (head) => head.recoveryRequired || head.status === 'paused' ? 'paused'
   : ['queued', 'running'].includes(head.activity?.status) ? 'thinking' : 'idle';
 const conversationReply = output => ({ text: output.text, finishReason: output.finishReason,
-  ...(output.modelLabel ? { modelLabel: output.modelLabel } : {}), ...(output.directAvatar ? { role: 'system' } : {}),
+  ...(output.modelLabel ? { modelLabel: output.modelLabel } : {}), ...(output.directAvatar || output.hostReceipt ? { role: 'system' } : {}),
+  ...(output.objectOutcome ? { objectResolved: true } : {}),
+  ...(['placed', 'saved'].includes(output.objectOutcome?.status) ? { objectCommitted: true } : {}),
   ...(output.avatarFailed ? { avatarFailed: true } : {}) });
 
 export async function worldConversationId(worldId, requester) {
@@ -77,6 +81,8 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
   let operation, operationDone, voicePreparation, voicePreparationDone, recordingStart, voiceEnabled = false, recording = false;
   let appearance, appearancePresenter, generatedObjects, residentAvatars, worldChat, experience, conversations, motor, memory, social, socialOperation, socialDone;
   let objectives, objectiveStore, unsubscribeObjectives, knowledgeStore, knowledge, mind;
+  let diagnostics, inspector, inspectorData;
+  const worldChatStates = new Map(), diagnosticOrigins = new Map();
   let standing, standingRunner, standingStore, ooda;
   const oodaStates = new Map();
   const standingStates = new Map();
@@ -89,7 +95,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
   const pendingPublicCaptions = new Map();
   const localKey = (id) => `local:${id}`;
   const bindingOf = (head) => head?.embodiments?.find((binding) => binding.worldId === worldId);
-  const fail = (error) => { if (!disposed) ui?.setStatus(error?.name === 'AbortError' ? 'Cancelled.' : error?.message ?? String(error)); };
+  const fail = (error, key) => { if (!disposed) ui?.setStatus(error?.name === 'AbortError' ? 'Cancelled.' : error?.message ?? String(error), key); };
   const alive = () => { if (disposed) throw new Error('World agents are closed'); };
   const voiceUnavailable = 'Voice models are no longer loaded. Enable voice to prepare them again.';
   function refreshVoiceAvailability() {
@@ -109,6 +115,35 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
   const objectiveActive = id => ![undefined, 'paused', 'completed', 'cancelled'].includes(objectiveStates.get(id)?.status);
   const objectivePlanning = () => [...objectiveStates.values()].some(goal => goal.status === 'planning');
   const ownsObjective = id => bodies.get(localKey(id))?.local === true && (!embodimentLease || embodimentLease.entries.has(id));
+  function diagnose(key, source, stage, status, { message, errorCode, messageId, operationId, route, details } = {}) {
+    const body = bodies.get(key);
+    if (disposed || !body?.local || !ownsObjective(body.agentId) || !diagnostics) return;
+    // The diagnostic store projects a bounded metadata allowlist. Never pass a
+    // prompt, model output, full event or resident head into this private ring.
+    void diagnostics.append({ agentId: body.agentId, worldId, source, stage, status,
+      severity: status === 'waiting' ? 'warning' : ['error', 'failed', 'outcome-unknown'].includes(status)
+        || status === 'paused' && details?.pauseCause === 'automatic' && message ? 'error' : 'info',
+      ...(message ? { message: String(message) } : {}), ...(errorCode ? { errorCode } : {}),
+      ...(messageId ? { messageId } : {}), ...(operationId ? { operationId } : {}),
+      ...(route ? { route: { ...route, modelLabel: route.modelLabel ?? route.modelName ?? route.name } } : {}),
+      ...(details ? { details } : {}) }).catch(() => {});
+  }
+  function enterDiagnosticOrigin(agentId, origin) {
+    const entries = diagnosticOrigins.get(agentId) ?? new Set(); entries.add(origin); diagnosticOrigins.set(agentId, entries);
+    return () => { entries.delete(origin); if (!entries.size) diagnosticOrigins.delete(agentId); };
+  }
+  async function readInspector(input) { await ready; alive(); return inspectorData.read(input); }
+  async function openInspector({ key, returnFocus, tab } = {}) {
+    await ready; alive();
+    const body = bodies.get(key); if (!body) throw new Error('This resident is no longer in the world');
+    beforeOpen?.();
+    inspector ??= createResidentInspectorPanel({ onRead: readInspector,
+      onEdit: ({ key, patch, expectedRevision, signal }) => edit({ ...patch, key, expectedRevision, signal }),
+      onMind: openMind, onAssignGoal: assignGoal, onPauseGoal: pauseGoal, onResumeGoal: resumeGoal,
+      onCancelGoal: cancelGoal, onResume: ({ key }) => resume(key), onAppearance: generateAppearance,
+      onRemove: ({ key }) => remove(key), onClone: clone });
+    return inspector.open({ key, name: body.name, returnFocus, tab });
+  }
   function ownedObjectiveBody(key) {
     const body = bodies.get(key);
     if (!body?.local || !ownsObjective(body.agentId)) throw new Error('Only the resident owner can manage its objective');
@@ -120,6 +155,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     objectiveStates.set(record.agentId, record);
     if (!['planning', 'acting'].includes(record.status)) objectiveDecisions.delete(record.goalId);
     const key = localKey(record.agentId);
+    diagnose(key, 'objective', 'lifecycle', record.status, { operationId: record.goalId });
     if (bodies.get(key)?.local) ui.setGoalStatus?.(key, record);
     social?.sync(); standing?.sync();
   }
@@ -327,9 +363,13 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
   }
   async function respond({ agentId, prompt, requesterPeerId, signal, avatarInput }) {
     privateResponses++;
+    const leaveOrigin = enterDiagnosticOrigin(agentId, { source: 'private-chat' });
     try { await Promise.all([interruptSocial('human'), objectives?.interrupt({ agentId, reason: 'human conversation' })]);
       return await respondToVisitor({ agentId, prompt, requesterPeerId, signal, avatarInput }); }
-    finally { privateResponses--; social?.sync(); standing?.sync(); worldChat?.sync(); }
+    finally {
+      leaveOrigin();
+      privateResponses--; social?.sync(); standing?.sync(); worldChat?.sync();
+    }
   }
   async function respondToVisitor({ agentId, prompt, requesterPeerId, signal, avatarInput }) {
     alive();
@@ -344,8 +384,42 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     const context = JSON.stringify(adapter.getContext?.(descriptor) ?? { world: worldLabel, position: descriptor.position });
     if (encoder.encode(context).length > 8192) throw new Error('World observations exceed the conversation budget');
     const turn = await experience?.prepare({ key: descriptor.key, agentId, conversationId, audience: 'private',
+      requesterIsOwner: !requesterPeerId && ownsObjective(agentId),
       requesterPeerId: requesterPeerId || worldNetwork()?.peerId, prompt, scene: JSON.parse(context),
       publicConversationId: await worldConversationId(worldId, 'public-room'), signal });
+    // The host, not conversational prose, owns the generation/retention receipt.
+    // The reusable turn controller can execute this validated proposal before
+    // narration, so a persona's imagined limitations cannot veto an actual tool.
+    const executeObject = async (object, { signal: actionSignal = signal } = {}) => {
+      try {
+        if (requesterPeerId || disposed || !ownsObjective(agentId)) throw new Error('Only the resident owner can request object generation');
+        const result = await generatedObjects.generate({ agentId, action: object.action,
+          placementTarget: object.placementTarget,
+          expectedRevision: object.residentRevision, requestId: object.requestId, signal: actionSignal });
+        const location = result.placement.position.map(value => Number(value.toFixed(2))).join(', ');
+        const status = result.status === 'saved' ? 'saved' : 'placed';
+        let text = `${status === 'saved' ? 'Saved' : 'Placed'} ${result.placement.name} at (${location}).`;
+        if (result.displayError) text += ` Display failed: ${result.displayError}`;
+        try {
+          await memory?.append({ worldId, agentId, audience: 'private', conversationId, kind: 'action-outcome',
+            who: { peerId: descriptor.ownerPeerId || agents.store.hostId, agentId, name: descriptor.name },
+            where: result.placement.position, outcome: status === 'placed' ? 'Generated object saved and displayed in the world.'
+              : 'Generated object saved; display is not confirmed.',
+            text: `${text} Object CID: ${result.artifactCid}.`,
+            source: { kind: 'verified-action', eventId: object.requestId } });
+        } catch (error) { text += ` Memory update failed: ${String(error.message).slice(0, 160)}`; }
+        return { status, text, artifactCid: result.artifactCid, placement: result.placement };
+      } catch (error) {
+        actionSignal?.throwIfAborted();
+        let text = `Object not placed: ${String(error.message).replaceAll('\0', '').slice(0, 240)}`;
+        try { await memory?.append({ worldId, agentId, audience: 'private', conversationId, kind: 'action-outcome',
+          who: { peerId: descriptor.ownerPeerId || agents.store.hostId, agentId, name: descriptor.name }, where: descriptor.position,
+          outcome: 'Object generation failed; no new placement was confirmed.', text: memoryExcerpt(text),
+          source: { kind: 'verified-action', eventId: object.requestId } }); }
+        catch (memoryError) { text += ` Failure memory not saved: ${String(memoryError.message).slice(0, 160)}`; }
+        return { status: 'not-placed', text };
+      }
+    };
     const output = avatarInput ? { text: '', finishReason: 'stop', directAvatar: true,
       avatar: { action: avatarInput.action, residentRevision: head.revision, requestId: crypto.randomUUID() } }
       : await conversations.run({ key: descriptor.key, agentId, turn,
@@ -354,10 +428,19 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
       allowTask: !requesterPeerId && !!objectives,
       allowKnowledge: !requesterPeerId && !!knowledge,
       allowObject: !requesterPeerId && !!generatedObjects,
+      ...(!requesterPeerId && generatedObjects ? { executeObject } : {}),
       allowAvatar: !requesterPeerId && !!residentAvatars,
       maxNewTokens: 512, signal, valid: current => !disposed && ownsObjective(agentId) && !!bindingOf(current)
         && (!requesterPeerId || bindingOf(current).shared) });
     if (!requesterPeerId && output.applied) await pauseResidentObjective(agentId);
+    if (output.object) output.objectOutcome = await executeObject(output.object);
+    if (output.objectOutcome) {
+      const receipt = output.objectOutcome.text;
+      if (output.text === receipt) { output.text = `[${receipt}]`; output.hostReceipt = true; }
+      else output.text += `\n[${receipt}]`;
+      if (output.speechError) output.text += `\n[Reply unavailable: ${String(output.speechError.message).slice(0, 200)}]`;
+      return conversationReply(output);
+    }
     if (output.avatar) {
       const rememberOutcome = async (kind, text, outcome, sourceKind = 'verified-action') => memory?.append({
         worldId, agentId, audience: 'private', conversationId, kind,
@@ -392,31 +475,6 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
         output.text = output.text.trim();
         try { await rememberOutcome('avatar-command-result', output.text, 'Result of the explicit owner avatar command.'); }
         catch (error) { output.text += `\n[Command history not saved: ${String(error.message).slice(0, 160)}]`; }
-      }
-      return conversationReply(output);
-    }
-    if (output.object) {
-      try {
-        if (requesterPeerId || disposed || !ownsObjective(agentId)) throw new Error('Only the resident owner can request object generation');
-        const result = await generatedObjects.generate({ agentId, action: output.object.action,
-          expectedRevision: output.object.residentRevision, requestId: output.object.requestId, signal });
-        const receipt = `Placed ${result.placement.name} beside the resident. Object CID: ${result.artifactCid}.`;
-        output.text += `\n[Placed ${result.placement.name} beside the resident.]`;
-        try {
-          await memory?.append({ worldId, agentId, audience: 'private', conversationId, kind: 'action-outcome',
-            who: { peerId: descriptor.ownerPeerId || agents.store.hostId, agentId, name: descriptor.name },
-            where: result.placement.position, outcome: 'Generated object saved and displayed in the world.', text: receipt,
-            source: { kind: 'verified-action', eventId: output.object.requestId } });
-        } catch (error) { output.text += `\n[Object saved; memory update failed: ${String(error.message).slice(0, 160)}]`; }
-      } catch (error) {
-        signal?.throwIfAborted();
-        const failure = `Object not placed: ${String(error.message).replaceAll('\0', '').slice(0, 240)}`;
-        output.text += `\n[${failure}]`;
-        try { await memory?.append({ worldId, agentId, audience: 'private', conversationId, kind: 'action-outcome',
-          who: { peerId: descriptor.ownerPeerId || agents.store.hostId, agentId, name: descriptor.name }, where: descriptor.position,
-          outcome: 'Object generation failed; no new placement was confirmed.', text: memoryExcerpt(failure),
-          source: { kind: 'verified-action', eventId: output.object.requestId } }); }
-        catch (memoryError) { output.text += `\n[Failure memory not saved: ${String(memoryError.message).slice(0, 160)}]`; }
       }
       return conversationReply(output);
     }
@@ -523,11 +581,12 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
   }
   async function select(key) {
     await ready; alive();
+    await dismissCapture();
+    if (key == null) { selectedKey = null; ui.select(null); return; }
     const descriptor = bodies.get(key);
     if (!descriptor) throw new Error('This agent is no longer in the world');
-    if (operation || recording || recordingStart) await cancel();
     selectedKey = key; ui.open(); ui.select(descriptor); adapter.focus?.(key);
-    if (descriptor.local) {
+    if (descriptor.local && !transcripts.has(key)) {
       const channel = await worldConversationId(worldId, 'owner');
       const events = [];
       for (let after; ;) {
@@ -549,7 +608,9 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
           rows.push({ at: item.when, role: item.kind === 'avatar-command' ? 'user' : 'system', text: item.text });
         }
       }
-      transcripts.set(key, rows.sort((a, b) => a.at - b.at).slice(-24).map(({ at, ...row }) => row));
+      // A live reply can complete while history is being read. Its in-memory
+      // transcript already owns that turn and must not be replaced by this read.
+      if (!transcripts.has(key)) transcripts.set(key, rows.sort((a, b) => a.at - b.at).slice(-24).map(({ at, ...row }) => row));
     }
     showMessages(key);
     // The roster can still contain a coalesced pre-resume snapshot. Chat
@@ -557,7 +618,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     const currentStatus = descriptor.local ? statusOf(await agents.get(descriptor.agentId)) : descriptor.status;
     ui.setStatus(currentStatus === 'paused'
       ? descriptor.local ? 'Paused. Resume to start a new conversation.' : 'Paused. Only its owner can resume this resident.'
-      : `Talk to ${descriptor.name}.`);
+      : `Talk to ${descriptor.name}.`, key);
   }
   async function spawn({ name, goals = [], localOnly = false, shared = true, appearancePrompt = '', respondToWorldChat = false, initiateConversations = true, autonomous = true,
     instructions, shareMemories = false, sharePrivateMemories = false, allowCloning = shareMemories, movement = 'self-directed', standingGoal, selfModifiable = false }) {
@@ -588,11 +649,15 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     return createResidentProfile(ownerCopy ? { ...current, embodiments: [{ ...binding, shared: true, allowCloning: true }] }
       : current, worldId, { memories: episodes, knowledge: facts });
   }
-  async function edit({ key, name, instructions, goals, appearancePrompt, movement, shared, respondToWorldChat, initiateConversations, autonomous, allowCloning, shareMemories, sharePrivateMemories, localOnly, standingGoal, selfModifiable }) {
-    await ready; alive(); await Promise.all([interruptSocial('owner'), objectives?.interrupt({ reason: 'resident editing' })]); requireConversationIdle();
-    const body = bodies.get(key); if (!body?.local) throw new Error('Only the owner can edit this resident; clone it to customize your own');
+  async function edit({ key, name, instructions, goals, summary, appearancePrompt, movement, shared, respondToWorldChat, initiateConversations, autonomous, allowCloning, shareMemories, sharePrivateMemories, localOnly, standingGoal, selfModifiable, expectedRevision, signal }) {
+    await ready; alive(); signal?.throwIfAborted(); requireConversationIdle();
+    const body = bodies.get(key); if (!body?.local || !ownsObjective(body.agentId)) throw new Error('Only the owner can edit this resident; clone it to customize your own');
+    await Promise.all([interruptSocial('owner'), objectives?.interrupt({ agentId: body.agentId, reason: 'resident editing' })]);
+    signal?.throwIfAborted();
     const head = await agents.get(body.agentId), binding = bindingOf(head);
+    if (expectedRevision !== undefined && expectedRevision !== head.revision) throw new Error('Resident changed while editing. Refresh and review before saving.');
     if (!binding) throw new Error('This resident is no longer in this world');
+    if (!ownsObjective(body.agentId)) throw new Error('Resident body ownership changed');
     if (movement === 'follow' && adapter.observe && !adapter.observe(key).participants.some(item => item.kind === 'human' && item.peerId === body.ownerPeerId)) {
       throw new Error('The owner must be nearby before selecting Follow');
     }
@@ -606,10 +671,11 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     // Detect a profile too large to share before committing the opt-in.
     if (next.shared && next.allowCloning) createResidentProfile({ ...head,
       identity: { name: name ?? head.identity.name, instructions: instructions ?? head.identity.instructions },
-      goals: goals ?? head.goals, embodiments: [next] }, worldId);
-    const saved = await agents.update(head.agentId, { name, instructions, goals,
+      goals: goals ?? head.goals, context: { ...head.context, summary: summary ?? head.context.summary }, embodiments: [next] }, worldId);
+    const saved = await agents.update(head.agentId, { name, instructions, goals, summary,
       ...(localOnly === undefined ? {} : { inferenceMode: localOnly ? 'local-only' : 'network-assisted' }),
-      embodiments: head.embodiments.map(item => item.worldId === worldId ? next : item) }, { expectedRevision: head.revision });
+      embodiments: head.embodiments.map(item => item.worldId === worldId ? next : item) }, { expectedRevision: head.revision, signal });
+    diagnose(key, 'owner', 'profile', 'saved');
     await refreshLocal();
     if (movement !== undefined) adapter.setMovement?.(key, movement);
     if (selectedKey === key) ui.select(bodies.get(key));
@@ -717,7 +783,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
       const body = list().find(entry => entry.agentId === input.agentId && entry.ownerPeerId === input.peerId);
       if (body) {
         caption(body.key, input.text);
-        return worldChat?.receive({ ...input, name: worldResidentName(body.name) });
+        return admitRoomMessage({ ...input, name: worldResidentName(body.name) });
       }
       else if (typeof input.text === 'string' && encoder.encode(input.text).length <= 2048) {
         // The first reply can arrive before the next bounded body-directory poll.
@@ -735,8 +801,16 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
       }
       return;
     }
-    const received = worldChat?.receive(input);
+    const received = admitRoomMessage(input);
     if (received?.accepted) { publicEpoch++; void interruptSocial('human'); }
+    return received;
+  }
+  function admitRoomMessage(input) {
+    const received = worldChat?.receive(input);
+    if (received?.accepted) for (const body of bodies.values()) if (body.local && body.agentId !== input.agentId) {
+      const status = !body.respondToWorldChat ? 'disabled' : body.status === 'paused' ? 'paused' : 'received';
+      diagnose(body.key, 'world-chat', 'reception', status, { messageId: input.id });
+    }
     return received;
   }
   async function replyToWorld(body, incoming, { signal, context, isCurrent = () => true }) {
@@ -744,6 +818,8 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     alive(); requireConversationIdle();
     const epoch = publicEpoch;
     return runOperation(async ownedSignal => {
+      const leaveOrigin = enterDiagnosticOrigin(body.agentId, { source: 'world-chat', messageId: incoming.id });
+      try {
       const combined = AbortSignal.any([ownedSignal, signal]);
       const head = await agents.get(body.agentId), binding = bindingOf(head);
       if (!binding?.respondToWorldChat || !bodies.get(body.key)?.local) throw new Error('World-chat responses are disabled');
@@ -780,7 +856,8 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
       let excerpt = '';
       for (const character of answer) { if (encoder.encode(excerpt + character).length > 2045) break; excerpt += character; }
       return excerpt + '…';
-    });
+      } finally { leaveOrigin(); }
+    }, body.key);
   }
   function interruptSocial(reason = 'human') {
     social?.interrupt(reason); standing?.interrupt(reason);
@@ -818,6 +895,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     const body = bodies.get(key);
     if (disposed || !body?.local) return;
     standingStates.set(key, status); bodies.set(key, { ...body, standingStatus: status }); ui.setAgents(list());
+    diagnose(key, 'standing-goal', 'lifecycle', status);
   }
   async function decideStanding({ resident: body, target, signal, isCurrent }) {
     const head = await agents.get(body.agentId), epoch = publicEpoch;
@@ -937,9 +1015,11 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
       ? { status: 'waiting', reason: 'Waiting for an available model or conversation slot.' } : result?.text ?? '';
   }
   async function remove(key) {
-    const body = bodies.get(key); if (!body?.local) throw new Error('Only the owner can remove this body');
+    await ready; alive();
+    const body = bodies.get(key); if (!body?.local || !ownsObjective(body.agentId)) throw new Error('Only the owner can remove this body');
     await cancel(); await agents.cancel(body.agentId);
     const head = await agents.get(body.agentId);
+    if (!ownsObjective(body.agentId)) throw new Error('Resident body ownership changed');
     await agents.update(head.agentId, { embodiments: (head.embodiments ?? []).filter((binding) => binding.worldId !== worldId) }, { expectedRevision: head.revision });
     if (selectedKey === key) { selectedKey = null; ui.select(null); ui.setMessages([]); }
     await refreshLocal();
@@ -948,7 +1028,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
   }
   async function resume(key) {
     await ready; alive(); requireConversationIdle();
-    const body = bodies.get(key); if (!body?.local) throw new Error('Only the owner can resume this agent');
+    const body = bodies.get(key); if (!body?.local || !ownsObjective(body.agentId)) throw new Error('Only the owner can resume this agent');
     await agents.resume(body.agentId); await refreshLocal(); await select(key);
     ui.setStatus(`${body.name} is ready for a new message. No previous request was replayed.`);
   }
@@ -957,14 +1037,18 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     if (typeof text !== 'string' || !text.trim() || encoder.encode(text).length > WORLD_AGENT_LIMITS.promptBytes) throw new Error('Enter a message within 16 KiB');
     const body = bodies.get(key); if (!body) throw new Error('Choose an agent in this world');
     if (avatarInput && !body.local) throw new Error('Only this resident’s owner can supply an avatar image or exact prompt');
-    message(key, 'user', text); ui.setStatus(`${body.name} is thinking…`);
+    message(key, 'user', text); ui.setStatus(`${body.name} is thinking…`, key);
     const result = body.local ? await respond({ agentId: body.agentId, prompt: text, signal, avatarInput })
       : await network?.request(body.ownerPeerId, { agentId: body.agentId, prompt: text }, { signal });
-    signal.throwIfAborted(); if (!result) throw new Error('The agent owner is not connected');
+    // An acknowledged local tool outcome survives cancelling its narration.
+    // Remote peers cannot grant this exception, and teardown does not reopen UI.
+    if (!body.local || !result?.objectResolved) signal.throwIfAborted();
+    if (!result) throw new Error('The agent owner is not connected');
+    if (disposed) return result;
     message(key, result.role === 'system' ? 'system' : 'assistant', result.text, result.modelLabel); caption(key, result.text);
-    ui.setStatus(result.finishReason === 'length' ? 'Reply reached the output limit. Ask the agent to continue.' : 'Ready.');
-    if (voiceReply && voiceEnabled) {
-      if (!refreshVoiceAvailability()) ui.setStatus(`Text reply received. ${voiceUnavailable}`);
+    ui.setStatus(result.finishReason === 'length' ? 'Reply reached the output limit. Ask the agent to continue.' : 'Ready.', key);
+    if (voiceReply && voiceEnabled && !signal.aborted) {
+      if (!refreshVoiceAvailability()) ui.setStatus(`Text reply received. ${voiceUnavailable}`, key);
       else {
         try {
           caption(key, result.text, 'speaking');
@@ -974,22 +1058,22 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
           }
         } catch (error) {
           signal.throwIfAborted(); refreshVoiceAvailability();
-          ui.setStatus(`Text reply received. Voice: ${error.message}${voiceEnabled ? '' : ` ${voiceUnavailable}`}`);
+          ui.setStatus(`Text reply received. Voice: ${error.message}${voiceEnabled ? '' : ` ${voiceUnavailable}`}`, key);
         }
         finally { caption(key, result.text); }
       }
     }
     return result;
   }
-  function runOperation(work) {
+  function runOperation(work, key) {
     if (operation) throw new Error('Wait for the current conversation or cancel it');
     const controller = new AbortController(); operation = controller;
-    const signal = AbortSignal.any([controller.signal, lifetime.signal]); ui.setBusy(true);
+    const signal = AbortSignal.any([controller.signal, lifetime.signal]); ui.setBusy(true, key);
     // One owner covers capture completion, transcription, reply and playback.
     // Stop must never replace the controller of an existing typed request.
     const preempted = Promise.all([interruptSocial('human'), objectives?.interrupt({ reason: 'human conversation' })]);
     const pending = Promise.resolve(preempted).then(() => { signal.throwIfAborted(); return work(signal); })
-      .catch((error) => { fail(error); throw error; })
+      .catch((error) => { fail(error, key); throw error; })
       .finally(() => {
         if (operation === controller) { operation = null; operationDone = null; if (!disposed) { ui.setBusy(false); worldChat?.sync(); } }
       });
@@ -1000,7 +1084,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     const avatarInput = ownerAvatarInput(text, avatarImage);
     if (avatarImage != null && !text?.trim()) text = AVATAR_IMAGE_PROMPT;
     await ready; alive(); requireConversationIdle();
-    return runOperation((signal) => converse({ key, text, voiceReply, signal, avatarInput }));
+    return runOperation((signal) => converse({ key, text, voiceReply, signal, avatarInput }), key);
   }
   async function cancel() {
     const socialCancelled = interruptSocial('human');
@@ -1017,6 +1101,15 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     await goalsInterrupted;
     await pendingActions;
     if (!disposed) ui.setVoiceStatus({ enabled: voiceEnabled, recording, preparing: !!voicePreparation });
+  }
+  async function dismissCapture() {
+    // Closing/choosing a chat ends microphone capture, not model work, queued
+    // goals, positional playback or a reply belonging to another conversation.
+    if (!recording && !recordingStart) return;
+    recordingStart?.controller.abort(new DOMException('Microphone dismissed', 'AbortError'));
+    await audio?.cancelRecording(); recording = false;
+    await recordingStart?.promise.catch(() => {});
+    if (!disposed) ui.setVoiceStatus({ enabled: voiceEnabled, recording: false, preparing: !!voicePreparation });
   }
   async function enableVoice(enabled) {
     await ready; alive();
@@ -1073,7 +1166,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
         signal.throwIfAborted();
         if (!result.text?.trim()) throw new Error('No speech recognized. Try again or type a message.');
         return converse({ key, text: result.text, voiceReply, signal });
-      });
+      }, key);
     }
   }
   async function closePanel() {
@@ -1092,7 +1185,6 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
   }
   async function models() {
     await ready; alive(); if (panel || panelOpening) return;
-    await Promise.all([interruptSocial('owner'), objectives?.interrupt({ reason: 'model controls' })]);
     requireConversationIdle();
     if (voicePreparation) throw new Error('Wait for voice preparation or cancel it before opening Models');
     beforeOpen?.();
@@ -1118,8 +1210,8 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     return panelOpening;
   }
   ui = uiFactory({ worldLabel, onOpen: beforeOpen, onSpawn: spawn, onSelect: select, onSend: send, onModels: models,
-    onVoice: enableVoice, onRecord: record, onCancel: cancel, onClose: cancel, onRemove: remove, onResume: resume,
-    onAppearance: generateAppearance, onWorldChat: setWorldChat, onEdit: edit, onClone: clone, onMind: openMind,
+    onVoice: enableVoice, onRecord: record, onCancel: cancel, onClose: dismissCapture, onRemove: remove, onResume: resume,
+    onAppearance: generateAppearance, onWorldChat: setWorldChat, onEdit: edit, onClone: clone, onMind: openMind, onInspect: openInspector,
     onAssignGoal: assignGoal, onPauseGoal: pauseGoal, onResumeGoal: resumeGoal, onCancelGoal: cancelGoal });
   const ready = (async () => {
     const options = await getRuntimeOptions(); worldManager = options.networkManager;
@@ -1129,6 +1221,23 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
       telemetryApplication: worldManager?.config?.gameId ?? 'world',
       auxiliaryWorkerSlots: adapter.setMotor ? 1 : 0 });
     lifetime.signal.throwIfAborted(); agents = await runtime.getAgentController();
+    if (runtime.stateManager?.createResidentDiagnosticsStore) {
+      const name = `${agents.store?.name ?? 'world-agents'}-diagnostics`.slice(0, 80);
+      diagnostics = runtime.stateManager.getResidentDiagnosticsStore(name) ?? runtime.stateManager.createResidentDiagnosticsStore({ name });
+      // Diagnostics must not prevent a resident from running when storage fails.
+      await diagnostics.open().catch(() => {});
+    }
+    inspectorData = createWorldResidentInspector({ worldId,
+      getBody: key => { const body = bodies.get(key); return body && liveBody(body); }, owns: ownsObjective,
+      getAgent: id => agents.get(id), getEvents: (id, options) => agents.events(id, options),
+      getKnowledge: input => knowledge ? listKnowledge(input) : [],
+      getObjective: key => objectives ? getObjective(key) : null,
+      canMemory: () => !!knowledge, canGoals: () => !!objectives,
+      getRuntime: () => runtime, getDiagnostics: () => diagnostics,
+      getNavigation: key => adapter.getResidentMotorStatus?.(key), isClosed: () => disposed,
+      getStates: key => ({ worldChat: worldChatStates.get(key) ?? (bodies.get(key)?.respondToWorldChat ? 'listening' : 'disabled'),
+        ooda: oodaStates.get(key), social: socialStates.get(key), standing: standingStates.get(key),
+        profile: profileStates.get(key), appearance: appearanceStates.get(bodies.get(key)?.agentId) }) });
     appearance = createWorldAppearance({ runtime, agents, worldId, onStatus: event => {
       if (disposed) return;
       appearanceStates.set(event.agentId, { appearanceStatus: event.status === 'unavailable' ? 'waiting' : event.status,
@@ -1152,15 +1261,38 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
       experience = createWorldExperience({ worldId, adapter, memory, knowledge, getBody: key => bodies.get(key),
         onStatus: text => { if (!disposed) ui.setStatus(text); } });
     }
-    conversations = createWorldConversationTurns({ agents, experience, signal: lifetime.signal });
+    conversations = createWorldConversationTurns({ agents, experience, signal: lifetime.signal,
+      getActionCapabilities: () => ({ targets: runtime.listInferenceTargets(),
+        supportsGroundedPlacement: generatedObjectAdapter?.supportsGroundedPlacement === true }),
+      getActionObservation: input => knowledge ? knowledge.observe({ ...input, query: input.message,
+        audience: 'private', requester: 'owner' }) : input.observed });
     appearancePresenter = createWorldAppearancePresenter({ appearance, adapter, getNetwork: () => network });
     if (residentAvatarAdapter) residentAvatars = createWorldResidentAvatars({ runtime, agents, adapter: residentAvatarAdapter,
       worldId, ownerHostId: agents.store.hostId, isOwner: ownsObjective, onSaved: refreshLocal,
-      onStatus: event => { if (!disposed) ui.setStatus(event.message); } });
+      onStatus: event => { if (!disposed) ui.setStatus(event.message, event.agentId ? localKey(event.agentId) : undefined); } });
     if (generatedObjectAdapter) {
       generatedObjects = createWorldGeneratedObjects({ runtime, agents, adapter: generatedObjectAdapter, worldId,
         ownerHostId: agents.store.hostId, getNetwork: worldNetwork, isOwner: ownsObjective,
-        onStatus: event => { if (!disposed) ui.setStatus(event.message); } });
+        assertPlacementCurrent: async ({ agentId, placementTarget, signal }) => {
+          if (!placementTarget?.knowledgeId) return;
+          if (!knowledgeStore || !knowledge) throw new Error('Remembered placement is unavailable');
+          const records = await knowledgeStore.snapshot({ agentId, worldId, includePrivate: true }, { signal });
+          const record = records.find(item => item.id === placementTarget.knowledgeId);
+          if (!record || record.kind !== 'place' || record.revision !== placementTarget.knowledgeRevision
+              || JSON.stringify(record.position) !== JSON.stringify(placementTarget.position)) {
+            throw new DOMException('Remembered placement changed; observe again', 'AbortError');
+          }
+          // Check only the selected record. Unrelated familiarity updates do not
+          // invalidate a long-running mesh job; correcting/forgetting its place does.
+          await knowledge.assertCurrent({ knowledgeSnapshot: [record] }, { signal });
+        },
+        onStatus: event => {
+          if (disposed) return;
+          const key = event.agentId ? localKey(event.agentId) : undefined;
+          ui.setStatus(event.message, key);
+          if (key) diagnose(key, 'objects', 'generation', event.status,
+            { message: event.status === 'error' ? event.message : undefined });
+        } });
       await generatedObjects.ready;
     }
     if (typeof publishWorldMessage === 'function') worldChat = createWorldChatResponder({
@@ -1170,12 +1302,23 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
           && !voicePreparation && !recording && !recordingStart && !disposed })),
       respond: replyToWorld, publish: publishWorldMessage,
       onDelivered: async ({ body, incoming, output, result }) => {
+        diagnose(body.key, 'world-chat', 'publication', 'delivered', { messageId: incoming.id,
+          details: { outputChars: output.text.length, count: result?.delivery?.delivered ?? 0 } });
         if (!incoming.social || !experience) return;
         await experience.rememberDelivery({ key: body.key, conversationId: await worldConversationId(worldId, 'public-room'),
           target: { peerId: incoming.peerId, agentId: incoming.agentId, name: incoming.name }, text: output.text, result,
           eventId: `${incoming.social.rootId}:${incoming.social.turn + 1}` });
       },
-      onStatus: event => { if (!disposed && event.status === 'error') ui.setStatus(`World chat: ${event.error}`); },
+      onStatus: event => {
+        if (disposed) return;
+        worldChatStates.set(event.key, event);
+        diagnose(event.key, 'world-chat', 'reply', event.status, { messageId: event.messageId,
+          message: event.error ?? event.reason, errorCode: event.errorCode });
+        if (event.status === 'error') {
+          const text = `${bodies.get(event.key)?.name ?? 'Resident'}: ${event.error}. Open Resident details for the activity log.`;
+          if (ui.setWorldChatStatus) ui.setWorldChatStatus(event.key ?? 'world-chat', text); else ui.setStatus(`World chat: ${text}`);
+        } else if (event.status === 'idle') ui.setWorldChatStatus?.(event.key, '');
+      },
     });
     if (exclusiveEmbodiments) {
       embodimentLease = new WorldEmbodimentLease({ namespace: agents.store?.lockName ?? options.storeName ?? 'inference-models-agents', worldId });
@@ -1197,7 +1340,22 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
         if (provisioned.created) await agents.resume(provisioned.head.agentId, { signal: lifetime.signal });
       }
     }
-    unsubscribe = agents.subscribe((event) => { if (['changed', 'removed', 'activity'].includes(event.type)) void refreshLocal().catch(fail); });
+    unsubscribe = agents.subscribe((event) => {
+      if (event.type === 'activity') {
+        const value = event.activity, origins = diagnosticOrigins.get(event.agentId);
+        const origin = origins?.size === 1 ? origins.values().next().value : null;
+        diagnose(localKey(event.agentId), origin?.source ?? 'inference', 'execution', value.status, {
+          messageId: origin?.messageId, operationId: value.requestId, message: value.error,
+          errorCode: value.errorCode, route: value.route,
+          details: { ...(value.task ? { task: value.task } : {}),
+            ...(value.pauseCause ? { pauseCause: value.pauseCause } : {}),
+            ...(value.contextBudget ? { inputTokens: value.contextBudget.inputTokens,
+              contextLength: value.contextBudget.contextTokens, maxNewTokens: value.contextBudget.reservedOutputTokens } : {}),
+            ...(typeof value.outputStarted === 'boolean' ? { outputStarted: value.outputStarted } : {}),
+            ...(typeof value.committed === 'boolean' ? { committed: value.committed } : {}) } });
+      }
+      if (['changed', 'removed', 'activity'].includes(event.type)) void refreshLocal().catch(fail);
+    });
     await refreshLocal(); lifetime.signal.throwIfAborted();
     if (experience && runtime.stateManager?.createWorldGoalStore) {
       const name = `${agents.store.name}-objectives`.slice(0, 80);
@@ -1267,6 +1425,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
         const body = bodies.get(key); if (!body?.initiateConversations || !body.shared || disposed) return;
         const status = ({ deciding: 'considering', quiet: 'resting', spoken: 'resting', cancelled: 'resting', error: 'resting' })[event.status] ?? event.status;
         socialStates.set(key, status); bodies.set(key, { ...body, socialStatus: status }); ui.setAgents(list());
+        diagnose(key, 'social', 'decision', event.status, { message: event.error ?? event.reason });
       } });
     if (worldChat && experience && runtime.stateManager?.createWorldStandingGoalStore) {
       const name = `${agents.store.name}-standing-goals`.slice(0, 80);
@@ -1316,6 +1475,8 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
         cycle: options => runSocial(signal => deliberate({ ...options, signal }), { signal: options.signal, timeoutMs: 120000 }),
         onStatus: event => {
           oodaStates.set(event.key, event);
+          diagnose(event.key, 'ooda', 'cycle', event.status, { message: event.error ?? event.reason,
+            details: { ...(Number.isFinite(event.nextAt) ? { nextAt: event.nextAt } : {}) } });
           const body = bodies.get(event.key);
           if (body?.local && !disposed) { bodies.set(event.key, { ...body, oodaStatus: event }); ui.setAgents(list()); }
         },
@@ -1343,13 +1504,13 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     // The scene owns these operations; exposed for embedding and acceptance
     // checks without invoking GPU work through a hidden global test harness.
     spawn, edit, clone, send, remove, resume, enableVoice, cancel, generateAppearance, setWorldChat, receiveWorldMessage,
-    assignGoal, pauseGoal, resumeGoal, cancelGoal, getObjective, openMind, listKnowledge, correctKnowledge, forgetKnowledge,
+    assignGoal, pauseGoal, resumeGoal, cancelGoal, getObjective, openMind, listKnowledge, correctKnowledge, forgetKnowledge, openInspector, readInspector,
     get residentAvatars() { return residentAvatars; },
     get generatedObjects() { return generatedObjects; },
     get runtime() { return runtime; },
     async dispose() {
       if (closing) return closing;
-      disposed = true; mind?.dispose(); lifetime.abort(new DOMException('World closed', 'AbortError')); clearInterval(networkTimer); clearInterval(navigationTimer); unsubscribe?.();
+      disposed = true; mind?.dispose(); inspector?.dispose(); inspectorData?.dispose(); lifetime.abort(new DOMException('World closed', 'AbortError')); clearInterval(networkTimer); clearInterval(navigationTimer); unsubscribe?.();
       closing = (async () => {
         await ready.catch(() => {}); await cancel(); await networkStarting; await modelStarting; await closePanel();
         await ooda?.dispose(); await objectives?.dispose(); unsubscribeObjectives?.();
@@ -1360,9 +1521,10 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
         await network?.close(); network = null;
         await conversations?.dispose();
         adapter.setMotor?.(null); await experience?.dispose(); await motor?.dispose();
-        await speech?.dispose(); await audio?.dispose(); await runtime?.dispose();
+        await speech?.dispose(); await audio?.dispose(); await diagnostics?.flush(); await runtime?.dispose();
         await refreshing; await adapter.dispose(); await embodimentLease?.close();
         ui.dispose(); bodies.clear(); heads.clear(); transcripts.clear(); pendingPublicCaptions.clear(); objectiveStates.clear(); objectiveDecisions.clear();
+        worldChatStates.clear(); diagnosticOrigins.clear();
       })();
       try { await closing; } finally { closing = null; }
     },

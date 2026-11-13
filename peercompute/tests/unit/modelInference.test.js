@@ -388,6 +388,27 @@ test('history trimming accounts for image tokens and keeps the image on the late
   await fixture.runtime({ command: 'unload', sessionId: 'test-session' });
 });
 
+test('token fitting preserves unanswered observation data and the latest image prompt, or rejects before generation', async () => {
+  const messages = [{ role: 'system', content: 'Your identity.' },
+    { role: 'user', content: 'older question' }, { role: 'assistant', content: 'older answer' },
+    { role: 'user', content: 'Current attributed world observation data.' }, { role: 'user', content: 'Describe this leaf.' }];
+  const original = structuredClone(messages);
+  for (const fits of [true, false]) {
+    const events = [], components = fakeComponents({ events, vision: true,
+      inputTokens: text => fits && !text.includes('older') ? 1000 : 1800 });
+    const fixture = runtimeFor({ components }); await loadRuntime(fixture, manifest({ vision: true }));
+    const work = fixture.runtime({ command: 'generate', sessionId: 'test-session', requestId: `world-data-${fits}`,
+      messages, image: { data: new Uint8Array(4), width: 1, height: 1, channels: 4 } });
+    if (fits) { const result = await work; assert.equal(result.contextTruncated, true); }
+    else { await assert.rejects(work, /context budget/); assert.equal(events.includes('generate'), false); }
+    const processed = events.filter(event => typeof event === 'object');
+    assert.equal(processed.length, 2, 'Only one complete answered historical turn can be removed');
+    assert.equal(processed.at(-1).text, 'Your identity.\nCurrent attributed world observation data.\n<image>Describe this leaf.');
+    assert.deepEqual(messages, original);
+    await fixture.runtime({ command: 'unload', sessionId: 'test-session' });
+  }
+});
+
 test('an oversized latest prompt remains an explicit error after bounded history trimming', async () => {
   const events = [];
   const fixture = runtimeFor({ components: fakeComponents({ events, inputTokens: 1800 }) });

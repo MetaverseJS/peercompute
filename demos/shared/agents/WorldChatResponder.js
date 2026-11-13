@@ -179,9 +179,14 @@ export function createWorldChatResponder({ getResidents, respond, publish, onSta
       if (classifyInferenceAvailability(error) && !run.publishing && !run.controller.signal.aborted) {
         try { if (defer(error.message)) return; } catch { /* A newer message or owner choice wins. */ }
       }
-      const cancelled = run.controller.signal.aborted || error?.name === 'AbortError';
+      // A runtime failure can pause the resident before this rejection arrives.
+      // Reconciliation then aborts our controller, but that does not turn the
+      // original inference/storage failure into a cancellation. Late success
+      // and genuine caller cancellation still fail through AbortError above.
+      const cancelled = error?.name === 'AbortError';
       notify({ key, status: cancelled ? 'cancelled' : 'error', messageId: run.message.id,
-        ...(cancelled ? {} : { error: String(error?.message ?? error).slice(0, 512) }) });
+        ...(cancelled ? {} : { error: String(error?.message ?? error).slice(0, 512),
+          ...(typeof error?.code === 'string' ? { errorCode: error.code.replaceAll('\0', '').slice(0, 128) } : {}) }) });
     }).finally(() => { if (active === run) active = null; schedule(); });
   }
   function sync() { if (!closed) { reconcile(); schedule(); } }

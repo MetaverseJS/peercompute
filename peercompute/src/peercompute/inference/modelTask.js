@@ -62,9 +62,11 @@ function dropOldestTurn(messages) {
   const first = messages.findIndex((message) => message.role === 'user');
   if (first < 0) return null;
   const next = messages.findIndex((message, index) => index > first && message.role === 'user');
-  if (next < 0) return null;
+  if (next < 0 || !messages.some((message, index) => index > first && index < next && message.role === 'assistant')) return null;
   // Keep all system instructions and the latest user turn. Do not slice text or
   // leave an older assistant response without its corresponding user request.
+  // Consecutive unanswered user messages may be current observation data plus
+  // the current question; neither is a completed historical turn to discard.
   return messages.filter((message, index) => index < first || index >= next || message.role === 'system');
 }
 

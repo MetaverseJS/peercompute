@@ -5355,3 +5355,69 @@ Final8 internal preview verification passed exact HTTPS assets (82 CubeChat,
 46 Earth), native desktop/mobile Self directed controls, new guide default and
 authenticated SecretWorkshop connectivity, with no page/console/cleanup errors.
 No GitHub Pages files were rebuilt or published for this slice.
+
+Resident inspector acceptance: owner/peer projection privacy, caller revision
+checks, inspection during inference, draft/caret preservation during refresh,
+close/switch/authority-loss cancellation, mobile modal and chat entry; separate
+bounded diagnostics survive reload without consuming agent history. Trace
+world-chat receive/queue/inference/publication/recovery and reproduce original
+error visibility races. Use real peer evidence for execution claims and preserve
+model/context failures without fake replies or uncertain-operation replay.
+<!-- November 12 resident inspector/continuity acceptance -->
+`npm run test:resident-inspector` checks private diagnostic retention/lifecycle,
+owner/peer inspector boundaries, stale-edit protection, current model/route/error
+projection, native desktop/mobile controls and separate Room errors. Extend held
+generation cases through close and conversation switches; assert one original
+request/result, no cancellation, no delivery to another conversation. Model
+quality is a separate real-peer gate: same CID/provider/persona/prompt/512-token
+allowance, new agent/request IDs, with and without attributed public speech.
+
+Grounded placement gates: model-selected observed/remembered destination IDs;
+unknown/stale/spoofed refs and raw coordinates rejected; current participant
+identity after long generation; boundary/surface/object-footprint/obstruction
+checks before work and before commit; cancellation/ownership revision loss;
+actual retained placement and peer display. Future manipulation additionally
+requires acquisition reservation, real approach/carry/release receipts and
+interruption without duplicate movement or stealing another host's object.
+
+`npm run test:resident-placement` covers shared navigation/object references,
+geometry and retained lifecycle. Native host tests additionally run the real
+ArtifactStore with clearly simulated inference, checking remembered destinations
+and cross-tab forgetting during generation. Final3 inspector suite353/353 and
+placement suite105/105passed. Stage-specific specialist context then passed46
+focused cases and a real-Qwen tokenizer18-case matrix (maximum1976/2048tokens,
+including512replyreserve); this is budget evidence, not live inference proof.
+
+Budget limitation: stress cases with ~500-word completed replies, or24participants
+plus~250words, still exceed2048 and must fail normal preflight. Current Cube
+sensors cap participants at16; the passing18-case matrix is not a guarantee for
+arbitrary input length. Full stress evidence is preserved externally.
+
+Final5 owner-tool tests: npm run test:resident-inspector passes364/364 and
+npm run test:resident-placement passes118/118 (overlapping scopes). Native host
+fixtures verify object planning/execution precedes narration; successful commit
+survives narration failure/cancellation and display failure; known failed actions
+survive narration cancellation without a false commit claim; cross-tab forgetting
+revokes placement before mesh dispatch. Fixture model output is simulated, while
+ArtifactStore retention and manifests are real. The six actual-tokenizer object-
+only contexts fit within2048 tokens, max1544 including512 reply reserve. This is
+not proof of a model choosing the correct spatial reference. Live acceptance
+keeps distant-placement (>64 units) separate from pipeline/CID/reload acceptance.
+
+Availability attribution adds routed full-queue → absent → ready task tests,
+unknown/committed error propagation, bounded Unicode trace storage and no wait
+step/failure charge.76 focused cases pass. Authenticated speaker checks cover
+unseen owner, nearby named residents, same-host resident speakers and unchanged
+private visitor channels.46 unit/contract cases plus the native host owner/visitor
+case pass. Seven real Qwen category requests qualify only object admission, not
+argument selection or image/mesh execution. Preserve failed final5 acceptance.
+
+Final6 results:367/367 inspector and170/170 placement/task tests pass (overlapping
+scopes). Desktop/mobile exact-preview assets and SecretWorkshop Noise checks pass
+with no console/page errors. One real Qwen2B/DreamShaper/SF3D owner request passes
+planning, image/mesh execution, grounded placement, complete+pinned CID and
+identical native reload. Overall semantic acceptance FAIL remains: selected32
+rather than96-unit ground, failing the unchanged >64criterion; subsequent model
+speech contradicted the true placed receipt. No context truncation, request retry
+or local GPU model was involved. Retain that failure as the next spatial/speech
+quality regression, not as a waived or passing gate.

@@ -7,6 +7,26 @@ const copy = (value) => structuredClone(value);
 const abortError = (reason = 'Agent task cancelled') => new DOMException(String(reason?.message ?? reason), 'AbortError');
 const failure = (message, code) => Object.assign(new Error(message), { code });
 const activeOperation = (head) => ['prepared', 'dispatched'].includes(head.pendingOperation?.status);
+const budgetFields = ['inputTokens', 'contextTokens', 'reservedOutputTokens', 'removedTurns',
+  'preflightCalls', 'measurementTokens', 'probeTokenBudget', 'probeOutputTokens'];
+function boundedContextBudget(value) {
+  if (!value || typeof value !== 'object') return undefined;
+  const counters = Object.fromEntries(budgetFields.filter(key => Number.isSafeInteger(value[key]) && value[key] >= 0)
+    .map(key => [key, value[key]]));
+  return Object.keys(counters).length ? counters : undefined;
+}
+// Error objects can include arbitrary provider data. Retain only bounded
+// diagnostic fields, on the existing lifecycle event rather than extra rows.
+function failureDetails(error, entry) {
+  const errorCode = typeof error?.code === 'string' ? error.code.replaceAll('\0', '').slice(0, 128) : '';
+  const contextBudget = { ...entry?.contextBudget, ...boundedContextBudget(error), ...boundedContextBudget(error?.contextBudget) };
+  return { ...(errorCode ? { errorCode } : {}),
+    ...(entry ? { requestId: entry.requestId, task: entry.input.task,
+      ...(entry.input.conversationId !== undefined ? { conversationId: entry.input.conversationId } : {}),
+      dispatched: entry.dispatched === true, outputStarted: entry.outputStarted === true || error?.outputStarted === true } : {}),
+    ...(typeof error?.committed === 'boolean' ? { committed: error.committed } : {}),
+    ...(Object.keys(contextBudget).length ? { contextBudget } : {}) };
+}
 
 export const AGENT_CAPABILITIES = Object.freeze({ generalAgent: true, baselineRouting: true,
   learnedRouting: false, peerRouter: false, modelProvisioning: false, mobility: false, tasks: AGENT_TASKS });
@@ -102,7 +122,9 @@ export class AgentRuntime {
       this.#emit({ type: 'changed', agentId: id, head }); return head;
     } catch (error) {
       this.unsaved.set(id, { expectedRevision: previous.revision, change: copy(change) });
-      this.#activity(id, { status: 'paused', unsaved: true, error: `Not saved: ${error.message}` });
+      const entry = this.entries.get(id);
+      this.#activity(id, { status: 'paused', unsaved: true, ...failureDetails(error, entry),
+        ...(entry?.route ? { route: entry.route } : {}), error: `Not saved: ${error.message}` });
       throw error;
     }
   }
@@ -189,6 +211,7 @@ export class AgentRuntime {
           this.#activity(id, { status: 'running', requestId, route });
           const progress = (event) => {
             if (combined.aborted) return;
+            if (event?.type === 'context-budget') entry.contextBudget = boundedContextBudget(event);
             if (event?.type === 'accepted' && typeof event.peerId === 'string') {
               entry.route = { ...route, peerId: event.peerId.slice(0, 128) };
               this.#activity(id, { status: 'running', requestId, route: entry.route });
@@ -254,18 +277,19 @@ export class AgentRuntime {
             const nextStatus = availability || preempted ? 'waiting' : 'paused';
             const pauseCause = nextStatus === 'paused' ? entry.ownerCancelled ? 'owner' : 'automatic' : null;
             const text = String(error.message ?? error).slice(0, 2048);
+            const details = failureDetails(error, entry);
             try {
               await this.#save(id, saved, { head: { ...saved, status: nextStatus, pauseCause },
                 ...(prepared ? { operation: { id: requestId, status: status === 'waiting' ? 'cancelled' : status,
                   ...(entry.route ? { route: entry.route } : {}) } } : {}),
-                event: { type: status, operationId: requestId, text, ...(entry.route ? { route: entry.route } : {}),
+                event: { type: status, operationId: requestId, text, ...details, ...(entry.route ? { route: entry.route } : {}),
                   ...(availability ? { waiting: availability.kind, code: availability.code } : {}),
                   ...(preempted ? { superseded: true } : {}),
                   ...(!prepared ? { dispatched: false } : {}) } });
             } catch { /* #save preserves the failed checkpoint for explicit reconciliation. */ }
             if (!this.unsaved.has(id)) {
               entry.failureHandled = true;
-              this.#activity(id, { status: nextStatus, pauseCause, ...(availability ? { waiting: availability.kind } : {}),
+              this.#activity(id, { status: nextStatus, pauseCause, ...details, ...(availability ? { waiting: availability.kind } : {}),
                 error: text, ...(entry.route ? { route: entry.route } : {}) });
             }
           }
@@ -275,6 +299,7 @@ export class AgentRuntime {
     } catch (error) {
       if (!this.unsaved.has(id) && !entry.failureHandled) this.#activity(id, {
         status: error.code === 'ERR_AGENT_BUSY' || classifyInferenceAvailability(error) ? 'waiting' : 'paused',
+        ...failureDetails(error, entry), ...(entry.route ? { route: entry.route } : {}),
         error: String(error.message ?? error).slice(0, 2048) });
       throw error;
     }

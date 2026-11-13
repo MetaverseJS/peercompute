@@ -2505,3 +2505,38 @@ roaming; explicit stored movement choices and owner pauses remain respected.
 Self-directed follow-up is implemented and verified on internal final8 previews;
 focused tests and desktop/mobile controls passed. Pending user review, keep this
 slice local and preserve the published Pages build.
+
+Next authorized resident slice: a dedicated reusable inspector launched from
+resident chat, with local-owner profile editing, runtime/objective/memory/model
+state and a bounded private diagnostic log. Reproduce missed world-chat replies
+and distinguish context/preflight/transport/publication failures from model
+quality. Preserve original history, host authority and internal-only previews.
+
+Follow-up scope: chat presentation is independent of inference lifetime. Closing
+or switching a conversation and moving around must preserve its in-flight reply
+and deliver it to the original conversation. Explicit cancellation, removal and
+world teardown retain their lifecycle authority. Public-speaker imitation is
+reproduced on a live Qwen2B peer; qualify observation/identity separation with
+unchanged persona, original user prompt and attributable model route.
+
+
+Current resident follow-up: grounded object placement reuses navigation locations
+and remembered places, with current surface/footprint validation. Next requested
+Humunculus slice is acquire/carry/place of owned or explicitly authorized props,
+using stable object identity, reservations, motor arrival and placement receipts.
+The throne-to-castle example is a planned objective, not a currently shipped
+manipulation capability. See demos/cubechat/plan.md.
+
+Object authoring now has an owner-only plan → validated host execution → verified
+receipt → character reply path. A conversational disclaimer cannot prevent a
+validated tool request from reaching execution. Existing nonobject intent checks
+remain. Saved CID/position survives later speech or display failure. Real-model
+semantic distance selection is still being qualified; no completion claim yet.
+
+Resident inspector / object authoring checkpoint:367 inspector and170 placement
+checks pass. Actual Qwen2B → DreamShaper → SF3D execution generated a retained
+castle and restored its identical CID/placement after reload. Shared spatial
+references and host validation work. The model chose32 instead of96 units for
+a distant request and narrated a false capability denial; overall semantic
+acceptance remains failed. Keep those quality issues open, alongside reported
+repetition. Do not conflate verified host execution with model prose.

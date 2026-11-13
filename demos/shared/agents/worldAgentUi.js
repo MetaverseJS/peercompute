@@ -17,7 +17,7 @@ const checkbox = (label, checked = false) => {
 
 /** Accessible scene conversation controls. No model execution or storage ownership. */
 export function createWorldAgentUi({ worldLabel = 'World', container = document.body,
-  onSpawn, onSelect, onSend, onModels, onVoice, onRecord, onCancel, onClose, onRemove, onResume, onOpen, onMind } = {}) {
+  onSpawn, onSelect, onSend, onModels, onVoice, onRecord, onCancel, onClose, onRemove, onResume, onOpen, onMind, onInspect } = {}) {
   const root = element('div', undefined, 'pc-world-agent-ui');
   const launcher = button('Agents'); launcher.className = 'pc-world-agent-launcher';
   const dialog = element('dialog', undefined, 'pc-world-agent-dialog');
@@ -44,12 +44,14 @@ export function createWorldAgentUi({ worldLabel = 'World', container = document.
   sidebar.append(list, empty, spawnDetails);
   const conversation = element('section', undefined, 'pc-world-agent-conversation');
   const agentName = element('h3', 'Select an agent cube');
+  const residentHeading = element('div', undefined, 'pc-world-agent-actions'), inspect = button('Resident'); residentHeading.append(agentName, inspect);
   const metadata = element('p', 'Choose a cube in the scene or an agent from the list.', 'pc-world-agent-note');
   const ownerActions = element('div', undefined, 'pc-world-agent-actions');
   const resume = button('Resume'), remove = button('Remove body'), mind = button('Mind');
   remove.title = 'Remove this cube from the world. Its saved identity and conversation history remain.';
   ownerActions.append(mind, resume, remove);
   const recovery = element('p', '', 'pc-world-agent-note'); recovery.hidden = true;
+  const pendingNote = element('p', '', 'pc-world-agent-note'); pendingNote.hidden = true; pendingNote.dataset.pendingConversation = '';
   const messages = element('div', undefined, 'pc-world-agent-messages');
   messages.setAttribute('role', 'log'); messages.setAttribute('aria-label', 'Agent conversation'); messages.setAttribute('aria-live', 'polite');
   const composer = element('form', undefined, 'pc-world-agent-composer');
@@ -62,25 +64,29 @@ export function createWorldAgentUi({ worldLabel = 'World', container = document.
   const voiceNote = element('p', 'Voice models download about 376 MB on first use. Text chat remains available.', 'pc-world-agent-note');
   const voiceReply = checkbox('Speak replies');
   composer.append(prompt, sendActions, voice.wrapper, voiceNote, voiceReply.wrapper);
-  conversation.append(agentName, metadata, ownerActions, recovery, messages, composer);
+  conversation.append(residentHeading, metadata, ownerActions, recovery, messages, pendingNote, composer);
   layout.append(sidebar, conversation);
   const footer = element('footer'), closeButton = button('Close'); footer.append(closeButton);
   dialog.append(header, status, layout, footer); root.append(launcher, dialog); container.append(root);
 
   let agents = [], selected = null, busy = false, disposed = false, closing = null, restoreFocus = null;
-  let sending = false, mutating = false, cancelling = false, selecting = false;
+  let sending = false, mutating = false, cancelling = false, selecting = false, inspecting = false;
   let voiceState = { enabled: false, recording: false, preparing: false }, recordIntent = false, recordPending = false, voiceEpoch = 0, recordEpoch = 0;
   let messageList = [];
+  let sendingKey = null, busyKey = null;
+  const histories = new Map(), drafts = new Map(), statuses = new Map();
   const active = () => busy || sending;
   const capturing = () => voiceState.recording || recordIntent || recordPending;
   const paused = () => selected?.status === 'paused' || selected?.recoveryRequired === true;
-  const setStatus = (value) => { if (!disposed) status.textContent = text(value); };
+  let statusMessage = ''; const worldChatStatuses = new Map();
+  const renderStatus = () => { if (!disposed) status.textContent = [statuses.get(selected?.key) ?? statusMessage, ...worldChatStatuses.values()].filter(Boolean).join('\n'); };
+  const setStatus = (value, key = selected?.key) => { if (typeof key === 'string') statuses.set(key, text(value)); else statusMessage = text(value); renderStatus(); };
 
   function updateControls() {
     const blocked = disposed || Boolean(closing), pending = mutating || selecting;
     launcher.disabled = blocked;
     closeButton.disabled = blocked; closeButton.textContent = closing ? 'Closing…' : 'Close';
-    models.disabled = blocked || pending || active() || capturing() || voiceState.preparing;
+    models.disabled = blocked || pending;
     name.disabled = goals.disabled = localOnly.input.disabled = shared.input.disabled = blocked || mutating;
     spawn.disabled = blocked || mutating || active() || capturing() || typeof onSpawn !== 'function';
     prompt.disabled = blocked || !selected || paused() || active() || capturing() || pending;
@@ -103,12 +109,16 @@ export function createWorldAgentUi({ worldLabel = 'World', container = document.
     remove.hidden = !owned; remove.disabled = blocked || pending || active() || capturing() || typeof onRemove !== 'function';
     resume.hidden = !owned || !paused(); resume.disabled = blocked || pending || active() || capturing() || typeof onResume !== 'function';
     mind.hidden = !owned || typeof onMind !== 'function'; mind.disabled = blocked || !owned;
+    inspect.hidden = !selected || typeof onInspect !== 'function'; inspect.disabled = blocked || inspecting || !selected;
     resume.textContent = selected?.recoveryRequired ? 'Acknowledge and resume' : 'Resume';
     recovery.hidden = !paused();
     recovery.textContent = selected?.recoveryRequired
       ? 'The previous request has an unknown outcome. Resume acknowledges it without replaying that request.'
       : owned ? 'This agent is paused. Resume it before starting a new conversation.' : 'This agent is paused by its host.';
-    for (const row of list.querySelectorAll('button')) row.disabled = blocked || pending || active() || capturing();
+    const pendingKey = sendingKey ?? busyKey;
+    pendingNote.hidden = !pendingKey || !active();
+    pendingNote.textContent = pendingNote.hidden ? '' : `Reply for ${text(agents.find(item => item.key === pendingKey)?.name ?? 'resident', 240)} is still pending. You can switch or close chat; Cancel stops the request.`;
+    for (const row of list.querySelectorAll('button')) row.disabled = blocked || pending;
   }
 
   async function invoke(callback, argument, { mutation = false, selection = false } = {}) {
@@ -127,7 +137,7 @@ export function createWorldAgentUi({ worldLabel = 'World', container = document.
       ? `${selected.local ? 'Hosted on this device' : 'Hosted by a peer'} · ${text(selected.status || 'idle', 32)}`
       : 'Choose a cube in the scene or an agent from the list.';
     for (const row of list.querySelectorAll('button')) row.setAttribute('aria-current', String(row.dataset.agentKey === selected?.key));
-    updateControls();
+    renderStatus(); updateControls();
   }
 
   function setAgents(next) {
@@ -144,7 +154,7 @@ export function createWorldAgentUi({ worldLabel = 'World', container = document.
     if (selected) {
       const fresh = agents.find(item => item.key === selected.key);
       if (fresh) selected = { ...fresh };
-      else { selected = null; setMessages([]); }
+      else select(null);
     }
     renderSelection();
     if (focused) [...list.querySelectorAll('button')].find(row => row.dataset.agentKey === focused)?.focus();
@@ -153,22 +163,28 @@ export function createWorldAgentUi({ worldLabel = 'World', container = document.
   function select(descriptor) {
     if (disposed) return;
     const changed = selected?.key !== descriptor?.key;
+    if (selected) drafts.set(selected.key, prompt.value);
     selected = descriptor ? { ...descriptor } : null;
-    if (changed) { setMessages([]); prompt.value = ''; }
+    if (changed) { messageList = histories.get(selected?.key) ?? []; renderMessages(); prompt.value = drafts.get(selected?.key) ?? ''; }
     renderSelection();
   }
 
-  function setMessages(next) {
+  function setMessages(next, key = selected?.key) {
     if (disposed) return;
-    messageList = (Array.isArray(next) ? next : []).slice(-32).map(item => {
+    const entries = (Array.isArray(next) ? next : []).slice(-32).map(item => {
       const modelLabel = item?.role === 'assistant' && typeof item.modelLabel === 'string' ? text(item.modelLabel, 240).trim() : '';
       return { role: ['user', 'assistant', 'system'].includes(item?.role) ? item.role : 'system', text: text(item?.text, 16_000),
         ...(modelLabel ? { modelLabel } : {}) };
     });
     let budget = 128_000;
-    for (let index = messageList.length - 1; index >= 0; index--) {
-      messageList[index].text = messageList[index].text.slice(0, Math.max(0, budget)); budget -= messageList[index].text.length;
+    for (let index = entries.length - 1; index >= 0; index--) {
+      entries[index].text = entries[index].text.slice(0, Math.max(0, budget)); budget -= entries[index].text.length;
     }
+    if (typeof key === 'string') histories.set(key, entries);
+    if (key !== selected?.key) return;
+    messageList = entries; renderMessages();
+  }
+  function renderMessages() {
     messages.replaceChildren();
     for (const message of messageList) {
       const article = element('article');
@@ -186,16 +202,17 @@ export function createWorldAgentUi({ worldLabel = 'World', container = document.
   async function sendMessage() {
     if (send.disabled || sending || disposed) return;
     const content = prompt.value.trim(), key = selected.key;
-    sending = true; updateControls();
+    drafts.set(key, prompt.value); sending = true; sendingKey = key; updateControls();
     try {
       await onSend({ key, text: content, voiceReply: voiceState.enabled && voiceReply.input.checked });
+      if (!disposed && (drafts.get(key) ?? '').trim() === content) drafts.set(key, '');
       if (!disposed && selected?.key === key && prompt.value.trim() === content) prompt.value = '';
-    } catch (error) { setStatus(error?.message ?? error); }
-    finally { sending = false; updateControls(); }
+    } catch (error) { setStatus(error?.message ?? error, key); }
+    finally { sending = false; sendingKey = null; updateControls(); }
   }
 
   composer.addEventListener('submit', event => { event.preventDefault(); void sendMessage(); });
-  prompt.addEventListener('input', updateControls);
+  prompt.addEventListener('input', () => { if (selected) drafts.set(selected.key, prompt.value); updateControls(); });
   prompt.addEventListener('keydown', event => {
     if (event.key !== 'Enter' || event.shiftKey || event.isComposing || event.repeat) return;
     event.preventDefault(); void sendMessage();
@@ -212,6 +229,13 @@ export function createWorldAgentUi({ worldLabel = 'World', container = document.
   models.addEventListener('click', () => { if (!models.disabled) void invoke(onModels); });
   remove.addEventListener('click', () => { if (selected?.local && !remove.disabled) void invoke(onRemove, selected.key, { mutation: true }); });
   mind.addEventListener('click', () => { if (selected?.local && !mind.disabled) void invoke(onMind, { key: selected.key, returnFocus: mind }); });
+  inspect.addEventListener('click', async () => {
+    if (inspect.disabled || !selected) return;
+    const key = selected.key; inspecting = true; updateControls();
+    try { await onInspect({ key, returnFocus: inspect, tab: 'overview' }); }
+    catch (error) { setStatus(error?.message ?? error); }
+    finally { inspecting = false; updateControls(); }
+  });
   resume.addEventListener('click', () => { if (selected?.local && !resume.disabled) void invoke(onResume, selected.key, { mutation: true }); });
   cancel.addEventListener('click', async () => {
     if (cancel.disabled) return;
@@ -248,13 +272,12 @@ export function createWorldAgentUi({ worldLabel = 'World', container = document.
   async function close() {
     if (disposed || !dialog.open) return;
     if (closing) return closing;
-    let didClose = false;
-    closing = Promise.resolve().then(() => onClose?.()).then(() => {
-      if (disposed) return;
-      dialog.close(); didClose = true;
-    }).catch(error => setStatus(error?.message ?? error)).finally(() => {
+    if (selected) drafts.set(selected.key, prompt.value);
+    dialog.close();
+    if (restoreFocus?.isConnected && typeof restoreFocus.focus === 'function') restoreFocus.focus();
+    closing = Promise.resolve().then(() => onClose?.()).catch(error => setStatus(error?.message ?? error)).finally(() => {
       closing = null; updateControls();
-      if (didClose && !disposed && restoreFocus?.isConnected && typeof restoreFocus.focus === 'function') restoreFocus.focus();
+      if (!disposed && !dialog.open && document.activeElement === document.body && restoreFocus?.isConnected) restoreFocus.focus();
     });
     updateControls(); return closing;
   }
@@ -271,8 +294,15 @@ export function createWorldAgentUi({ worldLabel = 'World', container = document.
   });
   updateControls();
   return { element: root, dialog, open, close, setAgents, select, setMessages, setStatus,
-    appendMessage(role, value) { setMessages([...messageList, { role, text: value }]); },
-    setBusy(value) { busy = Boolean(value); updateControls(); },
+    setWorldChatStatus(key, value) {
+      if (disposed || typeof key !== 'string' || !key || key.length > 300) return;
+      const message = text(value);
+      if (message) { worldChatStatuses.set(key, message); if (worldChatStatuses.size > 64) worldChatStatuses.delete(worldChatStatuses.keys().next().value); }
+      else worldChatStatuses.delete(key);
+      renderStatus();
+    },
+    appendMessage(role, value, key = selected?.key) { setMessages([...(histories.get(key) ?? []), { role, text: value }], key); },
+    setBusy(value, key) { busy = Boolean(value); busyKey = busy ? key ?? busyKey ?? selected?.key ?? null : null; updateControls(); },
     setVoiceStatus(value) {
       if (disposed) return;
       const wasEnabled = voiceState.enabled;
@@ -285,6 +315,6 @@ export function createWorldAgentUi({ worldLabel = 'World', container = document.
       if (disposed) return;
       disposed = true; voiceEpoch++; recordEpoch++;
       if (dialog.open) dialog.close();
-      root.remove(); agents = []; selected = null; messageList = [];
+      root.remove(); agents = []; selected = null; messageList = []; worldChatStatuses.clear(); histories.clear(); drafts.clear(); statuses.clear();
     } };
 }

@@ -169,6 +169,36 @@ test('errors never automatically replay; input/output and public-context size ar
   assert.equal(g.replies[0][2].context.messages.at(-1).id, 'long29');
 });
 
+test('automatic pause during a failed response preserves its original inference error without publication or replay', async t => {
+  const gate = deferred(); let signal, attempts = 0;
+  const f = fixture(t, { respond: async (_body, _message, options) => {
+    attempts++; signal = options.signal; await gate.promise;
+    throw Object.assign(new Error('The current prompt exceeds the model context budget'), { code: 'ERR_MODEL_CONTEXT_BUDGET' });
+  } });
+  f.responder.receive(message('failed-turn')); await until(() => signal);
+  f.bodies[0].status = 'paused'; f.bodies[0].pauseCause = 'automatic'; f.responder.sync();
+  assert.equal(signal.aborted, true); gate.resolve();
+  await until(() => !f.responder.getStatus().active);
+  assert.deepEqual(f.statuses.at(-1), { key: 'local:ada', status: 'error', messageId: 'failed-turn',
+    error: 'The current prompt exceeds the model context budget', errorCode: 'ERR_MODEL_CONTEXT_BUDGET' });
+  f.bodies[0].status = 'idle'; f.bodies[0].pauseCause = null; f.responder.sync();
+  await delay(5); assert.equal(attempts, 1); assert.equal(f.publications.length, 0);
+});
+
+test('owner revocation still cancels actual aborts without inventing an error or replaying a request', async t => {
+  let signal, attempts = 0;
+  const f = fixture(t, { respond: async (_body, _message, options) => {
+    attempts++; signal = options.signal;
+    await new Promise((resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true }));
+  } });
+  f.responder.receive(message('revoked-turn')); await until(() => signal);
+  f.bodies[0].respondToWorldChat = false; f.responder.sync();
+  await until(() => !f.responder.getStatus().active);
+  assert.deepEqual(f.statuses.at(-1), { key: 'local:ada', status: 'cancelled', messageId: 'revoked-turn' });
+  f.bodies[0].respondToWorldChat = true; f.responder.sync();
+  await delay(5); assert.equal(attempts, 1); assert.equal(f.publications.length, 0);
+});
+
 test('dedup window fails closed at its cap and expires by clock without accepting duplicate payload changes', async t => {
   let clock = 0;
   const f = fixture(t, { now: () => clock }); f.bodies[0].available = false;

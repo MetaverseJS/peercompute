@@ -162,7 +162,24 @@ test('managed routing preserves local-only and waits without loading an absent m
   let generated = 0;
   const inference = { async listCandidates({ mode }) { assert.equal(mode, 'local-only'); return []; }, async generate() { generated++; } };
   assert.deepEqual(await generateWorldGoalDecision({ inference, head: { policy: { inferenceMode: 'local-only' } }, goal, observed }),
-    { status: 'waiting-for-model' });
+    { status: 'waiting-for-model', availability: { kind: 'model-unavailable', code: 'ERR_AGENT_NO_MODEL',
+      message: 'No compatible local model has available inference capacity.' } });
+  assert.equal(generated, 0);
+});
+
+test('full queues preserve busy evidence while unclassified discovery and accepted-operation errors propagate', async () => {
+  let generated = 0;
+  const inference = { async listCandidates() { return [{ ...candidate, busy: true, queuedRequests: 2, queueCapacity: 2 }]; },
+    async generate() { generated++; } };
+  const input = { inference, head: { policy: { inferenceMode: 'local-only' } }, goal, observed };
+  assert.deepEqual(await generateWorldGoalDecision(input), { status: 'waiting-for-model', availability: {
+    kind: 'busy', code: 'ERR_INFERENCE_BUSY', message: 'No compatible local model has available inference capacity.' } });
+  assert.equal(generated, 0);
+  for (const error of [Object.assign(new Error('Discovery timed out'), { code: 'ERR_TEST_DISCOVERY' }),
+    Object.assign(new Error('Accepted before the connection closed'), { code: 'ERR_INFERENCE_BUSY', committed: true })]) {
+    inference.listCandidates = async () => { throw error; };
+    await assert.rejects(generateWorldGoalDecision(input), cause => cause === error);
+  }
   assert.equal(generated, 0);
 });
 

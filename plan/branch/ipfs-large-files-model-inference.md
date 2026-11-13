@@ -1765,3 +1765,26 @@ This slice is a local checkpoint; Pages and origin publication are not included.
 Follow-up steering: make Self directed the default movement profile. No random
 wandering or scripted path is supplied by this preference; OODA/goal decisions
 use the existing learned motor. Preserve explicit saved movement choices.
+
+Resident inspector follow-up: dedicated detail modal from chat, owner/host edits,
+private persistent diagnostics and world-chat failure investigation. Retain
+conversation history and distinguish model output quality from routing errors.
+Internal preview and local checkpoint only.
+<!-- November 12 ongoing resident inspector follow-up -->
+Keep resident model work alive across chat-window navigation and movement.
+Key late results/status to their original conversation. Retain explicit Cancel,
+owner removal and world teardown behavior. Investigate reproduced Qwen2B quote
+imitation with controlled peer requests before changing prompt framing.
+
+Grounded placement follow-up shares navigation locations and remembered places
+with object generation. Resolve model-selected references privately, validate
+current geometry and footprint before work/retention, and report actual saved
+positions. Next todo is owned/authorized acquire/carry/place of existing objects,
+with reservations and physical progress receipts; no teleport-based substitute.
+
+Resident object follow-up: execute validated owner object plans before character
+narration and retain truthful placed/saved/not-placed receipts through later
+reply/display failure. The throne-to-castle manipulation example remains the next
+acquire/carry/place slice. Investigate reported car-output repetition and task-
+controller waiting labels without changing physical permissions or deleting
+private conversation history. Internal previews only; Pages remains unchanged.

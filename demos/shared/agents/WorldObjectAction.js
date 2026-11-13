@@ -1,5 +1,6 @@
 import { artifactCID } from '../../../peercompute/src/peercompute/artifacts/ArtifactManifest.js';
 import { normalizeWorldModelSize, resolveWorldModelSize, WORLD_MODEL_SIZE } from '../world/WorldModelScale.js';
+export { normalizeWorldObjectTarget } from './WorldSpatialReferences.js';
 
 export const WORLD_OBJECT_SCHEMA = 'peercompute.world.generated-object.v1';
 export const WORLD_OBJECT_LIMITS = Object.freeze({ perOwner: 32, visible: 128, promptBytes: 1024, nameBytes: 120,
@@ -36,10 +37,23 @@ export function normalizeWorldObjectAction(value) {
     prompt: objectText(value.prompt, WORLD_OBJECT_LIMITS.promptBytes, 'description') };
   return { ...action, size: resolveWorldModelSize(value.size, action) };
 }
-export const WORLD_OBJECT_ACTION_INSTRUCTIONS = 'You may also create a 3D object when the owner explicitly asks you to generate/build/place a new object. '
-  + 'Return an object with name, prompt and size, for example {"object":{"name":"Coffee mug","prompt":"One ceramic coffee mug on a plain white background","size":0.8}}. '
-  + 'The object is placed beside your cube. This only proposes generation; do not claim it already exists. '
-  + 'Do not create objects for questions, hypothetical examples, avatars, or movement requests.';
+function objectInstructions(allowPlacement) {
+  const shape = { object: { name: 'Object name', prompt: 'Description of one isolated object on a plain background', size: 6,
+    ...(allowPlacement ? { placement: { locationId: 'l1' } } : {}) } };
+  return 'Resolve only arguments for the selected object action. Return exactly one JSON object with no prose or code fences. '
+    + `Use this complete shape: ${JSON.stringify(shape)}. `
+    + 'The object response has no other top-level keys: do not add action, intent, type, coordinates or extra fields. '
+    + 'Choose its name and description from the current request; the description excludes placement instructions. '
+    + 'Size is its largest dimension, 0.3 to 48 world units; a person/cube is 6, a chair 3, a car 15 and a house 36. Honor requested scale. '
+    + (allowPlacement ? 'If the request specifies a destination, placement is required: choose one listed locationId (lN) matching its direction/distance, '
+      + 'or use {"targetId":"speaker"} inside placement for beside an observed person (speaker/pN). '
+      + 'Never invent coordinates or references. Never copy example l1 unless it fits the actual request. '
+      + 'If no destination was requested, omit placement for nearby placement. '
+      : 'The object is placed beside your cube. ')
+    + 'The only alternative response is {"intent":null} when the required target is unavailable or no creation was requested. Never claim execution success.';
+}
+export const WORLD_OBJECT_ACTION_INSTRUCTIONS = objectInstructions(false);
+export const WORLD_OBJECT_TARGET_INSTRUCTIONS = objectInstructions(true);
 
 export function normalizeWorldObjectPlacement(value, { worldId, ownerHostId } = {}) {
   fields(value, ['schema', 'worldId', 'ownerHostId', 'agentId', 'objectId', 'requestId', 'requestHash', 'name', 'position', 'size']);

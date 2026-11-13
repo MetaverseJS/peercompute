@@ -8,9 +8,10 @@ import { createWorldExperience } from '../shared/agents/WorldExperience.js';
 import { createWorldConversationTurns } from '../shared/agents/WorldConversationTurn.js';
 import { WORLD_INTENT_LEGACY_SUFFIX } from '../shared/agents/WorldIntent.js';
 import { projectWorldKnowledgeRequest } from '../shared/agents/WorldKnowledgeDecision.js';
+import { projectWorldIntentRequest } from '../shared/agents/WorldIntentDecision.js';
 
 function deferred() { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; }
-async function fixture(t, { clock = () => 1000 } = {}) {
+async function fixture(t, { clock = () => 1000, getActionCapabilities, getActionObservation } = {}) {
   const held = new Set(), store = new AgentRecordStore({ indexedDBImpl: new IDBFactory(), keyRange: IDBKeyRange,
     lockManager: { async request(name, options, callback) {
       if (held.has(name)) return callback(null); held.add(name);
@@ -35,7 +36,7 @@ async function fixture(t, { clock = () => 1000 } = {}) {
     memory: { append: async event => episodes.push(event), retrieve: async scope => episodes.filter(event => event.conversationId === scope.conversationId) } });
   const f = { store, agents, inference, body, senses, speech, answers, actions, episodes, decisions, experience,
     decide: async () => ({ intent: null }) };
-  const conversations = createWorldConversationTurns({ agents, experience, decideIntent: async options => {
+  const conversations = createWorldConversationTurns({ agents, experience, getActionCapabilities, getActionObservation, decideIntent: async options => {
     decisions.push({ message: options.message, reply: options.reply, observed: structuredClone(options.observed) }); return f.decide(options);
   } });
   f.conversations = conversations;
@@ -59,8 +60,10 @@ test('one journaled speech turn retains history and strips only the exact old sc
   ]) head = await f.store.commit(f.body.agentId, { expectedRevision: head.revision, event });
   const before = await f.agents.events(f.body.agentId, { limit: 100 });
   await f.run('What is here?'); await f.run('What changed?');
-  assert.deepEqual(f.speech[1].messages.slice(1).map(item => item.content),
-    ['Earlier question', 'Earlier answer', 'What is here?', 'Reply 1', 'What changed?']);
+  assert.deepEqual(f.speech[1].messages.slice(1, -1).map(item => item.content),
+    ['Earlier question', 'Earlier answer', 'What is here?', 'Reply 1']);
+  assert.equal(f.speech[1].prompt, 'What changed?');
+  assert(f.speech[1].messages.at(-1).content.endsWith('\n\nCurrent request:\nWhat changed?'));
   assert.equal(f.speech[1].taskInstructions, undefined);
   assert(!f.speech[1].messages.some(item => /Other visitor|Resident response format|Return one valid JSON/.test(item.content)));
   const events = await f.agents.events(f.body.agentId, { limit: 100 });
@@ -144,7 +147,8 @@ test('an explicit declined reply settles without an action and a different next 
   const second = await f.run('Become a copper robot', { allowAvatar: true });
   assert.equal(second.avatar.action.name, 'Robot'); assert.equal(f.decisions.length, 1);
   assert.equal(f.decisions[0].message, 'Become a copper robot'); assert.equal(f.decisions[0].reply, 'I will try a copper robot.');
-  assert.equal(f.speech[1].messages.at(-1).content, 'Become a copper robot');
+  assert.equal(f.speech[1].prompt, 'Become a copper robot');
+  assert(f.speech[1].messages.at(-1).content.endsWith('\n\nCurrent request:\nBecome a copper robot'));
   assert(f.speech[1].messages.some(message => message.content === declined), 'Do not erase refusals or prior history');
   assert.notEqual(f.speech[0].requestId, f.speech[1].requestId);
   assert.equal((await f.agents.events(f.body.agentId)).filter(event => event.type === 'result').length, 2);
@@ -169,6 +173,241 @@ test('adapter knowledge survives a personality replacement without reviving the 
   const events = await f.agents.events(head.agentId);
   assert.equal(events.find(event => event.type === 'request').text, 'How do I move?');
   assert(!events.some(event => event.text?.includes('World facts')));
+});
+
+test('owner tool speech receives current provider facts without rewriting its prompt or storing system facts as conversation', async t => {
+  const calls = [], providers = task => ({ key: `local:${task}`, manifestCid: task, runtime: 'fixture', local: true, available: true,
+    task, modalities: [task === 'image-to-3d' ? 'image' : 'text'], outputModalities: [task === 'image-to-3d' ? 'mesh' : 'image'] });
+  const targets = [providers('text-to-image'), providers('image-to-3d')];
+  const f = await fixture(t, { getActionCapabilities: input => { calls.push(input); return { targets }; } });
+  f.answers.push('I can try creating the virtual castle nearby.');
+  f.decide = async () => ({ object: { name: 'Castle Grayskull', prompt: 'A green stone fantasy castle', size: 40 } });
+  const prompt = 'Generate a 3D model of Castle Grayskull.', result = await f.run(prompt, { allowObject: true, allowAvatar: true, taskInstructions: 'CubeChat is a shared world.' });
+  assert.equal(result.object.action.name, 'Castle Grayskull'); assert.equal(calls.length, 1);
+  assert.equal(calls[0].head.policy.inferenceMode, 'local-only'); assert.equal(calls[0].allowObject, true);
+  const system = f.speech[0].messages[0].content;
+  assert.match(system, /CubeChat is a shared world/); assert.match(system, /create\/place nearby virtual 3D objects; replace avatar/);
+  assert.match(system, /Cached providers \(local-only\): image=ready, mesh=ready/);
+  assert.match(system, /Not physical manufacturing/); assert.match(system, /only with verified receipts/);
+  assert.equal(f.speech[0].prompt, prompt); assert(f.speech[0].messages.at(-1).content.endsWith('\n\nCurrent request:\n' + prompt));
+  assert.equal(f.speech.length, 1);
+  const events = await f.agents.events(f.body.agentId);
+  assert.equal(events.find(event => event.type === 'request').text, prompt);
+  assert(!events.some(event => event.text?.includes('Host tools:')));
+  targets[1].available = false; await f.run('Try another castle.', { allowObject: true });
+  assert.match(f.speech[1].messages[0].content, /mesh=not-advertised/);
+});
+
+test('optional owner object hook plans, validates and executes before one speech turn about the verified result', async t => {
+  const sequence = [], f = await fixture(t, { clock: Date.now,
+    getActionCapabilities: () => ({ supportsGroundedPlacement: true, targets: [] }) });
+  f.senses.locations = [{ id: 'ground:96:0', name: 'Distant ground', position: [96, 3, 0] }];
+  f.decide = async options => {
+    sequence.push('plan'); assert.equal(options.reply, undefined); assert.equal(options.objectOnly, true);
+    return projectWorldIntentRequest(options.message, options.observed, options).resolve(JSON.stringify({ object: {
+      name: 'Castle', prompt: 'One green stone castle', size: 40, placement: { locationId: 'l1' } } }));
+  };
+  const generate = f.inference.generate;
+  f.inference.generate = async (...args) => { sequence.push('speech'); return generate(...args); };
+  f.answers.push('The castle is now placed in the distance.');
+  const verified = { status: 'placed', text: 'Placed Castle at (96, 0, 0).', placement: { position: [96, 0, 0] }, artifactCid: 'verified-cid' };
+  const prompt = 'Create Castle Grayskull off in the distance.';
+  const result = await f.run(prompt, { allowObject: true, executeObject: async (proposal, { signal }) => {
+    sequence.push('execute'); signal.throwIfAborted();
+    assert.equal(proposal.residentRevision, (await f.agents.get(f.body.agentId)).revision);
+    assert.deepEqual(proposal.placementTarget.position, [96, 3, 0]);
+    assert.equal(proposal.action.prompt, 'One green stone castle'); assert.match(proposal.requestId, /^[0-9a-f-]{36}$/);
+    return verified;
+  } });
+  assert.deepEqual(sequence, ['plan', 'execute', 'speech']); assert.equal(f.decisions.length, 1);
+  assert.equal(result.object, undefined); assert.deepEqual(result.objectOutcome, verified);
+  assert.match(f.speech[0].taskInstructions, /Verified object tool outcome/);
+  assert(f.speech[0].taskInstructions.includes(JSON.stringify({ status: verified.status, text: verified.text })));
+  assert.equal(f.speech[0].prompt, prompt); assert(f.speech[0].messages.at(-1).content.endsWith('\n\nCurrent request:\n' + prompt));
+  const events = await f.agents.events(f.body.agentId);
+  assert.deepEqual(events.filter(item => ['request', 'result'].includes(item.type)).map(item => item.text), [prompt, result.text]);
+  verified.placement.position[0] = 999;
+  assert.deepEqual(result.objectOutcome.placement.position, [96, 0, 0], 'Acknowledged metadata is detached');
+});
+
+test('owner object hook respects planner none, declined nonobject speech and absent owner capability', async t => {
+  for (const mode of ['none', 'declined-motion', 'no-capability']) {
+    const f = await fixture(t, { clock: Date.now }); let executions = 0;
+    f.decide = async options => {
+      if (options.objectOnly) { assert.equal(options.reply, undefined); return { intent: null }; }
+      assert.equal(options.reply, 'Which design do you want?');
+      return { intent: null };
+    };
+    f.answers.push(mode === 'declined-motion' ? 'I cannot perform that action.' : 'Which design do you want?');
+    const result = await f.run('An ambiguous request', { allowObject: mode !== 'no-capability',
+      executeObject: async () => { executions++; throw new Error('No admitted object'); } });
+    assert.equal(executions, 0); assert.equal(f.decisions.length, mode === 'none' ? 2 : 1); assert.equal(result.objectOutcome, undefined);
+    assert.deepEqual(f.actions, []);
+  }
+});
+
+test('a failed object attempt feeds its verified failure to speech without retry or a success claim', async t => {
+  const f = await fixture(t, { clock: Date.now }); let executions = 0;
+  f.decide = async () => ({ object: { name: 'Castle', prompt: 'A castle', size: 40 } });
+  const result = await f.run('Build a castle', { allowObject: true, executeObject: async () => {
+    executions++; return { status: 'not-placed', text: 'Object not placed: destination is occupied.' };
+  } });
+  assert.equal(executions, 1); assert.equal(f.decisions.length, 1);
+  assert.equal(result.objectOutcome.status, 'not-placed'); assert.equal(result.object, undefined);
+  assert.match(f.speech[0].taskInstructions, /not-placed.*destination is occupied/);
+});
+
+test('an acknowledged object outcome survives speech failure, late cancellation, owner edit and instruction overflow', async t => {
+  for (const mode of ['speech-error', 'cancel', 'edit', 'budget', 'saved', 'not-placed']) {
+    const f = await fixture(t, { clock: Date.now }), controller = new AbortController(); let executions = 0;
+    f.decide = async () => ({ object: { name: 'Castle', prompt: 'A castle', size: 40 } });
+    if (['speech-error', 'saved', 'not-placed'].includes(mode)) f.inference.generate = async () => { throw Object.assign(new Error('Peer speech unavailable'), { code: 'SPEECH_UNAVAILABLE' }); };
+    const verified = mode === 'saved' ? { status: 'saved', text: 'Saved Castle; display is pending.', artifactCid: 'actual-cid' }
+      : mode === 'not-placed' ? { status: 'not-placed', text: 'Object not placed: destination is occupied.' }
+      : { status: 'placed', text: 'Placed Castle at (96, 0, 0).', artifactCid: 'actual-cid' };
+    const result = await f.run('Build a castle', { allowObject: true, signal: controller.signal,
+      ...(mode === 'budget' ? { taskInstructions: 'x'.repeat(4096) } : {}),
+      executeObject: async () => {
+        executions++;
+        if (mode === 'cancel') controller.abort();
+        if (mode === 'edit') await f.agents.update(f.body.agentId, { name: 'Edited after commit' });
+        return verified;
+      } });
+    assert.equal(executions, 1); assert.equal(result.text, verified.text); assert.deepEqual(result.objectOutcome, verified);
+    assert.equal(result.object, undefined); assert(result.speechError?.message); assert.equal(f.decisions.length, 1);
+    if (mode !== 'speech-error') assert.equal(f.speech.length, 0);
+    if (mode === 'budget') assert.equal(result.speechError.code, 'ERR_WORLD_OBJECT_REPLY_BUDGET');
+  }
+});
+
+test('pre-execution owner edits, cancellation, command changes or forged targets never call the object hook', async t => {
+  for (const mode of ['edit', 'cancel', 'command', 'forged']) {
+    const f = await fixture(t, { clock: Date.now, getActionCapabilities: () => ({ supportsGroundedPlacement: true }) });
+    f.senses.locations = [{ id: 'ground:96:0', name: 'Distant ground', position: [96, 3, 0] }];
+    const began = deferred(), release = deferred(), controller = new AbortController(); let executions = 0;
+    f.decide = async options => {
+      began.resolve(); await release.promise;
+      // An injected proposal provider cannot mutate the trusted observation to
+      // authorize a point that was absent when this request was admitted.
+      if (mode === 'forged') options.observed.locations[0].position[0] = 999;
+      return { object: { name: 'Castle', prompt: 'A castle', size: 40 }, placementTarget: {
+        kind: 'location', id: 'ground:96:0', position: [mode === 'forged' ? 999 : 96, 3, 0], observedAt: options.observed.observedAt } };
+    };
+    const pending = f.run('Build a castle', { allowObject: true, signal: controller.signal,
+      executeObject: async () => { executions++; return { status: 'placed', text: 'Should not execute' }; } });
+    pending.catch(() => {}); await began.promise;
+    if (mode === 'edit') await f.agents.update(f.body.agentId, { name: 'Edited before commit' });
+    if (mode === 'cancel') controller.abort();
+    if (mode === 'command') f.senses.self.intentRevision++;
+    release.resolve(); await assert.rejects(pending);
+    assert.equal(executions, 0); assert.equal(f.speech.length, 0);
+  }
+});
+
+test('object execution stays busy and cancellation waits for owned resource cleanup', async t => {
+  const f = await fixture(t, { clock: Date.now }), began = deferred(), release = deferred();
+  f.decide = async () => ({ object: { name: 'Castle', prompt: 'A castle', size: 40 } });
+  const pending = f.run('Build a castle', { allowObject: true, executeObject: async (_proposal, { signal }) => {
+    began.resolve(); await new Promise(resolve => signal.addEventListener('abort', resolve, { once: true }));
+    await release.promise; signal.throwIfAborted();
+  } }); pending.catch(() => {}); await began.promise;
+  await assert.rejects(f.run('Build another one', { allowObject: true }), { code: 'ERR_AGENT_BUSY' });
+  let finished = false;
+  const cancellation = f.conversations.cancelPending('Owner cancelled generation').then(() => { finished = true; });
+  await tick(); assert.equal(finished, false); release.resolve(); await cancellation;
+  await assert.rejects(pending, { name: 'AbortError' }); assert.equal(f.speech.length, 0);
+});
+
+test('nonobject admission preserves speech-first clarification checks and fresh movement observations', async t => {
+  for (const mode of ['valid', 'left', 'command', 'clarification']) {
+    const f = await fixture(t, { clock: Date.now });
+    if (mode === 'clarification') f.answers.push('Which person should I follow?');
+    f.decide = async options => {
+      if (options.objectOnly) { assert.equal(options.reply, undefined); return { intent: null }; }
+      assert.equal(options.reply, mode === 'clarification' ? 'Which person should I follow?' : 'Reply 1');
+      return mode === 'clarification' ? { intent: null } : { intent: { type: 'follow', targetId: 'human:visitor' } };
+    };
+    const generate = f.inference.generate;
+    f.inference.generate = async (...args) => {
+      if (mode === 'left') f.senses.participants = [];
+      if (mode === 'command') f.senses.self.intentRevision++;
+      return generate(...args);
+    };
+    const result = await f.run('Follow me', { allowObject: true, executeObject: async () => { throw Error('Not an object'); } });
+    assert.equal(f.decisions.length, mode === 'command' ? 1 : 2); assert.equal(result.objectOutcome, undefined);
+    if (mode === 'valid') assert.equal(f.actions.length, 1);
+    else { assert.equal(f.actions.length, 0); if (mode !== 'clarification') assert.match(result.text, /Action not started/); }
+  }
+});
+
+test('public speech remains unchanged and does not inspect action provider snapshots', async t => {
+  let snapshots = 0;
+  const f = await fixture(t, { getActionCapabilities: () => { snapshots++; throw Error('Must not inspect public providers'); } });
+  await f.run('What is CubeChat?', { conversationId: 'world:public', taskInstructions: 'Original world facts.' });
+  assert.equal(snapshots, 0); assert.equal(f.speech[0].taskInstructions, 'Original world facts.');
+  assert(!f.speech[0].messages[0].content.includes('Host tools:'));
+});
+
+test('capability grounding never bypasses an explicit decline or claims execution from speech', async t => {
+  let snapshots = 0;
+  const f = await fixture(t, { getActionCapabilities: () => { snapshots++; return { targets: [] }; } });
+  const refusal = 'I cannot generate this design. I can offer a different design.';
+  f.answers.push(refusal); f.decide = async () => { throw Error('A decline must not dispatch a tool'); };
+  const result = await f.run('Generate my requested object.', { allowObject: true });
+  assert.equal(snapshots, 1); assert.equal(result.text, refusal); assert.equal(result.object, undefined);
+  assert.equal(f.decisions.length, 0); assert.equal(result.applied, false); assert.deepEqual(f.actions, []);
+  assert.match(f.speech[0].messages[0].content, /Missing\/busy means wait/);
+});
+
+test('failed capability snapshots stay unknown and existing full instruction budgets are preserved', async t => {
+  const f = await fixture(t, { getActionCapabilities: () => { throw Error('Cache unavailable'); } });
+  await f.run('Become a robot.', { allowAvatar: true });
+  assert.match(f.speech[0].messages[0].content, /image=unknown, mesh=unknown/);
+  const instructions = 'x'.repeat(4096);
+  await f.run('Try an object.', { allowObject: true, taskInstructions: instructions });
+  assert.equal(f.speech[1].taskInstructions, instructions);
+});
+
+test('owner object proposals carry a validated remembered target separately from render text', async t => {
+  let recalled = 0;
+  const f = await fixture(t, { clock: Date.now, getActionCapabilities: () => ({ targets: [], supportsGroundedPlacement: true }),
+    getActionObservation: async input => { recalled++; return { ...input.observed,
+      locations: [{ id: 'knowledge:castle', name: 'Castle hill', position: [96, 3, 0], knowledgeId: 'castle', knowledgeRevision: 5 }] }; } });
+  f.decide = async options => {
+    assert.equal(options.allowPlacement, true);
+    return projectWorldIntentRequest(options.message, options.observed, options).resolve(JSON.stringify({ object: {
+      name: 'Castle', prompt: 'One castle on a white background', size: 40, placement: { locationId: 'l1' } } }));
+  };
+  const prompt = 'Build a castle on castle hill.', result = await f.run(prompt, { allowObject: true });
+  assert.equal(recalled, 1); assert.equal(result.object.action.prompt, 'One castle on a white background');
+  assert.equal(result.object.action.placement, undefined);
+  assert.deepEqual(result.object.placementTarget.position, [96, 3, 0]); assert.equal(result.object.placementTarget.knowledgeRevision, 5);
+  assert.match(f.speech[0].taskInstructions, /at observed places or beside people/);
+  assert.equal(f.speech[0].prompt, prompt); assert.equal(result.applied, false, 'A target is still a proposal, not a placement receipt');
+});
+
+test('injected object decisions cannot invent coordinates or bypass world placement capability', async t => {
+  for (const supported of [true, false]) {
+    const f = await fixture(t, { clock: Date.now, getActionCapabilities: () => ({ supportsGroundedPlacement: supported }) });
+    f.senses.locations = [{ id: 'ground:96:0', name: 'Distant ground', position: [96, 3, 0] }];
+    f.decide = async options => ({ object: { name: 'Castle', prompt: 'One castle', size: 40 },
+      placementTarget: { kind: 'location', id: 'ground:96:0', position: [666, 3, 0], observedAt: options.observed.observedAt } });
+    const result = await f.run('Build a castle there.', { allowObject: true });
+    assert.equal(result.object, undefined); assert.match(result.text, /Action not started/);
+  }
+});
+
+test('observation recall is owner-action only and owner edits during recall prevent decision dispatch', async t => {
+  const began = deferred(), release = deferred(); let reads = 0;
+  const f = await fixture(t, { clock: Date.now, getActionCapabilities: () => ({ supportsGroundedPlacement: true }),
+    getActionObservation: async input => { reads++; began.resolve(); await release.promise; return input.observed; } });
+  await f.run('Hello room', { conversationId: 'world:public' }); assert.equal(reads, 0);
+  f.answers.push('I cannot generate that object.');
+  await f.run('Create an object.', { allowObject: true }); assert.equal(reads, 0, 'Declines never begin action recall');
+  const before = f.decisions.length, pending = f.run('Build a castle there.', { allowObject: true });
+  await began.promise; await f.agents.update(f.body.agentId, { name: 'Edited while recalling' }); release.resolve();
+  const result = await pending; assert.equal(result.object, undefined); assert.equal(f.decisions.length, before);
+  assert.match(result.text, /Action not started/);
 });
 
 test('conversational JSON remains literal speech and cannot authorize movement', async t => {
@@ -214,7 +453,8 @@ test('a newer turn supersedes and drains the old decision without dropping its s
   assert.equal(f.speech.length, 1, 'Next speech waits for superseded inference cleanup');
   release.resolve(); const result = await first; await second;
   assert.match(result.text, /^Reply 1\n\[Action not started:/); assert.deepEqual(f.actions, []);
-  assert.deepEqual(f.speech[1].messages.slice(1).map(item => item.content), ['First', 'Reply 1', 'Second']);
+  assert.deepEqual(f.speech[1].messages.slice(1, -1).map(item => item.content), ['First', 'Reply 1']);
+  assert.equal(f.speech[1].prompt, 'Second'); assert(f.speech[1].messages.at(-1).content.endsWith('\n\nCurrent request:\nSecond'));
 });
 
 test('paused or edited owners and revoked conversation permissions invalidate pending decisions', async t => {

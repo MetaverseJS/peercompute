@@ -181,3 +181,47 @@ still fail a request; the UI preserves the prior body and reports the failure.
 The reported identical model reply was not independently reproduced as a cached
 transport result. Tests prove current prompts, distinct calls, idle recovery and
 saved failure context, rather than claiming all semantic repetition is fixed.
+
+## Grounded placement and manipulation roadmap — November 12
+
+Placement now shares `WorldSpatialReferences` with navigation. The argument
+model selects a request-local location (`lN`) or authenticated participant
+(`speaker`/`pN`); raw generated coordinates are never authority. A separate
+trusted target passes through `WorldConversationTurn` and `WorldAgentHost` to
+`WorldGeneratedObjects`. Render prompts describe the object only. Remembered
+places retain their original point and revision; moving participants are
+observed again during generation and immediately before retention.
+
+`CubeSpatialTargets` validates the current bounded Cannon floor, navigation
+range, center clearance and conservative full-size object envelope. Actual
+physics shape bounds and rendered prop bounds prevent overlap. Explicit invalid
+destinations fail without falling back to nearby placement. The saved manifest,
+visible object and receipt use the same final validated position. The geometry
+remains cosmetic; footprint admission does not add collision bodies.
+
+Next todo: manipulate existing owned props. For “go get the throne and put it
+near the castle,” expose stable observed object IDs, resolve an authorized
+source and destination, reserve the source, approach it using the learned motor,
+acquire/carry it, then place it using this validator. Persist idempotent objective
+steps and actual approach/acquisition/release receipts. Keep immutable mesh CIDs
+separate from revisioned placement state. Visibility grants no right to move
+another host's object; remote permission/transfer must be explicit. Do not mark
+the task complete from speech or teleport an object to simulate carrying.
+
+Owner-chat execution order: WorldConversationTurn can accept an executeObject
+host callback. It first requests object-or-none with complete argument schema;
+validated object plans execute before persona speech. The callback returns a
+bounded placed/saved/not-placed receipt. Speech sees that receipt and never owns
+commit authority. A completed receipt remains available if narration fails or
+is cancelled. An error after retention but during presentation returns saved
+with CID/position and displayError, preserving restore/share without regeneration.
+Nonobject requests continue through the existing post-speech intent path.
+
+Actual peer qualification (November12): Qwen2B action planning, DreamShaper image
+generation and SF3D mesh generation completed; a31,252-triangle GLB was retained
+and displayed at the selected sensed point and restored identically after reload.
+The original distant-placement test remains semantically failed: selected32units
+when96-unit points were available. Subsequent Qwen narration contradicted the
+verified receipt. Host receipt/state is authoritative; model prose is not. Further
+spatial/narration qualification remains necessary, with no silent benchmark
+relaxation or automatic replay of a committed object.
