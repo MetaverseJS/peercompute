@@ -5513,3 +5513,24 @@ resident inspector checks, zero page/console/HTTP/download/cleanup errors. No
 local model sessions or HF fetches. Representative CubeChat capture reviewed.
 This browser check covers startup/UI, while the signed mesh transfer is a real
 Node/WebSocket integration test; no new cross-device WAN latency claim.
+
+## November13: Pages publication of mesh transfer and object transforms
+
+Canonical `npm run build:all` passes the library and15demo builds. The source is
+cc044513, including the separately qualified753d12a7 object resizing/grounding.
+Run the release-helper tests (`pages-release-assets`, `pages-shared-runtime`,
+`pages-isolation`, `demo-ports`) and built `demo-release` contracts:68/68pass.
+External inventory verification covers3039files,560prior-active hashed assets,
+exact previous-generation retention and629,415,736totalbytes. The34existing
+heuristic default-path findings remain recorded and attributed; parsed module,
+HTML, CSS and app-manifest closure passes without a new unresolved reference.
+Acceptance evidence: `/home/cos/.cache/peercompute-pages-mesh-release-20261113/`.
+Staged/public browser evidence is added to that directory; this is release smoke,
+not new model quality, numerical physics, camera, XR or optional geodata testing.
+
+Staged acceptance:23unique routes,27executions with separate native-physics and
+software presentation checks;11authenticated SecretWorkshop routes; desktop/mobile
+views, isolation and pooled WASM compile checks pass. Original general runner
+was interrupted after17passing routes; its incomplete aggregate stays preserved,
+owned process/port cleanup was verified and the final2routes pass independently.
+All completed route errors are zero. Public checks use smaller bounded batches.

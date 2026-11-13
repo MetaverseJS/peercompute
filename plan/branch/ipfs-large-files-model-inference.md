@@ -1818,3 +1818,8 @@ alternatives as one bounded dial; keep caller and shutdown cancellation active
 alongside the request deadline. Limited relay connections are not reusable for
 Bitswap. Leave the five-second discovery fan-out wait and mesh decoding unchanged.
 This is a local source/internal-preview slice, not a Pages release.
+
+November13 deployment follow-up: user explicitly authorizes Pages publication
+of this completed slice and the preceding object-transform fixes. Canonical
+full build, staged/public route and asset validation, normal main/feature
+fast-forward push; no backend/settings changes or new model qualification.

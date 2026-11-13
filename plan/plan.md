@@ -1,5 +1,10 @@
 Instructions: This file contains high level goals for the project and a roadmap.
 
+November13 release authorized: build and publish the complete demo set with
+persistent object sizing/ground contact and bounded peer mesh transfer waits
+(source cc044513). Validate staged and public Pages routes, retained assets and
+SecretWorkshop connectivity. Preserve existing model-quality limitations.
+
 November12 release: the complete demo set from resident tooling checkpoint
 9970f491 is built for main:/docs. All23 staged routes, desktop/mobile captures,
 11authenticated SecretWorkshop connections and release asset checks pass.
