@@ -1,3 +1,4 @@
+import { validateWorldObjectResize } from './WorldObjectResizeDecision.js';
 import { normalizeWorldAvatarAction } from './WorldAvatarAction.js';
 import { generateWorldIntentDecision } from './WorldIntentDecision.js';
 import { normalizeWorldObjectAction } from './WorldObjectAction.js';
@@ -11,7 +12,7 @@ const changed = () => new Error('The resident or conversation changed before the
 const annotation = error => `\n[Action not started: ${String(error?.message || 'The action decision failed.').replaceAll('\0', '').slice(0, 240)}]`;
 const bytes = value => new TextEncoder().encode(value).length;
 function objectOutcome(value) {
-  if (!value || !['placed', 'saved', 'not-placed'].includes(value.status) || typeof value.text !== 'string'
+  if (!value || !['placed', 'resized', 'saved', 'not-placed'].includes(value.status) || typeof value.text !== 'string'
       || !value.text.trim() || value.text.includes('\0') || !value.text.isWellFormed() || bytes(value.text) > 2048) {
     throw new TypeError('Object execution requires a bounded verified outcome');
   }
@@ -66,7 +67,7 @@ export function createWorldConversationTurns({ agents, experience, signal: paren
   }
   async function observationForDecision(entry, allowPlacement, signal) {
     let observed = currentObservation(entry);
-    if (allowPlacement && getActionObservation) {
+    if ((allowPlacement || entry.allowResize) && getActionObservation) {
       observed = structuredClone(await getActionObservation({ key: entry.key, agentId: entry.agentId, observed: structuredClone(observed),
         message: entry.message, signal }));
       await headFor(entry); signal.throwIfAborted();
@@ -74,6 +75,9 @@ export function createWorldConversationTurns({ agents, experience, signal: paren
     return observed;
   }
   function proposeObject(entry, decision, observed, allowPlacement) {
+    if (entry.allowResize && decision?.resize && Object.keys(decision).length === 1) {
+      return { resize: validateWorldObjectResize(decision.resize, observed), residentRevision: entry.revision, requestId: crypto.randomUUID() };
+    }
     if (!entry.allowObject || !decision?.object || Object.keys(decision).some(key => !['object', 'placementTarget'].includes(key))) return null;
     if (Object.hasOwn(decision, 'placementTarget') && !allowPlacement) throw changed();
     const placementTarget = Object.hasOwn(decision, 'placementTarget')
@@ -84,7 +88,7 @@ export function createWorldConversationTurns({ agents, experience, signal: paren
   async function selectDecision(entry, head, observed, allowPlacement, signal, reply, objectOnly = false) {
     return decideIntent({ inference: agents.inference, head, message: entry.message, reply,
       observed: structuredClone(observed), signal, allowTask: entry.allowTask, allowObject: entry.allowObject, allowAvatar: entry.allowAvatar,
-      allowKnowledge: entry.allowKnowledge, allowPlacement, objectOnly, knowledgeObserved: structuredClone(entry.knowledgeObserved) });
+      allowKnowledge: entry.allowKnowledge, allowPlacement, allowResize: entry.allowResize, objectOnly, knowledgeObserved: structuredClone(entry.knowledgeObserved) });
   }
   async function execute(entry, previous) {
     // A replaced decision keeps its inference resources until cleanup settles.
@@ -103,7 +107,7 @@ export function createWorldConversationTurns({ agents, experience, signal: paren
       } catch { capabilities = undefined; }
     }
     const allowPlacement = entry.allowObject && capabilities?.supportsGroundedPlacement === true;
-    const facts = worldActionCapabilityFacts({ allowObject: entry.allowObject, allowAvatar: entry.allowAvatar, allowPlacement,
+    const facts = worldActionCapabilityFacts({ allowObject: entry.allowObject, allowAvatar: entry.allowAvatar, allowPlacement, allowResize: entry.allowResize,
       inferenceMode: initial.policy?.inferenceMode, targets: capabilities?.targets, hasImage: capabilities?.hasImage === true });
     const combinedInstructions = [taskInstructions, facts].filter(Boolean).join('\n\n');
     // Embedders may already use the full supported instruction budget. Never
@@ -193,7 +197,7 @@ export function createWorldConversationTurns({ agents, experience, signal: paren
     }
   }
   function run({ key, agentId, turn, prompt, message = prompt, conversationId, worldContext, taskInstructions,
-    maxNewTokens = 512, signal, valid = () => true, allowTask = false, allowObject = false, allowAvatar = false, allowKnowledge = false,
+    maxNewTokens = 512, signal, valid = () => true, allowTask = false, allowObject = false, allowAvatar = false, allowKnowledge = false, allowResize = false,
     executeObject } = {}) {
     if (executeObject !== undefined && typeof executeObject !== 'function') throw new TypeError('Object execution requires a host callback');
     const combined = AbortSignal.any([lifetime.signal, ...(parentSignal ? [parentSignal] : []), ...(signal ? [signal] : [])]);
@@ -202,7 +206,7 @@ export function createWorldConversationTurns({ agents, experience, signal: paren
     if (['speech', 'object'].includes(previous?.phase)) return Promise.reject(Object.assign(new Error('This resident is already replying.'), { code: 'ERR_AGENT_BUSY' }));
     previous?.decision.abort(aborted('A newer message superseded this pending action.'));
     const entry = { key, agentId, turn, prompt, message, conversationId, worldContext, taskInstructions, maxNewTokens, valid, executeObject,
-      allowTask: allowTask === true, allowObject: allowObject === true, allowAvatar: allowAvatar === true,
+      allowTask: allowTask === true, allowObject: allowObject === true, allowResize: allowObject === true && allowResize === true, allowAvatar: allowAvatar === true,
       allowKnowledge: allowKnowledge === true, knowledgeObserved: allowKnowledge === true ? structuredClone(turn?.senses) : undefined,
       signal: combined, phase: 'speech', decision: new AbortController() };
     active.set(key, entry);

@@ -225,3 +225,33 @@ when96-unit points were available. Subsequent Qwen narration contradicted the
 verified receipt. Host receipt/state is authoritative; model prose is not. Further
 spatial/narration qualification remains necessary, with no silent benchmark
 relaxation or automatic replay of a committed object.
+
+## Existing-object transforms — November 12 follow-up
+
+Resize is a separate owner-chat tool: category → frozen oN object reference and
+one multiplier/absolute dimension → host validation → immutable placement
+revision → verified receipt → narration. The argument model never supplies a
+raw object ID, CID, revision or coordinate. StateManager owns WorldObjectStore's
+IndexedDB current heads, operation receipts and deletion tombstones. Tiny
+revision manifests retain the original mesh file record/CID, so10× resizing does
+not regenerate or duplicate mesh data. CAS and a short world/host mutation lock
+protect commit and geometry validation; old revisions remain receipt evidence
+until object deletion. Reload adopts legacy creation manifests but cannot adopt
+orphan uncommitted transform candidates or resurrect tombstoned props.
+
+The v3 room protocol carries revised descriptors and larger object sizes. The
+v2/v1 handlers filter out unsupported descriptors, preserving compatible peers'
+other objects. The presenter verifies immutable descriptor provenance and reuses
+decoded geometry when file CID is unchanged. A fresh viewer still verifies and
+fetches the real mesh through ArtifactStore/IPFS. Artifact startup has bounded
+retry independent of successful model networking, and provider discovery rotates
+bounded peer batches per CID instead of repeatedly querying only the first8.
+The user's fresh-device report was delayed loading, not permanent disappearance;
+these fixes do not establish the exact cause of that observed delay.
+
+Castle/citadel/fortress defaults are96units, wrestling rings24; explicit model
+sizes remain authoritative proposals. Object dimension admission is0.3–1024,
+with actual scene/occupancy validation, separate from avatars. Visible support
+uses actual mesh samples and rendered themed-plane triangles; it adjusts only
+presentation Y, preserving saved coordinates/yaw. Irregular mesh bases are not
+flattened or automatically rotated.

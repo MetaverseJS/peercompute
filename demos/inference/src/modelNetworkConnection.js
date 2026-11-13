@@ -12,10 +12,12 @@ function waitFor(promise, signal) {
 
 /** Application discovery is independent of the optional, persistent artifact node. */
 export function createModelNetworkConnection({ store, manager = null, createManager,
-  stopArtifacts = (value) => value._stopArtifactTransport() } = {}) {
+  stopArtifacts = (value) => value._stopArtifactTransport(), now = Date.now } = {}) {
+  if (typeof now !== 'function') throw new TypeError('Artifact recovery requires a clock');
   let network = manager;
   let applicationStarting = null, artifactStarting = null, disposing = null;
   let applicationError = null, artifactError = null, artifactStatus = 'offline';
+  let artifactFailures = 0, artifactRetryAt = null;
   let ownedArtifact = null, closed = false;
   const ownedManagers = new Set();
   const lifetime = new AbortController();
@@ -48,10 +50,11 @@ export function createModelNetworkConnection({ store, manager = null, createMana
     if (artifactStarting) return artifactStarting;
     if (transport()) {
       artifactStatus = 'ready'; artifactError = null;
+      artifactFailures = 0; artifactRetryAt = null;
       return Promise.resolve(transport());
     }
     const candidate = network;
-    artifactStatus = 'starting'; artifactError = null;
+    artifactStatus = 'starting'; artifactError = null; artifactRetryAt = null;
     const operation = (async () => {
       try {
         // The manager exposes only completed startup. Keep its entire operation
@@ -74,10 +77,16 @@ export function createModelNetworkConnection({ store, manager = null, createMana
         if (result?.store !== store || result.requiresCleanup) {
           throw new Error('Artifact transport is not ready for this model library');
         }
-        if (!closed && network === candidate && candidate.isConnected) artifactStatus = 'ready';
+        if (!closed && network === candidate && candidate.isConnected) {
+          artifactStatus = 'ready'; artifactFailures = 0; artifactRetryAt = null;
+        }
         return result;
       } catch (error) {
-        if (!closed) { artifactError = error; artifactStatus = 'error'; }
+        if (!closed) {
+          artifactError = error; artifactStatus = 'error';
+          artifactFailures = Math.min(5, artifactFailures + 1);
+          artifactRetryAt = now() + Math.min(60000, 5000 * 2 ** (artifactFailures - 1));
+        }
         return null;
       } finally {
         if (closed || !candidate.isConnected) artifactStatus = 'offline';
@@ -86,6 +95,19 @@ export function createModelNetworkConnection({ store, manager = null, createMana
     artifactStarting = operation;
     operation.then(() => { if (artifactStarting === operation) artifactStarting = null; });
     return operation;
+  }
+
+  // No timer or new application/model session is created here. A transfer or
+  // the embedding world's maintenance tick can retry due file startup without
+  // hammering a locked library or a temporarily unavailable relay. Connect is
+  // still an explicit immediate retry, and all callers share one startup.
+  function retryArtifacts({ signal, force = false } = {}) {
+    assertOpen(); aborted(signal);
+    if (typeof force !== 'boolean') throw new TypeError('Artifact retry force must be a boolean');
+    if (!network?.isConnected) return Promise.resolve(null);
+    if (artifactStarting) return waitFor(artifactStarting, signal);
+    if (!force && artifactStatus === 'error' && artifactRetryAt > now()) return Promise.resolve(null);
+    return waitFor(startArtifacts(), signal);
   }
 
   async function disconnectOwned(candidate) {
@@ -149,8 +171,7 @@ export function createModelNetworkConnection({ store, manager = null, createMana
   async function requireArtifacts({ signal } = {}) {
     assertOpen(); aborted(signal);
     if (!network?.isConnected) throw new Error('Connect the network before transferring model files');
-    if (artifactStarting) await waitFor(artifactStarting, signal);
-    else if (artifactStatus === 'offline') await waitFor(startArtifacts(), signal);
+    await retryArtifacts({ signal });
     aborted(signal); assertOpen();
     if (!ready()) throw artifactError ?? new Error('Model file sharing is unavailable; use Connect to retry');
     return transport();
@@ -182,14 +203,15 @@ export function createModelNetworkConnection({ store, manager = null, createMana
   }
 
   return {
-    connect, startArtifacts, requireArtifacts, dispose,
+    connect, startArtifacts, retryArtifacts, requireArtifacts, dispose,
     get manager() { return network; },
     get networkReady() { return !closed && !!network?.isConnected; },
     get artifactReady() { return ready(); },
     get error() { return applicationError ?? artifactError; },
     getArtifactNetworkStatus() {
       const status = closed || !network?.isConnected ? 'offline' : artifactStatus;
-      return { status, error: status === 'error' ? String(artifactError?.message ?? artifactError).slice(0, 1024) : null };
+      return { status, error: status === 'error' ? String(artifactError?.message ?? artifactError).slice(0, 1024) : null,
+        ...(status === 'error' && artifactRetryAt !== null ? { retryAt: artifactRetryAt } : {}) };
     },
   };
 }

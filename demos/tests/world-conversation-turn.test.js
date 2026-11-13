@@ -529,3 +529,33 @@ test('owner chat task proposal preserves journaled speech without dispatching a 
   const visitor = await f.run('Visitor cannot assign a persistent task.');
   assert.equal(visitor.task, undefined); assert.match(visitor.text, /Action not started/);
 });
+
+test('owned resize executes before speech without generation providers and preserves committed receipt on speech failure', async t => {
+  const object = { local: true, objectId: 'castle', artifactCid: 'known', revision: 0, name: 'Castle', size: 6, position: [60, 0, 0] };
+  const f = await fixture(t, { clock: Date.now, getActionCapabilities: () => ({ targets: [] }),
+    getActionObservation: input => ({ ...input.observed, objects: [object] }) });
+  const order = [];
+  f.decide = async options => {
+    order.push('decision'); assert.equal(options.allowResize, true);
+    return projectWorldIntentRequest(options.message, options.observed, options)
+      .resolve('{"resize":{"targetId":"o1","multiplier":10}}');
+  };
+  f.inference.generate = async () => { order.push('speech'); throw new Error('Narration unavailable'); };
+  const result = await f.run('Make the castle 10x bigger.', { allowObject: true, allowResize: true,
+    executeObject: async proposal => {
+      order.push('resize'); assert.equal(proposal.action, undefined); assert.equal(proposal.resize.expectedObjectRevision, 0);
+      return { status: 'resized', text: 'Resized Castle from 6 to 60 world units (10×).' };
+    } });
+  assert.deepEqual(order, ['decision', 'resize', 'speech']); assert.equal(result.objectOutcome.status, 'resized');
+  assert.match(result.text, /6 to 60/); assert.match(result.speechError.message, /Narration unavailable/);
+});
+
+test('injected resize proposals cannot replace saved object preconditions before host execution', async t => {
+  const f = await fixture(t, { clock: Date.now, getActionObservation: input => ({ ...input.observed, objects: [
+    { local: true, objectId: 'castle', artifactCid: 'known', revision: 2, name: 'Castle', size: 6, position: [60, 0, 0] }] }) });
+  f.decide = async () => ({ resize: { objectId: 'castle', expectedArtifactCid: 'known', expectedObjectRevision: 1, multiplier: 10 } });
+  let executed = false;
+  await assert.rejects(f.run('Make it bigger', { allowObject: true, allowResize: true,
+    executeObject: async () => { executed = true; } }), /current, unambiguous owned object/);
+  assert.equal(executed, false); assert.equal(f.speech.length, 0);
+});

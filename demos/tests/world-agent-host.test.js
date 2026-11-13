@@ -39,6 +39,7 @@ async function boot() {
     const { WorldMemoryStore } = await import('/peercompute/src/peercompute/agents/WorldMemoryStore.js');
     const { WorldKnowledgeStore } = await import('/peercompute/src/peercompute/agents/WorldKnowledgeStore.js');
     const { ResidentDiagnosticsStore } = await import('/peercompute/src/peercompute/agents/ResidentDiagnosticsStore.js');
+    const { WorldObjectStore } = await import('/peercompute/src/peercompute/agents/WorldObjectStore.js');
     const { WorldGoalStore } = await import('/peercompute/src/peercompute/agents/WorldGoalStore.js');
     const { WorldStandingGoalStore } = await import('/peercompute/src/peercompute/agents/WorldStandingGoalStore.js');
     const { ArtifactStore } = await import('/peercompute/src/peercompute/artifacts/ArtifactStore.js');
@@ -47,7 +48,7 @@ async function boot() {
     const { WORLD_GOAL_INSTRUCTIONS, WORLD_GOAL_OBSERVATIONS_MARKER } = await import('/demos/shared/agents/WorldGoalDecision.js');
     const { WORLD_PHYSICAL_INTENT_INSTRUCTIONS, WORLD_CHAT_TASK_INSTRUCTIONS, WORLD_PHYSICAL_OBSERVATIONS_MARKER,
       WORLD_ACTION_CATEGORY_INSTRUCTIONS, WORLD_ACTION_ARGUMENT_INSTRUCTIONS,
-      WORLD_OBJECT_ADMISSION_INSTRUCTIONS } = await import('/demos/shared/agents/WorldIntentDecision.js');
+      WORLD_OBJECT_ADMISSION_INSTRUCTIONS, WORLD_OBJECT_EDIT_ADMISSION_INSTRUCTIONS } = await import('/demos/shared/agents/WorldIntentDecision.js');
     Object.assign(window, { calls: [], view: {}, speechChunks, worldConversationId });
     const candidate = { key: 'local', local: true, available: true, manifestCid: 'fixture', sessionId: 'fixture', runtime: 'transformers.js',
       task: 'text-generation', modalities: ['text'], outputModalities: ['text'] };
@@ -60,6 +61,8 @@ async function boot() {
         ...(window.defaultGuide ? { defaultResident: cubeGuidePreset('cubechat:test') } : {}),
         ...(window.generatedObjectFixture ? { generatedObjectAdapter: {
           ...objectScene, supportsGroundedPlacement: true,
+          validateTransform: (_key, descriptor) => descriptor.placement.position,
+          updateTransform: (key, descriptor) => { calls.push(['object-resized', descriptor]); },
           async prepare(...args) {
             const view = await objectScene.prepare(...args);
             return { ...view, commit(...input) {
@@ -142,15 +145,15 @@ async function boot() {
                 if (window.profileError) throw Object.assign(new Error('Profile context is too large'), { code: 'ERR_MODEL_CONTEXT_BUDGET' });
                 return { text: JSON.stringify(window.fixtureProfilePatch ?? null), finishReason: 'stop' };
               }
-              if (input.messages?.[0]?.content === WORLD_OBJECT_ADMISSION_INSTRUCTIONS) {
+              if ([WORLD_OBJECT_ADMISSION_INSTRUCTIONS, WORLD_OBJECT_EDIT_ADMISSION_INSTRUCTIONS].includes(input.messages?.[0]?.content)) {
                 calls.push(['intent-decision', input]);
-                return { text: JSON.stringify({ action: window.fixtureIntentDecision?.object ? 'object' : 'none' }), finishReason: 'stop' };
+                return { text: JSON.stringify({ action: window.fixtureIntentDecision?.resize ? 'resize' : window.fixtureIntentDecision?.object ? 'object' : 'none' }), finishReason: 'stop' };
               }
               if (input.messages?.[0]?.content.startsWith(WORLD_ACTION_CATEGORY_INSTRUCTIONS)) {
                 calls.push(['intent-decision', input]);
                 const value = window.fixtureIntentDecision ?? { intent: null };
                 return { text: JSON.stringify({ action: value.task ? 'task' : value.knowledge ? 'remember-place'
-                  : value.object ? 'object' : value.avatar ? 'avatar' : value.intent?.type ?? 'none' }), finishReason: 'stop' };
+                  : value.resize ? 'resize' : value.object ? 'object' : value.avatar ? 'avatar' : value.intent?.type ?? 'none' }), finishReason: 'stop' };
               }
               if ([WORLD_PHYSICAL_INTENT_INSTRUCTIONS, WORLD_CHAT_TASK_INSTRUCTIONS, WORLD_ACTION_ARGUMENT_INSTRUCTIONS].some(prefix => input.messages?.[0]?.content.startsWith(prefix))
                   && input.messages[0].content.includes(WORLD_PHYSICAL_OBSERVATIONS_MARKER)) {
@@ -208,8 +211,11 @@ async function boot() {
           window.agents = agents;
           const artifacts = window.generatedObjectFixture ? new ArtifactStore({ persistent: false }) : null;
           if (artifacts) { await artifacts.open(); window.artifacts = artifacts; }
+          const objects = new Map();
           const memories = new Map(), objectives = new Map(), standing = new Map(), knowledge = new Map(), diagnostics = new Map();
-          const stateManager = { ...(window.knowledgeFixture ? {
+          const stateManager = { getWorldObjectStore: name => objects.get(name),
+            createWorldObjectStore: options => { const value = new WorldObjectStore(options); objects.set(options.name, value); window.objectStore = value; return value; },
+            ...(window.knowledgeFixture ? {
             getWorldKnowledgeStore: name => knowledge.get(name),
             createWorldKnowledgeStore: options => { const value = new WorldKnowledgeStore(options); knowledge.set(options.name, value); window.knowledgeStore = value; return value; }
           } : {}), getResidentDiagnosticsStore: name => diagnostics.get(name),
@@ -220,12 +226,14 @@ async function boot() {
             createWorldGoalStore: options => { const value = new WorldGoalStore(options); objectives.set(options.name, value); window.objectiveStore = value; return value; },
             getWorldStandingGoalStore: name => standing.get(name),
             createWorldStandingGoalStore: options => { const value = new WorldStandingGoalStore(options); standing.set(options.name, value); window.standingStore = value; return value; } };
-          return { stateManager, networkReady: true, networkManager: { peerId: window.fixturePeerId ?? 'owner' }, getAgentController: async () => agents,
+          return { stateManager, networkReady: true,
+            ...(window.artifactRetryFixture ? { artifactReady: false,
+              retryArtifactNetwork: async () => { calls.push('artifact-retry'); } } : {}), networkManager: { peerId: window.fixturePeerId ?? 'owner' }, getAgentController: async () => agents,
             listInferenceTargets: () => window.generatedObjectFixture ? [candidate, imageCandidate, meshCandidate] : window.imageAvailable ? [imageCandidate] : [],
             service: { getStatus: () => ({ status: 'ready', manifestCid: 'fixture', sessionId: 'fixture' }) },
             store: artifacts ?? { getManifest: async () => ({ model: imageCandidate }) }, refreshPeers: async () => {},
             dispose: async () => { await agents.dispose(); await store.destroy(); for (const memory of memories.values()) await memory.close();
-              await artifacts?.destroy();
+              await artifacts?.destroy(); for (const value of objects.values()) await value.destroy();
               for (const value of diagnostics.values()) await value.destroy(); for (const value of knowledge.values()) await value.destroy(); for (const value of objectives.values()) await value.close(); for (const value of standing.values()) await value.destroy(); calls.push('runtime-dispose'); } };
         },
         serviceFactory: (options) => { window.networkOptions = options; return {
@@ -1647,4 +1655,40 @@ test('closing and switching chats leave inference running and deliver only to it
   assert.deepEqual(finished.messages.map(row => row.text), ['Finish this while I walk around.', finished.output.text]);
   assert.equal(finished.events.filter(e => e.type === 'result').length, 1);
   assert(!finished.events.some(e => e.type === 'cancelled'));
+});
+
+test('owner chat resizes the same retained object with no generation providers and records its durable head', async t => {
+  const page = await fixture(t);
+  const result = await page.evaluate(async () => {
+    await host.dispose(); Object.assign(window, { embodiedFixture: true, generatedObjectFixture: true }); await start();
+    const head = await host.spawn({ name: 'Builder' }), key = 'local:' + head.agentId;
+    window.fixtureIntentDecision = { object: { name: 'Castle', prompt: 'One castle', size: 6 } };
+    await host.send({ key, text: 'Generate a castle.' });
+    const before = host.generatedObjects.list()[0];
+    const originalManifest = await artifacts.getManifest(before.artifactCid);
+    window.noMeshProvider = true; window.fixtureIntentDecision = { resize: { targetId: 'o1', multiplier: 10 } };
+    const reply = await host.send({ key, text: 'Make the castle 10x bigger.' });
+    const after = host.generatedObjects.list()[0], manifest = await artifacts.getManifest(after.artifactCid);
+    const saved = await objectStore.list({ worldId: 'cubechat:test', ownerHostId: agents.store.hostId });
+    return { reply, before, after, originalManifest, manifest, saved,
+      generation: calls.filter(c => c[0] === 'object-generation'),
+      events: (await episodeStore.retrieve({ worldId: 'cubechat:test', agentId: head.agentId, audience: 'private',
+        conversationId: await worldConversationId('cubechat:test', 'owner') })).map(event => event.text) };
+  });
+  assert.equal(result.before.placement.objectId, result.after.placement.objectId);
+  assert.equal(result.after.placement.size, 60); assert.equal(result.after.placement.revision, 1);
+  assert.notEqual(result.after.artifactCid, result.before.artifactCid);
+  assert.deepEqual(result.manifest.files, result.originalManifest.files, 'Mesh bytes and CID are reused');
+  assert.equal(result.saved[0].artifactCid, result.after.artifactCid);
+  assert.equal(result.reply.objectCommitted, true);
+  assert.deepEqual(result.generation.map(c => c[1]), ['text-to-image', 'image-to-3d']);
+  assert.match(result.reply.text, /Resized Castle from 6 to 60 world units \(10×\)/);
+});
+
+test('connected model application still retries a failed artifact network without replacing model sessions', async t => {
+  const page = await fixture(t);
+  await page.evaluate(async () => { await host.dispose(); window.artifactRetryFixture = true; await start(); });
+  await page.waitForFunction(() => calls.includes('artifact-retry'));
+  const result = await page.evaluate(() => ({ calls, status: host.getStatus() }));
+  assert(result.calls.includes('artifact-retry')); assert(!result.calls.some(c => Array.isArray(c) && c[0] === 'generate'));
 });

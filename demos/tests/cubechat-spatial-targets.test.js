@@ -123,6 +123,33 @@ test('placed mesh bounds, supported floor and owner authority constrain placemen
   assert.throws(() => f.spatial.placement('ada', 6, target), /supported planar/);
 });
 
+test('building sizes exceed avatar limits only when the real footprint fits, with no silent resize clamp', () => {
+  const f = fixture();
+  assert.deepEqual(f.spatial.placement('ada', 96, locationTarget([60, 3, 0])), [60, 0, 0]);
+  assert.throws(() => f.spatial.placement('ada', 960, locationTarget([60, 3, 0])), /footprint.*outside/);
+  assert.throws(() => f.spatial.placement('ada', 1024.1, locationTarget([60, 3, 0])), /1024/);
+  const obstacle = f.obstacle([105, 5, 0]);
+  assert.throws(() => f.spatial.placement('ada', 96, locationTarget([60, 3, 0])), /footprint.*occupied/);
+  f.world.removeBody(obstacle);
+  assert.deepEqual(f.spatial.placement('ada', 96, locationTarget([60, 3, 0])), [60, 0, 0]);
+});
+
+test('existing-object transforms may be remote while retaining support, bounds and every physical clearance check', () => {
+  const f = fixture(), spatial = createCubeSpatialTargets({ physics: { world: f.world }, sensors: f.sensors,
+    getEntries: () => f.entries, getBounds: () => ({ min: [-1000, -1000], max: [1000, 1000] }), groundHeight: () => 0 });
+  const target = locationTarget([700, 0, 0]);
+  assert.throws(() => spatial.placement('ada', 400, target), /range/);
+  assert.deepEqual(spatial.placement('ada', 400, target, { transformExisting: true }), [700, 0, 0]);
+  const blocker = f.obstacle([850, 3, 0]);
+  assert.throws(() => spatial.placement('ada', 400, target, { transformExisting: true }), /footprint.*occupied/);
+  f.world.removeBody(blocker);
+  assert.throws(() => spatial.placement('ada', 960, target, { transformExisting: true }), /footprint.*outside/);
+  assert.throws(() => spatial.placement('ada', 400, locationTarget([100, 0, 0]), { transformExisting: true }), /footprint.*occupied/,
+    'the requesting resident remains an obstruction');
+  f.world.removeBody(f.floor);
+  assert.throws(() => spatial.placement('ada', 400, target, { transformExisting: true }), /supported planar/);
+});
+
 test('private and rotated compound blockers constrain destinations without exposing their identity', () => {
   const f = fixture(), compound = new CANNON.Body({ mass: 0, position: new CANNON.Vec3(0, 3, 0) });
   compound.addShape(new CANNON.Box(new CANNON.Vec3(1, 3, 10)), new CANNON.Vec3(30, 0, 0));

@@ -13,6 +13,7 @@ import { noise } from 'peercompute-artifact-noise';
 import { yamux } from '@libp2p/yamux';
 import { identify } from '@libp2p/identify';
 import { ArtifactStore, ARTIFACT_MANIFEST_SCHEMA } from '../../src/peercompute/artifacts/ArtifactStore.js';
+import { encodeGeneratedMesh, retainGeneratedMesh, readGeneratedMesh } from '../../src/peercompute/inference/GeneratedMeshArtifact.js';
 import { MemoryArtifactBackend } from '../../src/peercompute/artifacts/ArtifactBackends.js';
 import { IpfsArtifactTransport } from '../../src/peercompute/networkManager/IpfsArtifactTransport.js';
 import { NetworkManager } from '../../src/peercompute/networkManager/NetworkManager.js';
@@ -309,6 +310,22 @@ test('provider proofs reject forged bindings, replay, expiry, scope and challeng
   await assert.rejects(verifyArtifactProviderRecord(fresh, { ...options, nonce: fresh.body.nonce, replayWindow }), /full/);
 });
 
+test('interleaved artifact discovery rotates independent bounded peer batches', async () => {
+  const f = catalogFixture(), calls = new Map();
+  f.discovery.manager.libp2p.getConnections = () => Array.from({ length: 16 }, (_, index) => ({ status: 'open',
+    remotePeer: { toString: () => `peer-${index}` } }));
+  f.discovery._query = async (connection, cid) => {
+    if (!calls.has(cid)) calls.set(cid, []);
+    calls.get(cid).push(connection.remotePeer.toString());
+  };
+  const roots = [catalogCID(701), catalogCID(702)];
+  for (let round = 0; round < 2; round++) for (const cid of roots) await f.discovery.find(cid);
+  for (const cid of roots) assert.deepEqual(calls.get(cid), Array.from({ length: 16 }, (_, index) => `peer-${index}`));
+  for (let index = 0; index < 129; index++) await f.discovery.find(catalogCID(1000 + index));
+  assert.equal(f.discovery.queryCursors.size, 128);
+  await f.discovery.stop(); assert.equal(f.discovery.queryCursors.size, 0);
+});
+
 test('NetworkManagers discover signed providers and expose only approved complete artifacts', { timeout: 30000 }, async (t) => {
   const managers = [];
   const appNodes = [];
@@ -344,7 +361,20 @@ test('NetworkManagers discover signed providers and expose only approved complet
   const privateArtifact = await stores[0].importFile(new TextEncoder().encode('private fixture'));
   assert.deepEqual(await b.findArtifactProviders(approved.cid), []);
   await a.announceArtifact(approved.cid);
-  const providers = await b.findArtifactProviders(approved.cid);
+  // The actual owner is beyond a full bounded batch of unrelated connections.
+  // Its provider signature and subsequent Bitswap delivery remain real; only
+  // the unrelated peers' unsupported discovery streams are controlled here.
+  const connections = b.libp2p.getConnections.bind(b.libp2p), unrelatedQueries = [];
+  const unrelated = Array.from({ length: 8 }, (_, index) => ({ status: 'open', remotePeer: { toString: () => `unrelated-${index}` },
+    async newStream() { unrelatedQueries.push(index); throw new Error('Unrelated peer has no artifact service'); } }));
+  let providers;
+  b.libp2p.getConnections = () => [...unrelated, ...connections()];
+  try {
+    assert.deepEqual(await b.findArtifactProviders(approved.cid), []);
+    assert.deepEqual(unrelatedQueries, [0, 1, 2, 3, 4, 5, 6, 7]);
+    providers = await b.findArtifactProviders(approved.cid);
+    assert.equal(unrelatedQueries.length, 15, 'Second batch contains seven unrelated peers and the real owner');
+  } finally { b.libp2p.getConnections = connections; }
   assert.equal(providers.length, 1, JSON.stringify({ outbound: b.artifactDiscovery.lastErrors, inbound: a.artifactDiscovery.lastInboundError }));
   assert.equal(providers[0].appPeerId, a.libp2p.peerId.toString());
   assert.equal(providers[0].artifactPeerId, a.getArtifactTransport().getPeerInfo().peerId);
@@ -352,6 +382,26 @@ test('NetworkManagers discover signed providers and expose only approved complet
     fetchBlock: (cid, options) => b.fetchArtifactBlock(cid, { ...options, artifactCid: approved.cid })
   });
   assert.deepEqual(await collect(stores[1].openRead(approved.cid)), Buffer.from(publicBytes));
+  // A freshly receiving store needs both the retained manifest and its GLB
+  // closure. Real signed discovery/Noise/Bitswap delivers both, then the same
+  // mesh admission used by object/avatar viewers verifies their exact bytes.
+  const mesh = encodeGeneratedMesh({ positions: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]),
+    indices: new Uint16Array([0, 1, 2]), colors: new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]) });
+  const savedMesh = await retainGeneratedMesh(stores[0], mesh, { name: 'Fresh peer retained mesh' });
+  await stores[0].gc();
+  assert.equal(await stores[1].stat(savedMesh.artifactCid), undefined);
+  assert.deepEqual(await b.findArtifactProviders(savedMesh.artifactCid), []);
+  await a.announceArtifact(savedMesh.artifactCid);
+  const meshProviders = await b.findArtifactProviders(savedMesh.artifactCid);
+  assert.equal(meshProviders.length, 1);
+  assert.equal(meshProviders[0].appPeerId, a.libp2p.peerId.toString());
+  await stores[1].ensureLocal(savedMesh.artifactCid, {
+    fetchBlock: (cid, options) => b.fetchArtifactBlock(cid, { ...options, artifactCid: savedMesh.artifactCid })
+  });
+  const receivedMesh = await readGeneratedMesh(stores[1], savedMesh.artifactCid);
+  assert.deepEqual(receivedMesh.data, mesh.data);
+  assert.equal(receivedMesh.sha256, mesh.sha256);
+  assert.equal(receivedMesh.vertexCount, 3); assert.equal(receivedMesh.triangleCount, 1);
   assert.deepEqual(await b.findArtifactProviders(privateArtifact.cid), []);
   await a.announceArtifact(privateArtifact.cid);
   assert.equal((await b.findArtifactProviders(privateArtifact.cid)).length, 1);

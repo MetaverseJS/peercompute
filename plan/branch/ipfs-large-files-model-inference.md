@@ -1794,3 +1794,16 @@ Pages push of the current resident changes. Publish main:/docs and keep this
 feature branch aligned by normal fast-forward refs. Preserve the documented
 Qwen distance, narration and repetition limitations; no additional inference
 qualification is part of this release.
+
+After that release, investigate models missing on fresh CubeChat peers across
+origins and add persistent owner resize plus correct structural scale/grounding.
+Use retained mesh bytes to validate transport and rendering without regenerating
+assets. Internal previews/local commits first; no new publication requested.
+- Object transform checkpoint verified: owner-only resize reuses exact mesh CID,
+  durable revisions and tombstones survive reload, v3 peer descriptors preserve
+  transformed scale; old peers omit unsupported revisions. Larger omitted castle
+  defaults and visible terrain support are implemented.232regressions plus real
+  Qwenresize/shrink/control3/3 and retained-mesh visual checks pass. Tailscale
+  Cube/Earth/inference refreshed with exact assets and SecretWorkshop verified.
+  No new Pages deployment or origin push; mesh-base flattening/carrying remain out
+  of this bounded edit.

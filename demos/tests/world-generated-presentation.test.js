@@ -148,3 +148,60 @@ test('grounded renderer placement validates the actual existing mesh bounds thro
   } finally { layer.dispose(); await store.destroy(); }
   assert.equal(scene.children.length, 0);
 });
+
+test('owned object resize reuses geometry, excludes only self and keeps visual terrain independent from its physical placement', async () => {
+  const world = new CANNON.World(), physics = { world }, scene = new THREE.Scene();
+  const floorBody = new CANNON.Body({ mass: 0, shape: new CANNON.Plane() }); floorBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0); world.addBody(floorBody);
+  const body = new CANNON.Body({ mass: 5, position: new CANNON.Vec3(0, 3, 0), shape: new CANNON.Box(new CANNON.Vec3(3, 3, 3)) }); world.addBody(body);
+  const entries = new Map([['guide', { body, descriptor: { local: true, agentId: 'guide' } }]]);
+  const sensors = createCubeNavigationSensors({ physics, getEntries: () => entries });
+  const spatial = createCubeSpatialTargets({ physics, sensors, getEntries: () => entries,
+    getBounds: () => ({ min: [-500, -500], max: [500, 500] }), groundHeight: () => 0 });
+  const makeFloor = (y, size = 1000) => {
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(size, size, 4, 4), new THREE.MeshBasicMaterial());
+    floor.rotation.x = -Math.PI / 2; floor.position.y = y; return floor;
+  };
+  const shell = { scene, gridSize: 1000, floor: makeFloor(7) }, floors = [shell.floor];
+  const layer = new CubeGeneratedObjectLayer({ scene: shell, physics, getResidentPosition: () => body.position.toArray(),
+    resolvePlacement: (...args) => spatial.placement(...args) });
+  const store = new ArtifactStore({ persistent: false }); await store.open();
+  try {
+    const mesh = meshFixture(), originalPlacement = { ...placement, position: [100, 0, 0] };
+    const record = await retainGeneratedMesh(store, mesh, { provenance: { worldObject: originalPlacement } });
+    const original = { artifactCid: record.artifactCid, placement: originalPlacement };
+    const prepared = await layer.prepare(mesh); prepared.commit('local:object', original);
+    const entry = layer.entries.get('local:object'), sameView = entry.view, sameRoot = entry.group.children[0];
+    assert(Math.abs(new THREE.Box3().setFromObject(entry.group).min.y - 7) < 1e-8);
+    assert.equal(layer.updateGrounding(), false, 'unchanged frames do not resample the mesh or surface');
+    const largerPlacement = { ...originalPlacement, size: 60 };
+    const largerRecord = await retainGeneratedMesh(store, mesh, { provenance: { worldObject: largerPlacement } });
+    const larger = { artifactCid: largerRecord.artifactCid, placement: largerPlacement };
+    body.position.x = -200;
+    assert.throws(() => layer.getPlacement('guide', 60, { kind: 'location', id: 'observed', position: [100, 0, 0], observedAt: 100 }), /range/);
+    assert.deepEqual(layer.validateTransform('local:object', larger, { agentId: 'guide' }), [100, 0, 0],
+      'an authorized guide can resize another resident creation on this host from beyond navigation range');
+    layer.updateTransform('local:object', larger);
+    assert.equal(entry.view, sameView); assert.equal(entry.group.children[0], sameRoot);
+    assert.equal(entry.view.worldSize, 60); assert.equal(entry.group.scale.x, 30);
+    assert.deepEqual(entry.descriptor.placement.position, [100, 0, 0]);
+    assert(Math.abs(new THREE.Box3().setFromObject(entry.group).min.y - 7) < 1e-8);
+    const otherPlacement = { ...originalPlacement, objectId: 'other', position: [140, 0, 0] };
+    const otherRecord = await retainGeneratedMesh(store, mesh, { provenance: { worldObject: otherPlacement } });
+    const other = await layer.prepare(mesh); other.commit('local:other', { artifactCid: otherRecord.artifactCid, placement: otherPlacement });
+    assert.throws(() => layer.validateTransform('local:object', { ...larger, placement: { ...largerPlacement, size: 90 } }, { agentId: 'guide' }), /overlaps a placed object/);
+    assert.throws(() => layer.validateTransform('remote:object', larger, { agentId: 'guide' }), /local object/);
+    assert.throws(() => layer.validateTransform('local:object', { ...larger, placement: { ...largerPlacement, position: [101, 0, 0] } }, { agentId: 'guide' }), /fixed placement/);
+    shell.floor = makeFloor(-8); floors.push(shell.floor);
+    assert.equal(layer.updateGrounding(), true);
+    assert(Math.abs(new THREE.Box3().setFromObject(entry.group).min.y + 8) < 1e-8);
+    assert.deepEqual(entry.descriptor.placement.position, [100, 0, 0]);
+    const before = { scale: entry.group.scale.toArray(), position: entry.group.position.toArray(), descriptor: entry.descriptor };
+    shell.floor = makeFloor(0, 10); floors.push(shell.floor);
+    assert.throws(() => layer.updateTransform('local:object', { ...larger, placement: { ...largerPlacement, size: 80 } }), /supporting surface/);
+    assert.deepEqual(entry.group.scale.toArray(), before.scale); assert.deepEqual(entry.group.position.toArray(), before.position);
+    assert.equal(entry.descriptor, before.descriptor, 'failed presentation leaves the prior visible transform intact');
+  } finally {
+    layer.dispose(); await store.destroy();
+    for (const floor of floors) { floor.geometry.dispose(); floor.material.dispose(); }
+  }
+});

@@ -784,3 +784,27 @@ Staged desktop/mobile checks pass all inspector tabs and the model windows,
 with the owned guide paused and no inference-model startup. Real provider
 distance/narration/repetition limitations above remain open; release smoke
 does not rerun or supersede their qualification.
+
+### Existing-object scale and visible support — November 12 follow-up
+
+Implement owner-chat resize as a distinct model-selected operation before persona
+speech. Freeze request-local oN references from saved local objects; resolve IDs,
+current manifest CID and revision privately. One multiplier or absolute size is
+validated again at execution. Reuse mesh bytes, persist a revisioned immutable
+placement manifest and transactional current head through StateManager's
+WorldObjectStore. Durable request receipts/tombstones prevent duplicate resizing
+or resurrection; cancellation after commit retains its actual result.
+
+Separate object0.3–1024size admission from avatar0.3–48. Castle fallback96 and
+ring24 apply only to omitted sizes; remove copied size6 from planner examples.
+Existing-object edits do not inherit the160unit navigation-leg distance limit,
+but still require a supported footprint, scene bounds and other-object/player
+clearance. Actual cross-peer transform transport uses v3; v2/v1 snapshots omit
+unrepresentable objects rather than breaking the whole directory.
+
+Visual placement samples the actual themed floor under a bounded mesh support
+envelope, retaining saved physics position and yaw. Reuse decoded geometry for
+size-only changes. No claim of planarizing an arbitrary generated mesh or adding
+collision bodies. Native transactions/owner chat, real retained mesh rendering,
+peer bytes and model semantic selection are separate acceptance layers. Carrying
+props remains the next manipulation slice; resizing does not simulate carrying.

@@ -34,7 +34,7 @@ Delivery status reports peer acknowledgments; it is not a read receipt.
 Open **Residents** in the hamburger menu, name a resident and place it in the world. Click its cube
 or select it as the chat target to use the same composer for a direct
 conversation. Direct visitor histories remain separate from public room chat.
-Residents start stationary. Ask a capable language model to “come here,” follow
+Residents default to Self directed and move when their planning loop selects an action. Ask a capable language model to “come here,” follow
 someone, stop or look at another observed participant. The model proposes a typed
 intention; a trained 6,914-parameter neural controller produces continuous movement
 through a local ComputeManager WebGPU worker. Movement continues while a resident
@@ -596,3 +596,29 @@ Task waiting reasons distinguish busy capacity, recovery and a missing compatibl
 model. Unknown availability remains labeled unknown. The current speaker is
 identified separately from nearby residents and recalled speech; model-generated
 repetition can still occur and should not be mistaken for a verified action.
+
+
+### Resizing placed objects
+
+Tell a resident you own **“make the castle 10x bigger”**, or request an absolute
+size. The resident selects an existing owned object from its current observations;
+the host checks the saved revision, available ground and other objects before
+changing it. Resizing reuses the mesh and requires only language inference, not
+an image or 3D generator. A verified receipt reports the old and new size. The
+same object and size survive reload and are shared with current-version peers.
+If several objects match, identify the target more precisely. An enlargement
+that crosses the world boundary or overlaps occupied space is rejected, not
+silently reduced. Objects remain cosmetic rather than new collision bodies.
+
+Omitted sizes now use object-specific defaults: a castle's largest dimension is
+96 world units, a house 36, a car 15 and a wrestling ring 24; a cube is 6 units tall.
+Explicit sizes override those defaults. Existing saved objects retain their size
+until edited. Object dimensions allow 0.3–1024 units subject to scene clearance;
+this does not change resident-avatar size limits.
+
+Placed meshes now contact the visible themed ground using sampled support
+points. Theme changes and resizing update that contact without changing mesh
+orientation or authoritative world coordinates. This does not flatten an
+irregular generated base or add terrain-conforming geometry. Refresh both peers
+to use the new object-transform protocol; older peers omit revisions and sizes
+they cannot represent.

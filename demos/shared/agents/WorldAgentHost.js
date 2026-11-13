@@ -23,6 +23,7 @@ import { speechChunks } from '../../../peercompute/src/peercompute/inference/spe
 import { WorldEmbodimentLease } from './WorldEmbodimentLease.js';
 import { createWorldAppearance } from './WorldAppearance.js';
 import { createWorldAppearancePresenter } from './WorldAppearancePresenter.js';
+import { worldObjectRevision } from './WorldObjectAction.js';
 import { createWorldGeneratedObjects } from './WorldGeneratedObjects.js';
 import { createWorldChatResponder } from './WorldChatResponder.js';
 import { worldConversationContext, worldReplyPrompt, worldResidentName, worldPublicMessage } from './WorldConversationContext.js';
@@ -57,7 +58,7 @@ const statusOf = (head) => head.recoveryRequired || head.status === 'paused' ? '
 const conversationReply = output => ({ text: output.text, finishReason: output.finishReason,
   ...(output.modelLabel ? { modelLabel: output.modelLabel } : {}), ...(output.directAvatar || output.hostReceipt ? { role: 'system' } : {}),
   ...(output.objectOutcome ? { objectResolved: true } : {}),
-  ...(['placed', 'saved'].includes(output.objectOutcome?.status) ? { objectCommitted: true } : {}),
+  ...(['placed', 'resized', 'saved'].includes(output.objectOutcome?.status) ? { objectCommitted: true } : {}),
   ...(output.avatarFailed ? { avatarFailed: true } : {}) });
 
 export async function worldConversationId(worldId, requester) {
@@ -393,17 +394,19 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     const executeObject = async (object, { signal: actionSignal = signal } = {}) => {
       try {
         if (requesterPeerId || disposed || !ownsObjective(agentId)) throw new Error('Only the resident owner can request object generation');
-        const result = await generatedObjects.generate({ agentId, action: object.action,
-          placementTarget: object.placementTarget,
-          expectedRevision: object.residentRevision, requestId: object.requestId, signal: actionSignal });
+        const execution = { agentId, expectedRevision: object.residentRevision, requestId: object.requestId, signal: actionSignal };
+        const result = object.resize ? await generatedObjects.resize({ ...execution, ...object.resize })
+          : await generatedObjects.generate({ ...execution, action: object.action, placementTarget: object.placementTarget });
         const location = result.placement.position.map(value => Number(value.toFixed(2))).join(', ');
-        const status = result.status === 'saved' ? 'saved' : 'placed';
-        let text = `${status === 'saved' ? 'Saved' : 'Placed'} ${result.placement.name} at (${location}).`;
+        const status = result.status === 'saved' ? 'saved' : object.resize ? 'resized' : 'placed';
+        let text = object.resize
+          ? `${status === 'saved' ? 'Saved resize of' : 'Resized'} ${result.placement.name} from ${Number(result.oldSize.toFixed(3))} to ${Number(result.newSize.toFixed(3))} world units (${Number(result.multiplier.toFixed(3))}×) at (${location}).`
+          : `${status === 'saved' ? 'Saved' : 'Placed'} ${result.placement.name} at (${location}).`;
         if (result.displayError) text += ` Display failed: ${result.displayError}`;
         try {
           await memory?.append({ worldId, agentId, audience: 'private', conversationId, kind: 'action-outcome',
             who: { peerId: descriptor.ownerPeerId || agents.store.hostId, agentId, name: descriptor.name },
-            where: result.placement.position, outcome: status === 'placed' ? 'Generated object saved and displayed in the world.'
+            where: result.placement.position, outcome: status === 'resized' ? 'Existing object size saved and displayed; original mesh reused.' : status === 'placed' ? 'Generated object saved and displayed in the world.'
               : 'Generated object saved; display is not confirmed.',
             text: `${text} Object CID: ${result.artifactCid}.`,
             source: { kind: 'verified-action', eventId: object.requestId } });
@@ -411,10 +414,10 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
         return { status, text, artifactCid: result.artifactCid, placement: result.placement };
       } catch (error) {
         actionSignal?.throwIfAborted();
-        let text = `Object not placed: ${String(error.message).replaceAll('\0', '').slice(0, 240)}`;
+        let text = `Object not ${object.resize ? 'resized' : 'placed'}: ${String(error.message).replaceAll('\0', '').slice(0, 240)}`;
         try { await memory?.append({ worldId, agentId, audience: 'private', conversationId, kind: 'action-outcome',
           who: { peerId: descriptor.ownerPeerId || agents.store.hostId, agentId, name: descriptor.name }, where: descriptor.position,
-          outcome: 'Object generation failed; no new placement was confirmed.', text: memoryExcerpt(text),
+          outcome: object.resize ? 'Object resize failed; no size change was confirmed.' : 'Object generation failed; no new placement was confirmed.', text: memoryExcerpt(text),
           source: { kind: 'verified-action', eventId: object.requestId } }); }
         catch (memoryError) { text += ` Failure memory not saved: ${String(memoryError.message).slice(0, 160)}`; }
         return { status: 'not-placed', text };
@@ -428,6 +431,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
       allowTask: !requesterPeerId && !!objectives,
       allowKnowledge: !requesterPeerId && !!knowledge,
       allowObject: !requesterPeerId && !!generatedObjects,
+      allowResize: !requesterPeerId && !!generatedObjects?.resize && typeof generatedObjectAdapter?.validateTransform === 'function',
       ...(!requesterPeerId && generatedObjects ? { executeObject } : {}),
       allowAvatar: !requesterPeerId && !!residentAvatars,
       maxNewTokens: 512, signal, valid: current => !disposed && ownsObjective(agentId) && !!bindingOf(current)
@@ -538,8 +542,15 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     return conversationReply(output);
   }
   async function ensureModelNetwork() {
-    if (disposed || runtime.networkReady || modelStarting) return modelStarting;
-    modelStarting = runtime.connectBackend({ signal: lifetime.signal }).catch((error) => {
+    if (disposed || modelStarting) return modelStarting;
+    const applicationReady = runtime.networkReady;
+    if (applicationReady && (runtime.artifactReady || typeof runtime.retryArtifactNetwork !== 'function')) return;
+    // Chat discovery and retained file delivery have separate lifecycles. A
+    // connected application does not prove that its artifact service started.
+    // The connection owns retry/backoff; maintenance never reloads a model.
+    modelStarting = Promise.resolve().then(() => applicationReady
+      ? runtime.retryArtifactNetwork({ signal: lifetime.signal })
+      : runtime.connectBackend({ signal: lifetime.signal })).catch((error) => {
       if (!disposed) ui.setStatus(`Model network unavailable: ${error.message}. Local models still work.`);
     }).finally(() => { modelStarting = null; });
     return modelStarting;
@@ -1264,15 +1275,32 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     conversations = createWorldConversationTurns({ agents, experience, signal: lifetime.signal,
       getActionCapabilities: () => ({ targets: runtime.listInferenceTargets(),
         supportsGroundedPlacement: generatedObjectAdapter?.supportsGroundedPlacement === true }),
-      getActionObservation: input => knowledge ? knowledge.observe({ ...input, query: input.message,
-        audience: 'private', requester: 'owner' }) : input.observed });
+      getActionObservation: async input => {
+        const observed = knowledge ? await knowledge.observe({ ...input, query: input.message,
+          audience: 'private', requester: 'owner' }) : input.observed;
+        return { ...observed, objects: (generatedObjects?.list() ?? []).map(({ artifactCid, placement }) => ({
+          objectId: placement.objectId, artifactCid, revision: worldObjectRevision(placement), name: placement.name,
+          size: placement.size, position: placement.position, local: true,
+        })) };
+      } });
     appearancePresenter = createWorldAppearancePresenter({ appearance, adapter, getNetwork: () => network });
     if (residentAvatarAdapter) residentAvatars = createWorldResidentAvatars({ runtime, agents, adapter: residentAvatarAdapter,
       worldId, ownerHostId: agents.store.hostId, isOwner: ownsObjective, onSaved: refreshLocal,
       onStatus: event => { if (!disposed) ui.setStatus(event.message, event.agentId ? localKey(event.agentId) : undefined); } });
     if (generatedObjectAdapter) {
+      let objectStore;
+      if (runtime.stateManager?.createWorldObjectStore) {
+        const name = `${agents.store?.name ?? 'world-agents'}-objects`.slice(0, 80);
+        objectStore = runtime.stateManager.getWorldObjectStore(name) ?? runtime.stateManager.createWorldObjectStore({ name });
+        await objectStore.open();
+      }
       generatedObjects = createWorldGeneratedObjects({ runtime, agents, adapter: generatedObjectAdapter, worldId,
-        ownerHostId: agents.store.hostId, getNetwork: worldNetwork, isOwner: ownsObjective,
+        ownerHostId: agents.store.hostId, getNetwork: worldNetwork, isOwner: ownsObjective, objectStore,
+        isCurrent: (agentId, revision) => {
+          const current = heads.get(agentId);
+          return !disposed && ownsObjective(agentId) && !!bindingOf(current) && current.status !== 'paused'
+            && !current.recoveryRequired && !current.activity?.unsaved && (revision === undefined || current.revision === revision);
+        },
         assertPlacementCurrent: async ({ agentId, placementTarget, signal }) => {
           if (!placementTarget?.knowledgeId) return;
           if (!knowledgeStore || !knowledge) throw new Error('Remembered placement is unavailable');

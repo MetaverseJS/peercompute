@@ -3,6 +3,7 @@ import { routeAgentTask } from '../../../peercompute/src/peercompute/agents/Agen
 import { validateWorldIntent } from './WorldIntent.js';
 import { normalizeWorldObjectAction, WORLD_OBJECT_ACTION_INSTRUCTIONS, WORLD_OBJECT_TARGET_INSTRUCTIONS } from './WorldObjectAction.js';
 import { worldSpatialLocations, worldSpatialLocationSummary, resolveWorldObjectTarget } from './WorldSpatialReferences.js';
+import { projectWorldObjectResizeRequest, WORLD_OBJECT_RESIZE_INSTRUCTIONS } from './WorldObjectResizeDecision.js';
 import { WORLD_MODEL_SCALE_INSTRUCTIONS } from '../world/WorldModelScale.js';
 import { projectWorldKnowledgeRequest, WORLD_KNOWLEDGE_ACTION_INSTRUCTIONS } from './WorldKnowledgeDecision.js';
 
@@ -52,6 +53,9 @@ Result: {"action":"none"}
 User: What is a lighthouse?
 Result: {"action":"none"}
 Classify the current user message. Output only the JSON result.`;
+export const WORLD_OBJECT_EDIT_ADMISSION_INSTRUCTIONS = WORLD_OBJECT_ADMISSION_INSTRUCTIONS
+  .replace('or {"action":"none"}.', 'or {"action":"resize"} or {"action":"none"}.')
+  + '\nUse resize when asked to enlarge, shrink, or change the size of an existing world object. A multiplicative size change modifies the existing object, not a newly generated replacement. Use none for unclear conversation. Output only the action JSON.';
 const actionDescriptions = {
   task: 'task means a journey, visiting a destination, returning to a place, or multi-step movement.',
   follow: 'follow means tracking the changing position of an observed participant.',
@@ -60,6 +64,7 @@ const actionDescriptions = {
   stop: 'stop means stopping movement.',
   'remember-place': 'remember-place means an explicit request to save a name for an observed place.',
   object: 'object means creating a separate 3D object.',
+  resize: 'resize means changing the size of an existing owned world object without generating a new one.',
   avatar: 'avatar means changing your own body or restoring your original cube.',
   none: 'none means ordinary conversation, questions, hypotheticals, personality edits or general goals.',
 };
@@ -82,11 +87,12 @@ function selectedAction(text, allowed) {
 /** References belong to one observation. Never persist them as body identities
  * or resolve a new response against an earlier conversation's lookup table. */
 export function projectWorldIntentRequest(message, observed, { allowTask = false, allowObject = false, allowAvatar = false,
-  allowKnowledge = false, allowPlacement = false, knowledgeObserved = observed } = {}) {
+  allowKnowledge = false, allowPlacement = false, allowResize = false, knowledgeObserved = observed } = {}) {
   if (typeof message !== 'string' || !message.trim() || message.includes('\0') || bytes(message) > 16384
       || !observed?.self || !Array.isArray(observed.participants) || observed.participants.length > 24
       || !Number.isFinite(observed.observedAt)) throw failure();
   const originalObservation = structuredClone(observed);
+  const resize = allowResize === true ? projectWorldObjectResizeRequest(originalObservation) : null;
   const knowledgeSnapshot = allowKnowledge === true ? structuredClone(knowledgeObserved) : null;
   const knowledge = knowledgeSnapshot ? projectWorldKnowledgeRequest(knowledgeSnapshot) : null;
   const senses = structuredClone(originalObservation), originals = new Map(), references = new Map();
@@ -122,6 +128,7 @@ export function projectWorldIntentRequest(message, observed, { allowTask = false
   // otherwise consume the object argument budget despite granting no placement
   // authority. The full frozen maps below remain unchanged for validation.
   function contextFor(stage) {
+    if (stage === 'resize') return JSON.stringify({ objects: resize?.context ?? [] });
     if (stage === 'object') return JSON.stringify({ participants: movement.participants,
       ...(movement.requesterId ? { requesterId: movement.requesterId } : {}),
       ...(context.locations ? { locations: context.locations } : {}) });
@@ -146,6 +153,7 @@ export function projectWorldIntentRequest(message, observed, { allowTask = false
               || originalObservation.self.intentRevision !== knowledgeSnapshot.self.intentRevision) throw failure();
           return { knowledge: knowledge.resolve(decision.knowledge, { now }) };
         }
+        if (resize && decision.resize) return { resize: resize.resolve(decision.resize, { now }) };
         if (allowAvatar === true && decision.avatar) {
           if (now < originalObservation.observedAt || now - originalObservation.observedAt > 120000) throw failure();
           return { avatar: normalizeWorldAvatarAction(decision.avatar) };
@@ -182,11 +190,11 @@ export function projectWorldIntentRequest(message, observed, { allowTask = false
  * Actual authority, target presence and motion revision are checked again by the
  * caller immediately before the physical adapter receives this proposal. */
 export async function generateWorldIntentDecision({ inference, head, message, reply, observed, signal, allowTask = false, allowObject = false, allowAvatar = false,
-  allowKnowledge = false, allowPlacement = false, objectOnly = false, knowledgeObserved = observed } = {}) {
+  allowKnowledge = false, allowPlacement = false, allowResize = false, objectOnly = false, knowledgeObserved = observed } = {}) {
   signal?.throwIfAborted();
   if (objectOnly && !allowObject) throw failure();
   if (reply !== undefined && (typeof reply !== 'string' || reply.includes('\0') || bytes(reply) > 65536)) throw failure();
-  const projection = projectWorldIntentRequest(message, observed, { allowTask, allowObject, allowAvatar, allowKnowledge, allowPlacement, knowledgeObserved });
+  const projection = projectWorldIntentRequest(message, observed, { allowTask, allowObject, allowAvatar, allowKnowledge, allowPlacement, allowResize, knowledgeObserved });
   const candidates = await inference.listCandidates({ mode: head.policy.inferenceMode,
     task: 'text-generation', signal, refresh: true });
   signal?.throwIfAborted();
@@ -203,9 +211,9 @@ export async function generateWorldIntentDecision({ inference, head, message, re
   // Choose the operation neurally first, then expose only its argument schema.
   // No keywords in the user's message choose a tool or grant execution authority.
   if (allowTask || allowKnowledge || allowObject || allowAvatar) {
-    const allowed = objectOnly ? ['none', 'object'] : ['none', ...(allowTask ? ['task'] : []), 'follow', 'approach', 'look-at', 'stop',
-      ...(allowKnowledge ? ['remember-place'] : []), ...(allowObject ? ['object'] : []), ...(allowAvatar ? ['avatar'] : [])];
-    const instructions = objectOnly ? WORLD_OBJECT_ADMISSION_INSTRUCTIONS
+    const allowed = objectOnly ? ['none', 'object', ...(allowResize ? ['resize'] : [])] : ['none', ...(allowTask ? ['task'] : []), 'follow', 'approach', 'look-at', 'stop',
+      ...(allowKnowledge ? ['remember-place'] : []), ...(allowObject ? ['object'] : []), ...(allowResize ? ['resize'] : []), ...(allowAvatar ? ['avatar'] : [])];
+    const instructions = objectOnly ? (allowResize ? WORLD_OBJECT_EDIT_ADMISSION_INSTRUCTIONS : WORLD_OBJECT_ADMISSION_INSTRUCTIONS)
       : WORLD_ACTION_CATEGORY_INSTRUCTIONS + `Allowed action values: ${allowed.join(', ')}. `
       + [...allowed.filter(action => action !== 'none'), 'none'].map(action => actionDescriptions[action]).join(' ')
       + ' Choose the requested operation, not an example or matching word. Do not supply arguments, execute an action or claim success.';
@@ -213,12 +221,12 @@ export async function generateWorldIntentDecision({ inference, head, message, re
     if (action === 'none') return { intent: null };
     if (action === 'task') return projection.resolve('{"task":true}');
     if (action === 'stop') return projection.resolve('{"intent":{"type":"stop"}}');
-    const argumentsFor = action === 'remember-place' ? WORLD_KNOWLEDGE_ACTION_INSTRUCTIONS
+    const argumentsFor = action === 'resize' ? WORLD_OBJECT_RESIZE_INSTRUCTIONS : action === 'remember-place' ? WORLD_KNOWLEDGE_ACTION_INSTRUCTIONS
       : action === 'object' ? (allowPlacement ? WORLD_OBJECT_TARGET_INSTRUCTIONS : WORLD_OBJECT_ACTION_INSTRUCTIONS)
       : action === 'avatar' ? WORLD_MODEL_SCALE_INSTRUCTIONS + ' ' + WORLD_AVATAR_ACTION_INSTRUCTIONS
       : WORLD_PHYSICAL_INTENT_INSTRUCTIONS;
     const result = projection.resolve(await generate(`${WORLD_ACTION_ARGUMENT_INSTRUCTIONS} ${action}. Do not switch operations. ${argumentsFor}`, undefined, action));
-    const actual = result.knowledge ? 'remember-place' : result.object ? 'object' : result.avatar ? 'avatar' : result.intent?.type;
+    const actual = result.resize ? 'resize' : result.knowledge ? 'remember-place' : result.object ? 'object' : result.avatar ? 'avatar' : result.intent?.type;
     if (result.intent === null || actual === action) return result;
     throw failure();
   }

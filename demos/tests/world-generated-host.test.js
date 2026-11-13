@@ -6,13 +6,14 @@ import { AgentRecordStore } from '../../peercompute/src/peercompute/agents/Agent
 import { AgentRuntime } from '../../peercompute/src/peercompute/agents/AgentRuntime.js';
 import { WorldMemoryStore } from '../../peercompute/src/peercompute/agents/WorldMemoryStore.js';
 import { ArtifactStore } from '../../peercompute/src/peercompute/artifacts/ArtifactStore.js';
+import { WORLD_OBJECT_ADMISSION_INSTRUCTIONS, WORLD_ACTION_CATEGORY_INSTRUCTIONS, WORLD_ACTION_ARGUMENT_INSTRUCTIONS, WORLD_PHYSICAL_INTENT_INSTRUCTIONS } from '../shared/agents/WorldIntentDecision.js';
 import { action, worldId, meshFixture, imageFixture, sceneAdapter, deferred, tick } from './world-generated-fixtures.js';
 
 // Presentation is injected below. Ignore only CSS imports while exercising
 // the unchanged host/agent modules in Node; no browser or default runtime starts.
 const css = registerHooks({ load(url, context, next) { return url.endsWith('.css')
   ? { format: 'module', source: '', shortCircuit: true } : next(url, context); } });
-const { installWorldAgents } = await import('../shared/agents/WorldAgentHost.js');
+const { installWorldAgents, worldConversationId } = await import('../shared/agents/WorldAgentHost.js');
 css.deregister();
 
 async function fixture(t, { avatar = false } = {}) {
@@ -29,7 +30,12 @@ async function fixture(t, { avatar = false } = {}) {
       calls.push(input);
       if (input.task === 'image-to-3d') return state.mesh(input, options);
       if (input.task === 'text-to-image') return { image: imageFixture() };
-      if (input.messages?.[0]?.content.includes('Choose optional physical action')) {
+      const system = input.messages?.[0]?.content ?? '';
+      if (system === WORLD_OBJECT_ADMISSION_INSTRUCTIONS || system.startsWith(WORLD_ACTION_CATEGORY_INSTRUCTIONS)) {
+        const selected = state.action ? avatar ? 'avatar' : 'object' : 'none';
+        return { text: JSON.stringify({ action: system === WORLD_OBJECT_ADMISSION_INSTRUCTIONS && avatar ? 'none' : selected }) };
+      }
+      if (system.startsWith(WORLD_ACTION_ARGUMENT_INSTRUCTIONS) || system.startsWith(WORLD_PHYSICAL_INTENT_INSTRUCTIONS)) {
         return { text: JSON.stringify(state.action ? { [avatar ? 'avatar' : 'object']: state.action } : { intent: null }) };
       }
       return { text: state.speech, finishReason: 'stop' };
@@ -54,13 +60,16 @@ async function fixture(t, { avatar = false } = {}) {
   });
   t.after(() => host.dispose()); await host.ready; await tick();
   const head = await host.spawn({ name: 'Builder', shared: true, movement: 'stationary' });
-  return { host, agents, objects, calls, statuses, state, head, memory, view, get networkOptions() { return networkOptions; } };
+  return { host, agents, objects, calls, statuses, state, head, memory, view,
+    get speeches() { return calls.filter(input => input.task === 'text-generation' && ![WORLD_OBJECT_ADMISSION_INSTRUCTIONS,
+      WORLD_ACTION_CATEGORY_INSTRUCTIONS, WORLD_ACTION_ARGUMENT_INSTRUCTIONS, WORLD_PHYSICAL_INTENT_INSTRUCTIONS]
+      .some(prefix => input.messages?.[0]?.content.startsWith(prefix))); }, get networkOptions() { return networkOptions; } };
 }
 test('full world host sends owner proposal through real agent journal, artifact manager and final placement receipt; visitors cannot create', async t => {
   const f = await fixture(t), key = `local:${f.head.agentId}`;
   const reply = await f.host.send({ key, text: 'Create a stone pyramid next to you' });
-  assert.match(reply.text, /\[Placed Test pyramid beside the resident\.\]/); assert.equal(f.objects.visible.size, 1);
-  assert.deepEqual(f.calls.map(value => value.task), ['text-generation', 'text-generation', 'text-to-image', 'image-to-3d']);
+  assert.match(reply.text, /\[Placed Test pyramid at \(10, 0, 4\)\.\]/); assert.equal(f.objects.visible.size, 1);
+  assert.deepEqual(f.calls.map(value => value.task), ['text-generation', 'text-generation', 'text-to-image', 'image-to-3d', 'text-generation']);
   assert(f.statuses.some(value => value.startsWith('Generating 3D shape')));
   const memory = await f.memory.retrieve({ worldId, agentId: f.head.agentId, audience: 'private',
     conversationId: (await f.agents.events(f.head.agentId)).find(event => event.type === 'request').conversationId, query: 'pyramid', limit: 8 });
@@ -106,12 +115,13 @@ test('a declined conversational reply never launches image or avatar work and ex
   f.state.speech = 'I cannot generate that avatar. I can suggest another design.';
   const reply = await f.host.send({ key, text: 'Try the first design' });
   assert.equal(reply.text, f.state.speech); assert.equal(reply.modelLabel, 'Fixture text-generation · local');
-  assert.deepEqual(f.calls.map(value => value.task), ['text-generation']);
+  assert.deepEqual(f.calls.map(value => value.task), ['text-generation', 'text-generation']);
+  assert.equal(f.speeches.length, 1);
   await f.host.openConversation(key); assert.equal(f.view.messages.at(-1).modelLabel, reply.modelLabel);
   f.state.speech = 'I will try the copper robot.';
   await f.host.send({ key, text: 'Try a copper robot instead' });
-  assert.equal(f.calls[1].messages.at(-1).content, 'Try a copper robot instead');
-  assert.match(f.calls[2].messages[0].content, /I will try the copper robot/);
+  assert(f.speeches.at(-1).messages.at(-1).content.endsWith('Try a copper robot instead'));
+  assert(f.calls.some(input => input.messages?.[0]?.content.startsWith(WORLD_ACTION_ARGUMENT_INSTRUCTIONS) && input.messages[0].content.includes('I will try the copper robot')));
   assert((await f.agents.get(f.head.agentId)).embodiments[0].avatar);
 });
 
@@ -125,7 +135,7 @@ test('a failed avatar settles, records the failure for the next turn and does no
   const before = f.calls.length, next = await f.host.send({ key, text: 'Become a second robot' });
   assert.match(next.text, /^Trying your second design/); assert.match(next.text, /Avatar saved/);
   assert.equal(f.calls[before].messages.at(-1).content, 'Become a second robot');
-  assert.match(f.calls[before].messages[0].content, /3D provider stopped/);
+  assert.match(JSON.stringify(f.speeches.at(-1).messages), /3D provider stopped/);
 });
 
 test('owner image controls bypass text and image models, copy pixels and restore command history', async t => {
@@ -155,13 +165,18 @@ test('multibyte owner commands and failed replies fit durable memory without blo
   assert.match(result.text, /Avatar saved/);
   await f.host.openConversation(key);
   const saved = f.view.messages.find(row => row.role === 'user' && row.text.startsWith('机器人'));
-  assert(saved); assert(new TextEncoder().encode(saved.text).length <= 2048); assert(saved.text.endsWith('…'));
+  assert(saved); assert.equal(saved.text, command, 'Live transcript preserves the full owner message');
+  const episodes = await f.memory.retrieve({ worldId, agentId: f.head.agentId, audience: 'private',
+    conversationId: await worldConversationId(worldId, 'owner'), query: '机器人', limit: 8 });
+  const retained = episodes.find(row => row.kind === 'avatar-command');
+  assert(retained); assert(new TextEncoder().encode(retained.text).length <= 2048); assert(retained.text.endsWith('…'));
   f.state.speech = '机器人'.repeat(300); f.state.mesh = async () => { throw new Error('Provider stopped'); };
   const failed = await f.host.send({ key, text: 'Try another robot' });
   assert.equal(failed.avatarFailed, true); assert.doesNotMatch(failed.text, /Failure memory not saved/);
   f.state.action = null; f.state.speech = 'Ready.';
   const before = f.calls.length; await f.host.send({ key, text: 'What happened?' });
-  assert.match(f.calls[before].messages[0].content, /Provider stopped/);
+  assert.equal(f.calls[before].prompt, 'What happened?');
+  assert.match(JSON.stringify(f.speeches.at(-1).messages), /Provider stopped/);
 });
 
 test('failed image commands return a retryable result without making the resident require Resume', async t => {

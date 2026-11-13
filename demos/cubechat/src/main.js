@@ -51,6 +51,7 @@ class CubeChat {
     this._initialThemeFromQuery = null;
     this.worldAgents = null;
     this.agentLayer = null;
+    this.generatedObjectLayer = null;
     this.worldUi = null;
     this.settingsUi = null;
     this.roomChat = null;
@@ -200,6 +201,7 @@ class CubeChat {
         panelFactory: async options => (await import('../../inference/src/agentPanel.js')).mountInferencePanel({ ...options, managementOnly: true })
       });
       this.agentLayer = layer;
+      this.generatedObjectLayer = generatedObjectLayer;
       this.worldAgents = host;
       Promise.resolve(host.ready).catch((error) => {
         if (this.worldAgents !== host || this.isDestroying) return;
@@ -217,8 +219,10 @@ class CubeChat {
     // Keep the reference on failed cleanup so room changes and shutdown can retry.
     await host?.dispose();
     this.agentLayer?.dispose();
+    this.generatedObjectLayer?.dispose();
     this.worldAgents = null;
     this.agentLayer = null;
+    this.generatedObjectLayer = null;
     this.worldUi = null;
   }
 
@@ -850,6 +854,7 @@ class CubeChat {
       // Step physics simulation
       this.physics.step(deltaTime);
       this.agentLayer?.afterPhysics(deltaTime);
+      this.generatedObjectLayer?.updateGrounding();
 
       // Sync visual representation with physics
       this.syncPhysicsToScene();

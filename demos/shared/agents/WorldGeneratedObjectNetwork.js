@@ -1,11 +1,14 @@
 import { channel, encryptedConnection } from '../../../peercompute/src/peercompute/networkManager/inference/protocol.js';
 import { waitForPeerConnection } from '../../../peercompute/src/peercompute/networkManager/inference/waitForPeerConnection.js';
 import { chatScope } from '../chat/roomChatContracts.js';
-import { normalizeWorldObjectDescriptor, objectText, WORLD_OBJECT_LIMITS } from './WorldObjectAction.js';
+import { normalizeWorldObjectDescriptor, objectText, WORLD_OBJECT_LIMITS, WORLD_OBJECT_SCHEMA, worldObjectRevision, sameWorldObject } from './WorldObjectAction.js';
 
-export const WORLD_OBJECT_PROTOCOL = '/peercompute/world-generated-objects/2.0.0';
+export const WORLD_OBJECT_PROTOCOL = '/peercompute/world-generated-objects/3.0.0';
+export const PREVIOUS_WORLD_OBJECT_PROTOCOL = '/peercompute/world-generated-objects/2.0.0';
 export const LEGACY_WORLD_OBJECT_PROTOCOL = '/peercompute/world-generated-objects/1.0.0';
-const legacySize = object => object.placement.size >= 1 && object.placement.size <= 12;
+const legacySize = object => object.placement.schema === WORLD_OBJECT_SCHEMA && object.placement.size >= 1 && object.placement.size <= 12;
+const previousSize = object => object.placement.schema === WORLD_OBJECT_SCHEMA && object.placement.size <= 48;
+const protocols = [WORLD_OBJECT_PROTOCOL, PREVIOUS_WORLD_OBJECT_PROTOCOL, LEGACY_WORLD_OBJECT_PROTOCOL];
 const owners = new WeakMap();
 const failure = message => new Error(`World objects: ${message}`);
 const abortStream = (stream, error) => { try { Promise.resolve(stream?.abort(error)).catch(() => {}); } catch { /* Transport is already closed. */ } };
@@ -24,7 +27,7 @@ export class WorldGeneratedObjectNetwork {
     Object.assign(this, { manager: networkManager, listLocalObjects, onDirectory, requestTimeoutMs, now });
     this.worldId = objectText(worldId, 240, 'world'); this.scope = chatScope(networkManager.config);
     this.lifetime = new AbortController(); this.operations = new Set(); this.inbound = new Map(); this.rate = new Map();
-    this.directory = new Map(); this.closed = false; this.registered = false;
+    this.directory = new Map(); this.revisions = new Map(); this.sequence = new Map(); this.completed = new Map(); this.closed = false; this.registered = false;
   }
   get node() { return this.boundNode ?? this.manager.getLibp2pNode?.() ?? this.manager.libp2p; }
   get peerId() { return this.node.peerId.toString(); }
@@ -64,7 +67,7 @@ export class WorldGeneratedObjectNetwork {
     if (!this.node?.handle || owners.has(this.node)) throw failure('room already has an object service or is offline');
     owners.set(this.node, this);
     try {
-      for (const protocol of [WORLD_OBJECT_PROTOCOL, LEGACY_WORLD_OBJECT_PROTOCOL]) await this.node.handle(protocol, (stream, connection) => {
+      for (const protocol of protocols) await this.node.handle(protocol, (stream, connection) => {
         const peerId = connection?.remotePeer?.toString?.(), time = this.now();
         const previous = this.rate.get(peerId);
         if (this.closed || !encryptedConnection(connection) || !this._known(peerId) || (previous !== undefined && time - previous < 250)
@@ -72,27 +75,28 @@ export class WorldGeneratedObjectNetwork {
           abortStream(stream, failure('encrypted current-room owner connection required or service busy')); return;
         }
         this.rate.set(peerId, time); this.inbound.set(peerId, (this.inbound.get(peerId) ?? 0) + 1);
-        this._track(this._handle(stream, connection, protocol === LEGACY_WORLD_OBJECT_PROTOCOL).finally(() => {
+        this._track(this._handle(stream, connection, protocol).finally(() => {
           const count = this.inbound.get(peerId) - 1;
           if (count) this.inbound.set(peerId, count); else this.inbound.delete(peerId);
         }));
       }, { maxInboundStreams: 2, maxOutboundStreams: 2, runOnLimitedConnection: true });
       this.registered = true; return this;
     } catch (error) {
-      await Promise.allSettled([WORLD_OBJECT_PROTOCOL, LEGACY_WORLD_OBJECT_PROTOCOL].map(protocol => this.node.unhandle(protocol)));
+      await Promise.allSettled(protocols.map(protocol => this.node.unhandle(protocol)));
       owners.delete(this.node); throw error;
     }
   }
-  async _handle(stream, connection, legacy = false) {
+  async _handle(stream, connection, protocol = WORLD_OBJECT_PROTOCOL) {
     const signal = AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(this.requestTimeoutMs)]);
     const abort = () => abortStream(stream, signal.reason); signal.addEventListener('abort', abort, { once: true });
     try {
       const io = channel(stream), peerId = connection.remotePeer.toString();
       const input = await io.read(signal); this._check(input, peerId, 'query', input?.nonce);
       const local = this._objects(await this.listLocalObjects()); signal.throwIfAborted();
-      // Older strict clients only admit sizes1..12. Do not let one larger or
-      // smaller new object make their entire room snapshot invalid.
-      const objects = legacy ? local.filter(legacySize) : local;
+      // Older strict clients cannot admit transform metadata or the expanded
+      // size range. Filter incompatible entries instead of poisoning the room.
+      const objects = protocol === LEGACY_WORLD_OBJECT_PROTOCOL ? local.filter(legacySize)
+        : protocol === PREVIOUS_WORLD_OBJECT_PROTOCOL ? local.filter(previousSize) : local;
       this._check(input, peerId, 'query', input.nonce);
       await io.write(this._envelope('objects', peerId, input.nonce, { objects }), signal); await finish(stream);
     } catch (error) { abortStream(stream, error); }
@@ -103,6 +107,7 @@ export class WorldGeneratedObjectNetwork {
     this._active(); if (!this._known(peerId)) throw failure('peer is not in this room');
     const signal = AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(this.requestTimeoutMs), ...(callerSignal ? [callerSignal] : [])]);
     const connections = () => this.node.getConnections().filter(value => encryptedConnection(value) && value.remotePeer.toString() === peerId);
+    const sequence = (this.sequence.get(peerId) ?? 0) + 1; this.sequence.set(peerId, sequence);
     let stream; const abort = () => abortStream(stream, signal.reason);
     signal.addEventListener('abort', abort, { once: true });
     try {
@@ -110,18 +115,33 @@ export class WorldGeneratedObjectNetwork {
         timeoutMs: this.requestTimeoutMs, dial: () => this.manager._maybeDialPeer(peerId, 'world-objects'),
         assertAllowed: () => { this._active(); if (!this._known(peerId)) throw failure('peer left room'); } });
       const connection = connections()[0]; if (!connection) throw failure('peer is not connected');
-      let legacy = false;
-      try { stream = await connection.newStream(WORLD_OBJECT_PROTOCOL, { signal, runOnLimitedConnection: true }); }
-      catch (error) {
-        signal.throwIfAborted(); legacy = true;
-        stream = await connection.newStream(LEGACY_WORLD_OBJECT_PROTOCOL, { signal, runOnLimitedConnection: true });
+      let selected;
+      for (const protocol of protocols) {
+        try { stream = await connection.newStream(protocol, { signal, runOnLimitedConnection: true }); selected = protocol; break; }
+        catch (error) { signal.throwIfAborted(); if (protocol === protocols.at(-1)) throw error; }
       }
       const io = channel(stream), nonce = crypto.randomUUID();
       await io.write(this._envelope('query', peerId, nonce), signal);
       const response = await io.read(signal); this._check(response, peerId, 'objects', nonce);
       const objects = this._objects(response.objects);
-      if (legacy && objects.some(value => !legacySize(value))) throw failure('legacy object size is out of range');
+      if ((selected === LEGACY_WORLD_OBJECT_PROTOCOL && objects.some(value => !legacySize(value)))
+          || (selected === PREVIOUS_WORLD_OBJECT_PROTOCOL && objects.some(value => !previousSize(value)))) throw failure('legacy object size is out of range');
       signal.throwIfAborted(); await finish(stream);
+      this._active(); if (!this._known(peerId)) throw failure('peer left room');
+      if ((this.completed.get(peerId) ?? 0) > sequence) throw failure('outdated object snapshot');
+      for (const object of objects) {
+        const key = `${peerId}:${object.placement.objectId}`, previous = this.revisions.get(key);
+        if (previous && (worldObjectRevision(object) < worldObjectRevision(previous)
+            || (worldObjectRevision(object) === worldObjectRevision(previous) && !sameWorldObject(previous, object))
+            || object.placement.ownerHostId !== previous.placement.ownerHostId || object.placement.agentId !== previous.placement.agentId)) {
+          throw failure('object revision or ownership rollback');
+        }
+      }
+      this.completed.set(peerId, sequence);
+      // Retain a bounded high-water table for currently advertised objects.
+      // Request ordering rejects late snapshots after an authenticated removal.
+      for (const key of this.revisions.keys()) if (key.startsWith(`${peerId}:`)) this.revisions.delete(key);
+      for (const object of objects) this.revisions.set(`${peerId}:${object.placement.objectId}`, object);
       return objects.map(value => ({ ...value, ownerPeerId: peerId, local: false }));
     } catch (error) { abortStream(stream, error); throw error; }
     finally { signal.removeEventListener('abort', abort); }
@@ -141,6 +161,10 @@ export class WorldGeneratedObjectNetwork {
       }));
       for (const [peerId, entry] of this.directory) if (!this._known(peerId) || this.now() - entry.at > 20000) this.directory.delete(peerId);
       for (const peerId of this.rate.keys()) if (!this._known(peerId)) this.rate.delete(peerId);
+      for (const peerId of this.sequence.keys()) if (!this._known(peerId)) {
+        this.sequence.delete(peerId); this.completed.delete(peerId);
+        for (const key of this.revisions.keys()) if (key.startsWith(`${peerId}:`)) this.revisions.delete(key);
+      }
       if (!this.closed) observe(this.onDirectory, [...this.directory.values()].flatMap(value => value.objects).slice(0, WORLD_OBJECT_LIMITS.visible));
     })()).finally(() => { this.refreshing = null; });
     return this.refreshing;
@@ -150,11 +174,11 @@ export class WorldGeneratedObjectNetwork {
     this.closed = true; this.lifetime.abort(new DOMException('World objects closed', 'AbortError'));
     this.closing = (async () => {
       if (this.registered) {
-        await this.node.unhandle(WORLD_OBJECT_PROTOCOL); await this.node.unhandle(LEGACY_WORLD_OBJECT_PROTOCOL); this.registered = false;
+        for (const protocol of protocols) await this.node.unhandle(protocol); this.registered = false;
       }
       await Promise.allSettled([...this.operations]);
       if (owners.get(this.node) === this) owners.delete(this.node);
-      this.directory.clear(); this.rate.clear(); observe(this.onDirectory, []);
+      this.directory.clear(); this.rate.clear(); this.revisions.clear(); this.sequence.clear(); this.completed.clear(); observe(this.onDirectory, []);
     })();
     return this.closing;
   }

@@ -14,6 +14,7 @@ import { LocalArtifactCache } from './LocalArtifactCache.js';
 import { ArtifactStore } from '../artifacts/ArtifactStore.js';
 import { AgentRecordStore } from '../agents/AgentRecordStore.js';
 import { WorldKnowledgeStore } from '../agents/WorldKnowledgeStore.js';
+import { WorldObjectStore } from '../agents/WorldObjectStore.js';
 import { ResidentDiagnosticsStore } from '../agents/ResidentDiagnosticsStore.js';
 import { WorldMemoryStore } from '../agents/WorldMemoryStore.js';
 import { WorldGoalStore } from '../agents/WorldGoalStore.js';
@@ -99,6 +100,7 @@ export class StateManager {
     this.agentRecordStores = new Map();
     this.worldMemoryStores = new Map();
     this.worldKnowledgeStores = new Map();
+    this.worldObjectStores = new Map();
     this.residentDiagnosticsStores = new Map();
     this.worldGoalStores = new Map();
     this.worldStandingGoalStores = new Map();
@@ -276,6 +278,20 @@ export class StateManager {
   }
 
   getWorldKnowledgeStore(name = 'default') { return this.worldKnowledgeStores.get(name) || null; }
+
+  /** Durable CAS heads and receipts for retained world-object transforms. */
+  createWorldObjectStore(options = {}) {
+    if (this.destroyed) throw new Error('StateManager is destroyed');
+    const name = options.name || 'default';
+    if (this.worldObjectStores.has(name)) throw new Error(`World object store ${name} is already registered`);
+    const store = new WorldObjectStore({ ...options, name, onDestroy: closed => {
+      if (this.worldObjectStores.get(name) === closed) this.worldObjectStores.delete(name);
+      options.onDestroy?.(closed);
+    } });
+    this.worldObjectStores.set(name, store); return store;
+  }
+  getWorldObjectStore(name = 'default') { return this.worldObjectStores.get(name) || null; }
+
 
   /** Owner-local diagnostics never enter replicated state or model context. */
   createResidentDiagnosticsStore(options = {}) {
@@ -1053,6 +1069,7 @@ export class StateManager {
       for (const store of [...this.agentRecordStores.values()]) await cleanup(() => store.destroy());
       for (const store of [...this.worldMemoryStores.values()]) await cleanup(() => store.destroy());
       for (const store of [...this.worldKnowledgeStores.values()]) await cleanup(() => store.destroy());
+      for (const store of [...this.worldObjectStores.values()]) await cleanup(() => store.destroy());
       for (const store of [...this.residentDiagnosticsStores.values()]) await cleanup(() => store.destroy());
       for (const store of [...this.worldGoalStores.values()]) await cleanup(() => store.destroy());
       for (const store of [...this.worldStandingGoalStores.values()]) await cleanup(() => store.destroy());

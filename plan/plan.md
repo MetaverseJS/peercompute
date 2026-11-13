@@ -10,6 +10,12 @@ scope; model repetition, semantic distance selection and receipt-consistent
 narration remain open. Existing-object acquire/carry/place remains the next
 manipulation slice.
 
+November12 follow-up: fix fresh-peer generated mesh delivery, add owner-authorized
+resize of retained props (including explicit10x changes), give structures a
+separate world-size profile, and ground their display on themed terrain. Keep
+mesh identity separate from revisioned transforms. This precedes the broader
+acquire/carry/place slice and must preserve shared updates and reload behavior.
+
 ## Project Overview:
 PeerCompute is a browser based p2p compute network library leveraging webGPU and built on top of libp2p.  Use cases for this would range from a networking library for player hosted online gaming, procedural world generation, large scale physics simulations,  backend for a metaverse network etc. 
 
@@ -2550,3 +2556,12 @@ references and host validation work. The model chose32 instead of96 units for
 a distant request and narrated a false capability denial; overall semantic
 acceptance remains failed. Keep those quality issues open, alongside reported
 repetition. Do not conflate verified host execution with model prose.
+
+November12 object-transform checkpoint: owner chat can resize a retained existing
+object via validated observed references and exact multiplier/absolute dimension.
+StateManager persists CAS heads/receipts/tombstones; immutable revision manifests
+reuse mesh bytes. Default omitted castle size96, ring24; themed visual support
+updates without changing stored XYZ/yaw.232regressions, actual peer resize/shrink/
+control3/3, six retained mesh renders and three internal preview startup/network
+checks pass. Existing irregular bases are not flattened. Internal previews updated;
+Pages unchanged. Carry/acquire/place remains the next manipulation milestone.

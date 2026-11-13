@@ -52,3 +52,10 @@ test('observed-destination capability is only advertised when the world adapter 
   assert.doesNotMatch(facts({ allowPlacement: true, allowObject: false }), /observed places/);
   assert(facts({ allowPlacement: true }).split(/\s+/).length < 60);
 });
+
+test('existing-object resizing is available independently of image and mesh provider readiness', () => {
+  const text = facts({ targets: [], allowResize: true });
+  assert.match(text, /Existing owned objects can be resized without image or mesh inference/);
+  assert.match(text, /image=not-advertised, mesh=not-advertised/);
+  assert.doesNotMatch(facts({ targets: [] }), /can be resized/);
+});

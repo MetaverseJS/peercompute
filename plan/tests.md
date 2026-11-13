@@ -5441,3 +5441,50 @@ errors or unexpected model transfers; all owned resources close. Baseline MPM
 drift, optional backend/hardware features and model quality are not qualified by
 these release smoke tests. Evidence: external peercompute-pages-resident-release-
 20261112 reports; public checks are recorded after deployment.
+
+## November12: persistent object resize and terrain contact
+
+- Test request-local oN binding, owner-only capability, unchanged current prompt,
+  exactly one multiplier/absolute size, no invented coordinates/CIDs/revisions,
+  stale target rejection and pre-speech committed receipts after narration fails.
+- Exercise native browser Host + ArtifactStore + IndexedDB WorldObjectStore;
+  resize6→60, same object and mesh CID, new immutable manifest/head, verified
+  memory, no extra image/mesh inference. Independent store handles test CAS,
+  idempotence, reload, orphan candidate exclusion and deletion tombstones.
+- Test serialized overlapping mutations and cancellation immediately after CAS.
+  Cross-peer tests use real signed encrypted discovery/Bitswap and verify a
+  fresh empty store receives exact retained GLB bytes at the new size. v3
+  updates reject stale/forged descriptors; legacy snapshots filter unsupported
+  entries without invalidating compatible entries.
+- Test avatar bounds separately from castle/ring defaults; actual Cube footprint
+  checks exclude only the edited object. Resize may exceed navigation leg range
+  but cannot bypass scene bounds, player/prop clearance or supported floor.
+- Test real Three/Cannon support contact, uniform scale and stable yaw, theme
+  invalidation, unchanged-frame caching, and unused-vertex exclusion. Owned
+  headless rendering of a previously generated GLB is visual evidence, not a
+  fresh image-to-3D inference qualification. Arbitrary bases are not planarized.
+- Discovery/retry regression proves bounded per-CID fairness and cancellation,
+  independent application/artifact readiness and unchanged model sessions.
+  The exact user's multi-minute latency is not claimed reproduced.
+
+Results:232distinct regression cases pass (223in the completed combined run plus
+9corrected generated-host cases). An obsolete fixture initially failed category
+admission and waited indefinitely for mesh; raw failure and owned-child
+termination are retained. Updating its simulated classifier/order and asserting
+the actual persisted-memory bound fixes the fixture without relaxing production
+validation. Native browser Host64cases include resize persistence and independent
+artifact recovery. Serial Cube/Earth/inference builds pass.
+
+Actual peer Qwen2B selection passes enlargement10×, half-size and no-action
+question: five real generations, no retries/substitution/truncation. The current
+prompt and observation binding are preserved; this small matrix is not general
+semantic reliability. Six real retained-castle renders across Tron/Moon/Ireland
+at6/60units verify same mesh, exact uniformscale/yaw and sampled contact. Gaps
+elsewhere under the irregular base remain (up to4.33units atsize60); no claim of
+flattening. External logs preserve initial harness CJS failure and clean rerun.
+
+Final internal runtime smoke passes exact HTML/entry bytes and82/99/10JS/CSS
+assets for Cube5176/Earth5187/inference5189. Desktop/mobile inspector viewport
+checks and encrypted SecretWorkshop connections pass; page/console/HTTP/download/
+cleanup errors0, no local model sessions. Browser resources closed. GitHubPages
+was not changed or requalified this slice.

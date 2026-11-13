@@ -2,6 +2,16 @@
 // six-unit person/cube is the reference; values describe the largest dimension.
 export const WORLD_MODEL_SCALE_SCHEMA = 'peercompute.world.model-scale.v1';
 export const WORLD_MODEL_SIZE = Object.freeze({ minimum: 0.3, maximum: 48, fallback: 6 });
+// Placed structures need a different range from wearable resident bodies.
+// Scene footprint admission still decides whether an object fits at its point.
+export const WORLD_OBJECT_SIZE = Object.freeze({ minimum: 0.3, maximum: 1024, fallback: 6 });
+
+export function normalizeWorldObjectSize(value) {
+  if (!Number.isFinite(value) || value < WORLD_OBJECT_SIZE.minimum || value > WORLD_OBJECT_SIZE.maximum) {
+    throw new TypeError('Object size must be between 0.3 and 1024 world units');
+  }
+  return value;
+}
 
 export function normalizeWorldModelSize(value) {
   if (!Number.isFinite(value) || value < WORLD_MODEL_SIZE.minimum || value > WORLD_MODEL_SIZE.maximum) {
@@ -47,6 +57,21 @@ export function resolveWorldModelSize(value, { name = '', prompt = '' } = {}) {
     if (found) return found[1];
   }
   return WORLD_MODEL_SIZE.fallback;
+}
+
+/** Building-scale defaults apply to props only; avatars keep their body bounds.
+ * Honor explicit size and miniature intent before estimating the named object. */
+export function resolveWorldObjectSize(value, { name = '', prompt = '' } = {}) {
+  if (value !== undefined) return normalizeWorldObjectSize(value);
+  const description = `${name} ${prompt}`;
+  if (/\b(toy|miniature|figurine|scale model)\b/i.test(description)) return 1;
+  for (const text of [name, prompt]) {
+    if (/\b(castle|fortress|citadel)\b/i.test(text)) return 96;
+    if (/\b(wrestling|boxing)\s+ring\b/i.test(text)) return 24;
+    const found = estimates.find(([pattern]) => pattern.test(text));
+    if (found) return found[1];
+  }
+  return WORLD_OBJECT_SIZE.fallback;
 }
 
 export function worldModelScale(size) {

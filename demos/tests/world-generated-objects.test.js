@@ -257,3 +257,137 @@ test('targeted object cancellation or ownership loss during persistence prevents
     assert.equal(records.filter(record => record.pinned).length, 0);
   }
 });
+
+function enableTransforms(f) {
+  f.adapter.validateTransform = (_key, descriptor) => [...descriptor.placement.position];
+  f.adapter.updateTransform = (key, descriptor) => {
+    if (!f.adapter.visible.has(key)) throw new Error('Not visible');
+    f.adapter.visible.set(key, structuredClone(descriptor));
+  };
+}
+
+test('exact resize reuses mesh CID without inference, persists CAS head through reload and deduplicates old operation', async t => {
+  const { IDBFactory } = await import('fake-indexeddb');
+  const { WorldObjectStore } = await import('../../peercompute/src/peercompute/agents/WorldObjectStore.js');
+  const f = await fixture(t); enableTransforms(f);
+  const original = await f.manager.generate({ agentId: 'agent', action, requestId: 'castle', image: imageFixture() });
+  const indexedDBImpl = new IDBFactory(), state = new WorldObjectStore({ name: 'resizing', indexedDBImpl }); await state.open();
+  await f.manager.dispose(); const managed = f.create({ objectStore: state }); await managed.ready; await until(() => f.adapter.visible.size === 1);
+  const request = { agentId: 'agent', objectId: 'castle', expectedObjectRevision: 0, expectedArtifactCid: original.artifactCid,
+    multiplier: 10, requestId: 'scale-ten', expectedRevision: 3 };
+  const before = await f.store.getManifest(original.artifactCid), count = f.calls.length;
+  const resized = await managed.resize(request);
+  assert.equal(resized.status, 'resized'); assert.equal(resized.oldSize, 6); assert.equal(resized.newSize, 60);
+  assert.equal(resized.placement.revision, 1); assert.deepEqual(resized.placement.position, original.placement.position);
+  assert.notEqual(resized.artifactCid, original.artifactCid);
+  const after = await f.store.getManifest(resized.artifactCid);
+  assert.deepEqual(after.files, before.files); assert.deepEqual(after.provenance.generatedMesh, before.provenance.generatedMesh);
+  assert.equal(f.calls.length, count); assert.equal(f.adapter.prepared.length, 2, 'original and reload only; resize does not decode GLB again');
+  assert.equal((await managed.resize(request)).newSize, 60); assert.equal(managed.list()[0].placement.size, 60);
+  await managed.dispose(); await state.destroy();
+  const reopened = new WorldObjectStore({ name: 'resizing', indexedDBImpl }); await reopened.open(); t.after(() => reopened.destroy());
+  const restored = f.create({ objectStore: reopened }); await restored.ready; await until(() => f.adapter.visible.size === 1);
+  assert.equal(restored.list()[0].artifactCid, resized.artifactCid); assert.equal(restored.list()[0].placement.size, 60);
+  assert.equal((await restored.resize(request)).replayed, true); assert.equal(f.calls.length, count);
+  const second = await restored.resize({ ...request, expectedObjectRevision: 1, expectedArtifactCid: resized.artifactCid, multiplier: 0.5, requestId: 'halve' });
+  assert.equal(second.newSize, 30);
+  assert.equal((await restored.resize(request)).newSize, 60, 'historic receipt does not overwrite the newer head');
+  assert.equal(restored.list()[0].placement.size, 30);
+  await restored.remove('castle'); await restored.dispose();
+  const gone = f.create({ objectStore: reopened }); await gone.ready; assert.deepEqual(gone.list(), []);
+  await assert.rejects(gone.resize(request), /removed/);
+});
+
+test('resize fences stale snapshots, foreign owners, exact bounds and geometry; no creation model is invoked', async t => {
+  const f = await fixture(t); enableTransforms(f);
+  const original = await f.manager.generate({ agentId: 'agent', action, requestId: 'object', image: imageFixture() });
+  const input = { agentId: 'agent', objectId: 'object', expectedObjectRevision: 0, expectedArtifactCid: original.artifactCid,
+    multiplier: 10, requestId: 'resize' };
+  const stranger = f.create({ ownerHostId: 'stranger', adapter: sceneAdapter() }); await stranger.ready;
+  await assert.rejects(stranger.resize(input), /not owned/);
+  await assert.rejects(f.manager.resize({ ...input, expectedObjectRevision: 4 }), /revision changed/);
+  await assert.rejects(f.manager.resize({ ...input, multiplier: 1000 }), /1024/);
+  f.adapter.validateTransform = () => { throw new Error('Object would intersect another body'); };
+  await assert.rejects(f.manager.resize(input), /intersect/);
+  assert.equal(f.manager.list()[0].artifactCid, original.artifactCid); assert.equal(f.calls.length, 1);
+  f.state.owns = false; await assert.rejects(f.manager.resize(input), /ownership/);
+});
+
+test('resize ownership loss after candidate retention leaves original head and reload ignores the uncommitted candidate', async t => {
+  const f = await fixture(t); enableTransforms(f);
+  const original = await f.manager.generate({ agentId: 'agent', action, requestId: 'original', image: imageFixture() });
+  const importManifest = f.store.importManifest.bind(f.store);
+  f.store.importManifest = async (...args) => { const record = await importManifest(...args); f.state.owns = false; return record; };
+  await assert.rejects(f.manager.resize({ agentId: 'agent', objectId: 'original', expectedObjectRevision: 0,
+    expectedArtifactCid: original.artifactCid, multiplier: 10, requestId: 'late' }), /ownership/);
+  assert.equal(f.manager.list()[0].artifactCid, original.artifactCid);
+  await f.manager.dispose(); const reload = f.create(); await reload.ready;
+  assert.equal(reload.list()[0].artifactCid, original.artifactCid); assert.equal(f.calls.length, 1);
+});
+
+test('display failure after resize commit is a truthful saved receipt and restores the committed scale', async t => {
+  const f = await fixture(t); enableTransforms(f);
+  const original = await f.manager.generate({ agentId: 'agent', action, requestId: 'visible', image: imageFixture() });
+  f.adapter.updateTransform = () => { throw new Error('Renderer was lost'); };
+  const result = await f.manager.resize({ agentId: 'agent', objectId: 'visible', expectedObjectRevision: 0,
+    expectedArtifactCid: original.artifactCid, multiplier: 10, requestId: 'saved-scale' });
+  assert.equal(result.status, 'saved'); assert.match(result.displayError, /Renderer/); assert.equal(result.newSize, 60);
+  await f.manager.dispose(); const reload = f.create(); await reload.ready; await until(() => f.adapter.visible.size === 1);
+  assert.equal(reload.list()[0].placement.size, 60); assert.equal(f.calls.length, 1);
+});
+
+test('cancellation on retention exit after head CAS still returns the known committed resize receipt', async t => {
+  const { WorldObjectStore } = await import('../../peercompute/src/peercompute/agents/WorldObjectStore.js');
+  const f = await fixture(t); enableTransforms(f);
+  const original = await f.manager.generate({ agentId: 'agent', action, requestId: 'committed', image: imageFixture() });
+  const objectStore = new WorldObjectStore({ persistent: false }); await objectStore.open(); t.after(() => objectStore.destroy());
+  await f.manager.dispose(); const manager = f.create({ objectStore }); await manager.ready; await until(() => f.adapter.visible.size === 1);
+  const controller = new AbortController(), commit = objectStore.commit.bind(objectStore);
+  objectStore.commit = async (...args) => { const result = await commit(...args); controller.abort(); return result; };
+  const result = await manager.resize({ agentId: 'agent', objectId: 'committed', expectedObjectRevision: 0,
+    expectedArtifactCid: original.artifactCid, multiplier: 10, requestId: 'commit-before-abort', signal: controller.signal });
+  assert.equal(result.newSize, 60); assert(['saved', 'resized'].includes(result.status));
+  assert.equal((await objectStore.get({ worldId, ownerHostId: 'host' }, 'committed')).artifactCid, result.artifactCid);
+  assert.equal((await f.store.stat(result.artifactCid)).pinned, true); assert.equal(f.calls.length, 1);
+});
+
+test('different-object mutations serialize final geometry validation so expanded neighbors cannot overlap', async t => {
+  const f = await fixture(t); enableTransforms(f);
+  const one = await f.manager.generate({ agentId: 'agent', action, requestId: 'one', image: imageFixture() });
+  const two = await f.manager.generate({ agentId: 'agent', action, requestId: 'two', image: imageFixture() });
+  f.adapter.validateTransform = (key, descriptor) => {
+    if ([...f.adapter.visible].some(([other, value]) => other !== key && value.placement.size >= 60)) throw new Error('Expanded neighbor blocks this resize');
+    return descriptor.placement.position;
+  };
+  const results = await Promise.allSettled([one, two].map((original, i) => f.manager.resize({ agentId: 'agent', objectId: original.placement.objectId,
+    expectedObjectRevision: 0, expectedArtifactCid: original.artifactCid, multiplier: 10, requestId: `grow-${i}` })));
+  assert.equal(results.filter(value => value.status === 'fulfilled').length, 1);
+  assert.match(results.find(value => value.status === 'rejected').reason.message, /neighbor/);
+  assert.deepEqual(f.manager.list().map(value => value.placement.size).sort((a,b) => a-b), [6, 60]);
+  assert.equal(f.calls.length, 2);
+});
+
+test('creation index failure preserves the known pinned artifact receipt and can be adopted on reload', async t => {
+  const { WorldObjectStore } = await import('../../peercompute/src/peercompute/agents/WorldObjectStore.js');
+  const f = await fixture(t), objectStore = new WorldObjectStore({ persistent: false }); await objectStore.open();
+  t.after(() => objectStore.destroy()); await f.manager.dispose();
+  const manager = f.create({ objectStore }); await manager.ready;
+  const adopt = objectStore.adopt.bind(objectStore); objectStore.adopt = async () => { throw new Error('Index quota failure'); };
+  const result = await manager.generate({ agentId: 'agent', action, requestId: 'index-failure', image: imageFixture() });
+  assert.equal(result.status, 'saved'); assert.equal(result.indexError, true); assert.match(result.displayError, /index/);
+  assert.equal((await f.store.stat(result.artifactCid)).pinned, true); assert.equal(f.calls.length, 1);
+  await manager.dispose(); objectStore.adopt = adopt;
+  const restored = f.create({ objectStore }); await restored.ready;
+  assert.equal(restored.list()[0].artifactCid, result.artifactCid); assert.equal(f.calls.length, 1);
+});
+
+test('synchronous current-revision guard rejects a settings change during object head transaction', async t => {
+  const f = await fixture(t); enableTransforms(f);
+  const original = await f.manager.generate({ agentId: 'agent', action, requestId: 'revision-guard', image: imageFixture() });
+  await f.manager.dispose();
+  let checks = 0;
+  const manager = f.create({ isCurrent: () => ++checks < 2 }); await manager.ready;
+  await assert.rejects(manager.resize({ agentId: 'agent', objectId: 'revision-guard', expectedObjectRevision: 0,
+    expectedArtifactCid: original.artifactCid, multiplier: 10, requestId: 'changed-settings', expectedRevision: 3 }), { name: 'AbortError' });
+  assert.equal(checks, 2); assert.equal(manager.list()[0].artifactCid, original.artifactCid);
+});

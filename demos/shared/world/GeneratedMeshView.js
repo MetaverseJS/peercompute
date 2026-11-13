@@ -2,11 +2,13 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { validateGeneratedMesh, getGeneratedMeshTextureSources } from '../../../peercompute/src/peercompute/inference/GeneratedMeshArtifact.js';
 import { decodeGeneratedMeshTexture } from '../../../peercompute/src/peercompute/inference/GeneratedMeshTexture.js';
-import { normalizeWorldModelSize } from './WorldModelScale.js';
+import { normalizeWorldModelSize, normalizeWorldObjectSize } from './WorldModelScale.js';
+import { generatedMeshSupport } from './GeneratedMeshGrounding.js';
 
 /** Uniform sizing preserves the generated proportions and its grounded origin. */
-export function fitGeneratedMeshView(view, size) {
-  const checked = normalizeWorldModelSize(size);
+export function fitGeneratedMeshView(view, size, { profile = 'avatar' } = {}) {
+  if (!['avatar', 'object'].includes(profile)) throw new TypeError('Unknown generated mesh size profile');
+  const checked = profile === 'object' ? normalizeWorldObjectSize(size) : normalizeWorldModelSize(size);
   if (!Number.isFinite(view.extent) || view.extent <= 0 || !Number.isFinite(view.height) || view.height < 0) {
     throw new TypeError('Invalid generated mesh bounds');
   }
@@ -74,11 +76,12 @@ export async function prepareGeneratedMeshView(mesh, { signal, alignForward = fa
     const center = bounds.getCenter(new THREE.Vector3());
     root.position.set(-center.x, -bounds.min.y, -center.z);
     const group = new THREE.Group(); group.add(root);
+    const support = generatedMeshSupport(root);
     // SF3D's export turns its camera-facing +X side into glTF -Z. Resident
     // bodies face +Z; align only that known convention when the caller opts in.
     // Existing TripoSR/unknown meshes and placed props keep their original yaw.
     // The validated generator string is a cosmetic hint, never authority.
     if (alignForward && asset.asset?.generator === 'SF3D-WebGPU') group.rotation.y = Math.PI;
-    return { group, extent, height: size.y, dispose, get released() { return released; } };
+    return { group, extent, height: size.y, support, dispose, get released() { return released; } };
   } catch (error) { dispose(); throw error; }
 }

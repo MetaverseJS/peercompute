@@ -1,7 +1,7 @@
 import * as CANNON from 'cannon-es';
 import { normalizeWorldGoalPosition } from '../../../../peercompute/src/peercompute/agents/WorldGoalPlan.js';
 import { NAVIGATION_SENSORS } from '../../../shared/agents/motor/navigationSensors.js';
-import { normalizeWorldModelSize } from '../../../shared/world/WorldModelScale.js';
+import { normalizeWorldObjectSize } from '../../../shared/world/WorldModelScale.js';
 import { normalizeWorldObjectTarget } from '../../../shared/agents/WorldObjectAction.js';
 
 export const CUBE_SPATIAL_LIMITS = Object.freeze({ maximumLegDistance: 160, maximumLocations: 12, maximumCoordinate: 1_000_000 });
@@ -38,12 +38,12 @@ export function createCubeSpatialTargets({ physics, getEntries, sensors, getBoun
     return { entry, floorHeight, spatial: { frame: 'planar-xz', bounds: { min: [...bounds.min], max: [...bounds.max] },
       maximumLegDistance: CUBE_SPATIAL_LIMITS.maximumLegDistance } };
   }
-  function validate(key, input, context = frame(key)) {
+  function validate(key, input, context = frame(key), { enforceRange = true } = {}) {
     const position = normalizeWorldGoalPosition(input), { entry, spatial } = context;
     if (position.some(value => Math.abs(value) > CUBE_SPATIAL_LIMITS.maximumCoordinate)) fail('Destination is outside this world');
     const planar = [position[0], position[2]];
     if (planar.some((value, axis) => value < spatial.bounds.min[axis] || value > spatial.bounds.max[axis])) fail('Destination is outside the walking surface');
-    if (Math.hypot(position[0] - entry.body.position.x, position[2] - entry.body.position.z) > spatial.maximumLegDistance) {
+    if (enforceRange && Math.hypot(position[0] - entry.body.position.x, position[2] - entry.body.position.z) > spatial.maximumLegDistance) {
       fail('Destination is beyond the current movement range');
     }
     if (!sensors.sample(key, { kind: 'location', position }).destinationClear) fail('The destination is occupied or obstructed');
@@ -60,9 +60,11 @@ export function createCubeSpatialTargets({ physics, getEntries, sensors, getBoun
   /** Object size is its maximum dimension, so this square/height envelope is
    * conservative before generation. It covers the entire uniformly fitted mesh,
    * rather than pretending a castle has the six-unit resident footprint. */
-  function validatePlacement(key, input, size, { obstacles = [] } = {}) {
-    normalizeWorldModelSize(size);
-    const context = frame(key), position = validate(key, input, context), bounds = surfaceBounds();
+  function validatePlacement(key, input, size, { obstacles = [], transformExisting = false } = {}) {
+    normalizeWorldObjectSize(size);
+    // Resizing an authenticated existing object is not a navigation leg. The
+    // caller binds this permission to that object's fixed retained location.
+    const context = frame(key), position = validate(key, input, context, { enforceRange: !transformExisting }), bounds = surfaceBounds();
     const half = size / 2, padding = NAVIGATION_SENSORS.margin;
     const lower = [position[0] - half, context.floorHeight, position[2] - half];
     const upper = [position[0] + half, context.floorHeight + size, position[2] + half];
@@ -112,7 +114,7 @@ export function createCubeSpatialTargets({ physics, getEntries, sensors, getBoun
     validate,
     validatePlacement,
     placement(key, size, target, options) {
-      normalizeWorldModelSize(size);
+      normalizeWorldObjectSize(size);
       const context = frame(key);
       let position;
       if (target === undefined) {

@@ -286,6 +286,7 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
     get artifactReady() { return networkConnection.artifactReady; },
     get networkError() { return networkConnection.error; },
     getArtifactNetworkStatus: () => networkConnection.getArtifactNetworkStatus(),
+    retryArtifactNetwork: (options) => networkConnection.retryArtifacts(options),
     async connectBackend(options = {}) {
       // Connect resolves on application readiness; file transport may still be
       // starting, in which case the return value is null. Transfers await it.

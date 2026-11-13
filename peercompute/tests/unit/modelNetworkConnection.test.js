@@ -64,7 +64,9 @@ test('artifact ownership failure preserves app connectivity and explicit Connect
   const connection = createModelNetworkConnection({ ...f, manager: null });
   await connection.connect({}); await connection.startArtifacts();
   assert.equal(connection.networkReady, true); assert.equal(connection.artifactReady, false);
-  assert.deepEqual(connection.getArtifactNetworkStatus(), { status: 'error', error: ownershipError.message });
+  assert.equal(connection.getArtifactNetworkStatus().status, 'error');
+  assert.equal(connection.getArtifactNetworkStatus().error, ownershipError.message);
+  assert(connection.getArtifactNetworkStatus().retryAt > Date.now());
   await assert.rejects(connection.requireArtifacts(), (error) => error === ownershipError);
   assert.equal(f.calls.includes('disconnect'), false);
   locked = false;
@@ -73,6 +75,74 @@ test('artifact ownership failure preserves app connectivity and explicit Connect
   assert.equal(connection.artifactReady, true); assert.equal(connection.error, null);
   assert.equal(f.calls.filter((value) => value === 'create').length, 1);
   await connection.dispose();
+});
+
+test('passive artifact recovery uses capped backoff and a later transfer recovers without reconnecting the application', async () => {
+  let clock = 1000, failing = true;
+  const f = fixture({ connected: true, hooks: { artifacts() { if (failing) throw new Error('Temporary relay startup failure'); } } });
+  const connection = createModelNetworkConnection({ ...f, now: () => clock });
+  try {
+    await connection.connect(); await nextTurn();
+    let attempts = 1;
+    for (const delay of [5000, 10000, 20000, 40000, 60000, 60000]) {
+      assert.deepEqual(connection.getArtifactNetworkStatus(), { status: 'error', error: 'Temporary relay startup failure', retryAt: clock + delay });
+      assert.equal(connection.networkReady, true); assert.equal(connection.artifactReady, false);
+      for (let i = 0; i < 3; i++) {
+        assert.equal(await connection.retryArtifacts(), null);
+        await assert.rejects(connection.requireArtifacts(), /Temporary relay startup failure/);
+      }
+      assert.equal(f.calls.filter(value => value === 'artifacts').length, attempts);
+      clock += delay - 1; await connection.retryArtifacts();
+      assert.equal(f.calls.filter(value => value === 'artifacts').length, attempts);
+      clock++; await connection.retryArtifacts(); attempts++;
+      assert.equal(f.calls.filter(value => value === 'artifacts').length, attempts);
+    }
+    failing = false; clock = connection.getArtifactNetworkStatus().retryAt;
+    const transport = await connection.requireArtifacts();
+    assert.equal(transport, f.manager.getArtifactTransport());
+    assert.equal(connection.artifactReady, true); assert.equal(connection.error, null);
+    assert.deepEqual(connection.getArtifactNetworkStatus(), { status: 'ready', error: null });
+    assert.equal(f.calls.filter(value => ['initialize', 'connect', 'disconnect', 'create'].includes(value)).length, 0);
+  } finally { await connection.dispose(); }
+});
+
+test('due maintenance and transfer retries share one startup; cancelling a waiter never cancels the shared retry', async () => {
+  let clock = 1000, failing = true;
+  const gate = Promise.withResolvers();
+  const f = fixture({ connected: true, hooks: { artifacts() { if (failing) throw new Error('Not yet available'); return gate.promise; } } });
+  const connection = createModelNetworkConnection({ ...f, now: () => clock });
+  try {
+    await connection.connect(); await nextTurn();
+    clock = connection.getArtifactNetworkStatus().retryAt; failing = false;
+    const controller = new AbortController();
+    const first = connection.retryArtifacts({ signal: controller.signal });
+    const second = connection.retryArtifacts(), third = connection.requireArtifacts();
+    controller.abort(); await assert.rejects(first, { name: 'AbortError' });
+    assert.equal(connection.getArtifactNetworkStatus().status, 'starting');
+    assert.equal(f.calls.filter(value => value === 'artifacts').length, 2);
+    gate.resolve(); assert.equal(await second, await third);
+    assert.equal(connection.artifactReady, true);
+    await connection.dispose();
+    assert.throws(() => connection.retryArtifacts(), /disposed/);
+  } finally { gate.resolve(); await connection.dispose(); }
+});
+
+test('explicit retry can bypass backoff but aborted and disconnected maintenance cannot start a transport', async () => {
+  let failing = true;
+  const f = fixture({ connected: true, hooks: { artifacts() { if (failing) throw new Error('Not ready'); } } });
+  const connection = createModelNetworkConnection({ ...f, now: () => 1000 });
+  try {
+    await connection.connect(); await nextTurn(); failing = false;
+    const controller = new AbortController(); controller.abort();
+    assert.throws(() => connection.retryArtifacts({ signal: controller.signal }), { name: 'AbortError' });
+    assert.equal(f.calls.filter(value => value === 'artifacts').length, 1);
+    f.manager.isConnected = false;
+    assert.equal(await connection.retryArtifacts({ force: true }), null);
+    assert.equal(f.calls.filter(value => value === 'artifacts').length, 1);
+    f.manager.isConnected = true;
+    await connection.retryArtifacts({ force: true }); assert.equal(connection.artifactReady, true);
+    assert.equal(f.calls.filter(value => value === 'artifacts').length, 2);
+  } finally { await connection.dispose(); }
 });
 
 test('concurrent Connect calls deduplicate config loading, app creation and artifact startup', async () => {

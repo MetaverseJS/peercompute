@@ -7,7 +7,7 @@ import { plaintext } from '@libp2p/plaintext';
 import { yamux } from '@libp2p/yamux';
 import { identify } from '@libp2p/identify';
 import { channel } from '../../peercompute/src/peercompute/networkManager/inference/protocol.js';
-import { WorldGeneratedObjectNetwork, WORLD_OBJECT_PROTOCOL, LEGACY_WORLD_OBJECT_PROTOCOL } from '../shared/agents/WorldGeneratedObjectNetwork.js';
+import { WorldGeneratedObjectNetwork, WORLD_OBJECT_PROTOCOL, PREVIOUS_WORLD_OBJECT_PROTOCOL, LEGACY_WORLD_OBJECT_PROTOCOL } from '../shared/agents/WorldGeneratedObjectNetwork.js';
 import { WORLD_OBJECT_SCHEMA } from '../shared/agents/WorldObjectAction.js';
 import { ArtifactStore } from '../../peercompute/src/peercompute/artifacts/ArtifactStore.js';
 
@@ -54,6 +54,7 @@ test('scaled objects transfer exactly on v2; v1 receives only compatible objects
   const response = await io.read(signal);
   assert.deepEqual(response.objects, [original]); await stream.close();
   await b.node.unhandle(WORLD_OBJECT_PROTOCOL);
+  await b.node.unhandle(PREVIOUS_WORLD_OBJECT_PROTOCOL);
   assert.deepEqual((await a.service.query(peerId)).map(value => value.placement.size), [8]);
 });
 test('plaintext, unknown room members, relay peers and claimed owner fields cannot publish object descriptors', { timeout: 12000 }, async t => {
@@ -79,4 +80,22 @@ test('raw scope, recipient, replay nonce and object authority extensions are rej
   const cancelled = new AbortController(); cancelled.abort();
   await assert.rejects(a.service.query(peerId, { signal: cancelled.signal }), { name: 'AbortError' });
   await a.service.close(); await assert.rejects(a.service.query(peerId), /closed/);
+});
+
+test('authenticated v3 peers transfer revisions and large objects while older protocols filter incompatible records and rollbacks fail', { timeout: 12000 }, async t => {
+  const { WORLD_OBJECT_TRANSFORM_SCHEMA } = await import('../shared/agents/WorldObjectAction.js');
+  const [a, b] = await fixture(t), peerId = b.node.peerId.toString(), original = b.objects[0];
+  const legacy = { ...original, placement: { ...original.placement, objectId: 'legacy' } };
+  const transformed = { ...original, placement: { ...original.placement, schema: WORLD_OBJECT_TRANSFORM_SCHEMA,
+    revision: 1, previousArtifactCid: original.artifactCid, actorAgentId: 'editor', size: 80 } };
+  b.objects = [legacy, transformed, { ...legacy, placement: { ...legacy.placement, objectId: 'castle-large', size: 960 } }];
+  assert.deepEqual((await a.service.query(peerId)).map(value => value.placement.size), [8, 80, 960]);
+  for (const protocol of [PREVIOUS_WORLD_OBJECT_PROTOCOL, LEGACY_WORLD_OBJECT_PROTOCOL]) {
+    const stream = await a.node.getConnections()[0].newStream(protocol), io = channel(stream), nonce = crypto.randomUUID(), signal = AbortSignal.timeout(1500);
+    await io.write({ type: 'query', recipient: peerId, nonce, worldId, scope }, signal);
+    assert.deepEqual((await io.read(signal)).objects, [legacy]); await stream.close();
+  }
+  b.objects = [original]; await assert.rejects(a.service.query(peerId), /rollback/);
+  b.objects = [{ ...transformed, placement: { ...transformed.placement, size: 81 } }];
+  await assert.rejects(a.service.query(peerId), /rollback/);
 });

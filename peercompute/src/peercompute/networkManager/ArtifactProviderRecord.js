@@ -120,6 +120,7 @@ export class ArtifactProviderDiscovery {
     this.closed = false;
     this.lastErrors = [];
     this.expiryTimer = null;
+    this.queryCursors = new Map();
     this.disconnectListener = (event) => this._forgetPeer(event.detail.toString());
   }
 
@@ -297,10 +298,21 @@ export class ArtifactProviderDiscovery {
   async find(cid, { signal } = {}) {
     if (this.closed) throw new Error('Artifact discovery is stopped');
     cid = canonicalCID(String(cid));
-    const connections = [...new Map(this.manager.libp2p.getConnections()
+    const connected = [...new Map(this.manager.libp2p.getConnections()
       .filter((connection) => connection.status === 'open')
-      .map((connection) => [connection.remotePeer.toString(), connection])).values()].slice(0, this.maximumQueryPeers);
+      .map((connection) => [connection.remotePeer.toString(), connection])).values()];
     if (this.operations.size >= 32) throw new Error('Artifact discovery is busy');
+    // Each attempt stays bounded, but repeated fresh-peer reads must not query
+    // the same first eight connections forever while the actual owner is later
+    // in the connected global model network. Proof/room validation is unchanged.
+    const count = Math.min(connected.length, this.maximumQueryPeers);
+    const start = connected.length ? (this.queryCursors.get(cid) ?? 0) % connected.length : 0;
+    const connections = Array.from({ length: count }, (_, index) => connected[(start + index) % connected.length]);
+    // Keep independent progress for interleaved object/avatar lookups; a single
+    // global cursor can phase-lock each artifact to the same incomplete batch.
+    this.queryCursors.delete(cid);
+    if (this.queryCursors.size >= 128) this.queryCursors.delete(this.queryCursors.keys().next().value);
+    this.queryCursors.set(cid, connected.length ? (start + count) % connected.length : 0);
     const operation = Promise.allSettled(connections.map((connection) => this._query(connection, cid, signal)));
     this.operations.add(operation);
     try {
@@ -310,9 +322,9 @@ export class ArtifactProviderDiscovery {
     } finally { this.operations.delete(operation); }
     signal?.throwIfAborted();
     this.controller.signal.throwIfAborted();
-    const connected = new Set(connections.map((connection) => connection.remotePeer.toString()));
+    const connectedPeers = new Set(connected.map((connection) => connection.remotePeer.toString()));
     return [...(this.providers.get(cid)?.values() || [])].filter((record) => record.expiresAt > Date.now()
-      && connected.has(record.appPeerId) && record.gameId === this.scope.gameId && record.roomId === this.scope.roomId
+      && connectedPeers.has(record.appPeerId) && record.gameId === this.scope.gameId && record.roomId === this.scope.roomId
       && record.topologyId === this.scope.topologyId).map((record) => structuredClone(record));
   }
 
@@ -357,5 +369,6 @@ export class ArtifactProviderDiscovery {
     await this.manager.libp2p.unhandle(ARTIFACT_PROVIDER_PROTOCOL);
     await Promise.allSettled([...this.operations]);
     this.providers.clear();
+    this.queryCursors.clear();
   }
 }
