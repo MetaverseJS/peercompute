@@ -63674,3 +63674,41 @@ arbitrary input length. Full stress evidence is preserved externally.
   storage origin/profile ownership, and registry isolation from GPU test loads.
   This is documentation evidence only. Local checkpoint and a full ICC index/
   Git-history refresh follow; runtime qualification remains future work.
+
+### 2026-11-14T22:16:03Z — native Bun root feasibility follow-up
+
+- Recording/tool time,13:16:03 AKST; exact user-send time
+  unavailable. User questions redundant Bun+Chromium dependencies and asks
+  whether native Bun WebGPU is sufficient and how difficult a Bun-only root is.
+- ICC assistant-status confirmed fresh5b7080c7 and resumed the existing root
+  analysis task. Read prior plan/log and relevant runtime/storage/worker source;
+  a native read-only agent reviewed adapter seams. Current primary-source web
+  review covers Bun web APIs/Workers/SQLite/Image, Bun1.4 release notes,
+  bun-webgpu Dawn FFI, Dawn Node binding and historical Bun binding issues.
+  Bun1.4 documents JSPI and memory64; missing APIs in older installed Bun1.3.9
+  do not establish current runtime limitations. The native binding is external
+  and its published CTS includes failures/skips; no GPU parity inferred.
+- Commands: bun --version; bun -e API presence probes; timeout15s bun --eval
+  importing the real StateManager with enablePersistence:false,
+  disableNetworkProvider:true, disableBroadcast:true. Initialization and destroy
+  passed without network/storage/GPU work. Installed1.3.9 exposes Worker and
+  SharedArrayBuffer, but no navigator.gpu, IndexedDB, WorkerGlobalScope,
+  OffscreenCanvas, createImageBitmap, Bun.Image, navigator.locks or JSPI.
+  No runtime upgrades, dependencies, models or servers started.
+- Revise recommendation to native Bun first: shared managers/service contracts,
+  SQLite evidence store/browser IDB outbox, native GPU/worker adapters. Evidence
+  registry is bounded; generic GPU compute is moderate; full existing model
+  engine parity is the uncertain larger effort. Keep Chromium optional as a
+  browser compatibility reference/fallback. Literal IndexedDB API parity is a
+  separate requirement from equivalent StateManager persistence semantics.
+- Updated root analysis, root TODO, high-level plan, tests and current branch
+  plan plus this log. Initial preflight failed because concurrent unrelated
+  reservation-ledger source/tests appeared after the initial clean check;
+  preserved those files and reran --allow-dirty, passing with that warning.
+  Documentation-only lease published. One functions.exec was aborted before
+  dispatch and retried. Initial broad search output was truncated; primary
+  sources were opened directly and scoped source reads repeated as needed.
+- Validation:5 local plan links and git diff --check pass; scoped ICC guard
+  passes all7 documentation files. Only the documented old-Bun API/StateManager
+  probes were executed; current Bun1.4/native GPU/model parity remains unrun.
+  Local documentation checkpoint excludes concurrent reservation-ledger work.

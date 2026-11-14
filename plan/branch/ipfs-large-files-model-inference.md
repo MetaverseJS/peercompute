@@ -1892,3 +1892,9 @@ StateManager persistence. Scope results to package, executor device, workload
 and relevant capability revision; re-evaluate old negatives after compatibility
 improvements. Keep root optional and relay/coturn independent. This turn is
 planning only; no runtime implementation or publication.
+
+November14 runtime follow-up: prefer native Bun platform-adapter qualification
+and a SQLite evidence registry before adding Chromium. Keep the browser-host
+option as a compatibility reference/fallback. Bun1.4 documents JSPI/memory64;
+actual managed ONNX/GGUF and native GPU binding parity remain untested. See the
+opening revision of the linked root analysis for scope and difficulty.

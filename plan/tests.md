@@ -1026,6 +1026,11 @@ model/runtime identity, resource limits, and full completion criteria.
 
 ### Planned root-node validation
 
+- November14 follow-up: prioritize native Bun qualification. Probe managed
+  native WebGPU execution/cleanup, shared-memory64/JSPI and actual ONNX/GGUF
+  engine loading separately from API presence. Test SQLite durability and
+  browser IndexedDB report exchange. The installed Bun1.3.9 StateManager
+  in-memory initialization/destruction probe passes; no GPU parity claimed.
 - November14 planning revision: the [root runtime/evidence plan](root-node-runtime-model-evidence.md)
   supersedes the Deno-specific first slice below; those broader authority tests
   remain future acceptance requirements under the selected runtime.

@@ -5,6 +5,11 @@ revised 2026-11-14. No root-node service implemented.
 
 ## November 14 revision: client parity and model evidence first
 
+Follow-up recommendation: first qualify a native Bun root with SQLite-backed
+state and native WebGPU bindings. Chromium is an optional compatibility
+reference/fallback. See the linked analysis's opening follow-up; the initial
+browser-host recommendation below is retained as the evaluated alternative.
+
 The current request restores the original root-as-Compute-Node intent, including
 the client's managed WebGPU workers and IndexedDB capabilities. Read
 [runtime analysis and model evidence plan](root-node-runtime-model-evidence.md)

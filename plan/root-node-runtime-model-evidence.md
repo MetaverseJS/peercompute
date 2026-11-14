@@ -3,6 +3,50 @@
 Status: recommendation, 2026-11-14. No root runtime implemented or qualified.
 This updates the runtime choice and first slice in [the June root plan](root-node-todo.md).
 
+## Follow-up: prefer native Bun qualification first
+
+The user's dependency-size objection changes the recommendation: qualify a
+native Bun root before adopting Chromium as a production dependency. The
+browser-host design below remains the compatibility fallback/reference.
+Use the same managers, protocols and service contracts with platform adapters;
+root-as-client does not require identical storage implementation or browser UI.
+If literal IndexedDB API compatibility is required on the root, it remains
+additional work; SQLite behind StateManager preserves the service contract,
+not the entire IndexedDB API.
+
+Bun can execute WebGPU through [bun-webgpu's Dawn FFI binding](https://github.com/kommander/bun-webgpu).
+This is a native dependency, not built-in WebGPU or Chromium. The binding's
+published conformance results include failures/skips; qualify our actual
+operations and model engines. The [Dawn Node binding](https://github.com/dawn-gpu/node-webgpu)
+is another candidate, subject to Bun native-addon compatibility testing.
+
+Current [Bun 1.4 release notes](https://bun.sh/blog/bun-v1.4) document JSPI and
+memory64, improving prospects for the existing GGUF WASM runtime. Its exact
+shared-memory64 configuration, loader and GPU binding still need execution
+tests. [Bun.Image](https://bun.com/docs/runtime/image) may cover native image
+decoding/resizing/encoding. [Workers](https://bun.com/docs/runtime/workers)
+remain experimental, particularly termination. These are qualification items,
+not proof that all existing inference engines work unchanged.
+
+| Native scope | Expected difficulty and acceptance |
+| --- | --- |
+| Evidence registry | Bounded service/storage work. Bun HTTP/WSS and built-in SQLite; browser IDB outbox. Reuse StateManager and shared schemas; prove durable restart and browser submissions. Native P2P still needs transport qualification. |
+| General WebGPU compute | Moderate platform-adapter work: initialize native GPU inside a managed worker, execute actual WGSL, transfer results, cancel and release resources. |
+| Existing ONNX/GGUF/media engines | Largest uncertainty: qualify engine asset loading, WASM features, GPU API coverage, ports, image/audio processing and cleanup per backend. Separate native-engine results from browser-engine evidence. |
+
+StateManager already permits browser persistence to be disabled; the inference
+demo uses that mode. A read-only lifecycle probe on installed Bun1.3.9 initialized
+and destroyed the current StateManager successfully. That older local runtime
+lacks built-in navigator.gpu, IndexedDB and JSPI; it is not evidence against
+the newer1.4 release. No new Bun version or GPU binding was installed/tested.
+Add real SQLite persistence for the native registry; disabling IDB alone is
+not persistence. Native WebGPU means one JS runtime plus a GPU library, not
+zero native dependencies. Keep Node24/Vite tooling unchanged.
+
+Revised order: registry plus small native worker/GPU feasibility spike, then
+one actual ONNX and GGUF execution, then wider modality parity. Chromium is
+optional qualification infrastructure unless native blockers justify it.
+
 ## Original intent and current implementation
 
 The original plan (`16b2f828`, 2025-11-11) allows hierarchical, distributed and
@@ -42,7 +86,7 @@ seams and constraints:
   has a bounded localStorage cache; catalog execution notes are manually
   recorded. These are not a shared compatibility evidence service.
 
-## Runtime recommendation
+## Initial browser-host recommendation (fallback after follow-up)
 
 Prefer **Bun as a replaceable host supervisor, with an owned persistent
 Chromium process executing the actual browser client modules**. Keep Node 24

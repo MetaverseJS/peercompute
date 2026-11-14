@@ -1,8 +1,9 @@
 Instructions: This file contains high level goals for the project and a roadmap.
 
 November14 root-node planning: return to the original root-as-client role.
-Recommend a Bun supervisor with a persistent Chromium PeerCompute client,
-qualified against the Node24 baseline. First useful service: shared model
+Follow-up prioritizes native Bun with storage/worker/GPU adapters; Chromium
+becomes a compatibility reference/fallback, subject to native qualification.
+First useful service: shared model
 inspection/execution evidence keyed by exact package, relevant client/runtime
 revision, executing device and workload, with measured resource/failure scope.
 Old incompatibility is historical evidence, not a permanent blacklist.

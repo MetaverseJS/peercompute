@@ -10,6 +10,9 @@ Implement a self-organizing distributed compute layer that adapts topology and w
 - Metrics are first-class and feed scheduling decisions.
 
 ## Root Node Sidecar
+- November14 dependency follow-up: first qualify native Bun, SQLite persistence
+  and native WebGPU/worker adapters. Chromium becomes a compatibility
+  reference/fallback; see the opening revision in the root analysis below.
 - November14 revision: [client-compatible root and model evidence](../root-node-runtime-model-evidence.md)
   supersedes the June Deno runtime and initial MVP order below. Recommend
   an optional persistent Chromium client supervised by Bun, qualified against
