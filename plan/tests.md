@@ -1026,6 +1026,25 @@ model/runtime identity, resource limits, and full completion criteria.
 
 ### Planned root-node validation
 
+- November14 deeper IndexedDB investigation: isolated official Bun1.4.4 has no
+  native IDB globals. `react-native-indexeddb-sqlite@0.2.0` with `bun:sqlite`,
+  sliceMs/fastClone disabled and synchronous FULL passes targeted restart,
+  abort/delete, SQL-failure rollback, process-kill and sequential worker tests.
+  Actual StateManager/Yjs, AgentRecordStore and IndexedDBArtifactBackend pass
+  write/read-delete/read-final phases in separate Bun processes. Binary values,
+  host identity, head/event/attachment, CAS rejection, cursor/accounting and
+  transaction rollback are checked. No AgentRuntime/locks/IPFS/GPU acceptance.
+- Reproduced limits: RN shim stale caches across processes, Blob becomes `{}`
+  after reopen, cyclic values abort. `node-indexeddb@6.0.3` resurrects aborted/
+  deleted data and loses typed arrays. `indexeddbshim@19.0.7` passes generic
+  persistence/crash/cycle checks but actual StateManager/Yjs produces unhandled
+  TransactionInactiveError and exit1, despite succeeding read assertions.
+  A StateManager-only reproduction confirms this is not the injected abort test.
+- Evidence/scripts/source hashes: external ICC artifact directory
+  `root-indexeddb-20261114` (path in the root plan). Follow with schema upgrade/
+  rollback, worker-owner recovery/locks, value admission, disk-full and metadata
+  memory/load/compaction checks before selecting an adapter. SIGKILL is not a
+  power-loss test. Browser storage and repo dependencies remain unchanged.
 - November14 follow-up: prioritize native Bun qualification. Probe managed
   native WebGPU execution/cleanup, shared-memory64/JSPI and actual ONNX/GGUF
   engine loading separately from API presence. Test SQLite durability and
@@ -1045,7 +1064,8 @@ model/runtime identity, resource limits, and full completion criteria.
   measured partial allocations versus estimated or physical memory.
 - Exercise offline outbox replay, durable acknowledgements, duplicate/conflicting
   reports, interrupted runs, bounded redacted data, root outage and unchanged
-  root-free clients. No runtime tests were run for this documentation review.
+  root-free clients. The original documentation review had no runtime tests;
+  later isolated storage results above do not establish whole-root parity.
 - Root node work is tracked in `plan/root-node-todo.md`.
 - The first implementation slice should add Deno unit tests for root schemas,
   identity/signing, session registry, leases, policy revisions, storage

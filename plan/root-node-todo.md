@@ -9,6 +9,11 @@ Follow-up recommendation: first qualify a native Bun root with SQLite-backed
 state and native WebGPU bindings. Chromium is an optional compatibility
 reference/fallback. See the linked analysis's opening follow-up; the initial
 browser-host recommendation below is retained as the evaluated alternative.
+The deeper IndexedDB investigation passes targeted existing-store persistence
+tests with an experimental SQLite shim on Bun1.4.4. Qualify a replaceable,
+single-owner adapter for bounded metadata before adoption; do not put model
+weights in its memory-resident cache. Native IndexedDB itself remains absent.
+Full workers/locks/GPU/model parity and evidence-service implementation are open.
 
 The current request restores the original root-as-Compute-Node intent, including
 the client's managed WebGPU workers and IndexedDB capabilities. Read

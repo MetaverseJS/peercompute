@@ -8,11 +8,12 @@ inspection/execution evidence keyed by exact package, relevant client/runtime
 revision, executing device and workload, with measured resource/failure scope.
 Old incompatibility is historical evidence, not a permanent blacklist.
 See [analysis and staged plan](root-node-runtime-model-evidence.md). Planning
-only: no root implementation, runtime qualification or deployment this turn.
-IndexedDB follow-up: consider a native persistent implementation if identified
-and qualified; current official evidence only confirms browser-backed WebView
-storage and an open native IndexedDB request. SQLite remains the proposed
-root backend pending that evidence, with browser IndexedDB unchanged.
+only: no root implementation or deployment. Isolated Bun1.4.4 storage probes now
+pass real StateManager/Yjs, agent records and artifact backend restart contracts
+using a third-party IndexedDB-over-SQLite candidate. It is not built-in Bun IDB,
+has value/memory/single-owner limits, and needs a bounded pilot before adoption.
+Keep bulk artifacts on the filesystem and direct SQLite available for growing
+evidence registries; full runtime, GPU and lock qualification remains open.
 
 November13 avatar follow-up: owner text commands such as “turn yourself into a
 knight” now use structured authoring admission before persona speech, alongside

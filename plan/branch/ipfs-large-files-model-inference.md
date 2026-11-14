@@ -10,6 +10,13 @@ Updated: 2026-11-03 AKST. Status: **implementation in progress** on
 Roadmap TODO: **IPFS-01**. Parent: [overall plan](../plan.md) and
 [distributed compute](distributed-compute.md).
 
+November14 root storage follow-up: isolated Bun1.4.4 tests show existing Yjs,
+agent records and IndexedDB artifact backend contracts can persist through a
+third-party SQLite shim. Plan a bounded single-owner metadata pilot, with value
+validation and filesystem bulk artifacts; no dependency/runtime implementation
+is adopted. Other shims fail rollback or the actual Yjs path. See the
+[root qualification results](../root-node-runtime-model-evidence.md).
+
 ## Implementation checkpoint — November 3, 2026
 
 - Implemented StateManager-owned ArtifactStore with canonical manifests,

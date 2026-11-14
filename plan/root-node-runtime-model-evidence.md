@@ -1,6 +1,7 @@
 # Root node: client parity and model evidence
 
-Status: recommendation, 2026-11-14. No root runtime implemented or qualified.
+Status: recommendation with isolated storage probes, 2026-11-14. No root runtime
+implemented or fully qualified.
 This updates the runtime choice and first slice in [the June root plan](root-node-todo.md).
 
 ## Follow-up: prefer native Bun qualification first
@@ -38,8 +39,9 @@ StateManager already permits browser persistence to be disabled; the inference
 demo uses that mode. A read-only lifecycle probe on installed Bun1.3.9 initialized
 and destroyed the current StateManager successfully. That older local runtime
 lacks built-in navigator.gpu, IndexedDB and JSPI; it is not evidence against
-the newer1.4 release. No new Bun version or GPU binding was installed/tested.
-Add real SQLite persistence for the native registry; disabling IDB alone is
+the newer1.4 release. The subsequent storage investigation below tests an
+isolated Bun1.4.4 binary; no GPU binding was installed/tested.
+Add durable persistence for the native registry; disabling IDB alone is
 not persistence. Native WebGPU means one JS runtime plus a GPU library, not
 zero native dependencies. Keep Node24/Vite tooling unchanged.
 
@@ -47,15 +49,69 @@ Revised order: registry plus small native worker/GPU feasibility spike, then
 one actual ONNX and GGUF execution, then wider modality parity. Chromium is
 optional qualification infrastructure unless native blockers justify it.
 
-IndexedDB follow-up: a native persistent implementation could reduce adapter
-work, but no official Bun-native experimental API was verified in the current
-documentation. The [native support request](https://github.com/oven-sh/bun/issues/2659)
-remains open; documented experimental WebView storage uses a browser backend.
-Before choosing a candidate, require restart/crash durability, transactional
-rollback, worker concurrency, schema upgrades and existing store/Yjs contract
-tests. An in-memory testing implementation does not meet root durability.
-Keep the backend replaceable; a link/version for the proposed implementation
-is still requested. No new storage dependency is selected or tested here.
+### IndexedDB investigation: actual Bun and PeerCompute probes
+
+The isolated official Bun1.4.4 Linux binary has no `indexedDB`, `IDBFactory`,
+`IDBDatabase`, `IDBTransaction` or `IDBKeyRange` globals. Its npm archive SHA512
+matches the package integrity metadata. Source review of stable38afee6c,
+main1ae1ed55 and the current canary release-body revision4df48e4b found no
+native global registrations or enablement flag. The
+[native support request](https://github.com/oven-sh/bun/issues/2659) remains open.
+The apparent [experimental IndexedDB entry](https://github.com/oven-sh/bun/blob/1ae1ed552560ed8bc6f36d98a1a648470c142c03/packages/bun-inspector-protocol/src/protocol/v8/protocol.json#L6925)
+is imported Chrome debugging-protocol metadata, not a Bun database.
+WebView storage still uses a browser. Avoid unused bare-variable presence
+probes: upstream PR46886 describes an optimizer bug that can produce a false
+positive; these probes consumed actual `globalThis` values.
+
+Third-party IndexedDB APIs backed by persistent native storage are nevertheless
+possible without Chromium. These are isolated qualification results, not a
+dependency adoption or a browser-conformance claim:
+
+| Candidate | Observed result on Bun1.4.4 | Limit for PeerCompute |
+| --- | --- | --- |
+| `react-native-indexeddb-sqlite@0.2.0` | Native `bun:sqlite` works through its existing `nodeSqlite` adapter. JSON/Uint8Array restart, abort/delete, injected SQL rollback, SIGKILL after completion, and sequential storage-worker restart pass. | Single owner; opened databases live in memory. Blob silently reopens as `{}`; cycles abort. Separate processes retain stale caches. Very new package dependent on fake-indexeddb internals. |
+| `indexeddbshim@19.0.7` | Normal Node entry opens SQLite under Bun without compiling native addons. Basic binary/restart/abort/delete/cycle/crash probes pass; interleaved processes observe updates. | Real StateManager/y-indexeddb initialization/update triggers unhandled `TransactionInactiveError` and exit1. Blob is rejected. Simultaneous writers/upgrades unqualified. |
+| `node-indexeddb@6.0.3` | Basic operations appear successful in memory. | Aborted/deleted records return after restart, even after explicit flushing/close; Uint8Array becomes a plain object. Reject this version. |
+| `fake-indexeddb@6.2.8` alone | In-memory IndexedDB API. | No durable root persistence. |
+
+The RN-named package does not require React or Expo for this path. Its only
+package dependency is pinned fake-indexeddb6.2.7. Tests use `sliceMs:false`,
+`fastClone:false`, `synchronous:'FULL'`; its optional fast-clone patch is not
+needed. See its [storage contract and adapters](https://github.com/leonsilicon/react-native-indexeddb-sqlite/blob/main/npm/react-native-indexeddb-sqlite/README.md).
+SIGKILL testing proves recovery from the tested process crashes, not power-loss
+durability. The mature shim's [known issues](https://github.com/IndexedDBShim/IndexedDBShim/blob/main/docs/KNOWN_ISSUES.md)
+include transaction timing and cross-process notifications; the exact Yjs fault
+has been reproduced, not repaired or fully attributed.
+
+Actual unchanged PeerCompute modules pass three fresh-process phases using the
+RN/SQLite candidate: StateManager with y-indexeddb restores Yjs state;
+AgentRecordStore restores host identity, head, event and RGBA attachment with
+revision-conflict rejection; IndexedDBArtifactBackend preserves typed arrays,
+deduplication, cursor order, accounting, transaction rollback and deletion.
+This is a targeted storage test, not AgentRuntime/Web Locks, the whole
+ArtifactStore, IPFS, network, GPU or model-engine qualification. The tested
+worktree contains independently owned reservation-ledger changes; hashes are
+retained with the results, and those changes were not edited here.
+
+Recommendation: a replaceable, single-owner IndexedDB-over-SQLite adapter is
+worth a bounded metadata/Yjs/agent-state pilot. Use message ports to reach that
+owner; do not let workers open independent caches of the same file. Enforce
+the proven JSON/typed-array value subset and reject unsupported values before
+acknowledgement. Keep bulk model/IPFS blocks on the existing filesystem backend,
+which must itself be qualified under Bun. For the growing model-evidence
+registry, direct SQLite remains preferable unless measured memory/load time
+and query tests establish that the shim fits its bounded retention policy.
+
+Before production adoption: schema upgrades and failed migrations; owner crash
+and recovery under queued writes; actual AgentRuntime/exclusive-lock semantics;
+large metadata load/compaction; unsupported-value rejection; disk-full faults;
+and browser/native contract comparison. Keep native SQLite behind the same
+service contracts as the fallback. No library dependency, Node24/Vite toolchain,
+live service, browser storage or GPU was changed.
+
+Detailed scripts, package metadata, results and source hashes are retained
+outside the repository at
+`/home/cos/.cache/icc/artifacts/peercompute/root-indexeddb-20261114/`.
 
 ## Original intent and current implementation
 

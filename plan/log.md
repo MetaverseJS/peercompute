@@ -63736,3 +63736,76 @@ arbitrary input length. Full stress evidence is preserved externally.
 - Independent source review reaches the same availability distinction. Scoped
   git diff --check passes for the three advisory documentation files; no
   storage-runtime acceptance tests were executed or claimed.
+
+### 2026-11-14T23:30:51Z — deeper Bun IndexedDB source and storage qualification
+
+- Prompt receipt/tool time14:30:51 AKST; exact user-send timestamp unavailable.
+  User: “very good. look more closely”, continuing the experimental IndexedDB
+  question. Scope: deeper source/package research and isolated executable
+  qualification, not a root implementation or deployment.
+- Resumed ICC assistant-status for root-node-runtime-model-evidence-20261114.
+  Read ICC skill, planning reference and current plan/log/store sources. Starting
+  HEAD66cbb9cd; last advisory documentation was newer than the c8973262 index.
+  Used live source and independent read-only native agents for official Bun
+  source and persistent packages. Existing index.js/StateManager.js changes and
+  untracked ReservationLedger.js/reservationLedger.test.js belong to other work
+  and are preserved. Agent preflight --allow-dirty passes6/6 with that warning;
+  nonconflicting plan/ lease published for this documentation work.
+- Official source audit covers stable1.4.4/38afee6c, main1ae1ed55 and canary
+  release-body revision4df48e4b. The canary Git tag/title are stale, so actual
+  release-body source was used. No native IDB global/flag found. Experimental
+  IndexedDB wording is imported Chrome inspector schema. PR46886 documents a
+  misleading optimized unused-global probe; our probes consume real values.
+- Downloaded official @oven/bun-linux-x64@1.4.4 only into isolated /tmp and
+  verified archive SHA512 against npm dist.integrity. No global runtime upgrade.
+  --version/--eval/--help confirm1.4.4, absent IDB globals/GPU, present JSPI.
+  Node remains24.18.0. Isolated packages include RN SQLite shim0.2.0,
+  node-indexeddb6.0.3 and IndexedDBShim19.0.7. The latter was installed with
+  npm install --ignore-scripts --no-audit --no-fund in its own /tmp directory;
+  normal Bun SQLite opening succeeds without native addon build scripts.
+- Package probes on1.3.9/1.4.4: RN SQLite shim passes JSON/Uint8Array reopen,
+  abort/delete and, on1.4.4, injected SQL failure rollback, SIGKILL after commit
+  and sequential worker restart. Found silent Blob-to-empty-object loss,
+  cyclic-object abort and stale independent-process caches. It retains each
+  opened DB in memory. LevelDB-backed node-indexeddb resurrects aborted/deleted
+  records after explicit flush/restart and loses typed-array type; rejected.
+- IndexedDBShim generic probes pass restart/abort/delete/binary/cycles and
+  process-kill recovery; Blob rejects with DataCloneError. Alternating processes
+  observe commits, but simultaneous writes/upgrades were not qualified. Simple
+  Promise get/put succeeds; do not call this universal Promise incompatibility.
+  Actual StateManager/Yjs hits unhandled TransactionInactiveError and exit1.
+  The larger integration's assertions still pass, but exit1 makes it a failure.
+  A StateManager-only initialize/set/destroy probe reproduces it without injected
+  aborts. Exact upstream fault remains undiagnosed; no shim source patched.
+- Parent commands: timeout30s /tmp/peercompute-bun-idb-7ggflwe5/bun
+  /tmp/peercompute-bun-idb-7ggflwe5/peercompute-probe.mjs write, read-delete,
+  read-final (three separate invocations). All exit0: actual unchanged
+  IndexedDBArtifactBackend typed-array/dedup/cursor/accounting/quota/abort/delete;
+  AgentRecordStore head/event/RGBA attachment/host identity/CAS; StateManager
+  y-indexeddb commit/reopen. Same script with IndexedDBShim exits1 on write and
+  read-delete; timeout20s minimal StateManager --eval also exits1. These are
+  bounded persistence probes, not whole-library/agent-lock/network/GPU tests.
+- Evidence archived outside repo at
+  /home/cos/.cache/icc/artifacts/peercompute/root-indexeddb-20261114/: exact
+  .mjs/.py probes, package metadata, JSON results and source SHA256s. Scratch
+  database contents are synthetic and separate from browser/user data. All
+  probe processes/workers exited; no servers, browser, GPU or models started.
+- Recommendation: a replaceable single-owner SQLite shim is worth a bounded
+  metadata/Yjs/agent pilot. Explicit value admission, ownership/recovery,
+  migrations/disk-full and scaling tests precede adoption. Use filesystem bulk
+  artifacts; direct SQLite is still preferable for growing registry queries
+  unless measured shim retention/load costs pass. SIGKILL is not power-loss
+  evidence. Native Bun IDB support itself remains absent.
+- Files touched: root-node-runtime-model-evidence.md, root-node-todo.md,
+  plan.md, tests.md, branch/ipfs-large-files-model-inference.md and this log,
+  all under plan/. Root README/code/dependencies remain unchanged. Commands
+  include scoped rg/sed, git status/diff, primary-source web/registry reads,
+  ICC preflight/session/guard, isolated installs/probes and evidence archival.
+  Failed reads of guessed dependency paths were retried at the root node_modules;
+  broad output truncation was narrowed. An initial IndexedDBShim open failed
+  because its owned data directory was absent; mkdir fixed that setup issue.
+- Validation before checkpoint: three current root-plan references resolve,
+  git diff --check and scoped ICC guard pass. Durable task evidence distinguishes
+  completed investigation from unqualified root runtime. Local documentation
+  checkpoint excludes concurrent source work; final ICC index/Git refresh and
+  lease closure are administrative follow-through, not runtime acceptance.
