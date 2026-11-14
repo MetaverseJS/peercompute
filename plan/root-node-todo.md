@@ -1,6 +1,22 @@
-# Deno Root Node TODO
+# Root Node TODO
 
-Status: planning artifact created 2026-06-18 AKDT.
+Status: planning artifact created 2026-06-18 AKDT; runtime/MVP recommendation
+revised 2026-11-14. No root-node service implemented.
+
+## November 14 revision: client parity and model evidence first
+
+The current request restores the original root-as-Compute-Node intent, including
+the client's managed WebGPU workers and IndexedDB capabilities. Read
+[runtime analysis and model evidence plan](root-node-runtime-model-evidence.md)
+before implementing the historical Deno-specific proposal below. Recommendation:
+Bun supervisor plus an owned persistent Chromium client, with Node 24 as the
+qualification baseline/fallback; actual runtime qualification remains pending.
+The first useful service records model inspection and execution evidence by
+package, capability revision, executor configuration and workload, including
+measured resource use and failures. Preserve optional authority, stable signed
+identity, checkpoint/replay and independent Go relay/coturn from this plan.
+The June Deno boundary, proposed layout and first-slice ordering below are
+historical and superseded by this recommendation, not implementation status.
 
 ## Purpose
 

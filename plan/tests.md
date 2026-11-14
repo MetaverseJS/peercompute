@@ -1026,6 +1026,21 @@ model/runtime identity, resource limits, and full completion criteria.
 
 ### Planned root-node validation
 
+- November14 planning revision: the [root runtime/evidence plan](root-node-runtime-model-evidence.md)
+  supersedes the Deno-specific first slice below; those broader authority tests
+  remain future acceptance requirements under the selected runtime.
+- First qualify Bun-supervised persistent Chromium against the Node24 browser
+  host baseline: actual managed GPU work, artifact MessagePort transfer,
+  IndexedDB/Web Locks, stable identity and data after process restart,
+  authenticated peer connection, worker cancellation and crash recovery.
+- Evidence-service checks must distinguish package/LoRA/projector identities,
+  inspection versus execution/modality, complete versus bounded inspection,
+  executor versus requester device, engine/capability changes versus UI-only
+  builds, retryable download errors versus unsupported architecture, and
+  measured partial allocations versus estimated or physical memory.
+- Exercise offline outbox replay, durable acknowledgements, duplicate/conflicting
+  reports, interrupted runs, bounded redacted data, root outage and unchanged
+  root-free clients. No runtime tests were run for this documentation review.
 - Root node work is tracked in `plan/root-node-todo.md`.
 - The first implementation slice should add Deno unit tests for root schemas,
   identity/signing, session registry, leases, policy revisions, storage

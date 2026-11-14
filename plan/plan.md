@@ -1,5 +1,14 @@
 Instructions: This file contains high level goals for the project and a roadmap.
 
+November14 root-node planning: return to the original root-as-client role.
+Recommend a Bun supervisor with a persistent Chromium PeerCompute client,
+qualified against the Node24 baseline. First useful service: shared model
+inspection/execution evidence keyed by exact package, relevant client/runtime
+revision, executing device and workload, with measured resource/failure scope.
+Old incompatibility is historical evidence, not a permanent blacklist.
+See [analysis and staged plan](root-node-runtime-model-evidence.md). Planning
+only: no root implementation, runtime qualification or deployment this turn.
+
 November13 avatar follow-up: owner text commands such as “turn yourself into a
 knight” now use structured authoring admission before persona speech, alongside
 separate-object and resize requests. Validated avatar actions reuse the existing

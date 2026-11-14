@@ -1880,3 +1880,15 @@ Fresh real knight is upright in raw orthographic front/side views and has only
 downward camera's perspective; all render parents have zero pitch/roll. No
 blanket correction is justified. User's older Castle/Skeletor artifacts were
 not available from the read-only public peer, so those remain unqualified.
+
+## November 14 — optional root and shared model evidence
+
+User requests analysis of root-node runtime and client parity, with inspected
+model facts, execution results, measured peaks and failures as its first useful
+service. [The recommendation](../root-node-runtime-model-evidence.md) preserves
+the original root-as-client role: Bun supervisor plus persistent Chromium,
+subject to qualification, with shared library evidence schemas/collectors and
+StateManager persistence. Scope results to package, executor device, workload
+and relevant capability revision; re-evaluate old negatives after compatibility
+improvements. Keep root optional and relay/coturn independent. This turn is
+planning only; no runtime implementation or publication.

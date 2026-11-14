@@ -63608,3 +63608,69 @@ arbitrary input length. Full stress evidence is preserved externally.
   browser errors, owned browser/server closed. This supports camera perspective
   for the reproduced sample on Tron. Older castle geometry and base contact
   remain unverified. No camera or mesh geometry settings changed.
+
+### 2026-11-14T19:29:35Z — root-node runtime and shared model evidence analysis
+
+- Prompt receipt/tool time above (2026-11-14 10:29:35 AKST); exact user-send
+  timestamp is unavailable. User requests original root requirements review,
+  workerd/Bun recommendation following Deno's maintenance horizon, full client
+  WebGPU/IndexedDB/worker parity, and shared inspection/execution/resource/failure
+  evidence that recognizes later client and hardware compatibility changes.
+  Scope is analysis and durable planning, not root implementation/deployment.
+- Read mission-control/repo AGENTS and ICC skill/references. ICC repo resolution
+  and query-only codebase_work used task root-node-runtime-model-evidence-20261114.
+  Starting HEAD e8f4c3cf is clean/fresh; generic readiness93 is not proof of a
+  root runtime. CLI work persisted the bounded plan; agent-preflight passed6/6
+  against the existing origin/feature/ipfs-artifacts-webgpu ref without fetching.
+  Root documentation lease published on plan/. Three native agents performed
+  independent read-only history, client-parity and model-evidence audits.
+- Commands/read evidence: git status/rev-parse/log/show; rg and focused sed/head/
+  tail reads across plan/plan.md, log.md, root-node-todo.md, architecture and
+  branch plans, NodeKernel/StateManager/ComputeManager/NetworkManager, inference
+  workers/services, artifacts/agents, Hugging Face resolver/cache/model browser,
+  capability/resource logic and model catalogs. Node is v24.18.0. Historical
+  commits16b2f828 and8059da16 establish root as a common compute-node role;
+  June18 log and2834322f document the later optional Deno authority/storage
+  sidecar scope. That later scope excluded browser GPU execution.
+- Primary-source web review confirms Deno company maintenance through October
+  2027 with no new features; current workerd source says experimental WebGPU
+  was removed. Bun has experimental WebView driving a real browser, persistent
+  storage opt-in, platform-specific default engines and an owned-process option.
+  Native IndexedDB remains an open Bun issue. Reviewed WebGPU specification,
+  Chrome headless/developer guidance and native GPU-binding evidence. Sources
+  are linked in the new plan; no binaries/dependencies were installed.
+- Recommendation: qualify Bun supervising an explicitly owned persistent
+  Chromium client, with Node24/browser automation as baseline/fallback. Share
+  actual client composition and library service contracts. Preserve optional
+  authority, stable identity, replay/checkpoint plans and Go relay/coturn.
+  Keep registry ingestion isolated from bulk GPU qualification failures.
+- Evidence design separates package bytes/composition, inspector admission,
+  real executor configuration, relevant capability revision and workload.
+  Distinguish download failures, policy rejection and execution failures;
+  preserve old negatives and re-evaluate after relevant changes. Separate
+  measured allocations/OS samples from estimates; browser WebGPU lacks a
+  portable exact per-model VRAM peak. Use StateManager journal/outbox, bounded
+  root queries and one authoritative store, not an unbounded shared Yjs corpus.
+- Files touched: new plan/root-node-runtime-model-evidence.md; updated
+  plan/root-node-todo.md, plan/plan.md, plan/tests.md,
+  plan/branch/distributed-compute.md,
+  plan/branch/ipfs-large-files-model-inference.md and this log. Retained original
+  Deno plan as explicitly superseded historical detail. Root README unchanged
+  because no library capability was implemented.
+- Read-only tooling issues: one initial exec runtime reset and later output
+  truncation required narrower reads; a two-path git --follow was retried per
+  file. Guessed peercompute/network path was absent; actual networkManager
+  sources reviewed. No .icc directory/enforcement policy exists here. Two
+  documentation patch calls contained unmatched log context; corrected without
+  discarding edits. No runtime failures were exercised or inferred.
+- No browsers, test servers, model downloads, inference, Pages build or push.
+  Runtime parity and all proposed acceptance tests remain unrun. Documentation
+  links/diff and final ICC bookkeeping are checked below before local commit.
+- Documentation validation: all5 local references in the new analysis and its
+  planned-root-test anchor resolve; six external primary-source citations were
+  reviewed. git diff --check passes. ICC scoped guard-diff passes all7 plan
+  files with no violations/warnings. Final composition review clarified
+  NodeKernel's optional inference hook versus the demo's full runtime, stable
+  storage origin/profile ownership, and registry isolation from GPU test loads.
+  This is documentation evidence only. Local checkpoint and a full ICC index/
+  Git-history refresh follow; runtime qualification remains future work.

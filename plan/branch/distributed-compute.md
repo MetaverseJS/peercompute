@@ -10,6 +10,11 @@ Implement a self-organizing distributed compute layer that adapts topology and w
 - Metrics are first-class and feed scheduling decisions.
 
 ## Root Node Sidecar
+- November14 revision: [client-compatible root and model evidence](../root-node-runtime-model-evidence.md)
+  supersedes the June Deno runtime and initial MVP order below. Recommend
+  an optional persistent Chromium client supervised by Bun, qualified against
+  Node24. Model inspection/execution/resource evidence is the first service;
+  this informs local placement without replacing cellular-automata decisions.
 - Detailed implementation todo: `plan/root-node-todo.md`.
 - The distributed-compute plan now assumes some deployments can opt into a
   Deno root-node control plane for durable authority, synchronization, and
@@ -100,7 +105,8 @@ Implement a self-organizing distributed compute layer that adapts topology and w
 - Do we require explicit admission control for GPU-heavy tasks?
 
 ## Immediate Next Steps
-1) Lock the Deno root-node MVP boundary from `plan/root-node-todo.md`.
+1) Qualify the root client host and model-evidence MVP from
+   [the November runtime review](../root-node-runtime-model-evidence.md).
 2) Write MetricsManager stub and publish local metrics.
 3) Add a simple CA rule set for LAN clustering.
 4) Integrate placement hints into NetworkScheduler.
