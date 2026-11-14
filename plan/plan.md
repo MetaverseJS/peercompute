@@ -9,6 +9,10 @@ revision, executing device and workload, with measured resource/failure scope.
 Old incompatibility is historical evidence, not a permanent blacklist.
 See [analysis and staged plan](root-node-runtime-model-evidence.md). Planning
 only: no root implementation, runtime qualification or deployment this turn.
+IndexedDB follow-up: consider a native persistent implementation if identified
+and qualified; current official evidence only confirms browser-backed WebView
+storage and an open native IndexedDB request. SQLite remains the proposed
+root backend pending that evidence, with browser IndexedDB unchanged.
 
 November13 avatar follow-up: owner text commands such as “turn yourself into a
 knight” now use structured authoring admission before persona speech, alongside

@@ -63712,3 +63712,27 @@ arbitrary input length. Full stress evidence is preserved externally.
   passes all7 documentation files. Only the documented old-Bun API/StateManager
   probes were executed; current Bun1.4/native GPU/model parity remains unrun.
   Local documentation checkpoint excludes concurrent reservation-ledger work.
+
+### 2026-11-14T23:22:38Z — experimental Bun IndexedDB question
+
+- Recording/tool time14:22:38 AKST; exact user-send time unavailable. User asks
+  whether the root should use experimental Bun IndexedDB support. Resumed ICC
+  assistant-status on c8973262; source fingerprint fresh including preserved
+  unrelated reservation-ledger work. Read plan/plan.md and latest log entries.
+- Primary-source search/open: Bun native support issue2659 remains open;
+  current experimental WebView documentation implements IndexedDB in its
+  browser backend. Reviewed fakeIndexedDB (in-memory) and IndexedDBShim
+  (WebSQL-backed polyfill) as distinctions, without claiming either is a native
+  Bun feature. A read-only agent independently checks availability. Requested
+  the user's candidate link/version; no answer yet at documentation time.
+- Recommendation remains conditional: evaluate a real persistent native
+  candidate for shared-code benefit, but require crash/restart durability,
+  rollback, worker concurrency, schema upgrades and existing storage contracts.
+  SQLite remains the proposed native backend; browser IndexedDB unchanged.
+- Files: plan/plan.md, root-node-runtime-model-evidence.md and this log. Commands
+  were read-only git status/head/tail and web/ICC queries; no runtime installs,
+  database mutation, model/GPU work, servers or deployment. Source implementation
+  and broad indexing are unchanged by this advisory follow-up.
+- Independent source review reaches the same availability distinction. Scoped
+  git diff --check passes for the three advisory documentation files; no
+  storage-runtime acceptance tests were executed or claimed.

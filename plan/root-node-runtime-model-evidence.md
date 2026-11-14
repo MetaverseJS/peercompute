@@ -47,6 +47,16 @@ Revised order: registry plus small native worker/GPU feasibility spike, then
 one actual ONNX and GGUF execution, then wider modality parity. Chromium is
 optional qualification infrastructure unless native blockers justify it.
 
+IndexedDB follow-up: a native persistent implementation could reduce adapter
+work, but no official Bun-native experimental API was verified in the current
+documentation. The [native support request](https://github.com/oven-sh/bun/issues/2659)
+remains open; documented experimental WebView storage uses a browser backend.
+Before choosing a candidate, require restart/crash durability, transactional
+rollback, worker concurrency, schema upgrades and existing store/Yjs contract
+tests. An in-memory testing implementation does not meet root durability.
+Keep the backend replaceable; a link/version for the proposed implementation
+is still requested. No new storage dependency is selected or tested here.
+
 ## Original intent and current implementation
 
 The original plan (`16b2f828`, 2025-11-11) allows hierarchical, distributed and
