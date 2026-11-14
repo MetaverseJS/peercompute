@@ -1836,3 +1836,22 @@ Nearest-placement checkpoint:204canonical tests and independent seeded geometry
 checks pass. Internal CubeChat5176serves the accepted external build; exact
 assets/desktop/mobile startup and SecretWorkshop connection pass. Retention uses
 the existing late rechecks; no new model generation or Pages release claimed.
+
+
+## November 13 — recover lost artifact relay reservations
+
+User follow-up: reproduce the Castle “No artifact address is explicitly trusted”
+error from a fresh peer. The authenticated provider actually advertised no
+addresses; its artifact identity was already trusted. The independent artifact
+transport now retains its original relay transport and periodically re-reserves
+only configured relays after connection loss. Existing listeners advertise the
+actual reservation result; no invented route or new trust is admitted. Stop
+waits for bounded renewal before releasing the persistent network identity.
+Readers refresh empty provider records without waiting out their60s lifetime;
+existing unrestricted transfer connections remain reusable. Empty lists have a
+reachability-specific message, while denied addresses still fail trust checks.
+
+Local fault/reseeding and real SecretWorkshop browser recovery pass. No change
+to publication approval, dual signatures, scopes, expiry, or CID validation.
+Previews5176/5189/5187 contain the fix; no Pages publication or push. Old open
+hosts need a refresh. Initial browser disconnect cause is still undetermined.

@@ -63374,3 +63374,118 @@ arbitrary input length. Full stress evidence is preserved externally.
   download/cleanup errors, no inference sessions. Screenshot reviewed and owned
   browser closed. Existing preview server and user sessions/storage untouched.
   No docs/Pages output or origin push. ICC final gates/local checkpoint follow.
+
+### 2026-11-13T22:59:14Z — clarify generated-object ground contact
+
+- Prompt: “dobtheybsit flat on the ground now too?” Exact user-send timestamp
+  unavailable; heading is the tool receipt time. Read plan/plan.md and the latest
+  log, CubeChat README, GeneratedMeshGrounding.js and CubeGeneratedObjectLayer.js.
+- Current grounding samples the mesh lower envelope against visible terrain and
+  applies a vertical offset. At least one sampled point contacts the surface;
+  orientation and mesh geometry remain unchanged. It does not level tilted
+  models or flatten irregular bases, so flush contact across the entire base
+  is not guaranteed. The nearest-footprint fix does not change that behavior.
+- Documentation-only clarification; no application edits or new tests. Source
+  inspection substantiates the answer; no new live rendering claim.
+
+### 2026-11-13T23:33:05Z — explain castle artifact-address error
+
+- Prompt: “wgats this nean? Object Castle: No artifact address is explicitly
+  trusted”. Exact user-send timestamp unavailable; heading is first tool receipt.
+  Read plan/plan.md and latest log, resumed ICC assistant-status read-only, traced
+  IpfsArtifactTransport.dial/_connectionGater/getPeerInfo, signed provider
+  admission/binding/fetchBlock, NetworkManager bootstrap relay wiring and
+  WorldGeneratedObjectPresenter error wrapping/retry. A read-only native agent
+  independently confirmed the trigger and reviewed existing tests.
+- Exact trigger: all supplied addresses are absent or filtered before a network
+  dial. Empty signed address lists are admitted and cause the same misleading
+  message as untrusted peer/relay IDs or disallowed insecure WebSocket routes.
+  Discovery binds the provider automatically; relay identities come from
+  configuration. Normal chat and artifact transfers have separate connections.
+  This message establishes a viewer retrieval failure, not deletion/corruption
+  of the saved castle. Actual failing peer addresses were not captured; no
+  specific live root cause is claimed.
+- Ran `node --test --test-name-pattern='artifact dial keeps its deadline|artifact
+  connection reuse excludes' peercompute/tests/unit/ipfsArtifactTransport.test.js`:
+  2/2 pass. Separate inline Node probe calls real transport dial([]) with a
+  synthetic started-node boundary and confirms this exact error before a dial.
+  No live models/network sessions, application edits, trust-policy changes,
+  build or deployment. Only this log was appended, preserving the preceding
+  uncommitted ground-contact clarification.
+
+### 2026-11-13T23:47:37Z — reproduce live castle retrieval failure
+
+- Prompt: “i cant get it to work can you try?” Exact user-send time unavailable;
+  heading is first tool receipt. Preserve prior two explanation log entries;
+  application source starts at da31e012. Read plans/log and ICC skill; MCP
+  codebase_work and CLI work establish artifact-address-recovery-20261113.
+  Generic dossier drift is the existing log update; source is read directly.
+  Root scoped preflight passes with known log-only dirty state allowed, lease
+  published. Native agent independently audits startup/relay/binding read-only.
+- Start an owned fresh headless Chrome peer at internal5176 public global room,
+  seed its private guide paused/local-only before bootstrap, disable local GPU/
+  media and HF downloads. Capture real descriptors, provider address arrays,
+  trust sets, dial outcomes, connection state and rendered objects; no prompts
+  or local model loads. Evidence and owned harness outside Git at
+  /home/cos/.cache/peercompute-artifact-address-recovery-20261113. No Pages release
+  or backend modification is authorized by this reproduction request.
+
+
+- Live before evidence confirms the exact failure twice: the app/artifact dual
+  proof admitted the Castle provider, its artifact identity was trusted, but
+  its signed addresses were empty. Our owned viewer also lost its artifact
+  relay/address list after roughly60s without recovery. Chat connections stayed
+  active. Independent source audit found configured reservations are removed
+  on connection loss without being automatically requeued by libp2p.
+- Edited IpfsArtifactTransport.js to retain the actual circuit transport,
+  check configured reservations every10s, renew absent/disconnected ones through
+  gated configured addresses, reuse listeners and wait for renewal before stop
+  releases ownership. Added recovery diagnostics. ArtifactProviderRecord.js
+  refreshes addressless cached proofs on the next read. Empty dial lists now
+  report missing reachability; denied nonempty lists retain the trust error.
+- Tests added in ipfsArtifactTransport.test.js and ipfs-artifacts.mjs. Root ICC
+  lease expanded after a scoped preflight for the runtime test. Initial18tests
+  passed; first expanded run20/21 failed because a synthetic test node lacked
+  getStats identity fields, corrected the assertion to the existing diagnostic
+  state, then21/21 passed. Related model-network/generated-object suite50/50
+  passes. First related command accidentally named two nonexistent test files;
+  Node ran only7presentation tests. Corrected exact paths and reran50/50.
+- Canonical browser runtime passes both before and after adding the fault gate.
+  In the final test, provider relay is deliberately closed, a real signed empty
+  provider proof is cached at receiver, actual timer restores reservation8.917s,
+  and receiver refreshes proof and fetches verified2,097,251file bytes/10blocks.
+  Origin exits, receiver reloads retaining identity and reseeds a third context.
+  No public HTTP fallback; all temporary browsers/server/relay cleaned up.
+- Independent native reviewer wrote an external owned-browser recovery probe:
+  real SecretWorkshop reservation/4addresses restored12.953s after closing only
+  that browser's artifact relay. Healthy for another90s;3listeners unchanged;
+  explicit stop clears timers/node/repair/key ownership. No console/page errors
+  or downloads. A separate90s Node baseline remained healthy. Initial browser
+  disconnect trigger is unproven; no monitor policy was relaxed to hide it.
+- Built all three affected previews externally with npm --prefix demos/{cubechat,
+  inference,earth} run build -- --outDir <evidence>/internal/<demo>-final1:
+ 19.54s/13.90s/26.11s, existing bundle size warnings only. Atomic pointer promotion
+  retains prior hashed assets. Exact HTTPS5176/5189/5187 HTML/assets/headers
+  verified, then owned headless checks pass82/10/99asset hashes, encrypted
+  SecretWorkshop connection and desktop/mobile layouts. Screenshot reviewed;
+  zero page/console/HTTP/download/cleanup failures, no local inference.
+- Public after probe ran90s without a remote object descriptor; it cannot prove
+  the user's Castle rendered after the fix. Asked user to refresh original
+  hosting tab on5176 and leave it open. Old already-open code cannot be repaired
+  remotely via the signed provider protocol; a refreshed viewer alone cannot
+  restore a missing reservation on an older host. No user profile/storage used.
+- Updated plan/plan.md, plan/tests.md, branch artifact plan and CubeChat README.
+  Kept prior two clarification log entries. External evidence under
+  /home/cos/.cache/peercompute-artifact-address-recovery-20261113; no runtime
+  artifacts/credentials in Git, no Pages build or push. ICC closeout and local
+  checkpoint follow. CLI bare `icc` was not on PATH; used the installed absolute
+  /home/cos/projects/infinite_context_coder/bin/icc. Node24.18.0 verified.
+
+- ICC full reindex completed121.4s; derived stores are fresh, with only the
+  expected dirty-worktree notice before checkpoint. Scoped guard-diff passes.
+  Production audit warns about existing portfolio/stale tasks and intentional
+  source changes only. Readiness reports generic ready; completion-oracle exits1
+  because artifact-address-recovery has no authored oracle (generic2/2 passes,
+  target_matched=false). These are not substitutes for the real browser/test
+  evidence. Saved plan marks repair verified and user Castle confirmation
+  pending. Local checkpoint records this bounded verified fix; no push.

@@ -230,7 +230,25 @@ try {
     else assert.deepEqual(await page.evaluate((cid) => window.artifactsTest.read(cid), artifact.cid), { size, sha256: expectedHash });
   }
   await a.evaluate((cid) => window.artifactsTest.announce(cid), artifact.cid);
-  assert.equal((await b.evaluate((cid) => window.artifactsTest.providers(cid), artifact.cid)).length, 1);
+  // Reproduce a provider which still has its application connection and file,
+  // but lost the separate artifact relay reservation. Its signed empty list
+  // must be refreshed after automatic recovery, without reloading either tab.
+  await a.evaluate(async () => {
+    const transport = window.artifactsTest.transport;
+    const relays = transport.node.libp2p.getConnections().filter(connection =>
+      transport.configuredPeerIds.has(connection.remotePeer.toString()));
+    if (!relays.length) throw new Error('No artifact relay to disconnect');
+    await Promise.all(relays.map(connection => connection.close()));
+  });
+  await a.waitForFunction(() => window.artifactsTest.info().addresses.length === 0, null, { timeout: 5000 });
+  const unavailableProviders = await b.evaluate((cid) => window.artifactsTest.providers(cid), artifact.cid);
+  assert.equal(unavailableProviders.length, 1);
+  assert.deepEqual(unavailableProviders[0].addresses, []);
+  const recoveryStarted = Date.now();
+  await a.waitForFunction(() => window.artifactsTest.info().addresses.some(address => address.includes('/webrtc/')),
+    null, { timeout: 30000 });
+  const relayRecoveryMs = Date.now() - recoveryStarted;
+  console.log(`Artifact relay recovered automatically in ${relayRecoveryMs}ms; receiver retains the signed empty-address record`);
   console.log(`Peer B fetching complete ${closure.blocks}-block closure over WebRTC; HTTP source disabled`);
   await b.evaluate((cid) => window.artifactsTest.ensure(cid), artifact.cid);
   await b.evaluate((cid) => window.artifactsTest.announce(cid), artifact.cid);
@@ -272,6 +290,7 @@ try {
     closureBlocks: closure.blocks, closureBytes: closure.bytes,
     restoredPeerIdentity: restored.peerId === bInfo.peerId,
     originClosed: true, firstDownloadBytes: firstDownload.receivedBlockBytes,
+    relayRecoveryMs, refreshedEmptyProvider: true,
     reseededBytes: reseeder.sentBlockBytes, finalDownloadBytes: receiver.receivedBlockBytes,
     transport: 'WebRTC', publicRequests: publicRequests.length,
     originFileRequestsDuringTransfer: seedRequests - importedSeedRequests

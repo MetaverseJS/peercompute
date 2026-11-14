@@ -634,3 +634,11 @@ loading their mesh blocks. Working providers take priority; an unavailable
 alternative no longer delays every block. Connection attempts remain bounded
 even while the viewer stays open. A first transfer still depends on discovery,
 connection quality and mesh size.
+
+File sharing maintains a separate relay connection from chat. If that connection
+is lost, it now retries the configured relay automatically, and viewers refresh
+providers that have no file-transfer address. “No reachable file-transfer address
+yet” means the host is reconnecting; it does not mean the saved model was deleted.
+After updating from an older build, refresh the original hosting tab as well as
+the viewer. The host must remain open unless another peer has retained and shares
+the object. Peer identity checks and content verification remain required.

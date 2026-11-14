@@ -337,7 +337,11 @@ export class ArtifactProviderDiscovery {
     let providers = [...(known?.values() || [])].filter((provider) => provider.expiresAt > Date.now() + 5000
       && connected.has(provider.appPeerId) && provider.gameId === this.scope.gameId
       && provider.roomId === this.scope.roomId && provider.topologyId === this.scope.topologyId);
-    if (!providers.length) {
+    // A signed empty address list proves ownership, not current reachability.
+    // Refresh it on the next read instead of replaying dial([]) until its TTL
+    // expires. An existing unrestricted connection remains sufficient.
+    if (!providers.some((provider) => provider.addresses.length
+      || this.transport.hasUsableConnection(provider.artifactPeerId))) {
       providers = await this.find(artifactCid || cid, { signal });
     }
     if (!providers.length) throw new Error(`No authenticated provider for artifact ${artifactCid || cid}`);

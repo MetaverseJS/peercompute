@@ -11,6 +11,7 @@ import { multiaddr } from '@multiformats/multiaddr';
 import { CID } from 'multiformats/cid';
 import { publicKeyToProtobuf } from '@libp2p/crypto/keys';
 import { loadOrCreateSelfKey } from '@libp2p/config';
+import { peerIdFromString } from '@libp2p/peer-id';
 
 const MAX_BLOCK_BYTES = 2 * 1024 * 1024;
 const localNetworkOwners = new WeakMap();
@@ -91,6 +92,10 @@ export class IpfsArtifactTransport {
     this.counters = {};
     this.readFailures = 0;
     this.lastError = null;
+    this.relayTransport = null;
+    this.relayRecoveryTimer = null;
+    this.relayRecovery = null;
+    this.lastRelayError = null;
   }
 
   authorizePeer(peerId) {
@@ -217,7 +222,11 @@ export class IpfsArtifactTransport {
     const transports = [webSockets()];
     const listen = [...this.options.listen];
     if (this.options.enableWebRTC) {
-      transports.push(circuitRelayTransport(), webRTC({
+      const createRelayTransport = circuitRelayTransport();
+      transports.push((components) => {
+        this.relayTransport = createRelayTransport(components);
+        return this.relayTransport;
+      }, webRTC({
         rtcConfiguration: structuredClone(this.options.rtcConfiguration)
       }));
       listen.push(...this.relayAddresses.map((address) => `${address}/p2p-circuit`), '/webrtc');
@@ -246,15 +255,64 @@ export class IpfsArtifactTransport {
     this.node = node;
     await node.start();
     for (const address of this.peerAddresses) await this.dial(address);
+    if (this.relayTransport && this.relayAddresses.length) {
+      // libp2p refreshes live reservations, but does not re-create configured
+      // reservations after their connection disappears. Chat has a separate
+      // node, so it can remain healthy while this node has no file addresses.
+      this.relayRecoveryTimer = setInterval(() => this._maintainRelayReservations(), 10000);
+      this.relayRecoveryTimer.unref?.();
+    }
     return this;
   }
 
+  _maintainRelayReservations() {
+    if (this.relayRecovery) return this.relayRecovery;
+    if (this.node?.status !== 'started' || this.shutdown?.signal.aborted || !this.relayTransport) return Promise.resolve();
+    const operation = (async () => {
+      const relays = new Map();
+      for (const address of this.relayAddresses) {
+        const peer = peerIdsInAddress(address).at(-1);
+        if (!relays.has(peer)) relays.set(peer, []);
+        relays.get(peer).push(address);
+      }
+      let failure = null;
+      for (const [peer, addresses] of relays) {
+        if (this.shutdown.signal.aborted) break;
+        try {
+          const reservations = this.relayTransport.reservationStore;
+          const reservation = reservations.reservations.get(peerIdFromString(peer));
+          const connected = this.node.libp2p.getConnections().some((connection) => connection.status === 'open'
+            && connection.id === reservation?.connection && connection.remotePeer.toString() === peer);
+          if (reservation && connected) continue;
+          // Only configured, gated relays may be used here. The original relay
+          // listener consumes the successful reservation's real addresses; do
+          // not manufacture addresses or create duplicate listeners.
+          const connection = await this.dial(addresses);
+          this.shutdown.signal.throwIfAborted();
+          await reservations.addRelay(connection.remotePeer, 'configured');
+        } catch (error) {
+          if (!this.shutdown.signal.aborted) failure = error.message;
+        }
+      }
+      if (!this.shutdown.signal.aborted) this.lastRelayError = failure;
+    })();
+    this.relayRecovery = operation;
+    operation.finally(() => { if (this.relayRecovery === operation) this.relayRecovery = null; }).catch(() => {});
+    return operation;
+  }
+
   async _stopOwnedNode() {
+    clearInterval(this.relayRecoveryTimer);
+    this.relayRecoveryTimer = null;
+    // Reservation RPCs have libp2p's bounded timeout. Let an in-flight renewal
+    // settle before stopping its listener/store so it cannot revive a dead node.
+    await this.relayRecovery;
     // Retain both the node and its lifetime ownership if stop rejects. A second
     // tab must not reuse the key until the previous network owner acknowledges stop.
     if (this.node) await this.node.stop();
     this.node = null;
     this.identityKey = null;
+    this.relayTransport = null;
     await this.releaseOwnership?.();
     this.releaseOwnership = null;
   }
@@ -283,9 +341,11 @@ export class IpfsArtifactTransport {
   async dial(addresses, { signal } = {}) {
     if (this.node?.status !== 'started') throw new Error('Artifact transport is not started');
     const gate = this._connectionGater();
+    const supplied = Array.isArray(addresses) ? addresses : [addresses];
+    if (!supplied.length) throw new Error('Artifact provider has no reachable file-transfer address yet; waiting for its relay connection');
     // A provider can advertise several alternatives, including an untrusted
     // relay. Keep allowed alternatives without ever dialing a denied address.
-    const targets = (Array.isArray(addresses) ? addresses : [addresses])
+    const targets = supplied
       .map((address) => multiaddr(String(address))).filter((target) => !gate.denyDialMultiaddr(target));
     if (!targets.length) throw new Error('No artifact address is explicitly trusted');
     const connection = await this.node.libp2p.dial(targets, {
@@ -375,6 +435,8 @@ export class IpfsArtifactTransport {
       pendingReads: this.pendingReads.size,
       readFailures: this.readFailures,
       lastError: this.lastError,
+      relayRecoveryPending: this.relayRecovery !== null,
+      lastRelayError: this.lastRelayError,
       routing: 'explicit-peers',
       publicGateways: false
     };

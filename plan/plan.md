@@ -1,5 +1,14 @@
 Instructions: This file contains high level goals for the project and a roadmap.
 
+November13 artifact-address recovery: reproduced a signed Castle provider with
+an empty address list while chat stayed connected. The independent artifact node
+now re-establishes lost configured relay reservations; readers refresh empty
+provider records and distinguish missing addresses from trust rejection.
+Browser fault injection restores real addresses and verified file delivery.
+Internal CubeChat/inference/Earth previews updated; old hosting tabs need a
+refresh. The original disconnect trigger and the user's Castle after host refresh
+are not yet verified. No Pages publication is included in this request.
+
 November13 placement follow-up: new generated objects should choose the nearest
 clear footprint when the requested spot is occupied. Reuse the navigation/world
 spatial constraints, account for existing meshes, and recheck before retention.

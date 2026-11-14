@@ -5565,3 +5565,32 @@ sampling450cases,6000strict old/new Cannon comparisons and2000range-disk cases
 pass with source-hash receipt. CubeChat external build passes; exact internal
 HTTPS startup verifies82assets, encrypted SecretWorkshop connection, mobile/
 desktop layout and zero browser/cleanup errors. No local inference loaded.
+
+
+### Artifact-address recovery — November 13, 2026
+
+- `node --test peercompute/tests/unit/ipfsArtifactTransport.test.js`:21/21 pass.
+  Covers configured-only renewal, healthy reservation reuse, shared in-flight
+  repair, failure retry, shutdown ownership, empty-address record refresh,
+  distinct missing-address/trust errors, signatures and real file delivery.
+- `node --test peercompute/tests/unit/modelNetworkConnection.test.js
+  demos/tests/world-generated-presentation.test.js
+  demos/tests/world-generated-network.test.js
+  demos/tests/world-generated-objects.test.js`:50/50 pass.
+- `node peercompute/tests/runtime/ipfs-artifacts.mjs`: three real isolated
+  browser contexts,2,097,251file bytes/10blocks. Close provider artifact relay
+  while application discovery remains alive; receiver caches its signed empty
+  address list. Automatic repair8.917s, then receiver refreshes that proof and
+  verifies all bytes over WebRTC. Origin exits; reloaded receiver reseeds third
+  peer with saved identity. No public HTTP source, forged addresses or inference.
+- Owned SecretWorkshop browser fault probe: actual relay reservation/4addresses
+  recover12.953s after intentional close; remain healthy90s. Listener count
+  remains3; stop clears timer, pending repair, transport and ownership. No errors.
+- External production builds CubeChat19.54s/inference13.90s/Earth26.11s pass
+  (existing size warnings). Exact HTTPS previews verify82/10/99served assets,
+  encrypted SecretWorkshop connections and applicable desktop/mobile inspector
+  layouts. No browser/console/HTTP/download/cleanup failures. No Pages build.
+- Public before probe reproduced the exact Castle error twice with a verified
+  empty-address provider. Public after probe saw no remote objects during90s;
+  that is not a successful Castle rendering claim. Host refresh remains needed.
+  Evidence: ~/.cache/peercompute-artifact-address-recovery-20261113/.

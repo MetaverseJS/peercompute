@@ -161,12 +161,84 @@ test('artifact dial keeps its deadline with a live caller signal and filters onl
   await assert.rejects(transport.dial([denied, allowed], { signal: caller.signal }), { name: 'TimeoutError' });
   assert.deepEqual(receivedTargets, [allowed], 'Denied addresses must never reach the dialer');
   await assert.rejects(transport.dial([denied]), /explicitly trusted/);
+  await assert.rejects(transport.dial([]), /no reachable file-transfer address/);
   const cancelled = transport.dial(allowed, { signal: caller.signal });
   caller.abort(new Error('Viewer closed'));
   await assert.rejects(cancelled, /Viewer closed/);
   const stopped = transport.dial(allowed);
   transport.shutdown.abort(new Error('Transport stopped'));
   await assert.rejects(stopped, /Transport stopped/);
+});
+
+test('artifact relay recovery restores only configured reservations and stops before releasing ownership', async (t) => {
+  const store = new ArtifactStore({ persistent: false });
+  t.after(() => store.destroy());
+  const relay = peerIdFromPublicKey((await generateKeyPair('Ed25519')).publicKey);
+  const address = `/dns4/relay.example/tcp/443/wss/p2p/${relay}`;
+  const transport = new IpfsArtifactTransport({ store, relayAddresses: [address] });
+  transport.shutdown = new AbortController();
+  const reservations = new Map(), connections = [], calls = [];
+  let release;
+  let pending;
+  transport.relayTransport = { reservationStore: {
+    reservations: { get: (peer) => reservations.get(peer.toString()) },
+    async addRelay(peer, type) {
+      calls.push(['reserve', peer.toString(), type]);
+      if (pending) await pending;
+      reservations.set(peer.toString(), { connection: connections.at(-1).id });
+    }
+  } };
+  transport.node = { status: 'started', libp2p: {
+    getConnections: () => connections,
+    async dial(addresses, { signal }) {
+      signal.throwIfAborted();
+      calls.push(['dial', addresses.map(String)]);
+      const connection = { id: `connection-${calls.length}`, remotePeer: relay, remoteAddr: addresses[0], status: 'open' };
+      connections.push(connection);
+      return connection;
+    }
+  }, async stop() { calls.push(['stop']); } };
+  transport.releaseOwnership = async () => { calls.push(['release']); };
+  await transport._maintainRelayReservations();
+  assert.deepEqual(calls, [['dial', [address]], ['reserve', relay.toString(), 'configured']]);
+  await transport._maintainRelayReservations();
+  assert.equal(calls.length, 2, 'Live reservations must not be renewed repeatedly');
+  connections[0].status = 'closed'; reservations.clear();
+  pending = new Promise((resolve) => { release = resolve; });
+  const recovering = transport._maintainRelayReservations();
+  assert.equal(transport._maintainRelayReservations(), recovering, 'Concurrent recovery must share one operation');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls.length, 4);
+  const stopping = transport.stop();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls.length, 4, 'Do not release the key while a reservation RPC is in flight');
+  release(); await stopping;
+  assert.deepEqual(calls.slice(-2), [['stop'], ['release']]);
+  await transport._maintainRelayReservations();
+  assert.equal(calls.length, 6, 'Stopped transport must not reconnect');
+  assert.equal(transport.relayRecoveryTimer, null);
+});
+
+test('artifact relay recovery retries a failed configured relay without authorizing new peers', async (t) => {
+  const store = new ArtifactStore({ persistent: false });
+  t.after(() => store.destroy());
+  const relay = peerIdFromPublicKey((await generateKeyPair('Ed25519')).publicKey);
+  const transport = new IpfsArtifactTransport({ store,
+    relayAddresses: [`/dns4/relay.example/tcp/443/wss/p2p/${relay}`] });
+  transport.shutdown = new AbortController();
+  let fail = true, reserved = 0;
+  transport.relayTransport = { reservationStore: { reservations: new Map(), async addRelay() { reserved++; } } };
+  transport.node = { status: 'started', libp2p: { getConnections: () => [], async dial(addresses) {
+    if (fail) throw new Error('Relay temporarily unavailable');
+    return { remotePeer: relay, remoteAddr: addresses[0] };
+  } } };
+  await transport._maintainRelayReservations();
+  assert.equal(transport.lastRelayError, 'Relay temporarily unavailable');
+  assert.equal(reserved, 0);
+  fail = false; await transport._maintainRelayReservations();
+  assert.equal(transport.lastRelayError, null);
+  assert.equal(reserved, 1);
+  assert.deepEqual([...transport.trustedPeerIds], [relay.toString()]);
 });
 
 test('artifact connection reuse excludes untrusted, closed and limited relay connections', async (t) => {
@@ -420,6 +492,25 @@ test('block delivery falls back across providers but stops immediately on cancel
   };
   await assert.rejects(f.discovery.fetchBlock(cid, { signal: caller.signal }), /Viewer gone/);
   assert.equal(calls.length, 1, 'Cancellation must not trigger another provider attempt');
+});
+
+test('empty provider addresses are refreshed on retry while live connections still transfer immediately', async (t) => {
+  const f = catalogFixture(), cid = catalogCID(901), calls = [];
+  t.after(() => f.discovery.stop());
+  const provider = { ...f.discovery.scope, cid, appPeerId: 'app', artifactPeerId: 'artifact',
+    expiresAt: Date.now() + 60000, addresses: [] };
+  f.discovery.providers.set(cid, new Map([[provider.appPeerId, provider]]));
+  f.discovery.manager.libp2p.getConnections = () => [{ remotePeer: provider.appPeerId }];
+  let usable = false;
+  f.transport.hasUsableConnection = () => usable;
+  f.discovery.find = async () => { calls.push('refresh signed provider'); return [{ ...provider, addresses: ['new-address'] }]; };
+  f.transport.dial = async (addresses) => { calls.push(addresses); usable = true; };
+  f.transport.fetchBlock = async () => new Uint8Array([24]);
+  assert.deepEqual(await f.discovery.fetchBlock(cid), new Uint8Array([24]));
+  assert.deepEqual(calls, ['refresh signed provider', ['new-address']]);
+  calls.length = 0;
+  assert.deepEqual(await f.discovery.fetchBlock(cid), new Uint8Array([24]));
+  assert.deepEqual(calls, [], 'No rediscovery or dial is necessary for an existing usable connection');
 });
 
 test('NetworkManagers discover signed providers and expose only approved complete artifacts', { timeout: 30000 }, async (t) => {
