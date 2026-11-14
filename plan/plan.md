@@ -1,5 +1,20 @@
 Instructions: This file contains high level goals for the project and a roadmap.
 
+November13 avatar follow-up: owner text commands such as “turn yourself into a
+knight” now use structured authoring admission before persona speech, alongside
+separate-object and resize requests. Validated avatar actions reuse the existing
+authorized generation/save path and record real receipts. A no-action decision
+cannot be redispatched after speech. Exact knight/question/separate-statue live
+peer classification,100focused/208placement and64host checks pass. Actual remote
+Qwen→DreamShaper→SF3D generates, saves and renders the knight in122.7s without
+persona speech. Internal CubeChat/Earth previews pass exact-asset, mobile/desktop
+and SecretWorkshop checks; no Pages publication requested.
+Tilt follow-up: the fresh knight is upright in raw front/side views, has zero
+render pitch/roll and only1.47–1.82degree lower-base slope, despite appearing
+strongly tilted at the screen edge. Downward-looking camera perspective explains
+this sample. Older affected castles were unavailable to measure; irregular-base
+ground contact remains open. No unmeasured global rotation was applied.
+
 November13 artifact-address recovery: reproduced a signed Castle provider with
 an empty address list while chat stayed connected. The independent artifact node
 now re-establishes lost configured relay reservations; readers refresh empty

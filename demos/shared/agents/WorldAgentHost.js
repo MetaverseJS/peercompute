@@ -434,6 +434,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
       allowResize: !requesterPeerId && !!generatedObjects?.resize && typeof generatedObjectAdapter?.validateTransform === 'function',
       ...(!requesterPeerId && generatedObjects ? { executeObject } : {}),
       allowAvatar: !requesterPeerId && !!residentAvatars,
+      avatarBeforeSpeech: !requesterPeerId && !!residentAvatars,
       maxNewTokens: 512, signal, valid: current => !disposed && ownsObjective(agentId) && !!bindingOf(current)
         && (!requesterPeerId || bindingOf(current).shared) });
     if (!requesterPeerId && output.applied) await pauseResidentObjective(agentId);
@@ -454,8 +455,10 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
         source: { kind: sourceKind, eventId: `${output.avatar.requestId}:${kind}` } });
       try {
         if (requesterPeerId || disposed || !ownsObjective(agentId)) throw new Error('Only the resident owner can request an avatar change');
-        if (avatarInput) await rememberOutcome('avatar-command', prompt,
-          avatarInput.image ? 'Owner supplied an image directly for the resident avatar.' : 'Owner supplied the exact image prompt; no language-model rewriting.', 'authenticated-message');
+        if (output.directAvatar) await rememberOutcome('avatar-command', prompt,
+          avatarInput?.image ? 'Owner supplied an image directly for the resident avatar.'
+            : avatarInput?.exactPrompt ? 'Owner supplied the exact image prompt; no language-model rewriting.'
+              : 'Owner requested an avatar change; a structured action decision selected its design.', 'authenticated-message');
         const result = await residentAvatars.generate({ agentId, action: output.avatar.action,
           ...(avatarInput ? { image: avatarInput.image, exactPrompt: avatarInput.exactPrompt } : {}),
           expectedRevision: output.avatar.residentRevision, requestId: output.avatar.requestId, signal });
@@ -475,7 +478,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
         try { await rememberOutcome('action-outcome', failure, 'Avatar update failed; no new avatar was confirmed.'); }
         catch (memoryError) { output.text += `\n[Failure memory not saved: ${String(memoryError.message).slice(0, 160)}]`; }
       }
-      if (avatarInput) {
+      if (output.directAvatar) {
         output.text = output.text.trim();
         try { await rememberOutcome('avatar-command-result', output.text, 'Result of the explicit owner avatar command.'); }
         catch (error) { output.text += `\n[Command history not saved: ${String(error.message).slice(0, 160)}]`; }

@@ -6,7 +6,7 @@ import { AgentRecordStore } from '../../peercompute/src/peercompute/agents/Agent
 import { AgentRuntime } from '../../peercompute/src/peercompute/agents/AgentRuntime.js';
 import { WorldMemoryStore } from '../../peercompute/src/peercompute/agents/WorldMemoryStore.js';
 import { ArtifactStore } from '../../peercompute/src/peercompute/artifacts/ArtifactStore.js';
-import { WORLD_OBJECT_ADMISSION_INSTRUCTIONS, WORLD_ACTION_CATEGORY_INSTRUCTIONS, WORLD_ACTION_ARGUMENT_INSTRUCTIONS, WORLD_PHYSICAL_INTENT_INSTRUCTIONS } from '../shared/agents/WorldIntentDecision.js';
+import { WORLD_OBJECT_ADMISSION_INSTRUCTIONS, WORLD_AUTHORING_ADMISSION_INSTRUCTIONS, WORLD_ACTION_CATEGORY_INSTRUCTIONS, WORLD_ACTION_ARGUMENT_INSTRUCTIONS, WORLD_PHYSICAL_INTENT_INSTRUCTIONS } from '../shared/agents/WorldIntentDecision.js';
 import { action, worldId, meshFixture, imageFixture, sceneAdapter, deferred, tick } from './world-generated-fixtures.js';
 
 // Presentation is injected below. Ignore only CSS imports while exercising
@@ -25,13 +25,13 @@ async function fixture(t, { avatar = false } = {}) {
   const candidates = ['text-generation', 'text-to-image', 'image-to-3d'].map(task => ({ key: `local:${task}`, local: true,
     available: true, manifestCid: task, sessionId: task, name: `Fixture ${task}`, task, runtime: 'fixture',
     modalities: task === 'image-to-3d' ? ['image'] : ['text'], outputModalities: task === 'image-to-3d' ? ['mesh'] : task === 'text-to-image' ? ['image'] : ['text'] }));
-  const agents = new AgentRuntime({ store: records, inference: { listCandidates: async () => candidates,
+  const agents = new AgentRuntime({ store: records, inference: { listCandidates: async () => candidates.filter(value => !state.missingImage || value.task !== 'text-to-image'),
     async generate(_candidate, input, options) {
       calls.push(input);
       if (input.task === 'image-to-3d') return state.mesh(input, options);
       if (input.task === 'text-to-image') return { image: imageFixture() };
       const system = input.messages?.[0]?.content ?? '';
-      if (system === WORLD_OBJECT_ADMISSION_INSTRUCTIONS || system.startsWith(WORLD_ACTION_CATEGORY_INSTRUCTIONS)) {
+      if (system === WORLD_OBJECT_ADMISSION_INSTRUCTIONS || system.startsWith(WORLD_AUTHORING_ADMISSION_INSTRUCTIONS) || system.startsWith(WORLD_ACTION_CATEGORY_INSTRUCTIONS)) {
         const selected = state.action ? avatar ? 'avatar' : 'object' : 'none';
         return { text: JSON.stringify({ action: system === WORLD_OBJECT_ADMISSION_INSTRUCTIONS && avatar ? 'none' : selected }) };
       }
@@ -62,7 +62,7 @@ async function fixture(t, { avatar = false } = {}) {
   const head = await host.spawn({ name: 'Builder', shared: true, movement: 'stationary' });
   return { host, agents, objects, calls, statuses, state, head, memory, view,
     get speeches() { return calls.filter(input => input.task === 'text-generation' && ![WORLD_OBJECT_ADMISSION_INSTRUCTIONS,
-      WORLD_ACTION_CATEGORY_INSTRUCTIONS, WORLD_ACTION_ARGUMENT_INSTRUCTIONS, WORLD_PHYSICAL_INTENT_INSTRUCTIONS]
+      WORLD_AUTHORING_ADMISSION_INSTRUCTIONS, WORLD_ACTION_CATEGORY_INSTRUCTIONS, WORLD_ACTION_ARGUMENT_INSTRUCTIONS, WORLD_PHYSICAL_INTENT_INSTRUCTIONS]
       .some(prefix => input.messages?.[0]?.content.startsWith(prefix))); }, get networkOptions() { return networkOptions; } };
 }
 test('full world host sends owner proposal through real agent journal, artifact manager and final placement receipt; visitors cannot create', async t => {
@@ -110,18 +110,20 @@ test('owner private chat changes the existing resident avatar and records a veri
   assert.match(reset.text, /Avatar saved: original cube/); assert.equal(f.host.getStatus().residentAvatars.rendered, 0);
 });
 
-test('a declined conversational reply never launches image or avatar work and exposes its actual model', async t => {
+test('no-action admission keeps conversational declines as speech and the next avatar request is independent', async t => {
   const f = await fixture(t, { avatar: true }), key = `local:${f.head.agentId}`;
+  f.state.action = null;
   f.state.speech = 'I cannot generate that avatar. I can suggest another design.';
   const reply = await f.host.send({ key, text: 'Try the first design' });
   assert.equal(reply.text, f.state.speech); assert.equal(reply.modelLabel, 'Fixture text-generation · local');
   assert.deepEqual(f.calls.map(value => value.task), ['text-generation', 'text-generation']);
   assert.equal(f.speeches.length, 1);
   await f.host.openConversation(key); assert.equal(f.view.messages.at(-1).modelLabel, reply.modelLabel);
-  f.state.speech = 'I will try the copper robot.';
+  f.state.action = { name: 'Robot', prompt: 'One copper robot' };
+  const before = f.calls.length;
   await f.host.send({ key, text: 'Try a copper robot instead' });
-  assert(f.speeches.at(-1).messages.at(-1).content.endsWith('Try a copper robot instead'));
-  assert(f.calls.some(input => input.messages?.[0]?.content.startsWith(WORLD_ACTION_ARGUMENT_INSTRUCTIONS) && input.messages[0].content.includes('I will try the copper robot')));
+  assert.equal(f.calls[before].prompt, 'Try a copper robot instead');
+  assert.equal(f.speeches.length, 1, 'An admitted command does not generate a persona refusal before trying its tools');
   assert((await f.agents.get(f.head.agentId)).embodiments[0].avatar);
 });
 
@@ -133,9 +135,41 @@ test('a failed avatar settles, records the failure for the next turn and does no
   assert.equal(f.host.getStatus().residentAvatars.busy, false);
   f.state.mesh = async () => ({ mesh: meshFixture() }); f.state.speech = 'Trying your second design.';
   const before = f.calls.length, next = await f.host.send({ key, text: 'Become a second robot' });
-  assert.match(next.text, /^Trying your second design/); assert.match(next.text, /Avatar saved/);
+  assert.equal(next.role, 'system'); assert.match(next.text, /Avatar saved/);
   assert.equal(f.calls[before].messages.at(-1).content, 'Become a second robot');
+  f.state.action = null; await f.host.send({ key, text: 'What happened to the first design?' });
   assert.match(JSON.stringify(f.speeches.at(-1).messages), /3D provider stopped/);
+});
+
+test('turn yourself into a knight uses actual avatar tools before persona speech and restores command receipts', async t => {
+  const f = await fixture(t, { avatar: true }), key = `local:${f.head.agentId}`;
+  f.state.action = { name: 'Knight', prompt: 'One standing armored knight' };
+  f.state.speech = 'I cannot turn myself into a knight because I do not have a body.';
+  const request = 'turn yourself into a knight';
+  const reply = await f.host.send({ key, text: request });
+  assert.equal(reply.role, 'system'); assert.match(reply.text, /Avatar saved: Knight/);
+  assert.doesNotMatch(reply.text, /cannot/); assert.equal(f.speeches.length, 0);
+  assert.deepEqual(f.calls.map(input => input.task), ['text-generation', 'text-generation', 'text-to-image', 'image-to-3d']);
+  assert.equal((await f.agents.events(f.head.agentId)).filter(event => event.type === 'result').length, 0);
+  const avatar = (await f.agents.get(f.head.agentId)).embodiments[0].avatar;
+  assert(avatar); assert.equal(f.host.getStatus().residentAvatars.rendered, 1);
+  await f.host.openConversation(key);
+  assert(f.view.messages.some(row => row.role === 'user' && row.text === request));
+  assert(f.view.messages.some(row => row.role === 'system' && /Avatar saved: Knight/.test(row.text)));
+  const episodes = await f.memory.retrieve({ worldId, agentId: f.head.agentId, audience: 'private',
+    conversationId: await worldConversationId(worldId, 'owner'), query: 'knight', limit: 8 });
+  assert(episodes.some(row => row.kind === 'avatar-command' && row.source.kind === 'authenticated-message' && row.text === request));
+  assert(episodes.some(row => row.kind === 'avatar-command-result' && row.source.kind === 'verified-action' && /Avatar saved/.test(row.text)));
+});
+
+test('text avatar reports a missing image provider while a supplied image still succeeds', async t => {
+  const f = await fixture(t, { avatar: true }), key = `local:${f.head.agentId}`;
+  f.state.action = { name: 'Knight', prompt: 'One standing armored knight' }; f.state.missingImage = true;
+  const result = await f.host.send({ key, text: 'turn yourself into a knight' });
+  assert.equal(result.avatarFailed, true); assert.match(result.text, /text-to-image model is needed/);
+  assert.equal((await f.agents.get(f.head.agentId)).embodiments[0].avatar, undefined);
+  assert(f.calls.every(input => input.task === 'text-generation'));
+  assert.match((await f.host.send({ key, text: 'Use this image', avatarImage: imageFixture() })).text, /Avatar saved/);
 });
 
 test('owner image controls bypass text and image models, copy pixels and restore command history', async t => {

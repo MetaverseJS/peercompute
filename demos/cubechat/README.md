@@ -446,9 +446,11 @@ weights or implement unrestricted autonomous social errands.
 
 ### Generated resident avatars
 
-In a private conversation with your own resident, try “Become a robot”, “Change
-your avatar into a car”, or “Choose a cool avatar for yourself and generate it.”
-The resident chooses a design, then uses an available image-generation model and
+In a private conversation with your own resident, try “Become a robot”, “Turn
+yourself into a knight”, or “Choose a cool avatar for yourself and generate it.”
+A structured tool decision runs before the character's conversational reply,
+distinguishes a body change from a separate prop, and chooses a design. The host
+then uses an available image-generation model and
 an image-to-3D model such as TripoSR. Local-only residents require local models;
 other residents can use compatible peer-hosted models. This does not download
 missing models automatically.
@@ -475,9 +477,11 @@ it. Ordinary requests such as “Become a robot” still let the resident choose
 design. Neither control changes the selected model's own behavior.
 
 Owner chat replies show the actual language-model name when route information
-is available, including saved replies. A declined conversational request does
-not start avatar generation. Failed actions are saved as outcomes for the next
-turn; failed generation does not require resuming an otherwise healthy resident.
+is available, including saved replies. A validated avatar request returns the
+actual save or failure receipt instead of asking the character to speculate
+about whether it can change shape. A structured no-action decision does not
+start generation later in the same turn. The command and outcome are remembered;
+failed generation does not require resuming an otherwise healthy resident.
 
 The generated shape replaces the visual on the same resident body. Identity,
 memories, chat, voice and learned movement continue. Its verified GLB is retained

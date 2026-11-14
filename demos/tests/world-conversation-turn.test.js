@@ -73,6 +73,44 @@ test('one journaled speech turn retains history and strips only the exact old sc
   assert.equal(f.decisions.length, 2); assert.deepEqual(f.actions, []);
 });
 
+test('owner avatar admission precedes speech without advancing the resident revision or inventing a reply', async t => {
+  const f = await fixture(t, { clock: Date.now }), before = await f.agents.get(f.body.agentId);
+  f.answers.push('I cannot change my body.');
+  f.decide = async options => {
+    assert.equal(options.reply, undefined); assert.equal(options.authoringOnly, true);
+    return { avatar: { name: 'Knight', prompt: 'One armored knight' } };
+  };
+  const result = await f.run('turn yourself into a knight', { allowAvatar: true, avatarBeforeSpeech: true });
+  assert.equal(result.directAvatar, true); assert.equal(result.text, ''); assert.equal(result.avatar.action.name, 'Knight');
+  assert.equal(result.avatar.residentRevision, before.revision); assert.equal(f.speech.length, 0);
+  assert.equal((await f.agents.get(f.body.agentId)).revision, before.revision);
+});
+
+test('a structured authoring none is not retried through post-speech avatar or object dispatch', async t => {
+  const f = await fixture(t, { clock: Date.now }); let count = 0;
+  f.decide = async options => {
+    if (++count === 1) assert.equal(options.authoringOnly, true);
+    else { assert.equal(options.allowAvatar, false); assert.equal(options.allowObject, false); assert.equal(options.allowResize, false); }
+    return { intent: null };
+  };
+  const result = await f.run('What is a knight?', { allowAvatar: true, allowObject: true, avatarBeforeSpeech: true,
+    executeObject: async () => { throw new Error('No object should execute'); } });
+  assert.equal(result.avatar, undefined); assert.equal(result.object, undefined); assert.equal(f.speech.length, 1); assert.equal(count, 2);
+});
+
+test('owner cancellation or revision edits during avatar admission cannot return an executable proposal', async t => {
+  for (const change of ['cancel', 'edit']) {
+    const f = await fixture(t, { clock: Date.now }), entered = deferred(), release = deferred(), controller = new AbortController();
+    f.decide = async () => { entered.resolve(); await release.promise; return { avatar: { name: 'Knight', prompt: 'One knight' } }; };
+    const pending = f.run('turn yourself into a knight', { allowAvatar: true, avatarBeforeSpeech: true, signal: controller.signal });
+    const rejected = assert.rejects(pending, /cancel|changed/i);
+    await entered.promise;
+    if (change === 'cancel') controller.abort(new DOMException('Owner cancelled', 'AbortError'));
+    else await f.agents.update(f.body.agentId, { name: 'Edited' });
+    release.resolve(); await rejected; assert.equal(f.speech.length, 0);
+  }
+});
+
 test('place memory proposals retain the incoming speaker position after speech and never fabricate persistence', async t => {
   const f = await fixture(t, { clock: Date.now }), started = deferred(), release = deferred();
   const generate = f.inference.generate;

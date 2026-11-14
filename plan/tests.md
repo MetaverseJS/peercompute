@@ -1,5 +1,39 @@
 ## PeerCompute Test Strategy
 
+### Owner avatar authoring before speech — November 13
+
+- `world-intent-decision`: original user prompt, neutral owner-authoring classifier,
+  avatar/object/resize/none capability gates, strict argument validation and no
+  persona/history in admission. A question about a knight must not change a body.
+- `world-conversation-turn`: exact knight command returns a revision-bound avatar
+  proposal without persona speech or an empty assistant history entry. Editing
+  or cancelling during classification invalidates it. Structured none prevents
+  a later speech decision from dispatching authoring tools on that turn.
+- `world-generated-host`: real host/service/storage fixture validates image→mesh,
+  one retained body, actual system receipt and remembered command/result. Missing
+  image providers fail honestly; supplied image still needs only a mesh provider.
+- Focused six-file suite100/100 and canonical resident-placement208/208 pass.
+  Live peer Qwen3.5 2B correctly distinguishes the exact knight request, a knight
+  question and a separate statue (five actual inference calls). This semantic
+  check alone does not qualify the image/mesh generation result.
+- Separate actual owner `host.send('turn yourself into a knight')` passes the
+  full Qwen→DreamShaper→SF3D pipeline in122.7s, saving and rendering its CID with
+  the factual avatar receipt and zero persona calls. Local models/HF requests,
+  page/console errors and cleanup errors are all zero. General host suite64/64
+  also passes. Cube/Earth builds and exact HTTPS assets, desktop/mobile layout
+  and SecretWorkshop connection checks pass. Evidence is external under
+  `/home/cos/.cache/peercompute-avatar-command-20261114/`.
+- Geometry follow-up must distinguish renderer/export rotations, camera
+  perspective and inclination baked into generated vertices. Retained irregular
+  feet do not justify a universal ten-degree correction. Actual affected meshes
+  or a controlled new generation are required before claiming the tilt fixed.
+- Fresh knight evidence: raw front/side geometry is upright, lower1–5% vertex
+  fits yield1.47–1.82degrees, node has no transform and avatar only180degree yaw.
+  Its off-center screenshot shows pronounced apparent lean. Default camera is
+  downward33.7degrees; an upright off-center test line projects about7degrees
+  from screen vertical. This explains the measured sample, not older unavailable
+  castles or their separate irregular-base ground gaps. No geometry edit made.
+
 ### Planned Hunyuan3D / CubeChat assets acceptance — November 10
 
 - Future tests only: pinned generation adapter, resource measurements, progress,

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { projectWorldIntentRequest, generateWorldIntentDecision, WORLD_PHYSICAL_INTENT_INSTRUCTIONS, WORLD_PHYSICAL_OBSERVATIONS_MARKER,
-  WORLD_OBJECT_ADMISSION_INSTRUCTIONS } from '../shared/agents/WorldIntentDecision.js';
+  WORLD_OBJECT_ADMISSION_INSTRUCTIONS, WORLD_AUTHORING_ADMISSION_INSTRUCTIONS } from '../shared/agents/WorldIntentDecision.js';
 import { WORLD_OBJECT_ACTION_INSTRUCTIONS, WORLD_OBJECT_TARGET_INSTRUCTIONS } from '../shared/agents/WorldObjectAction.js';
 
 const observation = () => ({ observedAt: Date.now(), self: { id: 'resident:owner:ada', name: 'Ada',
@@ -13,6 +13,27 @@ const candidate = local => ({ key: local ? 'local:model' : 'peer:model', manifes
   local, available: true, task: 'text-generation', modalities: ['text'], outputModalities: ['text'] });
 const head = mode => ({ identity: { instructions: 'PRIVATE_PERSONALITY_SENTINEL' }, goals: ['PRIVATE_GOAL_SENTINEL'],
   context: { summary: 'PRIVATE_MEMORY_SENTINEL' }, policy: { inferenceMode: mode } });
+
+test('owner authoring admission routes avatar arguments without persona history and preserves structured no-action', async () => {
+  const observed = observation(), calls = [], message = 'turn yourself into a knight';
+  const responses = [{ action: 'avatar' }, { avatar: { name: 'Knight', prompt: 'One armored knight' } }];
+  const inference = { listCandidates: async () => [candidate(true)], generate: async (_candidate, input) => {
+    calls.push(input); return { text: JSON.stringify(responses.shift()) };
+  } };
+  const options = { inference, head: head('local-only'), message, observed, authoringOnly: true, allowAvatar: true };
+  const result = await generateWorldIntentDecision(options);
+  assert.equal(result.avatar.name, 'Knight'); assert.equal(calls.length, 2);
+  assert(calls[0].messages[0].content.startsWith(WORLD_AUTHORING_ADMISSION_INSTRUCTIONS));
+  assert.match(calls[0].messages[0].content, /Allowed action values: none, avatar/);
+  assert(calls.every(input => input.prompt === message && input.messages.at(-1).content === message));
+  assert.doesNotMatch(JSON.stringify(calls), /PRIVATE_.*SENTINEL|Completed reply/);
+  responses.push({ action: 'none' }); calls.length = 0;
+  assert.deepEqual(await generateWorldIntentDecision(options), { intent: null }); assert.equal(calls.length, 1);
+  for (const invalid of [{ action: 'object' }, { action: 'follow' }, { action: 'avatar', prompt: 'Extra' }]) {
+    responses.push(invalid); await assert.rejects(generateWorldIntentDecision(options), { code: 'ERR_WORLD_INTENT_DECISION' });
+  }
+  await assert.rejects(generateWorldIntentDecision({ ...options, allowAvatar: false }), { code: 'ERR_WORLD_INTENT_DECISION' });
+});
 
 test('managed owner object classification selects one grounded destination without putting coordinates in render prompts', async () => {
   const observed = observation(); observed.self.position = [0, 3, 0];

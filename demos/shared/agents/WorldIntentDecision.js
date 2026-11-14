@@ -56,6 +56,13 @@ Classify the current user message. Output only the JSON result.`;
 export const WORLD_OBJECT_EDIT_ADMISSION_INSTRUCTIONS = WORLD_OBJECT_ADMISSION_INSTRUCTIONS
   .replace('or {"action":"none"}.', 'or {"action":"resize"} or {"action":"none"}.')
   + '\nUse resize when asked to enlarge, shrink, or change the size of an existing world object. A multiplicative size change modifies the existing object, not a newly generated replacement. Use none for unclear conversation. Output only the action JSON.';
+export const WORLD_AUTHORING_ADMISSION_INSTRUCTIONS = `You are an intent classifier for a virtual-world tool dispatcher. Other services generate images and 3D meshes. Classify the owner's requested outcome, not your own physical abilities.
+Return exactly one JSON object with only the field action, chosen from the allowed values below.
+object means creating a new separate 3D object in the world. A named object is sufficient; decorative details can be chosen later.
+avatar means changing the resident's own visible body or restoring its original cube. "Turn yourself into a robot", "become a car", and "design a new avatar for yourself" request avatar. They do not request a separate object or a personality change.
+resize means changing the size of an existing world object, without generating a replacement.
+none means ordinary conversation, capability questions, hypotheticals, navigation, moving existing objects, changing the owner's body, or personality edits. Do not substitute an unrequested alternative.
+Choose only an allowed action. Output only the action JSON. `;
 const actionDescriptions = {
   task: 'task means a journey, visiting a destination, returning to a place, or multi-step movement.',
   follow: 'follow means tracking the changing position of an observed participant.',
@@ -190,9 +197,10 @@ export function projectWorldIntentRequest(message, observed, { allowTask = false
  * Actual authority, target presence and motion revision are checked again by the
  * caller immediately before the physical adapter receives this proposal. */
 export async function generateWorldIntentDecision({ inference, head, message, reply, observed, signal, allowTask = false, allowObject = false, allowAvatar = false,
-  allowKnowledge = false, allowPlacement = false, allowResize = false, objectOnly = false, knowledgeObserved = observed } = {}) {
+  allowKnowledge = false, allowPlacement = false, allowResize = false, objectOnly = false, authoringOnly = false, knowledgeObserved = observed } = {}) {
   signal?.throwIfAborted();
   if (objectOnly && !allowObject) throw failure();
+  if (authoringOnly && (objectOnly || (!allowObject && !allowAvatar))) throw failure();
   if (reply !== undefined && (typeof reply !== 'string' || reply.includes('\0') || bytes(reply) > 65536)) throw failure();
   const projection = projectWorldIntentRequest(message, observed, { allowTask, allowObject, allowAvatar, allowKnowledge, allowPlacement, allowResize, knowledgeObserved });
   const candidates = await inference.listCandidates({ mode: head.policy.inferenceMode,
@@ -203,7 +211,7 @@ export async function generateWorldIntentDecision({ inference, head, message, re
     signal?.throwIfAborted();
     const output = await inference.generate(candidate, { requestId: crypto.randomUUID(), task: 'text-generation', prompt: projection.prompt,
       messages: [{ role: 'system', content: instructions + replyContext(reply, noAction)
-        + (stage === 'object-admission' ? '' : WORLD_PHYSICAL_OBSERVATIONS_MARKER + projection.contextFor(stage)) },
+        + (stage === 'object-admission' || stage === 'authoring-admission' ? '' : WORLD_PHYSICAL_OBSERVATIONS_MARKER + projection.contextFor(stage)) },
       { role: 'user', content: projection.prompt }], maxNewTokens: 512 }, { signal });
     signal?.throwIfAborted(); return output?.text;
   }
@@ -211,13 +219,15 @@ export async function generateWorldIntentDecision({ inference, head, message, re
   // Choose the operation neurally first, then expose only its argument schema.
   // No keywords in the user's message choose a tool or grant execution authority.
   if (allowTask || allowKnowledge || allowObject || allowAvatar) {
-    const allowed = objectOnly ? ['none', 'object', ...(allowResize ? ['resize'] : [])] : ['none', ...(allowTask ? ['task'] : []), 'follow', 'approach', 'look-at', 'stop',
+    const allowed = authoringOnly ? ['none', ...(allowObject ? ['object'] : []), ...(allowObject && allowResize ? ['resize'] : []), ...(allowAvatar ? ['avatar'] : [])]
+      : objectOnly ? ['none', 'object', ...(allowResize ? ['resize'] : [])] : ['none', ...(allowTask ? ['task'] : []), 'follow', 'approach', 'look-at', 'stop',
       ...(allowKnowledge ? ['remember-place'] : []), ...(allowObject ? ['object'] : []), ...(allowResize ? ['resize'] : []), ...(allowAvatar ? ['avatar'] : [])];
-    const instructions = objectOnly ? (allowResize ? WORLD_OBJECT_EDIT_ADMISSION_INSTRUCTIONS : WORLD_OBJECT_ADMISSION_INSTRUCTIONS)
+    const instructions = authoringOnly ? WORLD_AUTHORING_ADMISSION_INSTRUCTIONS + `Allowed action values: ${allowed.join(', ')}.`
+      : objectOnly ? (allowResize ? WORLD_OBJECT_EDIT_ADMISSION_INSTRUCTIONS : WORLD_OBJECT_ADMISSION_INSTRUCTIONS)
       : WORLD_ACTION_CATEGORY_INSTRUCTIONS + `Allowed action values: ${allowed.join(', ')}. `
       + [...allowed.filter(action => action !== 'none'), 'none'].map(action => actionDescriptions[action]).join(' ')
       + ' Choose the requested operation, not an example or matching word. Do not supply arguments, execute an action or claim success.';
-    const action = selectedAction(await generate(instructions, '{"action":"none"}', objectOnly ? 'object-admission' : 'category'), allowed);
+    const action = selectedAction(await generate(instructions, '{"action":"none"}', authoringOnly ? 'authoring-admission' : objectOnly ? 'object-admission' : 'category'), allowed);
     if (action === 'none') return { intent: null };
     if (action === 'task') return projection.resolve('{"task":true}');
     if (action === 'stop') return projection.resolve('{"intent":{"type":"stop"}}');

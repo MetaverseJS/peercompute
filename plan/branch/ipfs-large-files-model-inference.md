@@ -1855,3 +1855,28 @@ Local fault/reseeding and real SecretWorkshop browser recovery pass. No change
 to publication approval, dual signatures, scopes, expiry, or CID validation.
 Previews5176/5189/5187 contain the fix; no Pages publication or push. Old open
 hosts need a refresh. Initial browser disconnect cause is still undetermined.
+
+## November 13 — text avatar authoring and reported mesh tilt
+
+Owner requests such as “turn yourself into a knight” should reach the same
+authorized image/mesh/save pipeline as supplied images and exact image prompts.
+Use neutral neural authoring admission before persona speech, preserving explicit
+no-action decisions, ownership, resident revision, cancellation and actual
+receipts. Remember the command and result without inventing character dialogue.
+Missing image providers differ from missing mesh providers; no forced downloads.
+Focused/placement/host checks and live peer semantic controls pass. One actual
+remote Qwen→DreamShaper→SF3D knight request saves/renders its avatar in122.7s with
+zero persona calls. Cube/Earth internal preview exact assets, responsive layout
+and encrypted SecretWorkshop checks pass. No new Pages publication.
+
+User also reports a consistent roughly ten-degree lean on characters and castles.
+Audit shared export, parent transforms, camera projection and actual geometry
+before choosing a correction. Current grounding changes only vertical placement;
+it does not flatten an irregular or inclined generated base. Preserve known
+forward-facing yaw and content identity; do not apply an unmeasured global pitch.
+
+Fresh real knight is upright in raw orthographic front/side views and has only
+1.47–1.82degree support slope. Its screen-edge lean is consistent with the
+downward camera's perspective; all render parents have zero pitch/roll. No
+blanket correction is justified. User's older Castle/Skeletor artifacts were
+not available from the read-only public peer, so those remain unqualified.

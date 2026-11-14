@@ -63489,3 +63489,122 @@ arbitrary input length. Full stress evidence is preserved externally.
   target_matched=false). These are not substitutes for the real browser/test
   evidence. Saved plan marks repair verified and user Castle confirmation
   pending. Local checkpoint records this bounded verified fix; no push.
+
+### 2026-11-14T00:13:36Z — text avatar commands versus attached images
+
+- Prompt: “it's still not sitting flush on the ground but it is better. one
+  issue though. if I tell a resident "turn yourself into x" it refuses but if
+  I dop an image in the chat and tell him to use it for his model he happily
+  generates it.” Exact user-send timestamp unavailable; heading is first tool
+  receipt. Ground-contact limitation acknowledged separately.
+- Read plans/log and ICC skill; fresh source37f060a1. MCP/CLI work records
+  resident-avatar-command-20261114. Scoped preflight passes, root lease published;
+  independent native agent audits routes/revision/cancellation read-only.
+- Text-only avatar requests go through persona speech, whose explicit decline
+  prevents action planning. Images/exact prompts reach the authorized avatar
+  service directly. Existing pre-speech object admission explicitly excludes
+  avatars. Added structured owner authoring admission including avatar, returning
+  to the existing host execution/receipt path before persona speech. Structured
+  none disables later authoring dispatch for this turn. Host command/result
+  memory now includes these text commands. Legacy speech-only declines, explicit
+  input parsing, ownership/revision/cancellation and saved mesh semantics stay.
+- Avatar save updates the resident revision, so it executes outside the speech
+  controller to avoid self-cancelling its own CAS. Text needs image and mesh
+  providers, while supplied pixels need only mesh. Source files touched:
+  WorldIntentDecision.js, WorldConversationTurn.js, WorldAgentHost.js, with
+  world-intent-decision, world-conversation-turn and world-generated-host tests.
+
+### 2026-11-14T00:21:38Z — exact knight command and common model tilt
+
+- Steering recorded at tool time (exact user-send times unavailable): exact
+  request is “turn yourself into a knight”; refusal text not supplied. Added
+  this benign request as the host and classifier regression case. User also
+  reports all generated models, including characters/castles, have the same
+  roughly10-degree vertical tilt. A second read-only native agent is inspecting
+  shared mesh export, normalization, renderer and grounding transforms; no
+  geometry change assumed before evidence.
+- First expanded focused run98/100 passes. Two new turn fixtures used the old
+  fixed1000ms clock and correctly failed the120s observation-freshness gate;
+  changed those fixtures to Date.now, preserving production guards. An initial
+  functions.exec payload had a JS quoting error before execution, and a later
+  combined patch rejected an unmatched log context; no partial edits occurred.
+- Real remote Qwen3.5 2B classification of the exact knight command selects
+  avatar with a validated knight image prompt. Controls distinguish a knight
+  question (none) and a separate knight statue (object). All5 real text requests
+  pass, unchanged user text and no persona/history in action stages. DreamShaper
+  and SF3D are advertised but not invoked. No local models, HF, browser/console/
+  cleanup errors. Evidence under ~/.cache/peercompute-avatar-command-20261114/.
+  This proves routing, not generated mesh quality. No Pages/push authorized.
+
+- After compaction, ICC assistant-status/source-drift confirmed only this task's
+  expected six source/test edits against37f060a1; the full refresh follows final
+  evidence. No shared mesh pitch/roll was found in GLB nodes, render parents,
+  exporter mapping or the SF3D conditioning camera. A public70s read-only peer
+  connected but received no current remote mesh descriptors. A separate camera
+  projection check shows upright off-center lines can appear7degrees slanted;
+  this is not proof of the reported geometry issue. Asked whether it also occurs
+  on flat Tron terrain. No blind rotation or mesh-base fitting was introduced.
+- Focused suite100/100, canonical placement208/208 and complete world-agent-host
+  suite64/64 pass. CubeChat and Earth production builds pass16.82s/27.31s with
+  existing bundle-size warnings. Atomic internal preview promotion retains prior
+  hashes. Exact HTTPS5176/5187 and82/99served JS/CSS assets match, encrypted
+  SecretWorkshop connections and desktop/mobile inspector layout pass, no page/
+  console/download/cleanup errors. Mobile Cube screenshot reviewed. All owned
+  check browsers close; existing preview services remain available.
+- Updated CubeChat README, plan/plan.md, plan/tests.md and branch inference plan.
+  A guessed plan/demos/cubechat/plan.md was absent; actual demo plan lives under
+  demos/cubechat/plan.md. One combined documentation patch rejected an unmatched
+  test-plan heading before applying anything; corrected headings and reapplied.
+  No runtime artifacts or credentials added; no Pages build or origin push.
+
+- Full real host acceptance passed in an owned unique room: exact unchanged
+  “turn yourself into a knight” → two Qwen3.5 2B structured calls → DreamShaper
+ 1.773s → SF3D97.632s → persistent avatar binding and rendered body,122.712s
+  overall. Actual status receipt: “[Avatar saved: Knight of the Dawn.]” No
+  persona agents.run calls, local models, HF downloads, page/console/cleanup
+  errors. GLB SHA2566e8ecfc2859cd1e86da4637752134b4f4fc256605dce9056ef4f57a2ef557e9f
+  retained outside Git for the tilt audit. No second inference/generation run.
+  The reference image prompt included an unrequested stone-tower setting; this
+  remains model design quality, not a proven grounding fix. Source pixels were
+  not retained, only dimensions/hash/prompt. Owner test browser fully closed.
+
+- Tilt diagnosis from the retained real knight: reviewed raw orthographic front/
+  side point plots; geometry upright, GLB node has only mesh:0, rendered avatar
+  rotation[0,PI,0]. Lower1–5percent fits show1.47–1.82degree support slopes,
+  spanning52–72percentX/70–75percentZ. Its off-center in-world screenshot looks
+  markedly inclined anyway. Camera default looks down33.7degrees with no roll;
+  exact upright test lines project about7degrees from vertical atx10/z-30.
+  This supports perspective for this measured sample, not a universal export
+  error. Older user Castle/Skeletor meshes were unavailable, and their ground
+  gaps remain open. No rotation correction or generated-base flattening made.
+  Evidence: tilt-audit/knight/{raw-orthographic.png,metrics.json}, e2e-peer/world.png.
+
+### 2026-11-14T00:33:09Z — tilt also present on Tron
+
+- User clarifies: “Also tilted on the flat Tron floor.” Exact user-send time
+  unavailable; heading is recording time. Flat terrain rules out slope following
+  as the sole cause but not perspective. The fresh knight already reproduced
+  apparent lean on flat Tron while its measured vertices remained upright.
+- Read-only geometry agent is producing a controlled centered/level versus
+  downward/off-center camera comparison using that same retained GLB, with no
+  additional inference or model loading. Existing meshes are not counterrotated.
+
+- ICC full reindex completed125.336s; content-based drift check confirms the
+  three changed runtime files match the index. Scoped guard-diff passes all11
+  edited paths. Production audit reports only existing stale-task state and
+  intentional uncommitted edits. Readiness gives generic ready93; completion
+  oracle exits1 because no resident-avatar-command oracle is authored and its
+  generic runtime ledger has no parsed events. Those reports are not substituted
+  for the actual peer execution and test evidence retained externally. Latest
+  documentation/steering is preserved; after the local checkpoint, refresh the
+  final index and Git history and retain final gate reports outside the repo.
+
+- Controlled camera comparison complete: identical retained textured knight,
+  unchanged mesh/world transforms, flat floor and an exactly vertical reference
+  pole. CubeChat default camera at[0,13,15], FOV75, pitches downward; the pole
+  projects14.513degrees from screen vertical. A level centered camera projects
+  the same pole0degrees and knight visibly upright. Both screenshots reviewed.
+  Report/captures under tilt-audit/camera-comparison; no external requests or
+  browser errors, owned browser/server closed. This supports camera perspective
+  for the reproduced sample on Tron. Older castle geometry and base contact
+  remain unverified. No camera or mesh geometry settings changed.

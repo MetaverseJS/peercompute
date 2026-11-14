@@ -85,10 +85,12 @@ export function createWorldConversationTurns({ agents, experience, signal: paren
     return { action: normalizeWorldObjectAction(decision.object), residentRevision: entry.revision,
       ...(placementTarget ? { placementTarget } : {}), requestId: crypto.randomUUID() };
   }
-  async function selectDecision(entry, head, observed, allowPlacement, signal, reply, objectOnly = false) {
+  async function selectDecision(entry, head, observed, allowPlacement, signal, reply, beforeSpeech = false) {
     return decideIntent({ inference: agents.inference, head, message: entry.message, reply,
       observed: structuredClone(observed), signal, allowTask: entry.allowTask, allowObject: entry.allowObject, allowAvatar: entry.allowAvatar,
-      allowKnowledge: entry.allowKnowledge, allowPlacement, allowResize: entry.allowResize, objectOnly, knowledgeObserved: structuredClone(entry.knowledgeObserved) });
+      allowKnowledge: entry.allowKnowledge, allowPlacement, allowResize: entry.allowResize,
+      objectOnly: beforeSpeech && !entry.avatarBeforeSpeech, authoringOnly: beforeSpeech && entry.avatarBeforeSpeech,
+      knowledgeObserved: structuredClone(entry.knowledgeObserved) });
   }
   async function execute(entry, previous) {
     // A replaced decision keeps its inference resources until cleanup settles.
@@ -113,7 +115,7 @@ export function createWorldConversationTurns({ agents, experience, signal: paren
     // Embedders may already use the full supported instruction budget. Never
     // truncate their instructions or make a previously valid turn oversized.
     let instructions = bytes(combinedInstructions) <= 4096 ? combinedInstructions : taskInstructions;
-    if (entry.executeObject && entry.allowObject && turn && experience) {
+    if (((entry.executeObject && entry.allowObject) || entry.avatarBeforeSpeech) && turn && experience) {
       // Owner tool planning precedes persona speech. Only a validated structured
       // object proposal can call the host; a model's capability disclaimer is not
       // used as an action-admission gate for a tool it has not attempted yet.
@@ -122,6 +124,14 @@ export function createWorldConversationTurns({ agents, experience, signal: paren
       const observed = await observationForDecision(entry, allowPlacement, decisionSignal);
       const decision = await selectDecision(entry, initial, observed, allowPlacement, decisionSignal, undefined, true);
       await headFor(entry); decisionSignal.throwIfAborted(); currentObservation(entry, observed);
+      if (entry.avatarBeforeSpeech && decision?.avatar && Object.keys(decision).length === 1) {
+        // Reuse the host's authorized image/exact-prompt execution path. Its
+        // real receipt replaces persona speculation about tool capabilities.
+        // No empty assistant reply or fictitious completion enters history.
+        return { text: '', finishReason: 'stop', applied: false, directAvatar: true,
+          avatar: { action: normalizeWorldAvatarAction(decision.avatar), residentRevision: entry.revision,
+            requestId: crypto.randomUUID() } };
+      }
       const proposal = proposeObject(entry, decision, observed, allowPlacement);
       if (proposal) {
         entry.phase = 'object';
@@ -136,6 +146,10 @@ export function createWorldConversationTurns({ agents, experience, signal: paren
           { code: 'ERR_WORLD_OBJECT_REPLY_BUDGET' });
       } else if (!decision || Object.keys(decision).length !== 1 || decision.intent !== null) {
         throw new Error('Object admission must return a validated object or no action');
+      } else if (entry.avatarBeforeSpeech) {
+        // Respect this turn's structured no-action result. Ordinary speech and
+        // movement can follow, but cannot redispatch a declined authoring tool.
+        entry.allowObject = false; entry.allowAvatar = false; entry.allowResize = false;
       }
       await headFor(entry); decisionSignal.throwIfAborted();
       entry.phase = 'speech';
@@ -198,14 +212,16 @@ export function createWorldConversationTurns({ agents, experience, signal: paren
   }
   function run({ key, agentId, turn, prompt, message = prompt, conversationId, worldContext, taskInstructions,
     maxNewTokens = 512, signal, valid = () => true, allowTask = false, allowObject = false, allowAvatar = false, allowKnowledge = false, allowResize = false,
-    executeObject } = {}) {
+    executeObject, avatarBeforeSpeech = false } = {}) {
     if (executeObject !== undefined && typeof executeObject !== 'function') throw new TypeError('Object execution requires a host callback');
+    if (avatarBeforeSpeech && allowAvatar && allowObject && !executeObject) throw new TypeError('Owner authoring with object support requires a host callback');
     const combined = AbortSignal.any([lifetime.signal, ...(parentSignal ? [parentSignal] : []), ...(signal ? [signal] : [])]);
     combined.throwIfAborted();
     const previous = active.get(key);
     if (['speech', 'object'].includes(previous?.phase)) return Promise.reject(Object.assign(new Error('This resident is already replying.'), { code: 'ERR_AGENT_BUSY' }));
     previous?.decision.abort(aborted('A newer message superseded this pending action.'));
     const entry = { key, agentId, turn, prompt, message, conversationId, worldContext, taskInstructions, maxNewTokens, valid, executeObject,
+      avatarBeforeSpeech: allowAvatar === true && avatarBeforeSpeech === true,
       allowTask: allowTask === true, allowObject: allowObject === true, allowResize: allowObject === true && allowResize === true, allowAvatar: allowAvatar === true,
       allowKnowledge: allowKnowledge === true, knowledgeObserved: allowKnowledge === true ? structuredClone(turn?.senses) : undefined,
       signal: combined, phase: 'speech', decision: new AbortController() };
