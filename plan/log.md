@@ -63905,3 +63905,26 @@ arbitrary input length. Full stress evidence is preserved externally.
 - Three current role/root links, git diff --check and scoped ICC guard pass.
   Save a local planning checkpoint and refresh ICC index/Git evidence; preserve
   all unrelated reservation-ledger source/tests. No push is authorized here.
+
+### 2026-11-15T05:24:23Z — Websockify versus existing native WebSocket transport
+
+- First clock sample2026-11-14 20:24:23 AKST; exact prompt-send time unavailable.
+  User asks whether the supernode architecture also needs a Websockify server.
+  Clarification only, with no change to implementation scope or host selection.
+- ICC assistant-status confirms fresh9125ee7a. Reviewed current plan/log and
+  rg results for Go ws.New/ws.WithTLSConfig/transport registration and Node
+  webSockets registration. Official Websockify README defines its WebSocket↔TCP
+  bridge; official libp2p WebSocket docs confirm native transport support.
+  Independent read-only reviewer concurs: native relay already accepts WS/WSS;
+  generic socket conversion does not implement discovery/reservations/circuits.
+- Clarify that no standalone Websockify dependency is needed initially. Keep
+  it as an optional future adapter for a TCP-only service. Browser-trusted WSS
+  termination remains necessary at the companion or existing reverse proxy;
+  a byte bridge does not change browser listening or NAT constraints.
+- Files: plan/root-node-runtime-model-evidence.md, plan/plan.md and this log.
+  Commands: git status, scoped head/tail/rg, ICC status, primary-source web
+  reads and documentation checks. No code, package, browser, GPU, server or
+  deployment changes; unrelated reservation-ledger work remains untouched.
+  This is a small clarification of the existing design, not new runtime evidence.
+- git diff --check and scoped ICC guard pass for the three documentation files.
+  Save a local advisory checkpoint; no push and no runtime test required.

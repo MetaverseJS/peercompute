@@ -37,6 +37,13 @@ installing TCP transport and does not enable a relay-server service, so it is
 not already an installed supernode. [libp2p relay documentation](https://libp2p.github.io/js-libp2p/modules/_libp2p_circuit-relay-v2.html)
 explicitly excludes relay-server operation inside a browser.
 
+A separate Websockify process is unnecessary for this initial path: existing
+Go and Node relay transports already accept WS/WSS. Websockify translates
+WebSocket bytes to a TCP-only target; it does not implement libp2p discovery,
+reservations or circuit routing. Consider it only for a later TCP-only service
+integration. WSS certificate termination may live in the native companion or
+an ordinary reverse proxy. See [Websockify's scope](https://github.com/novnc/websockify).
+
 Browser-facing listeners require compatible transports such as trusted WSS;
 WebRTC Direct is another qualification candidate, not the existing WebRTC
 transport's automatic server mode. Public reachability depends on firewall/NAT,

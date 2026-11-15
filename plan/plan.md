@@ -5,6 +5,8 @@ Latest direction favors persistent unified headless Chromium and a minimal
 Node24 supervisor after investigating native compatibility gaps. An installed
 supernode adds optional native inbound listeners and Circuit Relay service;
 root service/authority and supernode connectivity are independent capabilities.
+Existing libp2p WS/WSS transports cover browser-facing sockets; a separate
+Websockify bridge is not required for the proposed initial supernode path.
 Keep native Bun/Node/Dawn/V8 investigations as alternatives, not prerequisites.
 First useful service: shared model
 inspection/execution evidence keyed by exact package, relevant client/runtime
