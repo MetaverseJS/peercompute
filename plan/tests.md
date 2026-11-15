@@ -5736,3 +5736,8 @@ desktop layout and zero browser/cleanup errors. No local inference loaded.
 - Deployment gates still open: correct SSH credentials, remote OS/Node/Chromium
   prerequisites, service installation, live public descriptor, independent
   browser delivery/query, restart receipt retention and unchanged relay/TURN.
+- Clean exported `cc4f6dd7` standalone release passes CPU-only sandboxed Chromium
+  startup and supervisor restart, retaining identity and committed evidence.
+  Its only installed packages are Playwright/core; system Chromium is reused.
+  Report: `~/.cache/peercompute-root-host/20261115/release-smoke.json`.
+  This proves local packaging, not remote host installation or public routing.

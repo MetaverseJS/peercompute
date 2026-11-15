@@ -61,6 +61,12 @@ TURN service health before and after. Keep the previous release for rollback;
 stop this unit, restore its release symlink and bundle, then restart. The original
 persistent origin/port and runtime data must remain unchanged.
 
+**Local qualification (2026-11-15):** clean source commit `cc4f6dd7` produced a
+standalone release that starts with only Playwright/core installed and system
+Chromium, with its sandbox enabled. CPU-only operation, disabled companion,
+and a full supervisor restart preserve identity and committed model evidence.
+No source tree, Vite, or native relay dependencies are needed at runtime.
+
 **Current status:** release/service configuration is prepared. Public installation
 requires working SecretWorkshop SSH credentials and has not been verified by
 these instructions alone. Do not report deployment based on a local build.

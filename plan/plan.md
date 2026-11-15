@@ -9,7 +9,10 @@ policy fingerprints and coarse device/workload facts. Requested GPU-buffer peaks
 WASM sizes and planning estimates are separately labeled; physical VRAM is not
 claimed measured. Real HF inspection, SmolVLM WebGPU execution, WSS/Noise upload,
 catalog lookup and root restart pass. Minimal registry deployment packaging is
-prepared; SecretWorkshop installation remains pending working SSH access.
+prepared and the clean exported registry release passes CPU-only sandboxed
+Chromium startup and full restart with retained identity/records, using only
+Playwright/core and the system browser. SecretWorkshop installation remains
+pending working SSH access.
 No GitHub Pages publication or production relay/TURN change is included.
 
 November14 implementation authorized: build the first persistent Chromium root

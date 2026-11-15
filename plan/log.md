@@ -64108,3 +64108,31 @@ arbitrary input length. Full stress evidence is preserved externally.
   ReservationLedger hunks from the index; their working-tree files remain intact.
   Evidence retained at ~/.cache/peercompute-root-host/20261115/. No required test
   commands remain running at the implementation checkpoint.
+
+### 2026-11-15T09:05:04Z — Clean release acceptance and deployment handoff
+
+- Local implementation commit `cc4f6dd7` contains 55 feature files; unrelated
+  ReservationLedger, its test and index/StateManager edits remain unstaged.
+- Exported committed root-node/library/package files with `git archive`, built
+  `root-node/deploy/build-release.mjs`, then installed only Playwright/core with
+  `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install --omit=dev --ignore-scripts`.
+  No vulnerabilities reported; release is approximately 100 MB including bundle.
+  External release: `~/.cache/peercompute-root-host/20261115/release-cc4f6dd7`.
+- External `release-smoke.mjs` passes sandboxed system Chromium, CPU-only registry,
+  no companion/source/Vite dependency at runtime, retained peer identity and
+  committed receipt after a full supervisor restart. All owned processes closed.
+  Report and build/install logs retained in the same dated evidence directory.
+- CLI full reindex and Git history refresh completed after implementation commit.
+  ICC audit warns only about incomplete saved task backlog in the selected scope.
+  Readiness passes its two generic criteria (runtime evidence present and no
+  unmarked stub path); it has zero authored goal-specific criteria, so this does
+  not establish public deployment. Initial MCP trace paths under /tmp were
+  rejected; copied actual reports into the permitted ICC task evidence directory.
+- Final documentation edits: this log, plan/plan.md, plan/tests.md and root-node
+  deployment README. A bare `icc` help invocation failed because CLI is not on
+  PATH; explicit `/home/cos/projects/infinite_context_coder/bin/icc` works.
+- SecretWorkshop is still not deployed: default cos/root SSH credentials failed,
+  and the question requesting an existing username/key path or alias is pending.
+  Preserve relay/TURN, installed previews and GitHub Pages. Next step is inspect
+  host prerequisites using supplied access, install only the prepared root service,
+  and complete the public descriptor/delivery/query/restart regression gates.
