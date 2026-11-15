@@ -18,7 +18,7 @@ import { ping } from '@libp2p/ping';
 import { bootstrap } from '@libp2p/bootstrap';
 import { pubsubPeerDiscovery } from '@libp2p/pubsub-peer-discovery';
 import { peerIdFromString } from '@libp2p/peer-id';
-import { generateKeyPair, privateKeyToProtobuf, publicKeyToProtobuf } from '@libp2p/crypto/keys';
+import { generateKeyPair, privateKeyFromProtobuf, privateKeyToProtobuf, publicKeyToProtobuf } from '@libp2p/crypto/keys';
 import { multiaddr } from '@multiformats/multiaddr';
 import { NetworkScheduler, DEFAULT_SCHEDULER_PROFILE } from './NetworkScheduler.js';
 import { TopologyController } from './TopologyController.js';
@@ -60,6 +60,21 @@ const TRANSIENT_DIAL_FAILURE_PATTERNS = [
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+
+/** Hosts may supply their privately retained identity; ordinary clients stay ephemeral. */
+export async function resolveApplicationPrivateKey({ privateKey, privateKeyProvider } = {}) {
+  if (privateKey !== undefined && privateKeyProvider !== undefined) {
+    throw new TypeError('Supply privateKey or privateKeyProvider, not both');
+  }
+  if (privateKeyProvider !== undefined && typeof privateKeyProvider !== 'function') {
+    throw new TypeError('privateKeyProvider must be a function');
+  }
+  if (privateKey === undefined && privateKeyProvider === undefined) return generateKeyPair('Ed25519');
+  const supplied = privateKeyProvider === undefined ? privateKey : await privateKeyProvider();
+  if (!supplied) throw new TypeError('The configured application identity is unavailable');
+  // Validate and copy supplied keys. Never silently replace an invalid retained key.
+  return privateKeyFromProtobuf(supplied instanceof Uint8Array ? supplied : privateKeyToProtobuf(supplied));
+}
 const DEBUG_P2P = typeof __PC_DEBUG__ !== 'undefined' && __PC_DEBUG__ === true;
 const debugLog = (...args) => {
   if (DEBUG_P2P) console.log(...args);
@@ -991,7 +1006,7 @@ export class NetworkManager {
       : webRTC();
     const relayTransport = circuitRelayTransport();
     this.relayTransport = relayTransport;
-    const privateKey = await generateKeyPair('Ed25519');
+    const privateKey = await resolveApplicationPrivateKey(this.config);
     this._applicationPrivateKey = privateKey;
 
     const connectionManagerConfig = {

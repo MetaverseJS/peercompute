@@ -63,6 +63,8 @@ state.write('message', 'Hello peers');
 Peers using the same game and room can share state. The [library guide](peercompute/README.md)
 adds snapshots/events, layered DataState, worker tasks and persistence examples.
 [Relay setup](peercompute/docs/RELAY_SERVER.md) explains discovery, configuration and hosting.
+An experimental [installed browser host](root-node/README.md) adds persistent
+Chromium execution, a bounded native relay companion and model-evidence storage.
 
 ## Architecture
 

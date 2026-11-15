@@ -1024,12 +1024,40 @@ model/runtime identity, resource limits, and full completion criteria.
   relay-only CubeChat media path. Remote service mutation additionally requires
   verified administrative access, a pre-change snapshot, and a rollback path.
 
-### Planned root-node validation
+### Browser root/supernode validation — November14 implementation
+
+- `npm run test:root-host`:37focused tests pass for private identity/restart and
+  transaction aborts, host profile/config/static HTTP boundaries, cleanup retry,
+  native Noise relay admission/capacity/byte/time cutoff, strict evidence
+  contracts/retention/outbox and real encrypted libp2p RPC.
+- `node --test peercompute/tests/unit/nodeKernel.start.test.js peercompute/tests/unit/networkManager.lifecycle.test.js peercompute/tests/unit/computeManager.worker.test.js`:
+  49existing regression tests pass; ephemeral ordinary-client identity remains
+  the default.
+- `npm run test:root-host:browser`: real NVIDIA hardware WGSL in a managed worker,
+  exact64-value readback, own relay reservation and Noise, second independent
+  browser submit/query/privacy/replay, Web Lock exclusion, automatic browser-exit
+  recovery and full supervisor restart preserve both identities, stable origin,
+  markers and evidence. All temporary browser/server/profile resources close.
+- `PEERCOMPUTE_HOST_WSS_NAME=<trusted-host> SSL_CERT=<external-cert> SSL_KEY=<external-key> node root-node/tests/wss-host.mjs`:
+  browser certificate validation, DNS hostname, real WSS+Noise reservation and
+  cleanup pass on fastbox's Tailnet address. No certificate bypass. This is a
+  same-machine routed-hostname check, not independent-machine/NAT qualification.
+- Evidence reports are protocol fixtures, not falsely claimed HF inspection or
+  successful model inference. GPU qualification is fixed WGSL only. Still open:
+  automatic client hooks/root discovery, real ONNX/GGUF/artifact execution in the
+  host, long-running recovery/resource bounds and independent-device reachability.
+- Failed experiments: initial loopback dial policy; incorrect marker-envelope
+  assertion; test attempted Host override with fetch (use raw HTTP to exercise
+  server rejection); WSS assertion expected `/wss`, but canonical multiaddr is
+  `/tls/ws`. Corrected and rerun; no user-owned processes changed.
+
+### Historical root-node validation plans
 
 - Latest November14 direction prioritizes persistent unified Chromium under
   existing Node24 supervision. Test stable origin/profile/identity, real WebGPU
   adapter+dispatch/model execution, IndexedDB/locks, restart/recovery and bounded
-  evidence ingestion. No browser/GPU/host test was executed for this discussion.
+  evidence ingestion. That discussion was planning-only; subsequent implementation
+  acceptance is recorded above.
 - Supernode gates: browser/native peer dials to advertised compatible endpoints;
   explicit relay opt-in and enforced bandwidth/connection/reservation limits;
   identity binding; relay loss/failover; truthful public/LAN-only/unreachable

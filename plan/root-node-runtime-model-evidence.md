@@ -1,8 +1,35 @@
 # Root node: client parity and model evidence
 
-Status: recommendation with isolated storage probes, 2026-11-14. No root runtime
-implemented or fully qualified.
+Status: experimental browser host and model-evidence foundation implemented
+2026-11-14. Hardware/relay/restart qualification passes; model-specific runtime
+parity and automatic demo evidence collection remain open. See
+[host setup and boundaries](../root-node/README.md).
 This updates the runtime choice and first slice in [the June root plan](root-node-todo.md).
+
+
+## November14 implementation checkpoint
+
+- `root-node/host` supervises persistent Chromium, owns a stable loopback origin,
+  exclusive external profile, finite browser recovery and native companion.
+- `root-node/browser` composes real client managers, privately persists the
+  application identity in acknowledged IndexedDB and provides a fixed WGSL task.
+  Optional key/provider injection leaves ordinary clients ephemeral.
+- `peercompute/src/host/native` provides WS/WSS, distinct persisted relay identity,
+  hosted-only admission by default and finite opt-in third-party circuits.
+  No production relay/coturn settings change.
+- `peercompute/src/peercompute/modelEvidence` contains normalized immutable
+  contracts, bounded IDB receipts/query/outbox, fail-soft collector and encrypted
+  submit/query RPC. Actual reporter comes from the authenticated connection.
+  Host composition currently owns persistence lifecycle; StateManager registry
+  integration is deliberately deferred to avoid unrelated in-progress edits.
+- Hardware NVIDIA WGSL through ComputeManager, encrypted browser relay delivery,
+  two-browser evidence/replay, browser-exit recovery and full supervisor restart
+  with both identities and committed data pass. No arbitrary model loading,
+  power-loss test or independent-device NAT claim is made.
+- Next: opt-in HF inspection and executing-host ModelInferenceService hooks,
+  root discovery/configuration, offline outbox scheduling, current-versus-stale
+  evidence in discovery UI, and real model/worker/artifact qualification on the
+  installed host. No observations from normal demos upload automatically yet.
 
 ## Current direction: browser client host and optional supernode networking
 
@@ -12,7 +39,8 @@ small Node24 supervisor, reusing the existing toolchain. No new Bun dependency
 is needed just to supervise Chrome. Use a dedicated root bootstrap that composes
 the real NodeKernel/managers/services; do not automate the inference demo UI.
 The native alternatives below remain researched options, not the current first
-implementation path. This is an architecture direction, not an implemented host.
+implementation path. The initial implementation follows this composition; it
+does not yet supply authority/session policy or a desktop installer.
 
 [Modern headless Chrome](https://developer.chrome.com/docs/automation-and-testing/headless)
 shares the normal browser implementation. Use an explicitly selected browser
@@ -62,7 +90,8 @@ both relay and compute IDs. Remote peers reach the installation without the
 central relay; the local hop is still relaying, not a claimed direct transport
 to the browser. Preserve existing inference/artifact authentication and upgrade
 to direct WebRTC where available. Sharing one logical network endpoint through
-native IPC is a later NetworkManager adapter option. No bridge is implemented.
+native IPC is a later NetworkManager adapter option. The initial bounded native
+relay bridge is implemented and exercised by two independent browser profiles.
 Current Go/Node relay configurations effectively disable normal circuit limits;
 do not inherit those settings for opt-in community relaying.
 

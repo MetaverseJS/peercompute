@@ -1911,3 +1911,16 @@ and a SQLite evidence registry before adding Chromium. Keep the browser-host
 option as a compatibility reference/fallback. Bun1.4 documents JSPI/memory64;
 actual managed ONNX/GGUF and native GPU binding parity remain untested. See the
 opening revision of the linked root analysis for scope and difficulty.
+
+## November14 implementation authorization — persistent browser host
+
+The user approved proceeding after the headless-browser/native-companion
+discussion. Implemented Node24 supervisor, real client bootstrap, distinct
+persistent browser/native identities, private IndexedDB, fixed managed WGSL
+qualification, hosted-only native relay and optional finite third-party relay.
+Versioned model-evidence store/collector/encrypted RPC is reusable library code.
+Two independent browsers exchange reports and recover acknowledged data after
+restart. Full model parity, normal-demo collection hooks, StateManager service
+registration, root discovery/UI and independent-device reachability remain next.
+Runtime files stay outside Git; preserve unrelated reservation-ledger edits and
+existing user preview processes. Local checkpoint only; no Pages build/push.

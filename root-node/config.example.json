@@ -1,0 +1,21 @@
+{
+  "dataDir": "~/.local/share/peercompute/root",
+  "port": 5199,
+  "chromePath": "/usr/bin/google-chrome",
+  "chromeArgs": ["--enable-gpu", "--enable-unsafe-webgpu"],
+  "bootstrapPeers": [],
+  "connectNetwork": true,
+  "requireHardwareGpu": false,
+  "maxBrowserRestarts": 3,
+  "companion": {
+    "enabled": true,
+    "listenHost": "127.0.0.1",
+    "listenPort": 5200,
+    "relay": {
+      "enabled": false,
+      "maxReservations": 16,
+      "maxCircuitDurationMs": 300000,
+      "maxCircuitBytes": 67108864
+    }
+  }
+}

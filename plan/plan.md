@@ -1,5 +1,14 @@
 Instructions: This file contains high level goals for the project and a roadmap.
 
+November14 implementation authorized: build the first persistent Chromium root
+host with a minimal Node24 supervisor, explicit browser identity, bounded native
+WS/WSS relay companion and versioned IndexedDB model-evidence foundation.
+Real managed hardware WebGPU, encrypted two-browser evidence delivery, stable
+identity/IndexedDB restart and owned-process cleanup pass. Automatic inspection/
+execution collection, model-specific qualification and wider reachability remain
+next; see root-node/README.md. Existing production relays
+and previews remain unchanged; this slice does not include a Pages deployment.
+
 November14 root-node planning: return to the original root-as-client role.
 Latest direction favors persistent unified headless Chromium and a minimal
 Node24 supervisor after investigating native compatibility gaps. An installed
@@ -12,8 +21,8 @@ First useful service: shared model
 inspection/execution evidence keyed by exact package, relevant client/runtime
 revision, executing device and workload, with measured resource/failure scope.
 Old incompatibility is historical evidence, not a permanent blacklist.
-See [analysis and staged plan](root-node-runtime-model-evidence.md). Planning
-only: no root implementation or deployment. Isolated Bun1.4.4 storage probes now
+See [analysis and staged plan](root-node-runtime-model-evidence.md). The original
+discussion was planning-only; the implementation checkpoint above supersedes it. Isolated Bun1.4.4 storage probes now
 pass real StateManager/Yjs, agent records and artifact backend restart contracts
 using a third-party IndexedDB-over-SQLite candidate. It is not built-in Bun IDB,
 has value/memory/single-owner limits, and needs a bounded pilot before adoption.
@@ -21,8 +30,8 @@ For that native alternative, keep bulk artifacts on the filesystem and direct
 SQLite available for growing evidence registries; browser IndexedDB remains the
 first host's storage path. Runtime, GPU and lock qualification remains open.
 Direct-V8 investigation found embedding feasible and rusty_v8 support continues.
-Browser hosting now takes priority; server GPU/storage/restart and installed
-host reachability/relay qualification remain future implementation gates.
+Browser hosting now takes priority; broader model parity and installed-host
+reachability/relay failover remain future qualification gates.
 
 November13 avatar follow-up: owner text commands such as “turn yourself into a
 knight” now use structured authoring admission before persona speech, alongside

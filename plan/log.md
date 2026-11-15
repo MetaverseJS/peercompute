@@ -63928,3 +63928,115 @@ arbitrary input length. Full stress evidence is preserved externally.
   This is a small clarification of the existing design, not new runtime evidence.
 - git diff --check and scoped ICC guard pass for the three documentation files.
   Save a local advisory checkpoint; no push and no runtime test required.
+
+### 2026-11-15T05:46:03Z — Implement the first browser root/supernode host
+
+- First clock sample2026-11-14 20:46:03 AKST; exact prompt-send time unavailable.
+  User: “ok go ahead”, authorizing the discussed persistent Chromium host,
+  minimal Node24 supervisor and native listener/relay composition.
+- ICC source drift found three documentation files since the previous index;
+  full reindex122.7s and Git-history refresh completed. Fresh codebase_work
+  readiness93 has no blocking actions; generic runtime oracle still requires
+  actual runtime evidence. CLI work persists task browser-root-supernode-host-20261114.
+- Reviewed root plans/log, current NodeKernel/NetworkManager/worker lifecycle,
+  production Node/Go relays and existing hardware-browser test patterns.
+  NetworkManager creates a fresh identity every initialization; new host needs
+  acknowledged local-only persistence and explicit injection. Existing relays
+  use unlimited policies, so a separate bounded factory preserves deployment.
+- Three native agents own browser bootstrap/identity, native companion and
+  evidence contracts/store/service; parent owns supervisor/integration/docs.
+  Preflight passes with known unrelated dirty reservation-ledger files preserved.
+  Initial leases with same task/no plan-item were rejected; republished distinct
+  plan-item claims with no overlapping paths. Initial preflight raced task
+  creation, then passed. build-git-history does not accept --format; corrected.
+  Guessed missing module paths and an invalid plan subcommand produced harmless
+  read/usage failures; actual paths and task-plan are now used.
+- No user preview, browser or resident model touched. No production relay edits,
+  dependency upgrades, Pages build or deployment. Implementation and validation
+  results follow below before the local checkpoint.
+
+### 2026-11-15T06:04:11.736151+00:00 — Display-manager restart recovery checkpoint
+
+- User warns: “I think I have to restart my display manager you might get taken out”.
+  Exact send timestamp unavailable; this is the checkpoint clock. Preserve all
+  files and continue the authorized root/supernode slice after restart.
+- Implemented on feature/ipfs-artifacts-webgpu: root-node/browser real NodeKernel
+  bootstrap, acknowledged private IndexedDB identity/markers, Web Lock, fixed
+  managed GPU qualification; optional privateKey/provider injection in
+  NetworkManager/NodeKernel. root-node/host Node24 supervisor, external profile
+  lock, fixed loopback origin/static server, bounded browser recovery and CLI.
+  peercompute/src/host/native provides distinct persisted WS/WSS/Noise relay
+  identity, hosted-only default, opt-in finite public relay.
+  peercompute/src/peercompute/modelEvidence implements immutable versioned
+  contracts, bounded IndexedDB store/outbox, collector, authenticated RPC.
+- Passed: 49 existing kernel/network/worker regression tests; native9/9; browser
+  identity8/8 (earlier combined35/35); evidence storage/contracts9 and real
+  Noise RPC5. Initial host unit3 passed; TLS selection unit added pending rerun.
+  Real headless NVIDIA WGSL64-value readback and browser/supervisor restart with
+  stable origin/both peerIDs/committed IDB passed. Current expanded browser test
+  adds second independent browser evidence submission/query/replay/recovery.
+- Runtime evidence: /tmp/peercompute-root-browser-report.json,
+  /tmp/peercompute-root-browser-test.log; focused regressions at
+  /tmp/peercompute-host-regression.log. Initial smoke fixed explicit loopback
+  dialing; first restart assertion mistakenly compared marker envelope to its
+  value and was corrected. No claim of model-specific inference qualification.
+- Before completion: inspect expanded browser test result, finish foreign Host
+  rejection on static server and cleanup failure/retry tests, run trusted WSS
+  smoke using external ~/.cache/peercompute-preview/tls/fastbox.crt/key, add
+  root-node README/package scripts, update plan/tests/branch/root status docs,
+  run final focused suites/diff/ICC gates, then selective LOCAL commit only.
+  Do not commit unrelated dirty StateManager/index/ReservationLedger files.
+  No GitHub push, Pages rebuild, public root deployment or user preview restart.
+- ICC task browser-root-supernode-host-20261114; task-plan has four implementation
+  items. Active parent/browser/evidence leases expire about07:55UTC; native ended.
+  Reindex/Git history was fresh before edits; refresh after final source changes.
+  Existing user previews5173/5176/5182/5187/5189 must remain untouched. Test
+  browsers use owned temporary profiles; they may be lost during display reset.
+
+### 2026-11-15T06:10:16.761056+00:00 — Display-manager restart completed; final host qualification
+
+- User: “I restarted it we're good to go”. Exact send timestamp unavailable;
+  timestamp is checkpoint clock. Continue the existing authorized task, no scope
+  change or new deployment authorization. Files and test evidence survived.
+- Two-browser evidence over the native encrypted circuit and committed records
+  after browser/full-supervisor restart pass. Root GPU qualification reports
+  actual NVIDIA hardware through ComputeManager,64exact WGSL readback values.
+- Scoped37tests pass (identity8, native9, evidence15, supervisor5), plus49existing
+  kernel/network/managed-worker tests. Independent reviewer found and resolved
+  WSS certificate hostname selection, resource-handle retention on failed stop,
+  foreign Host rejection and companion.enabled type validation. New tests cover
+  hostname selection, retry after cleanup failure and actual raw HTTP Host gate.
+- Trusted-WSS test passes with the external fastbox Tailnet cert/key, no TLS
+  bypass: browser uses DNS/WSS+Noise and receives a reservation. Initial probe
+  assertion incorrectly expected `/wss`; libp2p canonicalizes it to `/tls/ws`.
+  The second run passes. This is not independent-machine reachability evidence.
+- Added root-node README/config/CLI/scripts, concise root README link, current
+  plan/runtime/todo/roles/branch/test updates. Private runtime data stays outside
+  Git. Evidence service uses strict IDB transaction durability plus completion
+  acknowledgments; automatic client collector hooks/StateManager registration,
+  model-specific parity and wider reachability remain next, not claimed done.
+- Final focused suite, whitespace/source guard/ICC refresh and selective local
+  checkpoint follow. No user previews or production relay settings altered;
+  no Pages build, push, public root deployment or model downloads.
+
+- Final `npm run test:root-host`37/37 and current-source
+  `npm run test:root-host:browser` pass after strict evidence durability and
+  supervisor review fixes, including after the display-manager restart.
+  `wss-host.mjs` passes trusted hostname/WSS/Noise without GPU or TLS bypass.
+  CLI help and `git diff --check` pass. Test processes/profiles are closed;
+  persistent evidence copied to ~/.cache/peercompute-root-host/20261114/.
+  Build reports only the existing large-chunk warning; no page errors.
+- Scope boundary: usable experimental host plus initial evidence RPC foundation,
+  not full root authority or automatic demo model observation. Root-free client
+  behavior remains unchanged. Save this as a local implementation checkpoint.
+
+- Staged ICC guard:2811added/17deleted lines,0violations/0warnings; local links
+  pass. Full ICC refresh124.7s and MCP source-drift confirm fresh current source.
+  Initial production audit incorrectly interpreted intentional negative-test
+  worker-constructor failures in the49passing regression tests as live host
+  failures. Preserve those logs and scope host runtime-health evidence to the
+  real browser/WSS traces; do not claim generic portfolio completion.
+- Shell cleanup rejected an rm-style command automatically. Used a safer cleanup
+  that verifies the exact temporary installation ID/path and absence of its
+  active lock before deleting only the owned smoke profile/configs. All user
+  profiles and running preview services were left untouched.

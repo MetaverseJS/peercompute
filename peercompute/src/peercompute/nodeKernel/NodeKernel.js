@@ -423,6 +423,8 @@ export class NodeKernel {
    * @param {boolean} config.enableWebGPU - Enable WebGPU compute capabilities
    * @param {boolean} config.enablePersistence - Enable IndexedDB persistence
    * @param {Array<string>} config.bootstrapPeers - Bootstrap peer multiaddrs
+   * @param {Object|Uint8Array} config.privateKey - Optional locally retained libp2p application identity
+   * @param {Function} config.privateKeyProvider - Optional asynchronous alternative to privateKey; failures do not rotate identity
    * @param {string} config.stateTopic - P2P state sync topic
    * @param {number} config.presenceIntervalMs - Presence heartbeat interval in ms
    * @param {string} config.pubsubType - Pubsub router to use ('floodsub' or 'gossipsub')
@@ -622,6 +624,8 @@ export class NodeKernel {
         shardSize: this.config.shardSize,
         shardRadius: this.config.shardRadius,
         bootstrapPeers: this.config.bootstrapPeers,
+        privateKey: this.config.privateKey,
+        privateKeyProvider: this.config.privateKeyProvider,
         gameId: this.config.gameId,
         roomId: this.config.roomId,
         pubsubTopic: this.config.stateTopic,

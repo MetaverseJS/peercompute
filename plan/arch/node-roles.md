@@ -33,7 +33,9 @@ Status: active; role variants for compute nodes.
 
 ## Optional installed-host capability: Supernode
 
-Proposed November14,2026; not yet an installed-client implementation.
+Experimental browser-host/native-companion implementation November14,2026;
+see [setup and qualification boundaries](../../root-node/README.md). No installer
+or independent-device NAT qualification is included.
 - Runs the same PeerCompute client/services with a native networking companion.
 - Can advertise qualified inbound endpoints and optionally relay other peers'
   connections, subject to independent host options and resource budgets.

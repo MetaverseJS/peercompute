@@ -1,7 +1,8 @@
 # Root Node TODO
 
 Status: planning artifact created 2026-06-18 AKDT; runtime/MVP recommendation
-revised 2026-11-14. No root-node service implemented.
+revised 2026-11-14. Experimental persistent browser host, native companion and
+model-evidence RPC/store are implemented; broader root authority remains planned.
 
 ## November 14 revision: client parity and model evidence first
 
@@ -14,13 +15,15 @@ The deeper IndexedDB investigation passes targeted existing-store persistence
 tests with an experimental SQLite shim on Bun1.4.4. Any later native-host choice
 must qualify a single-owner adapter for bounded metadata; do not put model
 weights in its memory-resident cache. Native IndexedDB itself remains absent.
-Full workers/locks/GPU/model parity and evidence-service implementation are open.
+Managed WGSL, identity/IndexedDB/Web Locks, native relay and initial evidence
+service are tested. Actual hosted-model parity and automatic collection remain open.
 
 The current request restores the original root-as-Compute-Node intent, including
 the client's managed WebGPU workers and IndexedDB capabilities. Read
 [runtime analysis and model evidence plan](root-node-runtime-model-evidence.md)
 before implementing the historical Deno-specific proposal below. Browser-host
-runtime qualification and installed-host packaging/networking remain pending.
+qualification passes the initial managed-GPU/restart/relay slice. Model-specific
+qualification, independent-device reachability and installed packaging remain pending.
 The first useful service records model inspection and execution evidence by
 package, capability revision, executor configuration and workload, including
 measured resource use and failures. Preserve optional authority, stable signed
