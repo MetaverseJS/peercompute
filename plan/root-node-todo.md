@@ -2,7 +2,16 @@
 
 Status: planning artifact created 2026-06-18 AKDT; runtime/MVP recommendation
 revised 2026-11-14. Experimental persistent browser host, native companion and
-model-evidence RPC/store are implemented; broader root authority remains planned.
+model-evidence RPC/store plus automatic opt-in client collection and model-browser
+queries are implemented. Broader root authority and public deployment remain planned.
+
+## November15 next deployment gate
+
+Install the prepared registry-only release on SecretWorkshop when SSH access is
+available, publish its expiring descriptor, then validate client upload/query,
+restart persistence and unchanged relay/TURN health. See
+[root deployment](../root-node/deploy/README.md). Do not mark this complete based
+on local qualification alone.
 
 ## November 14 revision: client parity and model evidence first
 
@@ -16,7 +25,8 @@ tests with an experimental SQLite shim on Bun1.4.4. Any later native-host choice
 must qualify a single-owner adapter for bounded metadata; do not put model
 weights in its memory-resident cache. Native IndexedDB itself remains absent.
 Managed WGSL, identity/IndexedDB/Web Locks, native relay and initial evidence
-service are tested. Actual hosted-model parity and automatic collection remain open.
+service are tested. Automatic collection passes real SmolVLM client execution. Actual hosted-model
+parity on the installed root remains open.
 
 The current request restores the original root-as-Compute-Node intent, including
 the client's managed WebGPU workers and IndexedDB capabilities. Read

@@ -1,3 +1,5 @@
+import { generateKeyPair } from '@libp2p/crypto/keys';
+import { ModelEvidenceClient, normalizeEvidenceDirectory } from '../../src/peercompute/modelEvidence/ModelEvidenceClient.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { IDBFactory } from 'fake-indexeddb';
@@ -28,11 +30,12 @@ async function fixture(t, { unencrypted = false, timeoutMs = 2000 } = {}) {
     await Promise.allSettled(peers.map(peer => peer.store?.destroy()));
   });
   for (let index = 0; index < 2; index++) {
-    const node = await createLibp2p({ addresses: { listen: ['/ip4/127.0.0.1/tcp/0/ws'] },
+    const privateKey = await generateKeyPair('Ed25519');
+    const node = await createLibp2p({ privateKey, addresses: { listen: ['/ip4/127.0.0.1/tcp/0/ws'] },
       transports: [webSockets()], connectionEncrypters: [unencrypted ? plaintext() : noise()],
       streamMuxers: [yamux()], services: { identify: identify() } });
     const store = index === 0 ? new ModelEvidenceStore({ indexedDBImpl }) : null;
-    const manager = { libp2p: node, config: { gameId: `different-demo-${index}` } };
+    const manager = { libp2p: node, _applicationPrivateKey: privateKey, config: { gameId: `different-demo-${index}` } };
     const service = new ModelEvidenceService(manager, { store, serve: index === 0, timeoutMs });
     const peer = { node, manager, service, store, id: node.peerId.toString() }; peers.push(peer);
     await service.start();
@@ -95,4 +98,68 @@ test('stopping client service cancels an outstanding request and closes its owne
   const querying = client.service.query(root.id); querying.catch(() => {}); await entered;
   await client.service.stop(); await assert.rejects(querying, /STOPPED/);
   assert.equal(client.service.operations.size, 0); assert.equal(client.service.status().closed, true);
+});
+
+test('signed observations survive uploader identity changes without forging executors', { timeout: 15000 }, async t => {
+  const { generateKeyPair } = await import('@libp2p/crypto/keys');
+  const { peerIdFromPrivateKey } = await import('@libp2p/peer-id');
+  const { signModelEvidence } = await import('../../src/peercompute/modelEvidence/ModelEvidenceProof.js');
+  const [root, client] = await fixture(t), oldKey = await generateKeyPair('Ed25519');
+  const oldId = peerIdFromPrivateKey(oldKey).toString(), input = report(oldId);
+  const proof = await signModelEvidence(input, oldKey);
+  const receipt = await client.service.submitSigned(root.id, [{ report: input, proof }]);
+  assert.equal(receipt.ids.length, 1);
+  const records = await client.service.query(root.id);
+  assert.equal(records[0].reporterPeerId, oldId); assert.equal(records[0].report.executorPeerId, oldId);
+  assert.equal(records[0].provenance, 'verified-signature');
+  await assert.rejects(client.service.submitSigned(root.id, [{ report: { ...input, outcome: 'failed' }, proof }]), /signature/);
+  await assert.rejects(signModelEvidence(report(client.id), oldKey), /executor/);
+  assert.equal((await root.store.query()).length, 1);
+});
+
+
+test('opt-in outbox survives closing IndexedDB and changing application identity; opt-out makes no discovery requests', { timeout: 15000 }, async t => {
+  const [root, peer] = await fixture(t), indexedDBImpl = new IDBFactory();
+  let networkCalls = 0;
+  const options = { getManager: () => peer.manager, environment: () => ({ kind: 'browser' }), compatibility: report(peer.id).compatibility,
+    directoryUrl: 'https://directory.test/root.json', fetchImpl: async () => { networkCalls++; throw new Error('offline'); } };
+  const store = new ModelEvidenceStore({ indexedDBImpl });
+  const first = new ModelEvidenceClient({ ...options, store });
+  t.after(() => first.close());
+  await first.record(report(peer.id)); await first.flush();
+  assert.equal(networkCalls, 0); assert.equal((await store.pending()).length, 0);
+  first.setSharing(true); await first.flushing;
+  await first.record(report(peer.id, 2));
+  await first.close(); await store.destroy();
+  const reopened = new ModelEvidenceStore({ indexedDBImpl }); t.after(() => reopened.destroy());
+  const second = new ModelEvidenceClient({ ...options, store: reopened, getManager: () => root.manager });
+  t.after(() => second.close());
+  const pending = await reopened.pending(); assert.equal(pending.length, 1); assert(pending[0].proof);
+  const result = await second.collector.flush({ service: peer.service, rootPeerId: root.id });
+  assert.deepEqual(result, { sent: 1, failed: false });
+  assert.equal((await root.store.query())[0].reporterPeerId, peer.id);
+  assert.equal((await reopened.pending()).length, 0);
+});
+
+test('public discovery rejects expired, wrong identity and insecure addresses', async t => {
+  const [root] = await fixture(t), now = 1000;
+  const input = { schema: 'peercompute.model-evidence-directory.v1', protocol: MODEL_EVIDENCE_PROTOCOL,
+    expiresAt: 2000, peerId: root.id, addresses: [`/dns4/example.test/tcp/443/wss/p2p/${root.id}`] };
+  assert.equal(normalizeEvidenceDirectory(input, now).peerId, root.id);
+  assert.throws(() => normalizeEvidenceDirectory({ ...input, expiresAt: now }, now));
+  assert.throws(() => normalizeEvidenceDirectory({ ...input, addresses: input.addresses.map(a => a.replace('/wss/', '/ws/')) }, now));
+  assert.throws(() => normalizeEvidenceDirectory({ ...input, peerId: 'different-peer' }, now));
+});
+
+test('closing the evidence client prevents late discovery from creating a service or dialing', async t => {
+  const [root, peer] = await fixture(t), store = new ModelEvidenceStore({ indexedDBImpl: new IDBFactory() });
+  t.after(() => store.destroy());
+  let release, entered;
+  const requested = new Promise(resolve => { entered = resolve; });
+  const client = new ModelEvidenceClient({ store, getManager: () => peer.manager, environment: () => ({ kind: 'browser' }),
+    directoryUrl: 'https://directory.test/root.json', fetchImpl: () => { entered(); return new Promise(resolve => { release = resolve; }); } });
+  const connection = client.connect(); connection.catch(() => {}); await requested; await client.close();
+  release(new Response(JSON.stringify({ schema: 'peercompute.model-evidence-directory.v1', protocol: MODEL_EVIDENCE_PROTOCOL,
+    expiresAt: Date.now() + 60000, peerId: root.id, addresses: [`/dns4/example.test/tcp/443/wss/p2p/${root.id}`] })));
+  await assert.rejects(connection, { name: 'AbortError' }); assert.equal(client.service, undefined);
 });

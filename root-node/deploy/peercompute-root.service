@@ -1,0 +1,25 @@
+[Unit]
+Description=PeerCompute browser root model evidence registry
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=peercompute-root
+Group=peercompute-root
+Environment=HOME=/var/lib/peercompute-root
+WorkingDirectory=/opt/peercompute-root/current
+ExecStart=/usr/bin/node root-node/host/cli.mjs --config /etc/peercompute-root.json --no-build
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=45
+KillMode=control-group
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/peercompute-root
+
+[Install]
+WantedBy=multi-user.target

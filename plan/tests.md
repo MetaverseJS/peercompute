@@ -5709,3 +5709,30 @@ desktop layout and zero browser/cleanup errors. No local inference loaded.
   empty-address provider. Public after probe saw no remote objects during90s;
   that is not a successful Castle rendering claim. Host refresh remains needed.
   Evidence: ~/.cache/peercompute-artifact-address-recovery-20261113/.
+
+### Root model-information integration — November15
+
+- `npm run test:root-host`: contracts, signed/original-executor provenance,
+  ciphertext-required RPC, retention, replay, same-ID restart, opt-in outbox,
+  stale uploader identity and host lifetime/public descriptor checks.
+- `node --test peercompute/tests/unit/modelEvidence*.test.js
+  peercompute/tests/unit/modelInference.test.js
+  peercompute/tests/unit/requestedGpuMemory.test.js`: content projection,
+  immutable selected file-set lookup, lazy versus unsupported inspection,
+  fail-soft executing-host collection, scoped requested-buffer accounting.
+- GGUF/diffusion/speech regressions plus these tests:175pass before final
+  directory/client cancellation refinements. Model browser/SF3D suites:69pass.
+  Existing inference panel suite:113pass. Final scoped counts are in log.md.
+- `npm run test:root-host:client` with trusted WSS hostname/cert environment:
+  actual pinned HF inspection (5variants), cached verified SmolVLM256M import,
+  real managed GPU generation (3456dispatches,12output tokens), automatic signed
+  upload, and catalog browser query. Captured requested-buffer peak376917520bytes;
+  excludes physical VRAM/driver/texture/GC memory. Local acceptance intercepts
+  only discovery to the owned test root; it is not a public deployment test.
+- `npm run test:root-host:browser`: hardware WGSL, two-browser Noise RPC,
+  browser/supervisor restart, identity/IndexedDB persistence and owned cleanup.
+- Production builds for inference/CubeChat/Earth go to external temporary output
+  directories, never docs/ for this task. Full Pages publication is not requested.
+- Deployment gates still open: correct SSH credentials, remote OS/Node/Chromium
+  prerequisites, service installation, live public descriptor, independent
+  browser delivery/query, restart receipt retention and unchanged relay/TURN.

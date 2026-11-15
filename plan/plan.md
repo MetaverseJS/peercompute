@@ -1,5 +1,17 @@
 Instructions: This file contains high level goals for the project and a roadmap.
 
+November15 model-information integration: StateManager now owns bounded evidence
+journals; the shared inference facade records HF inspections and actual executor
+load/generation/device-loss results. Optional sharing defaults off. Signed outbox
+records survive client identity changes, and model details query local/root
+observations without overriding admission. Compatibility uses source/runtime/
+policy fingerprints and coarse device/workload facts. Requested GPU-buffer peaks,
+WASM sizes and planning estimates are separately labeled; physical VRAM is not
+claimed measured. Real HF inspection, SmolVLM WebGPU execution, WSS/Noise upload,
+catalog lookup and root restart pass. Minimal registry deployment packaging is
+prepared; SecretWorkshop installation remains pending working SSH access.
+No GitHub Pages publication or production relay/TURN change is included.
+
 November14 implementation authorized: build the first persistent Chromium root
 host with a minimal Node24 supervisor, explicit browser identity, bounded native
 WS/WSS relay companion and versioned IndexedDB model-evidence foundation.

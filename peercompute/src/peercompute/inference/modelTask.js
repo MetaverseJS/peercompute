@@ -1,3 +1,4 @@
+import { observeRequestedGpuMemory } from './RequestedGpuMemory.js';
 import { createArtifactFetch } from './ArtifactReadBridge.js';
 import { validateOnnxModelConfig } from './modelCapabilities.js';
 import { installQwenTextRopeCompatibility } from './qwenTextRope.js';
@@ -125,6 +126,7 @@ function createModelGpuGuard(entry) {
         }
         device = actual;
         entry.runtimeDevice = device;
+        entry.restoreResourceEvidence = observeRequestedGpuMemory(device, entry);
         device.addEventListener('uncapturederror', uncaptured);
         device.lost.then((cause) => markLost(gpuFailure('device lost', cause, frame?.stage ?? 'resident model')),
           (cause) => markLost(gpuFailure('device lost', cause, frame?.stage ?? 'resident model')));
@@ -174,6 +176,7 @@ function createModelGpuGuard(entry) {
     dispose() {
       disposed = true;
       device?.removeEventListener('uncapturederror', uncaptured);
+      entry.restoreResourceEvidence?.();
     },
   };
 }
@@ -249,6 +252,7 @@ function summary(entry) {
     workerId: entry.workerId,
     adapter: entry.adapter,
     runtimeAdapter: entry.runtimeAdapter ?? null,
+    requestedGpuBufferPeakBytes: entry.requestedGpuBufferPeakBytes,
     gpuDispatches: entry.gpuDispatches ?? 0,
     gpuSubmissions: entry.gpuSubmissions ?? 0,
     gpuProfileSamples: entry.gpuProfileSamples ?? 0,
@@ -524,6 +528,7 @@ export function createModelTaskRuntime({
       if (byteLength(text) > MODEL_POLICY.maxOutputBytes) throw new Error('Generated text exceeds its byte budget');
       entry.generatedRequests += 1;
       return { sessionId: entry.sessionId, requestId, text, inputTokens,
+        requestedGpuBufferPeakBytes: entry.requestedGpuBufferPeakBytes,
         outputTokens: generated.length, finishReason: generationFinishReason(model, generated, maxNewTokens), contextTruncated,
         workerId: entry.workerId, gpuDispatches: (entry.gpuDispatches ?? 0) - initialDispatches,
         gpuSubmissions: (entry.gpuSubmissions ?? 0) - initialSubmissions, gpuProfileSamples: entry.gpuProfileSamples ?? 0 };

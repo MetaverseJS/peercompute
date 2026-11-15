@@ -320,7 +320,7 @@ export async function createSf3dEngine({ manifest, runtimeAssets, artifactPort, 
         evidence.lastRoute = { sourceCommit: SOURCE_COMMIT, totalMs: result.totalMs,
           offloads: result.offloads, stageTimings: result.stageTimings };
         reportProgress('done');
-        return { text: '', mesh, gpuDispatches: evidence.gpuDispatches - startDispatches,
+        return { text: '', mesh, peakBufferBytes: evidence.peakBufferBytes, gpuDispatches: evidence.gpuDispatches - startDispatches,
           gpuSubmissions: evidence.gpuSubmissions - startSubmissions };
       } catch (error) {
         // Partial GPU pipelines are quarantined; a retry gets a clean worker.

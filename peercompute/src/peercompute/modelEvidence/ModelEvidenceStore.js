@@ -1,3 +1,4 @@
+import { normalizeEvidenceProof } from './ModelEvidenceProof.js';
 import { MODEL_EVIDENCE_LIMITS as LIMITS, normalizeModelEvidence, normalizeEvidenceQuery,
   evidencePeerId, evidenceInteger, evidenceBytes } from './ModelEvidenceContracts.js';
 
@@ -6,7 +7,7 @@ const request = value => new Promise((resolve, reject) => {
   value.onsuccess = () => resolve(value.result); value.onerror = () => reject(value.error);
 });
 const receipt = row => copy({ sequence: row.sequence, id: row.report.id, report: row.report,
-  reporterPeerId: row.reporterPeerId, receivedAt: row.receivedAt, provenance: row.provenance });
+  reporterPeerId: row.reporterPeerId, receivedAt: row.receivedAt, provenance: row.provenance, ...(row.proof ? { proof: row.proof } : {}) });
 
 /** Durable immutable reports. Delivery receipts are separate mutable bookkeeping.
  * This store does not replicate its database through room state. */
@@ -66,16 +67,17 @@ export class ModelEvidenceStore {
     finally { this.transactions.delete(completion); signal?.removeEventListener('abort', abort); }
   }
   async append(report, options) { return (await this.appendBatch([report], options))[0]; }
-  appendBatch(reports, { reporterPeerId, provenance = 'local', enqueue = false, signal } = {}) {
+  appendBatch(reports, { reporterPeerId, provenance = 'local', enqueue = false, proofs = [], signal } = {}) {
     try {
       evidencePeerId(reporterPeerId);
-      if (!['local', 'authenticated-peer'].includes(provenance) || enqueue && provenance !== 'local') throw new TypeError('Invalid evidence provenance');
+      if (!['local', 'authenticated-peer', 'verified-signature'].includes(provenance) || enqueue && provenance !== 'local') throw new TypeError('Invalid evidence provenance');
       if (!Array.isArray(reports) || !reports.length || reports.length > LIMITS.batch) throw new TypeError('Invalid evidence batch');
       const receivedAt = evidenceInteger(this.now());
-      const prepared = reports.map(input => {
+      const prepared = reports.map((input, index) => {
         const report = normalizeModelEvidence(input);
         if (report.executorPeerId !== undefined && report.executorPeerId !== reporterPeerId) throw new TypeError('Evidence executor must be its authenticated reporter');
         const row = { identity: `${reporterPeerId}:${report.id}`, report, reporterPeerId, receivedAt, provenance, pending: enqueue === true,
+          ...(proofs[index] ? { proof: normalizeEvidenceProof(proofs[index]) } : {}),
           repository: report.source.repository, manifestCid: report.source.manifestCid, packageFingerprint: report.source.packageFingerprint };
         // Reserve bounded space for sequence and eventual delivery bookkeeping.
         row.byteLength = evidenceBytes(row) + 512;
@@ -110,7 +112,7 @@ export class ModelEvidenceStore {
       return rows.filter(row => {
         const report = row.report;
         return (query.beforeSequence === undefined || row.sequence < query.beforeSequence)
-          && ['repository', 'revision', 'manifestCid', 'packageFingerprint'].every(key => query[key] === undefined || report.source[key] === query[key])
+          && ['repository', 'revision', 'manifestCid', 'packageFingerprint', 'selectionDigest'].every(key => query[key] === undefined || report.source[key] === query[key])
           && ['stage', 'compatibilityDigest', 'environmentDigest'].every(key => query[key] === undefined || report[key] === query[key])
           && (query.reporterPeerId === undefined || row.reporterPeerId === query.reporterPeerId);
       }).sort((a, b) => b.sequence - a.sequence).slice(0, query.limit).map(receipt);

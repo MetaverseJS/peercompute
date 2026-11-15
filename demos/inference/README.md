@@ -292,3 +292,22 @@ passing unit tests does not qualify every model on every device. See
 [test evidence](../../plan/tests.md), the [artifact plan](../../plan/branch/ipfs-large-files-model-inference.md),
 [model discovery](../../plan/demos/inference/model-browser.md) and
 [implementation log](../../plan/log.md) for dated trials and remaining gates.
+
+## Model observations
+
+Models → Config contains an optional **Share model compatibility observations**
+checkbox (off by default). Once the application peer initializes, inspections and
+managed load/generation outcomes are saved locally. Enabling sharing queues
+signed structural reports for the root registry: package/revision, runtime,
+coarse browser/GPU configuration, workload counts and bounded failure categories.
+Prompts, images, generated content and raw error messages are excluded.
+
+In Browse models, **Check observations** retrieves results for the selected
+package from this device and the root. Inspection success does not mean a model
+has executed. Results from different versions/devices are labeled historical;
+old failures never disable a newly compatible model. Root unavailability does
+not prevent local inference. Requested-buffer high-water counters and WASM
+buffer size are measurements with limited scope, not physical RAM/VRAM readings;
+planning estimates remain separately labeled. Uploads are bounded and survive
+reloads with their original signature. SecretWorkshop root deployment is pending
+working host access; until then, the query view reports root unavailability.

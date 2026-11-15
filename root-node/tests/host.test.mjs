@@ -78,3 +78,15 @@ test('failed cleanup keeps resource ownership for retry and does not release pro
   assert.equal(releases, 1);
   assert.equal(host.state, 'stopped');
 });
+
+
+test('public root directory exposes only live secure DNS relay routes and expires quickly', async () => {
+  const { publicEvidenceDirectory } = await import('../host/evidenceDirectory.mjs');
+  const address = '/dns4/secretworkshop.net/tcp/443/wss/p2p/relay/p2p-circuit/p2p/root';
+  const status = { phase: 'ready', connected: true, evidence: { network: { serving: true } }, identity: { peerId: 'root' }, addresses: [address,
+    '/ip4/127.0.0.1/tcp/123/ws/p2p/root', address.replace('secretworkshop.net', 'localhost')] };
+  const result = publicEvidenceDirectory(status, 1000);
+  assert.deepEqual(result.addresses, [address]); assert.equal(result.expiresAt, 121000);
+  assert.equal(publicEvidenceDirectory({ ...status, phase: 'stopped' }), null);
+  assert.equal(publicEvidenceDirectory({ ...status, addresses: [] }), null);
+});

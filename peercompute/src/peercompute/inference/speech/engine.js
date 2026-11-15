@@ -1,3 +1,4 @@
+import { observeRequestedGpuMemory } from '../RequestedGpuMemory.js';
 import { createArtifactFetch } from '../ArtifactReadBridge.js';
 import { throwIfAborted } from '../modelManifest.js';
 import { SPEECH_LIMITS } from './runtimeDefinition.js';
@@ -39,6 +40,7 @@ export async function createSpeechEngine({ manifest, sessionId, artifactPort, ru
     adapterPrototype.requestDevice = async function (...args) {
       if (this.isFallbackAdapter || this.info?.isFallbackAdapter) throw new Error('Speech cannot use a software GPU adapter');
       const actual = await request.apply(this, args); device = actual; capture?.(actual);
+      observeRequestedGpuMemory(actual, evidence);
       evidence.runtimeFeatures = [...actual.features];
       actual.addEventListener('uncapturederror', handleGpuError);
       actual.lost.then(() => { if (!disposed) fail(new Error('Speech GPU device lost')); });
@@ -121,7 +123,7 @@ export async function createSpeechEngine({ manifest, sessionId, artifactPort, ru
           result = { audio: new Float32Array(samples), sampleRate };
         }
         evidence.generatedRequests++;
-        return { ...result, gpuDispatches: evidence.gpuDispatches - before, gpuSubmissions: evidence.gpuSubmissions - submissions };
+        return { ...result, requestedGpuBufferPeakBytes: evidence.requestedGpuBufferPeakBytes, gpuDispatches: evidence.gpuDispatches - before, gpuSubmissions: evidence.gpuSubmissions - submissions };
       } catch (error) {
         if (error instanceof WebAssembly.RuntimeError) { fail(error); throw new Error('Model session lost: speech native runtime failed', { cause: error }); }
         throw error;

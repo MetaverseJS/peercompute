@@ -169,6 +169,7 @@ export async function collectModelDeviceCapabilities({ scope = globalThis, timeo
       const value = adapter.limits?.[key];
       if (Number.isSafeInteger(value) && value > 0) result.limits[key] = value;
     }
+    result.gpuInfo = { vendor: adapter.info?.vendor || 'unknown', architecture: adapter.info?.architecture || 'unknown' };
     result.webgpu = true;
   } catch (error) {
     result.probeError = String(error?.message ?? error).slice(0, 300);

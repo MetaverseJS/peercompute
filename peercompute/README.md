@@ -25,6 +25,8 @@ research work; see the [Keystone plan](../plan/branch/keystone-demo.md).
   task/graph execution with configurable result-admission and replica policies.
 - Verified IPFS/UnixFS artifacts with IndexedDB or filesystem retention.
 - Optional model execution, peer inference and private persistent agent records.
+- StateManager-owned model-evidence journals and optional signed root reporting,
+  scoped to exact packages, runtime revisions, executing devices and workloads.
 
 Ordinary `submitTask()` executes locally. Remote execution requires an explicit
 placement executor or target peer and an enabled responder. GPU-resident stages

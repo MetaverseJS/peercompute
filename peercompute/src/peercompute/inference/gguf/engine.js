@@ -1,3 +1,4 @@
+import { observeRequestedGpuMemory } from '../RequestedGpuMemory.js';
 import { initializeWllamaModule } from '@wllama/wllama/peercompute-engine.js';
 import { glueSerialize, glueDeserialize } from '@wllama/wllama/peercompute-glue.js';
 import { throwIfAborted } from '../modelManifest.js';
@@ -76,7 +77,8 @@ export function observeGpuDevice(device, evidence, { collect = false, onLost } =
     throw new Error('GGUF native runtime did not acquire the required hardware GPU');
   }
   device.lost.then((info) => onLost?.(info));
-  if (!collect) return () => {};
+  const restoreMemory = observeRequestedGpuMemory(device, evidence);
+  if (!collect) return restoreMemory;
   const encoderDescriptor = Object.getOwnPropertyDescriptor(device, 'createCommandEncoder');
   const submitDescriptor = Object.getOwnPropertyDescriptor(device.queue, 'submit');
   const create = device.createCommandEncoder.bind(device);
@@ -96,6 +98,7 @@ export function observeGpuDevice(device, evidence, { collect = false, onLost } =
   };
   device.queue.submit = (...args) => { const result = submit(...args); evidence.submissions += 1; return result; };
   return () => {
+    restoreMemory();
     if (encoderDescriptor) Object.defineProperty(device, 'createCommandEncoder', encoderDescriptor);
     else delete device.createCommandEncoder;
     if (submitDescriptor) Object.defineProperty(device.queue, 'submit', submitDescriptor);

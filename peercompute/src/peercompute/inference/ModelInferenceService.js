@@ -1,3 +1,4 @@
+import { executionEvidence, evidenceWorkload } from '../modelEvidence/ModelEvidenceAdapters.js';
 import { serveArtifactPort } from './ArtifactReadBridge.js';
 import { CID } from 'multiformats/cid';
 import { normalizeModelMessages, validateImageInput } from './modelTask.js';
@@ -55,7 +56,7 @@ export class ModelInferenceService {
     baseUrl = globalThis.location?.href,
     createChannel = () => new MessageChannel(),
     loadTimeoutMs = 300_000, generationTimeoutMs = 120_000,
-    allowedManifestCids = null, collectGpuEvidence = false } = {}) {
+    allowedManifestCids = null, collectGpuEvidence = false, onModelEvidence } = {}) {
     if (!computeManager?.submitTask || !computeManager.reserveWorkerAffinity
         || !computeManager.releaseWorkerAffinity || !computeManager.cancelTask
         || !computeManager.terminateWorkerAffinity || !computeManager.getWorkerAffinityState) {
@@ -98,11 +99,20 @@ export class ModelInferenceService {
     this.generationTimeoutMs = generationTimeoutMs;
     this.allowedManifestCids = allowedManifestCids ? new Set(allowedManifestCids) : null;
     this.collectGpuEvidence = collectGpuEvidence === true;
+    this.onModelEvidence = onModelEvidence;
     this.session = null;
     this.queue = [];
     this.active = null;
     this.closed = false;
     this.lastLoss = null;
+  }
+
+  #observe(entry, stage, fields = {}) {
+    if (typeof this.onModelEvidence !== 'function') return;
+    try {
+      const facts = executionEvidence({ entry, stage, runtime: this.runtimeDefinition.id, ...fields });
+      Promise.resolve(this.onModelEvidence(facts)).catch(() => {});
+    } catch { /* Optional observation must never reject inference or cleanup. */ }
   }
 
   async loadModel({ sessionId = crypto.randomUUID(), manifestCid, manifest, signal, onProgress } = {}) {
@@ -116,7 +126,7 @@ export class ModelInferenceService {
     CID.parse(manifestCid);
     throwIfAborted(signal);
     this.lastLoss = null;
-    const entry = { sessionId, manifestCid, affinityKey: `model:${sessionId}`, status: 'loading', reserved: false };
+    const entry = { sessionId, manifestCid, affinityKey: `model:${sessionId}`, status: 'loading', reserved: false, startedAt: performance.now() };
     this.session = entry;
     const operation = operationSignal(signal, this.loadTimeoutMs);
     entry.loadController = operation.controller;
@@ -134,6 +144,7 @@ export class ModelInferenceService {
         await verifyResidentConfig(this.artifactStore, entry.manifest, operation.controller.signal);
         const estimate = typeof this.resourceEstimate === 'function'
           ? await this.resourceEstimate(entry.manifest, validated) : this.resourceEstimate;
+        entry.estimate = estimate;
         for (const [key, floor] of [['cpuBytes', validated.resourcePolicy.minimumCpuBytes],
           ['gpuBytes', validated.resourcePolicy.minimumGpuBytes]]) {
           if (!Number.isSafeInteger(estimate?.[key]) || estimate[key] <= 0 || estimate[key] < floor) {
@@ -170,8 +181,10 @@ export class ModelInferenceService {
         this.#assertWorker(entry);
         entry.status = 'ready';
         entry.evidence = result;
+        this.#observe(entry, 'load', { result, startedAt: entry.startedAt });
         return result;
       } catch (error) {
+        this.#observe(entry, 'load', { error, startedAt: entry.startedAt });
         try {
           // A rejected loader can hide partially initialized ORT sessions. An owned-worker stop
           // acknowledges disposal of the whole realm before residency admission can be released.
@@ -239,6 +252,8 @@ export class ModelInferenceService {
     const copiedAudio = normalized.audio ? { samples: new Float32Array(normalized.audio.samples),
       sampleRate: normalized.audio.sampleRate } : undefined;
     const item = { requestId, session: entry, operation, started: false,
+      workload: evidenceWorkload(normalized, task ?? normalized.task
+        ?? (entry.manifest.model.task === 'image-text-to-text' && !normalized.image ? 'text-generation' : entry.manifest.model.task)),
       data: { ...normalized, command: 'generate', sessionId, requestId, image: copiedImage,
         ...(copiedAudio ? { audio: copiedAudio } : {}) },
       onProgress: (event) => {
@@ -268,6 +283,7 @@ export class ModelInferenceService {
     if (this.active || !this.queue.length) return;
     const item = this.queue.shift();
     item.started = true;
+    item.startedAt = performance.now();
     this.active = item;
     try {
       throwIfAborted(item.operation.controller.signal);
@@ -289,8 +305,10 @@ export class ModelInferenceService {
       if (completionError) throw completionError;
       throwIfAborted(item.operation.controller.signal);
       if (this.session !== item.session || item.session.status !== 'ready') throw new Error('Requested model is no longer ready');
+      this.#observe(item.session, 'generation', { result, startedAt: item.startedAt, workload: item.workload });
       item.resolve(result);
     } catch (error) {
+      this.#observe(item.session, 'generation', { error, startedAt: item.startedAt, workload: item.workload });
       // Some trusted runtimes cancel by destroying their owned GPU device. Once
       // dispatched, even an ordinary AbortError means that realm cannot serve
       // another request. Queued/pre-admission cancellation never reaches it.
@@ -399,6 +417,7 @@ export class ModelInferenceService {
   #recordLoss(entry, error) {
     if (entry.intendedUnload || this.closed) return;
     if (this.lastLoss?.sessionId === entry.sessionId) return;
+    this.#observe(entry, 'device-loss', { error });
     // Keep this independent of session lifetime: acknowledged cleanup can set
     // session=null before the registry observes the unexpected loss.
     this.lastLoss = { manifestCid: entry.manifestCid, sessionId: entry.sessionId,

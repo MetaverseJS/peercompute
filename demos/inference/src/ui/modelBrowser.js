@@ -1,3 +1,4 @@
+import { createModelEvidenceView } from './modelEvidenceView.js';
 import './modelBrowser.css';
 import { blocksLocal, compatibilityFor, filterBrowserModels, knownBytes, matchingPeerTargets,
   modelBytes, modelPrecision, modelTask, needsInspection, repositoryQuery, safeModelUrl } from './modelBrowserData.js';
@@ -19,7 +20,7 @@ const message = (error) => String(error?.message ?? error ?? 'Request failed').s
 
 /** Metadata-only model browsing. The owner handles every explicit load and its cancellation. */
 export function createModelBrowser({ container, getSources = () => [], getTargets = () => [],
-  searchModels, inspectModel, findConversions, getCompatibility, onLoad, onUsePeer, onSetup,
+  searchModels, inspectModel, findConversions, queryEvidence, getCompatibility, onLoad, onUsePeer, onSetup,
   storedContent, hasStoredModels = () => false, onStoredOpen, onConfigure, onDismiss, keepOpenOnAction = false } = {}) {
   if (!container?.append) throw new TypeError('A model browser container is required');
   const element = node('dialog', undefined, 'pc-model-browser');
@@ -79,8 +80,10 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
   content.append(results, details);
   const more = button('More Hugging Face results'); more.className = 'pc-browser-more'; more.hidden = true;
   panels.browse.append(controls, status, content, more);
+  element.addEventListener('close', () => { evidenceView?.dispose(); detailSignature = null; });
   element.append(header, feedback, tablist, ...Object.values(panels), pageContent); container.append(element);
 
+  let evidenceView;
   let disposed = false, busy = false, actionPending = false, desiredKey = null, visibleKey = null;
   let searchTimer, searchController, inspectController, searchSequence = 0, inspectSequence = 0;
   let hubItems = [], nextCursor = null, searchWarning = '', searchPending = false, inspecting = null;
@@ -290,6 +293,7 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
     if (signature === detailSignature) return;
     detailSignature = signature;
     const focusedControl = details.contains(document.activeElement) ? document.activeElement.dataset.browserControl : null;
+    evidenceView?.dispose(); evidenceView = null;
     details.replaceChildren();
     if (!source) { details.append(node('p', 'Choose a model to see its package, compatibility and available peers.', 'pc-browser-note')); return; }
     const body = node('div'); details.append(body);
@@ -353,6 +357,9 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
     body.append(node('p', badge(source) === 'Catalog' ? 'Catalog provenance does not guarantee model quality or performance on this device.'
       : 'Candidate packages have not necessarily been tested on this device. Review the model card and license.', 'pc-browser-note'));
     if (detail && findConversions && conversionReference(source)) renderConversions(body, source, repository);
+    if (queryEvidence && !source.browserSummary && (source.manifestCid || /^[a-f0-9]{40}$/.test(source.revision ?? source.model?.revision))) {
+      evidenceView = createModelEvidenceView({ source, query: queryEvidence }); body.append(evidenceView.element);
+    }
     const actions = node('div', undefined, 'pc-browser-actions');
     if (source.browserSummary || source.requiresInspection) {
       const inspectButton = button(source.requiresInspection ? 'Inspect selected variant' : 'Inspect variants');
@@ -601,7 +608,7 @@ export function createModelBrowser({ container, getSources = () => [], getTarget
       busy = Boolean(value); if (busy) stopRequests(); render();
       if (wasBusy && !busy && element.open && activeTab === 'browse' && searchIncomplete && !searchController) void runSearch(resumeAppend);
     },
-    dispose() { if (disposed) return; disposed = true; stopRequests(); stopStoredRequest(); mobile.removeEventListener('change', resizeFilters);
+    dispose() { if (disposed) return; evidenceView?.dispose(); disposed = true; stopRequests(); stopStoredRequest(); mobile.removeEventListener('change', resizeFilters);
       if (element.open) element.close(); element.remove(); inspected.clear(); variants.clear(); conversions.dispose(); },
   };
 }

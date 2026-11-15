@@ -123,7 +123,8 @@ live in `peercompute/src/peercompute/modelEvidence/`:
   acknowledgments, query cursors and a replay-safe upload outbox.
 - `ModelEvidenceCollector`: fail-soft recording and bounded outbox flush.
 - `ModelEvidenceService`: authenticated encrypted submit/query, frame and rate
-  bounds; reporter identity comes from the connection. Execution reports must
+  bounds; direct reports derive identity from the connection, while signed
+  outbox reports verify their original executor even after the uploader reloads. Execution reports must
   name the reporting executor, not the requesting client.
 
 Only admitted structural/numeric fields survive projection; prompts, images,
@@ -133,12 +134,34 @@ Old reports remain historical facts; changed engines/policies/hardware require
 reinspection or retesting. Authentication identifies the reporter, not the
 truth of its claim. Retention is bounded, not an archival guarantee.
 
-For now, the host composition explicitly owns this local store's lifecycle.
-Normal-client StateManager ownership, opt-in HF inspection/execution hooks,
-root discovery/outbox scheduling and search UI integration are **next steps**.
-Existing demos do not yet upload observations automatically. The host also does
-not yet expose model loading/hosted inference, signed root policies, checkpoint
-authority, a desktop installer or a service-manager installation.
+StateManager now owns evidence stores on roots and ordinary clients. The shared
+inference runtime records HF inspection results and executing-host load,
+generation and device-loss outcomes. Reports include source revision, selected
+file-set identity, verified package digest/CID, code/dependency fingerprints,
+coarse environment and workload facts. These are independent of demo rooms.
+
+In Models → Config, **Share model compatibility observations** opts into upload;
+it starts off. Observations made after the application peer initializes remain
+local unless sharing is enabled. Offline signed uploads survive reload without
+relabeling the executor. Each file set is tracked separately; Git blob hashes
+from HF metadata are distinguished from verified SHA-256 package digests.
+In Browse models, **Check observations** queries local and root evidence on
+request. Root failure never gates loading. Reports remain untrusted claims;
+current versus historical labels do not override admission or guarantee fit.
+
+Code and locked runtime build-input hashes drive compatibility freshness. A UI
+commit alone does not invalidate results. Browser GPU-buffer high-water counters
+track requested, not-yet-explicitly-destroyed buffer bytes on owned devices;
+textures, garbage collection, driver overhead and physical VRAM are outside
+that measurement. WASM buffer size and planning RAM/GPU envelopes are separately
+labeled. Failed operations use bounded reason categories, never raw error text.
+
+[Deployment packaging](deploy/README.md) provides a minimal registry-only release,
+systemd unit and static public discovery route through existing TLS hosting.
+Chromium sandboxing is enabled. SecretWorkshop installation is pending SSH
+access; no public registry is claimed deployed. The root does not yet expose
+model loading/hosted inference, signed root policies, checkpoint authority or a
+desktop installer. Full model parity and independent-device routing remain open.
 
 ## Validation
 
@@ -162,3 +185,19 @@ data/identities. It closes all its resources. It does not exercise power loss,
 arbitrary model parity or independent-machine NAT traversal. Set
 `PEERCOMPUTE_HOST_REPORT=/outside/repo/report.json` to retain its result and
 `PEERCOMPUTE_HOST_CHROME_ARGS` to a JSON array to qualify another driver setup.
+
+Real client collection acceptance (requires the cached SmolVLM256M package plus
+trusted local WSS certificate paths):
+
+```sh
+PEERCOMPUTE_HOST_WSS_NAME=your-host.example SSL_CERT=/private/host.crt \
+  SSL_KEY=/private/host.key npm run test:root-host:client
+```
+
+This test inspects a pinned HF revision, imports cached verified files, runs a
+real managed WebGPU generation, submits signed observations and queries them
+through the actual model-browser detail view. It owns and closes its profiles,
+servers and GPU workers. Public discovery is routed to the test root for this
+acceptance check; production SecretWorkshop discovery is a separate deployment
+gate. `PEERCOMPUTE_EVIDENCE_REPORT` and `PEERCOMPUTE_EVIDENCE_SCREENSHOT` retain
+external evidence files when set.

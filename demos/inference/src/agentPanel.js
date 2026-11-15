@@ -746,6 +746,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
         onStatus: (message) => { if (alive()) channels.setStatus(message); } });
     }
     const preferences = runtime.getPreferences(); view.sharing.checked = preferences.sharing; view.hosting.checked = preferences.hostInference;
+    view.shareEvidence.checked = runtime.getModelEvidenceStatus?.().sharing === true;
     syncMemoryBudgets();
     modelBrowser = createModelBrowser({ container: view.panel,
       keepOpenOnAction: managementOnly,
@@ -757,6 +758,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
       getSources: () => sources, getTargets: () => targets,
       searchModels: (options) => runtime.searchModelHub(options),
       inspectModel: (repository, options) => runtime.inspectModelHub(repository, options),
+      queryEvidence: runtime.queryModelEvidence ? (source, options) => runtime.queryModelEvidence(source, options) : undefined,
       findConversions: runtime.findModelConversions
         ? (repository, options) => runtime.findModelConversions(repository, options) : undefined,
       getCompatibility: (entry) => entry.localAvailability ?? runtime.getModelCompatibility?.(entry.package ?? entry)
@@ -953,7 +955,7 @@ export async function mountInferencePanel({ container = document.body, stateMana
     invalidateActions(); updateControls();
   };
   view.prompt.oninput = updateControls;
-  for (const [control, method] of [[view.sharing, 'setSharing'], [view.hosting, 'setHostInference']]) {
+  for (const [control, method] of [[view.sharing, 'setSharing'], [view.hosting, 'setHostInference'], [view.shareEvidence, 'setShareModelEvidence']]) {
     control.onchange = () => {
       if (!alive()) return;
       const desired = control.checked; control.disabled = true;

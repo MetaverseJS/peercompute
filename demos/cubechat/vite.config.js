@@ -1,3 +1,4 @@
+import { modelEvidenceBuildPlugin } from '../../scripts/modelEvidenceBuildPlugin.mjs';
 import { pagesSharedRuntimePlugin } from '../../scripts/pagesSharedRuntimePlugin.mjs';
 import { defineConfig } from 'vite';
 import path from 'path';
@@ -13,7 +14,7 @@ export default defineConfig(({ command }) => ({
   root: '.',
   base: './',
   worker: { format: 'es' },
-  plugins: [pagesSharedRuntimePlugin(), pagesIsolationPlugin()],
+  plugins: [modelEvidenceBuildPlugin(),pagesSharedRuntimePlugin(), pagesIsolationPlugin()],
   server: {
     port: 5176,
     https: command === 'serve' ? ensureDevHttpsCert() : undefined,

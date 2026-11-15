@@ -301,3 +301,15 @@ preserving the saved text model identity and reusing completed decoder files.
 Filter image/audio understanding by admitted modalities rather than primary task
 alone; show input modalities and candidate qualification notes in model details.
 The media package remains explicitly unverified until real native acceptance.
+
+## November15 observations
+
+The detail pane includes Check observations for immutable inspected/stored
+packages. It queries local StateManager evidence and the optional root, scoped to
+the selected revision/file set or exact manifest. Inspection, loading and actual
+generation are separate outcomes. Old version/device reports remain visible as
+historical context and never change admission. Closed/replaced detail views abort
+requests. Config sharing is opt-in; structural reports exclude all chat content.
+Verified source closure selectors bridge upstream Git blob digests to downloaded
+SHA-256 packages. Real HF/SmolVLM/Noise/certificate-verified WSS acceptance passes;
+public root discovery is pending deployment access.

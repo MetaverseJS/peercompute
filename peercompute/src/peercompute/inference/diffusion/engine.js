@@ -1,3 +1,4 @@
+import { observeRequestedGpuMemory } from '../RequestedGpuMemory.js';
 import { createGgufArtifactReader } from '../GgufArtifactReader.js';
 import { throwIfAborted } from '../modelManifest.js';
 import { DIFFUSION_RUNTIME_VERSION, validateDiffusionManifest } from './runtimeDefinition.js';
@@ -170,6 +171,7 @@ export async function createDiffusionEngine({ manifest, runtimeAssets, artifactP
     ort.env.webgpu.adapter = adapter;
     restoreAdapter = captureOrtDevice(adapter, (actual) => {
       device = actual;
+      observeRequestedGpuMemory(device, evidence);
       captureLoadingDevice?.(device);
       removeGpuObserver = observeDiffusionGpuErrors(device, markLost);
       evidence.runtimeFeatures = [...device.features];
@@ -274,6 +276,7 @@ export async function createDiffusionEngine({ manifest, runtimeAssets, artifactP
         throwIfAborted(requestSignal);
         evidence.generatedRequests++;
         return { text: '', image, seed, steps,
+          requestedGpuBufferPeakBytes: evidence.requestedGpuBufferPeakBytes,
           gpuDispatches: evidence.gpuDispatches - before.dispatches,
           gpuSubmissions: evidence.gpuSubmissions - before.submissions };
       } catch (error) {

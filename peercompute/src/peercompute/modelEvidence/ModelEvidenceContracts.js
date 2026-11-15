@@ -93,6 +93,7 @@ function source(input) {
   if (input.manifestCid !== undefined) result.manifestCid = cid(input.manifestCid);
   if (!result.repository && !result.manifestCid) throw new TypeError('Evidence requires immutable model identity');
   if (input.packageFingerprint !== undefined) result.packageFingerprint = digest(input.packageFingerprint);
+  if (input.selectionDigest !== undefined) result.selectionDigest = digest(input.selectionDigest);
   if (input.variant !== undefined) {
     result.variant = text(input.variant, 512);
     if (/[\\%?#:]/.test(result.variant) || result.variant.split('/').some(part => !part || part === '.' || part === '..')) throw new TypeError('Invalid evidence variant');
@@ -189,7 +190,7 @@ export function normalizeModelEvidence(input) {
 
 export function normalizeEvidenceQuery(input = {}) {
   object(input, 'query'); const query = { limit: evidenceInteger(input.limit ?? 50, MODEL_EVIDENCE_LIMITS.query, 1) };
-  for (const key of ['manifestCid', 'packageFingerprint', 'compatibilityDigest', 'environmentDigest']) {
+  for (const key of ['manifestCid', 'packageFingerprint', 'selectionDigest', 'compatibilityDigest', 'environmentDigest']) {
     if (input[key] !== undefined) query[key] = key === 'manifestCid' ? cid(input[key]) : digest(input[key]);
   }
   if (input.repository !== undefined) {

@@ -1,3 +1,4 @@
+import { verifyModelEvidence } from './ModelEvidenceProof.js';
 import { lpStream } from '@libp2p/utils';
 import { MODEL_EVIDENCE_LIMITS as LIMITS, normalizeModelEvidence, normalizeEvidenceQuery,
   evidenceInteger, evidencePeerId, evidenceBytes } from './ModelEvidenceContracts.js';
@@ -42,7 +43,7 @@ function wait(promise, signal) {
 function normalizedReceipt(value) {
   const report = normalizeModelEvidence(value?.report), reporterPeerId = evidencePeerId(value.reporterPeerId);
   if (value.id !== report.id || report.executorPeerId && report.executorPeerId !== reporterPeerId
-      || !['local', 'authenticated-peer'].includes(value.provenance)) throw failure();
+      || !['local', 'authenticated-peer', 'verified-signature'].includes(value.provenance)) throw failure();
   return { sequence: evidenceInteger(value.sequence, Number.MAX_SAFE_INTEGER, 1), id: report.id, report,
     reporterPeerId, receivedAt: evidenceInteger(value.receivedAt), provenance: value.provenance };
 }
@@ -116,6 +117,18 @@ export class ModelEvidenceService {
         const saved = await wait(this.store.appendBatch(input.reports,
           { reporterPeerId: peerId, provenance: 'authenticated-peer', signal: operation.signal }), operation.signal);
         await wait(io.write(this._envelope('accepted', peerId, input.requestId, { ids: [...new Set(saved.map(value => value.id))] }), operation.signal), operation.signal);
+      } else if (input.type === 'submit-signed') {
+        if (!Array.isArray(input.statements) || !input.statements.length || input.statements.length > LIMITS.batch) throw failure();
+        this._rate(peerId, input.statements.length);
+        // Validate the entire bounded batch before committing any claim. A new
+        // uploader may forward old signed observations but cannot rewrite them.
+        const verified = await Promise.all(input.statements.map(verifyModelEvidence)), ids = [];
+        for (const { report, proof, reporterPeerId } of verified) {
+          const saved = await wait(this.store.append(report, { reporterPeerId, proofs: [proof],
+            provenance: 'verified-signature', signal: operation.signal }), operation.signal);
+          ids.push(saved.id);
+        }
+        await wait(io.write(this._envelope('accepted', peerId, input.requestId, { ids: [...new Set(ids)] }), operation.signal), operation.signal);
       } else if (input.type === 'query') {
         const query = normalizeEvidenceQuery(input.query), records = await wait(this.store.query(query, { signal: operation.signal }), operation.signal);
         const response = this._envelope('results', peerId, input.requestId, { records: [] });
@@ -172,13 +185,23 @@ export class ModelEvidenceService {
         || new Set(response.ids).size !== ids.size || response.ids.some(id => !ids.has(id))) throw failure();
     return { ids: [...response.ids] };
   }
+  async submitSigned(peerId, statements, { signal } = {}) {
+    if (!Array.isArray(statements) || !statements.length || statements.length > LIMITS.batch) throw new TypeError('Invalid evidence batch');
+    const verified = await Promise.all(statements.map(verifyModelEvidence));
+    const ids = new Set(verified.map(value => value.report.id));
+    const response = await this._request(peerId, 'submit-signed', {
+      statements: verified.map(({ report, proof }) => ({ report, proof })) }, signal);
+    if (response.type !== 'accepted' || !Array.isArray(response.ids) || response.ids.length !== ids.size
+        || new Set(response.ids).size !== ids.size || response.ids.some(id => !ids.has(id))) throw failure();
+    return { ids: response.ids };
+  }
   async query(peerId, input = {}, { signal } = {}) {
     const query = normalizeEvidenceQuery(input), response = await this._request(peerId, 'query', { query }, signal);
     if (response.type !== 'results' || !Array.isArray(response.records) || response.records.length > query.limit) throw failure();
     const records = response.records.map(normalizedReceipt); let previous = query.beforeSequence ?? Infinity;
     for (const row of records) {
       if (row.sequence >= previous
-          || ['repository', 'revision', 'manifestCid', 'packageFingerprint'].some(key => query[key] !== undefined && row.report.source[key] !== query[key])
+          || ['repository', 'revision', 'manifestCid', 'packageFingerprint', 'selectionDigest'].some(key => query[key] !== undefined && row.report.source[key] !== query[key])
           || ['stage', 'compatibilityDigest', 'environmentDigest'].some(key => query[key] !== undefined && row.report[key] !== query[key])
           || query.reporterPeerId !== undefined && row.reporterPeerId !== query.reporterPeerId) throw failure();
       previous = row.sequence;

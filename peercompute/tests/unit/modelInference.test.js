@@ -1212,3 +1212,17 @@ test('standalone relay configuration preserves secure WSS and rejects unapproved
     fetchImpl: async () => new Response(JSON.stringify({ relayConfigUrl: 'https://unapproved.test/config.json' })) }), /approved/);
   await assert.rejects(loadInferenceRelayConfig({ baseUrl: origin, fetchImpl: async () => new Response(' '.repeat(70 * 1024)) }), /byte limit/);
 });
+
+
+test('managed execution emits structural observations and observation failure cannot fail inference', async () => {
+  const { service } = serviceFor(), observations = [];
+  service.onModelEvidence = facts => { observations.push(facts); return Promise.reject(new Error('offline collector')); };
+  try {
+    await service.loadModel({ sessionId: 'observed', manifestCid: cid });
+    await service.generate({ requestId: 'observed-request', prompt: 'PRIVATE_PROMPT', maxNewTokens: 5 });
+    assert.deepEqual(observations.map(value => value.stage), ['load', 'generation']);
+    assert(observations.every(value => value.outcome === 'success' && value.source.manifestCid === cid));
+    assert.equal(observations[1].workload.maxNewTokens, 5);
+    assert(!JSON.stringify(observations).includes('PRIVATE_PROMPT'));
+  } finally { await service.dispose(); }
+});

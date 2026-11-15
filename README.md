@@ -64,7 +64,8 @@ Peers using the same game and room can share state. The [library guide](peercomp
 adds snapshots/events, layered DataState, worker tasks and persistence examples.
 [Relay setup](peercompute/docs/RELAY_SERVER.md) explains discovery, configuration and hosting.
 An experimental [installed browser host](root-node/README.md) adds persistent
-Chromium execution, a bounded native relay companion and model-evidence storage.
+Chromium execution, a bounded native relay companion and versioned model-evidence
+collection/query services.
 
 ## Architecture
 

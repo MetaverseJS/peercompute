@@ -1,11 +1,42 @@
 # Root node: client parity and model evidence
 
-Status: experimental browser host and model-evidence foundation implemented
-2026-11-14. Hardware/relay/restart qualification passes; model-specific runtime
-parity and automatic demo evidence collection remain open. See
-[host setup and boundaries](../root-node/README.md).
+Status: experimental browser host plus automatic client model-evidence integration
+implemented November14–15,2026. Real managed WebGPU collection, signed encrypted
+upload, package lookup and persistent root restart are qualified. SecretWorkshop
+deployment remains pending working SSH access; broader hosted-model parity is
+not claimed. See [host setup and boundaries](../root-node/README.md).
 This updates the runtime choice and first slice in [the June root plan](root-node-todo.md).
 
+
+## November15 collection and registry deployment checkpoint
+
+November15 model-information integration: StateManager now owns bounded evidence
+journals; the shared inference facade records HF inspections and actual executor
+load/generation/device-loss results. Optional sharing defaults off. Signed outbox
+records survive client identity changes, and model details query local/root
+observations without overriding admission. Compatibility uses source/runtime/
+policy fingerprints and coarse device/workload facts. Requested GPU-buffer peaks,
+WASM sizes and planning estimates are separately labeled; physical VRAM is not
+claimed measured. Real HF inspection, SmolVLM WebGPU execution, WSS/Noise upload,
+catalog lookup and root restart pass. Minimal registry deployment packaging is
+prepared; SecretWorkshop installation remains pending working SSH access.
+No GitHub Pages publication or production relay/TURN change is included.
+
+- Ordinary clients remain ephemeral. Reports are signed with the executing
+  application's key before durable retention; the public proof remains usable
+  after that peer disappears. A later uploader cannot rewrite the executor.
+- Source file selection at an immutable HF revision is distinct from whole-file
+  package fingerprints. This bridges verified Git-blob metadata to downloaded
+  SHA-256 files without conflating quantization variants or changing artifact CIDs.
+- Code/locked runtime build inputs, inspector and admission-policy hashes make
+  old reports historical after relevant changes. UI-only changes do not veto
+  compatibility. A successful inspection is never a successful execution claim.
+- Registry-only deployment uses system Chromium (sandbox enabled), a small
+  Node24/Playwright supervisor, existing production WSS relay and an expiring
+  public descriptor. No second browser download or Bun runtime is required.
+- Missing evidence: actual SecretWorkshop service installation/restart and
+  independent-device discovery; public host SSH authentication was rejected.
+  Existing relay/TURN services and all user previews were preserved.
 
 ## November14 implementation checkpoint
 

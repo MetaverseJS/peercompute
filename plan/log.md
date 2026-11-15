@@ -64040,3 +64040,71 @@ arbitrary input length. Full stress evidence is preserved externally.
   that verifies the exact temporary installation ID/path and absence of its
   active lock before deleting only the owned smoke profile/configs. All user
   profiles and running preview services were left untouched.
+
+### 2026-11-15T07:41:52Z — SecretWorkshop model evidence deployment / proceed
+
+- User authorizes deploying the root service to SecretWorkshop once useful model
+  information is integrated, followed by “proceed”. Exact send timestamps are
+  unavailable; first captured request clock above, implementation checkpoint
+  2026-11-15T08:27:30Z. No GitHub Pages publication authorized.
+- ICC assistant-status/source drift/work/full refresh, then CLI task plan and
+  preflight/lease codex-evidence-deploy; preserved unrelated ReservationLedger
+  changes. Three delegated read-only investigations returned useful findings,
+  then hit agent usage limits; parent continues implementation.
+- Default SSH authentication for cos/root at SecretWorkshop was rejected; asked
+  for the correct existing SSH username/key path. No remote mutations.
+- Implementing opt-in signed observation delivery so queued reports survive
+  ephemeral client peer identities across reload, without relabeling executors.
+  Strict structural projection excludes prompts, images, outputs and raw errors.
+  Validation/deployment still pending; record commands and results below.
+
+### 2026-11-15T08:54:58Z — Model evidence implementation and qualification
+
+- Implemented shared ModelEvidenceAdapters/Proof/Client, StateManager store
+  ownership, HF inspection hooks, executing ModelInferenceService hooks, signed
+  restart-safe opt-in upload, bounded HTTPS root discovery and actual model
+  browser observations. Added stable source-selection digests so HF Git-blob
+  hashes match downloaded SHA-256 packages without conflating file variants.
+- Added code/dependency/inspector/admission fingerprints to inference, CubeChat
+  and Earth builds. Added owned-device requested GPU-buffer counters to ONNX,
+  GGUF, diffusion and speech; SF3D exposes its existing allocation peak. WASM
+  buffer bytes/planning estimates remain separately scoped; physical VRAM and
+  driver/texture/GC memory are not measured. All report content is projected.
+- Root now enables Chromium sandboxing, publishes only healthy secure DNS relay
+  routes with120s expiry, and has registry-only release packaging/systemd/nginx
+  templates. No combined relay/TURN installer, production mutation, Pages build
+  or push. Correct remote SSH user/key remains an unanswered prerequisite.
+- Tests: `npm run test:root-host`45/45; modelInference/requestedGpuMemory/GGUF/
+  diffusion/speech/evidence175/175 at earlier source checkpoint; final focused
+  evidence/inference/requested-memory/host80/80 before one extra cancellation
+  test (covered by final45). Existing inference-panel113/113; model-browser +
+  SF3D69/69. `npm run test:root-host:browser` passes actual hardwareWGSL, encrypted
+  peer evidence, sandboxed browser/full-supervisor restart and retained records.
+- `npm run test:root-host:client` with trusted fastbox WSS certs passes actual
+  pinned HF inspection(5variants), cached SmolVLM256M import, managed GPU
+  generation(3456dispatches,12output tokens), signed WSS/Noise upload and actual
+  catalog browser lookup/render. Requested-buffer peak376917520bytes; no model
+  prompt/output enters report. Owned profiles/servers/GPU resources closed.
+- Initial browser harness used large Playwright route.fulfill buffers and the
+  owned client exited during import. Replaced with streaming local-cache
+  responses. A subsequent assertion caught missing Vite define injection in the
+  custom HTML harness; transformIndexHtml fixes it. Both failures preserved in
+  this narrative; no production bug inferred from the harness failures.
+- Production inference/CubeChat/Earth builds pass to /tmp external outputs. First
+  CubeChat/Earth commands ran from repo root and could not resolve src/main.js;
+  their existing relative-root configs require each demo cwd. Correct cwd builds
+  pass(18.33/17.58/23.14s), with existing chunk-size warnings.
+- Final step: staged source guard, clean exported registry release smoke, durable
+  ICC evidence and local checkpoint. Public deployment is not complete. User
+  previews and unrelated ReservationLedger/index/StateManager edits preserved.
+
+- Final current-source HF/client acceptance passes after cancellation, source
+  selector and public-directory health refinements; actual model browser visual
+  captured in retro terminal styling. Root45tests, focused80tests,175runtime
+  regressions,113panel and69browser/SF3D tests pass at their stated checkpoints.
+  Root restart/hardware suite also passes with Chromium sandbox enabled.
+- Staged ICC guard passes:55files,1189additions/54deletions, zero rollback
+  violations/warnings. Selective staging reverses only the previously saved
+  ReservationLedger hunks from the index; their working-tree files remain intact.
+  Evidence retained at ~/.cache/peercompute-root-host/20261115/. No required test
+  commands remain running at the implementation checkpoint.

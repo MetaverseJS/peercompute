@@ -1,3 +1,4 @@
+import { ModelEvidenceStore } from '../modelEvidence/ModelEvidenceStore.js';
 /**
  * @fileoverview State Manager - Manages shared data state using Yjs CRDT
  * Coordinates read/write access with automatic P2P synchronization
@@ -97,6 +98,7 @@ export class StateManager {
     // State
     this.isInitialized = false;
     this.persistenceFailed = false;
+    this.modelEvidenceStores = new Map();
     this.agentRecordStores = new Map();
     this.worldMemoryStores = new Map();
     this.worldKnowledgeStores = new Map();
@@ -235,6 +237,19 @@ export class StateManager {
   }
 
   getArtifactStore(name = 'default') { return this.dataState.getArtifactStore(name); }
+
+  /** Private observation journals/outboxes stay outside replicated room state. */
+  createModelEvidenceStore(options = {}) {
+    if (this.destroyed) throw new Error('StateManager is destroyed');
+    const name = options.name || 'default';
+    if (this.modelEvidenceStores.has(name)) throw new Error(`Model evidence store ${name} is already registered`);
+    const store = new ModelEvidenceStore({ ...options, name, onDestroy: (closed) => {
+      if (this.modelEvidenceStores.get(name) === closed) this.modelEvidenceStores.delete(name);
+      options.onDestroy?.(closed);
+    } });
+    this.modelEvidenceStores.set(name, store); return store;
+  }
+  getModelEvidenceStore(name = 'default') { return this.modelEvidenceStores.get(name) || null; }
 
   /** Acknowledged private agent journals never enter the replicated Y.Doc. */
   createAgentRecordStore(options = {}) {
@@ -1066,6 +1081,7 @@ export class StateManager {
       const errors = [];
       const cleanup = async (operation) => { try { await operation(); } catch (error) { errors.push(error); } };
       // Agent runners acknowledge cancellation before private journals close.
+      for (const store of [...this.modelEvidenceStores.values()]) await cleanup(() => store.destroy());
       for (const store of [...this.agentRecordStores.values()]) await cleanup(() => store.destroy());
       for (const store of [...this.worldMemoryStores.values()]) await cleanup(() => store.destroy());
       for (const store of [...this.worldKnowledgeStores.values()]) await cleanup(() => store.destroy());

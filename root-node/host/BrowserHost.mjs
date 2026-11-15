@@ -2,10 +2,9 @@ import { readFile, writeFile, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { chromium } from 'playwright';
-import { createNativeCompanion } from '../../peercompute/src/host/native/NativeCompanion.js';
 import { normalizeHostConfig, companionBootstrapAddresses } from './config.mjs';
 import { acquireProfileLock } from './profileLock.mjs';
-import { buildBrowserHost } from './build.mjs';
+import { writeEvidenceDirectory } from './evidenceDirectory.mjs';
 import { startHostServer } from './staticServer.mjs';
 
 export async function deadline(promise, ms, label) {
@@ -29,7 +28,7 @@ export class BrowserHost {
   status() {
     return { state: this.state, origin: this.server?.origin, installationId: this.installation?.id,
       browser: this.browserStatus, companion: this.companion?.getStatus(),
-      restarts: this.restarts, lastError: this.lastError, pageErrors: [...this.pageErrors] };
+      directoryError: this.directoryError ?? null, restarts: this.restarts, lastError: this.lastError, pageErrors: [...this.pageErrors] };
   }
 
   async start(options = {}) {
@@ -56,12 +55,13 @@ export class BrowserHost {
       if (this.installation.version !== 1 || typeof this.installation.id !== 'string' || !Number.isInteger(this.installation.port) || this.installation.port < 0 || this.installation.port > 65535) throw new Error('Invalid installation metadata');
       if (this.config.port !== 0 && this.installation.port !== this.config.port) throw new Error('Port differs from the persistent origin; use the original port or a separate dataDir');
       const bundleDir = join(this.config.dataDir, 'bundle');
-      if (rebuild) await buildBrowserHost(bundleDir);
+      if (rebuild) { const { buildBrowserHost } = await import('./build.mjs'); await buildBrowserHost(bundleDir); }
       this.server = await startHostServer({ directory: bundleDir, port: this.installation.port, status: () => this.status() });
       this.installation.port = this.server.port;
       await writeFile(`${metadataPath}.tmp`, JSON.stringify(this.installation), { mode: 0o600 });
       await rename(`${metadataPath}.tmp`, metadataPath);
       if (this.config.companion.enabled) {
+        const { createNativeCompanion } = await import('../../peercompute/src/host/native/NativeCompanion.js');
         const { enabled, connectHost, tls: tlsPaths, ...companionOptions } = this.config.companion;
         let tls;
         if (tlsPaths) tls = { cert: await readFile(tlsPaths.certPath), key: await readFile(tlsPaths.keyPath) };
@@ -72,6 +72,7 @@ export class BrowserHost {
       await this.launchBrowser();
       if (this.stopping) throw new Error('Host startup cancelled');
       this.state = 'running';
+      await this.publishDirectory();
       this.scheduleWatchdog();
       return this.status();
     } catch (error) {
@@ -83,6 +84,7 @@ export class BrowserHost {
 
   async launchBrowser() {
     const context = await chromium.launchPersistentContext(join(this.config.dataDir, 'chromium-profile'), {
+      chromiumSandbox: true,
       executablePath: this.config.chromePath, headless: true,
       args: this.config.chromeArgs, timeout: this.config.startupTimeoutMs,
       viewport: { width: 900, height: 600 },
@@ -108,6 +110,12 @@ export class BrowserHost {
     }), this.config.startupTimeoutMs, 'Client initialization');
   }
 
+  async publishDirectory() {
+    if (!this.config.directoryFile) return;
+    try { await writeEvidenceDirectory(this.config.directoryFile, this.browserStatus); this.directoryError = null; }
+    catch (error) { this.directoryError = error.code || 'ERR_DIRECTORY_WRITE'; }
+  }
+
   scheduleWatchdog() {
     clearTimeout(this.watchdog);
     if (this.stopping || this.state !== 'running') return;
@@ -115,6 +123,7 @@ export class BrowserHost {
       try {
         this.browserStatus = await deadline(this.page.evaluate(() => window.peercomputeRoot.status()), this.config.watchdogTimeoutMs, 'Browser health');
         if (this.browserStatus.phase !== 'ready') throw new Error(`Browser runtime is ${this.browserStatus.phase}`);
+        await this.publishDirectory();
       } catch (error) { await this.recoverBrowser(error.message); }
       this.scheduleWatchdog();
     }, this.config.watchdogIntervalMs);

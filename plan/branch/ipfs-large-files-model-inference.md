@@ -1924,3 +1924,17 @@ restart. Full model parity, normal-demo collection hooks, StateManager service
 registration, root discovery/UI and independent-device reachability remain next.
 Runtime files stay outside Git; preserve unrelated reservation-ledger edits and
 existing user preview processes. Local checkpoint only; no Pages build/push.
+
+## November15 — client observations and requested SecretWorkshop deployment
+
+November15 model-information integration: StateManager now owns bounded evidence
+journals; the shared inference facade records HF inspections and actual executor
+load/generation/device-loss results. Optional sharing defaults off. Signed outbox
+records survive client identity changes, and model details query local/root
+observations without overriding admission. Compatibility uses source/runtime/
+policy fingerprints and coarse device/workload facts. Requested GPU-buffer peaks,
+WASM sizes and planning estimates are separately labeled; physical VRAM is not
+claimed measured. Real HF inspection, SmolVLM WebGPU execution, WSS/Noise upload,
+catalog lookup and root restart pass. Minimal registry deployment packaging is
+prepared; SecretWorkshop installation remains pending working SSH access.
+No GitHub Pages publication or production relay/TURN change is included.

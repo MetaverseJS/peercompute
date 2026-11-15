@@ -294,3 +294,5 @@ export { WorldKnowledgeStore } from './agents/WorldKnowledgeStore.js';
 export { ResidentDiagnosticsStore } from './agents/ResidentDiagnosticsStore.js';
 export { RESIDENT_DIAGNOSTICS_LIMITS } from './agents/ResidentDiagnosticsContracts.js';
 export { normalizeWorldKnowledgeRecord, worldKnowledgeStatus, WORLD_KNOWLEDGE_LIMITS } from './agents/WorldKnowledgeContracts.js';
+
+export * from './modelEvidence/index.js';

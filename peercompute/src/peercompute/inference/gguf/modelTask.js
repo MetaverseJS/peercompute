@@ -52,6 +52,7 @@ function status(entry) {
     runtimeAdapter: entry.engine?.evidence.runtimeAdapter ?? null,
     runtimeFeatures: entry.engine?.evidence.runtimeFeatures ?? [],
     gpuDispatches: entry.engine?.evidence.dispatches ?? 0, gpuSubmissions: entry.engine?.evidence.submissions ?? 0,
+    requestedGpuBufferPeakBytes: entry.engine?.evidence.requestedGpuBufferPeakBytes,
     gpuOffload: entry.engine?.evidence.offload ?? null, runtimeOptions: entry.options,
     effectiveContextTokens: entry.contextTokens ?? null,
     inputModalities: entry.inputModalities ?? ['text'],
@@ -258,6 +259,8 @@ export function createGgufTaskRuntime({ loadEngine = createGgufEngine,
       current.generatedRequests += 1;
       return { sessionId: current.sessionId, requestId, ...result,
         contextTruncated: fitted.contextTruncated, contextBudget: fitted.contextBudget,
+        requestedGpuBufferPeakBytes: current.engine.evidence.requestedGpuBufferPeakBytes,
+        wasmMemoryBytes: current.engine.memoryBytes(),
         workerId: current.workerId, gpuDispatches: current.engine.evidence.dispatches - dispatches,
         gpuSubmissions: current.engine.evidence.submissions - submissions,
         gpuOffload: current.engine.evidence.offload, artifactReads: current.reader.getStats() };

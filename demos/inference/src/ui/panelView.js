@@ -144,7 +144,11 @@ export function createPanelView(container) {
   sharingLabel.title = 'Share imported model files with connected peers while this browser stays online.';
   const hostingLabel = label('Host inference', hosting); hostingLabel.prepend(hosting);
   hostingLabel.title = 'Allow connected peers to send requests to compatible models loaded on this device.';
-  toggles.append(sharingLabel, hostingLabel); settings.body.append(toggles);
+  const shareEvidence = node('input'); shareEvidence.type = 'checkbox';
+  const evidenceLabel = label('Share model compatibility observations', shareEvidence); evidenceLabel.prepend(shareEvidence);
+  evidenceLabel.title = 'Send signed inspection and execution results, runtime versions and coarse device/resource facts to the root registry. Prompts, images and generated content stay private.';
+  toggles.append(sharingLabel, hostingLabel, evidenceLabel); settings.body.append(toggles);
+  settings.body.append(node('p', 'Model observations are saved locally. Sharing is optional and sends no chat content. Browser memory estimates are not measured physical VRAM.', 'pc-browser-note'));
   const status = node('p', 'Opening model chat…', 'pc-inference-status pc-status-quiet'); status.setAttribute('role', 'status'); panel.append(status);
   const gpuLayers = node('input'); gpuLayers.type = 'number'; gpuLayers.min = '1'; gpuLayers.max = '99999'; gpuLayers.value = '99999';
   gpuLayers.setAttribute('aria-label', 'GGUF GPU layer limit');
@@ -211,7 +215,7 @@ export function createPanelView(container) {
   panel.append(configuration, compatibility, about, menuWindow, chatOptions, loading, leaveWindow.element);
   const networkInfo = createNetworkStatus({ container: panel }); navigationActions.prepend(networkInfo.trigger);
   container.append(panel);
-  return { panel, browse, agents, networkInfo, discoveryStatus: networkInfo.status, modelsMenu, configure, chatConfigure, chatOptions, chatOptionsStatus: chatSettings.status, sharing, hosting, status, configuration,
+  return { panel, browse, agents, networkInfo, discoveryStatus: networkInfo.status, modelsMenu, configure, chatConfigure, chatOptions, chatOptionsStatus: chatSettings.status, sharing, hosting, shareEvidence, status, configuration,
     configurationStatus: settings.status, storedContent, storedList, storedRefresh, storedCancel, storedLoadSelected, storedDeleteSelected, storedAddLora, storedSelection, storedStatus, gpuLayers,
     leaveConfirmation: leaveWindow.element, leaveStatus: leaveWindow.status, stay, leave,
     back, menu, menuWindow, menuStatus: menuDialog.status, about, aboutButton, install,

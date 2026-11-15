@@ -1,6 +1,5 @@
 import { NodeKernel } from '../../peercompute/src/peercompute/nodeKernel/NodeKernel.js';
 import { multiaddr } from '@multiformats/multiaddr';
-import { ModelEvidenceStore } from '../../peercompute/src/peercompute/modelEvidence/ModelEvidenceStore.js';
 import { ModelEvidenceService } from '../../peercompute/src/peercompute/modelEvidence/ModelEvidenceService.js';
 import { BrowserHostStore, hostInstallationId } from './BrowserHostStore.js';
 
@@ -112,7 +111,7 @@ export function createBrowserRoot() {
       });
       await kernel.initialize();
       if (kernel.networkManager.libp2p.peerId.toString() !== identity.peerId) throw new Error('Kernel did not retain the prepared application identity');
-      evidenceStore = new ModelEvidenceStore({ name: installationId });
+      evidenceStore = kernel.stateManager.createModelEvidenceStore({ name: installationId });
       await evidenceStore.open();
       evidenceService = new ModelEvidenceService(kernel.networkManager, { store: evidenceStore, serve: true });
       await evidenceService.start();

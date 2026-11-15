@@ -1,3 +1,4 @@
+import { modelEvidenceBuildPlugin } from '../../scripts/modelEvidenceBuildPlugin.mjs';
 import { pagesSharedRuntimePlugin } from '../../scripts/pagesSharedRuntimePlugin.mjs';
 import { defineConfig } from 'vite';
 import { fileURLToPath } from 'node:url';
@@ -10,7 +11,7 @@ export default defineConfig(({ command }) => ({
   worker: { format: 'es' },
   // Keep generated dependency code readable without changing identifiers or licenses.
   esbuild: { lineLimit: 120, legalComments: 'inline' },
-  plugins: [pagesSharedRuntimePlugin(), pagesIsolationPlugin({ appShell: {
+  plugins: [modelEvidenceBuildPlugin(),pagesSharedRuntimePlugin(), pagesIsolationPlugin({ appShell: {
     publicFiles: ['manifest.webmanifest', 'icons/peercompute.svg', 'icons/peercompute-192.png',
       'icons/peercompute-512.png', 'icons/peercompute-maskable-512.png'],
   } })],

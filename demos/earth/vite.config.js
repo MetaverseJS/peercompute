@@ -1,3 +1,4 @@
+import { modelEvidenceBuildPlugin } from '../../scripts/modelEvidenceBuildPlugin.mjs';
 import { pagesSharedRuntimePlugin } from '../../scripts/pagesSharedRuntimePlugin.mjs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -21,7 +22,7 @@ export default defineConfig(({ command }) => ({
   define: {
     CESIUM_BASE_URL: JSON.stringify('./cesium/')
   },
-  plugins: [
+  plugins: [modelEvidenceBuildPlugin(),
     pagesSharedRuntimePlugin(),
     pagesIsolationPlugin(),
     viteStaticCopy({

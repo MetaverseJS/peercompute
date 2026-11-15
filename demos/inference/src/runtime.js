@@ -1,3 +1,6 @@
+import { ModelEvidenceClient } from '../../../peercompute/src/peercompute/modelEvidence/ModelEvidenceClient.js';
+import { inspectionEvidence, evidenceSource } from '../../../peercompute/src/peercompute/modelEvidence/ModelEvidenceAdapters.js';
+import { modelEvidenceEnvironment, evidenceBuild } from './evidence/environment.js';
 import { StateManager } from '../../../peercompute/src/peercompute/stateManager/StateManager.js';
 import { ComputeManager } from '../../../peercompute/src/peercompute/computeManager/ComputeManager.js';
 import { ResidentModelRegistry } from '../../../peercompute/src/peercompute/inference/ResidentModelRegistry.js';
@@ -92,11 +95,13 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
   let diffusionService;
   let activeService;
   let residents;
+  let modelEvidence;
   const createdServices = new Set();
   const claimedServices = new Set();
   const trackedServices = new WeakSet();
   function trackService(candidate) {
     createdServices.add(candidate);
+    candidate.onModelEvidence = facts => modelEvidence?.record(facts);
     if (!trackedServices.has(candidate)) {
       trackedServices.add(candidate);
       const dispose = candidate.dispose.bind(candidate);
@@ -176,11 +181,28 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
       resourceEstimate: modelMemoryEstimate, loadTimeoutMs: 30 * 60_000, generationTimeoutMs: 300_000 });
   }
 
+  const evidenceName = `${storeName}-evidence`;
+  const evidenceStore = state.getModelEvidenceStore(evidenceName) ?? state.createModelEvidenceStore({ name: evidenceName });
+  let evidenceStorage = preferenceStorage;
+  if (evidenceStorage === undefined) try { evidenceStorage = globalThis.localStorage; } catch { evidenceStorage = null; }
+  modelEvidence = new ModelEvidenceClient({ store: evidenceStore, getManager: () => networkConnection.manager,
+    storage: evidenceStorage, compatibility: evidenceBuild,
+    directoryUrl: 'https://secretworkshop.net/peercompute/config/model-evidence.json',
+    environment: async () => modelEvidenceEnvironment(await runtime.checkDeviceCapabilities()) });
   const hubClient = createHuggingFaceClient();
   const runtime = {
     searchModelHub: (options) => hubClient.search(options),
     inspectLoraHub: (reference, options = {}) => inspectLoraHub(reference, { ...options, client: hubClient }),
-    inspectModelHub: (repository, options = {}) => inspectHuggingFaceModel(repository, { ...options, client: hubClient, catalog: MODEL_CATALOG }),
+    async inspectModelHub(repository, options = {}) {
+      const result = await inspectHuggingFaceModel(repository, { ...options, client: hubClient, catalog: MODEL_CATALOG });
+      for (const facts of inspectionEvidence(result)) void modelEvidence.record(facts);
+      return result;
+    },
+    getModelEvidenceStatus: () => modelEvidence.status(),
+    flushModelEvidence: () => modelEvidence.flush(),
+    setShareModelEvidence: value => modelEvidence.setSharing(value),
+    queryModelEvidence: (source, options = {}) => modelEvidence.query(evidenceSource(source, source.manifestCid),
+      { ...options, current: source.model ?? source }),
     findModelConversions: (repository, options = {}) => findHuggingFaceConversions(repository, { ...options, client: hubClient }),
     stateManager: state, computeManager: compute, store,
     async getAgentController() {
@@ -393,6 +415,7 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
       const disposed = await Promise.allSettled([...createdServices].map((candidate) => candidate.dispose()));
       const failures = disposed.filter((result) => result.status === 'rejected').map((result) => result.reason);
       if (failures.length) throw new AggregateError(failures, 'Some managed model services could not finish cleanup');
+      await modelEvidence.close();
       await networkConnection.dispose();
       networkTelemetry.dispose();
       if (ownsCompute) await compute.destroy();
