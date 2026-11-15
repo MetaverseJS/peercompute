@@ -1026,6 +1026,10 @@ model/runtime identity, resource limits, and full completion criteria.
 
 ### Planned root-node validation
 
+- November14 direct-V8 advisory: compare Node24+Dawn with Bun using the same
+  managed-worker/storage/model contracts. Installed Node24.18.0 API probes show
+  JSPI absent by default and present with --experimental-wasm-jspi. This is API
+  presence only; no Dawn/GGUF execution, custom V8 build or package install ran.
 - November14 deeper IndexedDB investigation: isolated official Bun1.4.4 has no
   native IDB globals. `react-native-indexeddb-sqlite@0.2.0` with `bun:sqlite`,
   sliceMs/fastClone disabled and synchronous FULL passes targeted restart,

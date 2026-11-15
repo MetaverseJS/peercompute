@@ -113,6 +113,40 @@ Detailed scripts, package metadata, results and source hashes are retained
 outside the repository at
 `/home/cos/.cache/icc/artifacts/peercompute/root-indexeddb-20261114/`.
 
+### Direct V8 alternative
+
+The November14 follow-up asks whether a custom V8 host avoids Deno/Bun
+dependency concerns. It is technically feasible: V8 supplies JavaScript/Wasm,
+isolates and embedding hooks, while the host supplies I/O/event-loop integration,
+module resolution, worker/message/termination behavior, WebGPU bindings,
+storage and media APIs. V8 alone supplies neither WebGPU nor IndexedDB. See the
+[embedding guide](https://v8.dev/docs/embed). A small purpose-built host could
+omit browser rendering and unrelated runtime APIs, but binary size, startup,
+memory and compatibility benefits require measurement; no such build was made.
+
+Deno's [October9 announcement](https://deno.com/blog/cloudflare) explicitly
+continues support for `rusty_v8`, despite ending company runtime development
+after the announced year. That makes Rust plus rusty_v8 a credible custom-host
+foundation. `deno_core` offers more runtime machinery but remains part of the
+Deno source/maintenance dependency; its old standalone repository was merged
+into denoland/deno and archived, not independently abandoned in April.
+
+Before selecting a custom host, qualify **Node24 plus upstream Dawn bindings**
+alongside Bun. Node already embeds V8 and provides modules, networking, worker
+threads and native persistence APIs. [Dawn's Node binding](https://dawn.googlesource.com/dawn/+/refs/heads/main/src/dawn/node/README.md)
+provides native GPU compute without Chromium; it is WIP and does not supply
+browser image/video/canvas integration. Existing ComputeManager worker and
+media/storage adapters remain necessary. No full-browser parity is inferred.
+Installed Node24.18.0/V8 13.6 exposes no JSPI by default; the read-only
+`--experimental-wasm-jspi` probe exposes Suspending/promising APIs. Actual GGUF
+shared-memory64/JSPI execution remains untested. No GPU binding was installed.
+
+Recommendation: compare maintained native hosts using the same bounded
+registry/storage/WGSL/model gates. Defer a custom V8 runtime unless measured
+limitations or deployment requirements justify owning its bindings, packaging
+and engine-update work. This adds an evaluated alternative, not implementation
+authorization or a final host selection.
+
 ## Original intent and current implementation
 
 The original plan (`16b2f828`, 2025-11-11) allows hierarchical, distributed and

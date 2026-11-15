@@ -14,6 +14,9 @@ using a third-party IndexedDB-over-SQLite candidate. It is not built-in Bun IDB,
 has value/memory/single-owner limits, and needs a bounded pilot before adoption.
 Keep bulk artifacts on the filesystem and direct SQLite available for growing
 evidence registries; full runtime, GPU and lock qualification remains open.
+Direct-V8 follow-up: embedding is feasible and rusty_v8 support continues.
+Qualify Node24+Dawn alongside Bun before taking on a custom host runtime;
+WebGPU/IndexedDB and browser worker/media semantics still need host adapters.
 
 November13 avatar follow-up: owner text commands such as “turn yourself into a
 knight” now use structured authoring admission before persona speech, alongside

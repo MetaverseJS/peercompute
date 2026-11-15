@@ -63809,3 +63809,39 @@ arbitrary input length. Full stress evidence is preserved externally.
   completed investigation from unqualified root runtime. Local documentation
   checkpoint excludes concurrent source work; final ICC index/Git refresh and
   lease closure are administrative follow-through, not runtime acceptance.
+
+### 2026-11-14T23:57:25Z — direct V8 root-host discussion
+
+- First clock sample15:57:25 AKST; exact prompt-send time unavailable. User
+  expresses disappointment about Deno and asks whether we could use V8 directly.
+  Advisory scope only. ICC assistant-status resumes the root analysis with
+  current34a47a2d source/index; read current plan/log and ICC coordination rules.
+- Primary-source review: official Deno October9 announcement promises continued
+  rusty_v8 support while ending company runtime development after one year.
+  V8 embedding documentation separates JS/Wasm/isolate hooks from host APIs.
+  deno_core's archived standalone repo points to its merger into denoland/deno;
+  do not equate that archive with April abandonment. Reviewed Node24 worker
+  documentation, current V8 WASM flags and upstream Dawn Node binding README.
+  Independent read-only agent confirms Node24+Dawn as the less costly V8 host
+  candidate; GPU addon excludes browser media integration and remains WIP.
+- Read-only commands: git status; rg --files worker paths; scoped plan/log reads;
+  node -e consuming process/V8/JSPI/IDB/GPU values; node
+  --experimental-wasm-jspi -e consuming WebAssembly.Suspending/promising. Actual
+  installed Node24.18.0/V8 13.6.233.17-node.50 lacks those JSPI globals by
+  default and exposes both with the flag; no IDB/GPU global. No runtime upgrade,
+  package install, custom build, GPU, model, browser or server execution.
+- Recommendation: raw V8 is feasible but requires owned runtime APIs, bindings,
+  lifecycle and distribution. Evaluate Node24+Dawn alongside native Bun before
+  selecting a custom Rust/rusty_v8 host; no measured size/performance or full
+  client compatibility claim. Native GPU/IDB/worker/media adapters remain needed.
+- Files: plan/root-node-runtime-model-evidence.md, plan/plan.md, plan/tests.md,
+  and this log. Preflight passes6/6 with preserved unrelated reservation-ledger
+  dirty-source warning; documentation lease published without conflicts.
+  One guessed WorkerRuntime.js read failed; rg located actual worker sources.
+  Web fetch of a guessed Deno core directory failed; current libs/core path
+  was identified by the independent reviewer. No application files changed.
+- Validation: root-plan reference/section assertion, git diff --check and scoped
+  ICC guard pass. A documentation typo correction initially had an unrelated
+  context hunk and was rejected without edits; the scoped correction succeeded.
+  Save a local advisory checkpoint; no push or deployment. Full root runtime
+  and model execution remain unqualified by these source/API-presence checks.
