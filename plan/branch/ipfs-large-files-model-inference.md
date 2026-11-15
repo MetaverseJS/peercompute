@@ -10,6 +10,12 @@ Updated: 2026-11-03 AKST. Status: **implementation in progress** on
 Roadmap TODO: **IPFS-01**. Parent: [overall plan](../plan.md) and
 [distributed compute](distributed-compute.md).
 
+November14 latest host direction: prioritize a persistent headless browser
+running shared managers. An installed supernode optionally adds native listeners
+and Circuit Relay v2 service; root authority/evidence is a separate role. Reuse
+existing relay implementations, qualify public reachability and resource limits,
+and keep root-free browser clients supported. No new host is implemented yet.
+
 November14 root storage follow-up: isolated Bun1.4.4 tests show existing Yjs,
 agent records and IndexedDB artifact backend contracts can persist through a
 third-party SQLite shim. Plan a bounded single-owner metadata pilot, with value

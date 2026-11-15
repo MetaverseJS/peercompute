@@ -1026,6 +1026,15 @@ model/runtime identity, resource limits, and full completion criteria.
 
 ### Planned root-node validation
 
+- Latest November14 direction prioritizes persistent unified Chromium under
+  existing Node24 supervision. Test stable origin/profile/identity, real WebGPU
+  adapter+dispatch/model execution, IndexedDB/locks, restart/recovery and bounded
+  evidence ingestion. No browser/GPU/host test was executed for this discussion.
+- Supernode gates: browser/native peer dials to advertised compatible endpoints;
+  explicit relay opt-in and enforced bandwidth/connection/reservation limits;
+  identity binding; relay loss/failover; truthful public/LAN-only/unreachable
+  advertisement. Use independent devices/network paths, including NAT/CGNAT
+  cases. Keep Circuit Relay and optional STUN/TURN validation separate.
 - November14 direct-V8 advisory: compare Node24+Dawn with Bun using the same
   managed-worker/storage/model contracts. Installed Node24.18.0 API probes show
   JSPI absent by default and present with --experimental-wasm-jspi. This is API
@@ -1057,8 +1066,8 @@ model/runtime identity, resource limits, and full completion criteria.
 - November14 planning revision: the [root runtime/evidence plan](root-node-runtime-model-evidence.md)
   supersedes the Deno-specific first slice below; those broader authority tests
   remain future acceptance requirements under the selected runtime.
-- First qualify Bun-supervised persistent Chromium against the Node24 browser
-  host baseline: actual managed GPU work, artifact MessagePort transfer,
+- First qualify Node24-supervised persistent Chromium: actual managed GPU work,
+  artifact MessagePort transfer,
   IndexedDB/Web Locks, stable identity and data after process restart,
   authenticated peer connection, worker cancellation and crash recovery.
 - Evidence-service checks must distinguish package/LoRA/projector identities,

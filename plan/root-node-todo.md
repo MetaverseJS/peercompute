@@ -5,22 +5,22 @@ revised 2026-11-14. No root-node service implemented.
 
 ## November 14 revision: client parity and model evidence first
 
-Follow-up recommendation: first qualify a native Bun root with SQLite-backed
-state and native WebGPU bindings. Chromium is an optional compatibility
-reference/fallback. See the linked analysis's opening follow-up; the initial
-browser-host recommendation below is retained as the evaluated alternative.
+Latest direction: first qualify persistent unified headless Chromium with a
+minimal Node24 supervisor and shared client managers. Native Bun/Node/Dawn/V8
+remain evaluated alternatives. An installed supernode can add native inbound
+listeners and optional Circuit Relay v2 service; this role is independent of
+root workload/policy/evidence services. See the linked plan's current direction.
 The deeper IndexedDB investigation passes targeted existing-store persistence
-tests with an experimental SQLite shim on Bun1.4.4. Qualify a replaceable,
-single-owner adapter for bounded metadata before adoption; do not put model
+tests with an experimental SQLite shim on Bun1.4.4. Any later native-host choice
+must qualify a single-owner adapter for bounded metadata; do not put model
 weights in its memory-resident cache. Native IndexedDB itself remains absent.
 Full workers/locks/GPU/model parity and evidence-service implementation are open.
 
 The current request restores the original root-as-Compute-Node intent, including
 the client's managed WebGPU workers and IndexedDB capabilities. Read
 [runtime analysis and model evidence plan](root-node-runtime-model-evidence.md)
-before implementing the historical Deno-specific proposal below. Recommendation:
-Bun supervisor plus an owned persistent Chromium client, with Node 24 as the
-qualification baseline/fallback; actual runtime qualification remains pending.
+before implementing the historical Deno-specific proposal below. Browser-host
+runtime qualification and installed-host packaging/networking remain pending.
 The first useful service records model inspection and execution evidence by
 package, capability revision, executor configuration and workload, including
 measured resource use and failures. Preserve optional authority, stable signed

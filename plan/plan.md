@@ -1,8 +1,11 @@
 Instructions: This file contains high level goals for the project and a roadmap.
 
 November14 root-node planning: return to the original root-as-client role.
-Follow-up prioritizes native Bun with storage/worker/GPU adapters; Chromium
-becomes a compatibility reference/fallback, subject to native qualification.
+Latest direction favors persistent unified headless Chromium and a minimal
+Node24 supervisor after investigating native compatibility gaps. An installed
+supernode adds optional native inbound listeners and Circuit Relay service;
+root service/authority and supernode connectivity are independent capabilities.
+Keep native Bun/Node/Dawn/V8 investigations as alternatives, not prerequisites.
 First useful service: shared model
 inspection/execution evidence keyed by exact package, relevant client/runtime
 revision, executing device and workload, with measured resource/failure scope.
@@ -12,11 +15,12 @@ only: no root implementation or deployment. Isolated Bun1.4.4 storage probes now
 pass real StateManager/Yjs, agent records and artifact backend restart contracts
 using a third-party IndexedDB-over-SQLite candidate. It is not built-in Bun IDB,
 has value/memory/single-owner limits, and needs a bounded pilot before adoption.
-Keep bulk artifacts on the filesystem and direct SQLite available for growing
-evidence registries; full runtime, GPU and lock qualification remains open.
-Direct-V8 follow-up: embedding is feasible and rusty_v8 support continues.
-Qualify Node24+Dawn alongside Bun before taking on a custom host runtime;
-WebGPU/IndexedDB and browser worker/media semantics still need host adapters.
+For that native alternative, keep bulk artifacts on the filesystem and direct
+SQLite available for growing evidence registries; browser IndexedDB remains the
+first host's storage path. Runtime, GPU and lock qualification remains open.
+Direct-V8 investigation found embedding feasible and rusty_v8 support continues.
+Browser hosting now takes priority; server GPU/storage/restart and installed
+host reachability/relay qualification remain future implementation gates.
 
 November13 avatar follow-up: owner text commands such as “turn yourself into a
 knight” now use structured authoring admission before persona speech, alongside

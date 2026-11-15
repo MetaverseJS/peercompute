@@ -4,7 +4,72 @@ Status: recommendation with isolated storage probes, 2026-11-14. No root runtime
 implemented or fully qualified.
 This updates the runtime choice and first slice in [the June root plan](root-node-todo.md).
 
-## Follow-up: prefer native Bun qualification first
+## Current direction: browser client host and optional supernode networking
+
+The latest November14 discussion favors a headless browser after native storage
+and runtime compatibility investigation. Prefer modern unified Chromium with a
+small Node24 supervisor, reusing the existing toolchain. No new Bun dependency
+is needed just to supervise Chrome. Use a dedicated root bootstrap that composes
+the real NodeKernel/managers/services; do not automate the inference demo UI.
+The native alternatives below remain researched options, not the current first
+implementation path. This is an architecture direction, not an implemented host.
+
+[Modern headless Chrome](https://developer.chrome.com/docs/automation-and-testing/headless)
+shares the normal browser implementation. Use an explicitly selected browser
+binary, dedicated persistent profile, stable secure origin and one profile
+owner. Reuse IndexedDB, Web Locks, MessagePorts, workers, WebGPU and browser media
+APIs, while qualifying target GPU/driver/flags and actual model execution.
+Measure browser/process overhead; API parity does not establish identical
+performance or hardware capability. Preserve the metadata-only root mode.
+
+An installed **supernode** adds a separate connectivity capability: native
+listeners that other peers can dial, and optionally a Circuit Relay v2 server.
+A **root** provides scoped workload/policy/evidence services. One installation
+can be either or both; connectivity grants no room or global authority.
+Normal browser clients can already exchange direct WebRTC traffic after setup.
+Supernodes add server listeners and relay capacity, not the first direct path.
+
+Compose the installed host from a browser client and a native networking
+companion behind a narrow service/transport boundary. The repo already has Go
+and Node relay implementations; reuse their protocols and deployment lessons.
+Current NetworkManager's native branch advertises TCP listen addresses without
+installing TCP transport and does not enable a relay-server service, so it is
+not already an installed supernode. [libp2p relay documentation](https://libp2p.github.io/js-libp2p/modules/_libp2p_circuit-relay-v2.html)
+explicitly excludes relay-server operation inside a browser.
+
+Browser-facing listeners require compatible transports such as trusted WSS;
+WebRTC Direct is another qualification candidate, not the existing WebRTC
+transport's automatic server mode. Public reachability depends on firewall/NAT,
+address/port configuration and certificate setup; installation alone does not
+escape CGNAT. Probe reachability and advertise only usable addresses, retaining
+relay fallback. Circuit Relay and STUN/TURN serve different purposes; adding a
+Circuit Relay does not supply a TURN server for CubeChat media.
+
+Make inbound listening and helping relay others explicit, independent host
+options, with connection/bandwidth/reservation budgets. Define which process
+owns each application/artifact/relay peer identity and any signed association;
+do not copy one active private identity into independently running peers.
+First qualify the simpler bridge: the browser compute peer reserves through its
+co-located native relay and advertises an ordinary circuit address containing
+both relay and compute IDs. Remote peers reach the installation without the
+central relay; the local hop is still relaying, not a claimed direct transport
+to the browser. Preserve existing inference/artifact authentication and upgrade
+to direct WebRTC where available. Sharing one logical network endpoint through
+native IPC is a later NetworkManager adapter option. No bridge is implemented.
+Current Go/Node relay configurations effectively disable normal circuit limits;
+do not inherit those settings for opt-in community relaying.
+
+Server packaging can use Node24 plus headless Chromium. An installed desktop
+shell such as Electron is an option because it already separates native Node
+and Chromium processes, but does not prove headless-server or WebGPU parity.
+Share host services and browser client modules across packaging choices. First
+prove host persistence/peer connectivity and the versioned model-evidence MVP;
+then qualify direct browser-to-supernode connections, opt-in relaying and relay
+failover across machines/networks. Keep existing bootstrap/relay fallback during
+that rollout. Additional paths can inform throughput-based topology decisions;
+supernodes do not prove the cellular-automata core conjecture.
+
+## Earlier alternative: native Bun qualification first
 
 The user's dependency-size objection changes the recommendation: qualify a
 native Bun root before adopting Chromium as a production dependency. The
@@ -186,19 +251,20 @@ seams and constraints:
   has a bounded localStorage cache; catalog execution notes are manually
   recorded. These are not a shared compatibility evidence service.
 
-## Initial browser-host recommendation (fallback after follow-up)
+## Browser-host implementation outline
 
-Prefer **Bun as a replaceable host supervisor, with an owned persistent
-Chromium process executing the actual browser client modules**. Keep Node 24
-and the existing Vite/build toolchain. Node 24 plus existing browser automation
-is a low-change qualification baseline and fallback supervisor.
+Prefer **an owned persistent Chromium process executing the actual browser
+client modules**, supervised by existing Node24 tooling. Keep Vite and shared
+manager composition. Bun remains an evaluated alternative supervisor; adding
+it is unnecessary for the initial browser-host implementation.
 
 | Candidate | Assessment for the requested root |
 | --- | --- |
 | Deno | Maintainers provide bug/security maintenance until October 2027, with no new features. Existing binaries do not expire, but this is a poor foundation for new long-lived work. [Maintainer announcement](https://github.com/denoland/deno/issues/37030). |
 | workerd | Suitable to consider for a separate HTTP ingestion/query service, but not the current client execution environment. Its former experimental WebGPU API was removed. [Current source](https://github.com/cloudflare/workerd/blob/main/src/workerd/io/compatibility-date.capnp). |
 | Bun alone | Useful server runtime, but not drop-in browser parity. Native IndexedDB remains an open request; third-party GPU bindings require their own qualification. [IndexedDB issue](https://github.com/oven-sh/bun/issues/2659). |
-| Bun + Chromium | Recommended candidate: share real client modules and browser semantics; Bun manages process lifetime, HTTPS/WSS, health and host metrics. Qualification remains pending. |
+| Node24 + Chromium | Current preferred qualification path: real browser client, minimal process/health/metrics supervisor using existing tooling. |
+| Bun + Chromium | Previously proposed supervisor alternative; no need to add Bun solely for browser hosting. |
 
 Bun's experimental WebView API can drive installed Chromium and use a
 persistent profile. Force the Chrome backend: macOS defaults to WebKit. Force
@@ -216,7 +282,8 @@ a GPU and advertise that honestly. [Chrome headless WebGPU guidance](https://dev
 flowchart TB
   peers[Browser PeerCompute clients] <-->|PeerCompute evidence protocol| root
   subgraph host[Root host]
-    supervisor[Bun supervisor: HTTPS, health, restart, OS metrics]
+    supervisor[Node24 supervisor: HTTPS, health, restart, OS metrics]
+    transport[Optional native inbound and relay service]
     subgraph root[Persistent Chromium client]
       kernel[Shared client composition / NodeKernel]
       network[NetworkManager]
@@ -231,6 +298,9 @@ flowchart TB
       compute -->|Execution observations| registry
     end
     supervisor <-->|Bounded authenticated local bridge| root
+    supervisor --> transport
+    peers <-->|Advertised native endpoints| transport
+    transport <-->|Qualified local transport bridge| network
     state --> journal[(IndexedDB report journal)]
     journal --> backups[Versioned exports / backup]
   end
@@ -239,7 +309,7 @@ flowchart TB
 The service schemas, aggregation and collector belong in the library, with a
 thin root entrypoint. Any authorized ordinary client could host the same
 service. Root operation adds uptime, retention, stable identity and operator
-policy. Do not duplicate inference routing/scheduling in Bun or automate demo
+policy. Do not duplicate inference routing/scheduling in the supervisor or automate demo
 buttons. Start with one authoritative IndexedDB journal and acknowledged
 durable writes. Add SQLite as a derived query index or an explicit store
 backend later, with recovery/migration semantics; avoid two authoritative
@@ -327,8 +397,8 @@ retention/deletion controls must be explicit.
 
 All items below are proposed and **unimplemented**.
 
-1. **Qualify the root client host.** Compare Bun/Chromium with the Node 24
-   baseline using the existing managed worker, artifact MessagePort and a small
+1. **Qualify the root client host.** Start with Node24 and persistent Chromium
+   using the existing managed worker, artifact MessagePort and a small
    actual GPU workload. Verify stable identity, IndexedDB/locks after restart,
    cancellation/worker cleanup, SecretWorkshop connectivity and watchdog
    recovery with an owned profile. No new scheduler or demo UI dependency.
@@ -357,5 +427,5 @@ memory, crash recovery, invalid reports and unaffected root-free clients.
 See [test strategy](tests.md#planned-root-node-validation).
 
 This analysis used live source/history and current primary-source runtime
-documentation. It does not establish Bun/Chromium execution parity or server
+documentation. It does not establish browser-host operational parity or server
 operational readiness; those are the first implementation gates.

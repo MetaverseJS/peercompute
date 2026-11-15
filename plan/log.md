@@ -63845,3 +63845,63 @@ arbitrary input length. Full stress evidence is preserved externally.
   context hunk and was rejected without edits; the scoped correction succeeded.
   Save a local advisory checkpoint; no push or deployment. Full root runtime
   and model execution remain unqualified by these source/API-presence checks.
+
+### 2026-11-15T04:48:29Z — prefer a headless browser host
+
+- First clock sample2026-11-14 19:48:29 AKST; exact user-send timestamp
+  unavailable. User now leans toward a headless browser after native-host
+  investigation. This is a planning discussion, not implementation/deployment.
+- ICC assistant-status resumes current ce2a7413 and fresh source/index. Read
+  plan/log/root analysis/TODO/tests, ICC coordination reference and relay docs.
+  Native read-only reviewer checks modern Chromium, persistent context/origin
+  and GPU qualification. Official Chrome docs distinguish modern unified
+  headless from the old shell and demonstrate hardware WebGPU setup; Puppeteer
+  and Playwright references document process/profile selection. No browser ran.
+- Revise current plan to Node24 plus persistent unified Chromium, avoiding an
+  extra Bun supervisor dependency. Reuse the actual client bootstrap/managers,
+  with stable origin/profile/identity, real hardware tests and crash recovery;
+  retain native-host investigations as alternatives. First useful service
+  remains version-aware model inspection/execution/resource evidence.
+- Commands: git status, scoped head/tail/sed/rg, official web sources and ICC
+  status/preflight/session. Preflight passes6/6 with preserved unrelated dirty
+  reservation-ledger files; plan/ lease published. No dependencies/runtime/GPU,
+  user profile, listening service or deployment changed. Work continues with
+  the installed-supernode steering below.
+
+### 2026-11-15T04:50:40Z — installed supernode connectivity capability
+
+- First clock sample2026-11-14 19:50:40 AKST; exact user-send timestamp
+  unavailable. User adds installed clients accepting direct inbound connections
+  and potentially acting as relay servers. Preserve headless-client direction;
+  treat supernode connectivity as independent of root service/authority roles.
+- Read NetworkManager native/browser initialization, existing Go/Node relay
+  source, RELAY_SERVER.md and node-role architecture. Browser client has WS,
+  WebRTC and relay-client transports; native TCP listen lacks a TCP transport
+  and relay service. Existing Go relay offers TCP/WS/WSS, persistent identity
+  and Circuit Relay v2. Current relay limits are effectively unlimited, so
+  installed community relay mode needs separate budgets and explicit opt-in.
+- Primary sources: libp2p circuit-relay server docs explicitly exclude browsers;
+  WebRTC/Direct descriptions distinguish browser direct paths and native
+  listener capabilities; Electron process-model documentation supports the
+  native-main/browser-client desktop packaging option. Browser installation
+  alone does not provide public reachability or solve CGNAT/firewall constraints.
+  Circuit Relay does not replace CubeChat STUN/TURN. No transport is installed
+  or tested here. WebRTC Direct v2 is a later qualification candidate.
+- Recommended initial bridge: browser compute peer reserves through its local
+  native relay with distinct persisted IDs and existing authenticated streams.
+  This removes dependence on a central relay for that path but still includes
+  a local relay hop. Avoid copying one key between independently active peers;
+  application/artifact/relay associations must be explicit. Later native IPC
+  networking remains an alternative, not an assumed existing capability.
+- Files: plan/root-node-runtime-model-evidence.md (current direction and
+  composition), plan/root-node-todo.md, plan/plan.md, plan/tests.md,
+  plan/arch/node-roles.md, plan/branch/ipfs-large-files-model-inference.md and
+  this log. Preserve historical investigations and all instruction sections;
+  root README unchanged because no library feature was implemented.
+- Validation scope is plan/link/whitespace/ICC guard checks only. Future gates
+  now include real browser-host restart/GPU work and independent-machine direct
+  connection, address reachability, opt-in relay budgets and failover. No new
+  runtime acceptance, benchmark or deployment is claimed.
+- Three current role/root links, git diff --check and scoped ICC guard pass.
+  Save a local planning checkpoint and refresh ICC index/Git evidence; preserve
+  all unrelated reservation-ledger source/tests. No push is authorized here.

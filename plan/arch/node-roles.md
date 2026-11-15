@@ -31,6 +31,21 @@ Status: active; role variants for compute nodes.
 - Maintain presence, routing, and room membership.
 - Respect authority/clock policy when in a hierarchy.
 
+## Optional installed-host capability: Supernode
+
+Proposed November14,2026; not yet an installed-client implementation.
+- Runs the same PeerCompute client/services with a native networking companion.
+- Can advertise qualified inbound endpoints and optionally relay other peers'
+  connections, subject to independent host options and resource budgets.
+- Is orthogonal to root/parent/child roles: a supernode gains no authority merely
+  by accepting connections or relaying. A root may also be a supernode.
+- Direct reachability depends on network/firewall/NAT and browser-compatible
+  transports. Ordinary browser peers already support direct WebRTC paths.
+- Preserve independent application/artifact/relay identities and explicit
+  association when multiple networking processes exist. Define ownership before
+  bridging a native endpoint into the browser NetworkManager.
+- See [root and installed-host direction](../root-node-runtime-model-evidence.md).
+
 ## Failure Modes
 - Role confusion (two roots) leading to conflicting authority.
 - Parent loss without fallback causing partitioned state.
