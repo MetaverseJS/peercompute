@@ -8,6 +8,8 @@
 .cube-native-ui textarea { resize: vertical; }
 .cube-native-chat { position: fixed; z-index: 2100; bottom: 16px; left: 16px; width: min(620px, calc(100vw - 32px)); }
 .cube-native-chat-launcher { background: #071722e8 !important; text-align: left; }
+.cube-native-chat-actions { display: flex; align-items: center; gap: 6px; }
+.cube-native-chat-actions .pc-network-trigger { padding: 8px; }
 .cube-native-chat-body { padding: 12px; border: 1px solid var(--cube-border); background: #06141ef0; box-shadow: 0 4px 24px #0009; display: flex; flex-direction: column; gap: 8px; max-height: min(70dvh, 650px); }
 .cube-native-chat header, .cube-native-dialog header { display: flex; gap: 12px; align-items: center; justify-content: space-between; }
 .cube-native-chat header select { flex: 1; min-width: 0; }

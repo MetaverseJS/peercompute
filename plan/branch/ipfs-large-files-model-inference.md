@@ -1938,3 +1938,7 @@ claimed measured. Real HF inspection, SmolVLM WebGPU execution, WSS/Noise upload
 catalog lookup and root restart pass. Minimal registry deployment packaging is
 prepared; SecretWorkshop installation remains pending working SSH access.
 No GitHub Pages publication or production relay/TURN change is included.
+
+November 18: SecretWorkshop registry deployment and restart verification passed.
+CubeChat now lists live peer model capabilities and waits for a provider when
+avatar generation encounters a transient discovery gap.

@@ -27,7 +27,7 @@ before(async () => {
 after(async () => {
   try { await browser?.close(); } finally { await server?.close(); if (cache) await rm(cache, { recursive: true, force: true }); }
 });
-async function fixture(t, { mobile = false, enabled = true, withInspector = false } = {}) {
+async function fixture(t, { mobile = false, enabled = true, withInspector = false, withNetwork = false } = {}) {
   const context = await browser.newContext({ viewport: mobile ? { width: 390, height: 844 } : { width: 1200, height: 900 }, hasTouch: mobile });
   const page = await context.newPage(), errors = [], external = [];
   page.setDefaultTimeout(5000); page.on('pageerror', error => errors.push(error.message));
@@ -37,7 +37,7 @@ async function fixture(t, { mobile = false, enabled = true, withInspector = fals
   });
   t.after(async () => { await context.close(); assert.deepEqual(errors, []); assert.deepEqual(external, []); });
   await page.goto(origin + '/__cube_native_ui');
-  await page.evaluate(async ({ enabled, mobile, withInspector }) => {
+  await page.evaluate(async ({ enabled, mobile, withInspector, withNetwork }) => {
     await import('/demos/cubechat/src/style.css');
     const { createCubeWorldUi } = await import('/demos/cubechat/src/ui/CubeWorldUi.js');
     const { PlayerController } = await import('/demos/cubechat/src/controls/input.js');
@@ -51,7 +51,17 @@ async function fixture(t, { mobile = false, enabled = true, withInspector = fals
     window.hostHistories = new Map();
     const hold = key => new Promise((resolve, reject) => { pending[key] = { resolve, reject }; });
     const history = (key, rows) => { hostHistories.set(key, rows); ui.setMessages(rows, key); };
-    window.ui = createCubeWorldUi({ roomLabel: 'Test room',
+    window.networkRefreshes = 0;
+    const modelRuntime = {
+      getDiscoveryStatus: () => ({ connected: true, peerCount: 3, sharedModelCount: 2, hostedModelCount: 2 }),
+      listInferenceTargets: () => window.networkRefreshes ? [
+        { name: 'DreamShaper', manifestCid: 'image', task: 'text-to-image', available: true, hosts: [{ peerId: 'a', busy: false }] },
+        { name: 'TripoSR', manifestCid: 'mesh', task: 'image-to-3d', available: true, hosts: [{ peerId: 'b', busy: true }] },
+        { name: 'Local only', manifestCid: 'local', local: true, available: true, providerCount: 1 },
+      ] : [],
+      refreshPeers: async () => { window.networkRefreshes++; },
+    };
+    window.ui = createCubeWorldUi({ roomLabel: 'Test room', getModelRuntime: withNetwork ? () => modelRuntime : undefined,
       onOpen() { calls.push({ type: 'open' }); player.clearInput(); },
       onSelect: async key => {
         calls.push({ type: 'select', key });
@@ -167,10 +177,33 @@ async function fixture(t, { mobile = false, enabled = true, withInspector = fals
     ui.setAgents(residents); ui.setEnabled(enabled);
     window.canvasEnters = 0; document.querySelector('canvas').addEventListener('keydown', event => { if (event.key === 'Enter') canvasEnters++; });
     window.outsideClicks = 0; document.querySelector('#outside').onclick = () => outsideClicks++;
-  }, { enabled, mobile, withInspector });
+  }, { enabled, mobile, withInspector, withNetwork });
   return page;
 }
 const prompt = page => page.getByRole('textbox', { name: 'World message', exact: true });
+
+test('CubeChat Network status discovers advertised model capabilities on mobile without opening Models', async t => {
+  const page = await fixture(t, { mobile: true, withNetwork: true });
+  await openChat(page);
+  assert.equal(await page.evaluate(() => networkRefreshes), 0);
+  const button = page.getByRole('button', { name: 'Network status', exact: true });
+  assert.equal(await button.count(), 1, 'the world HUD has its own Network status button');
+  await button.click();
+  const popup = page.getByRole('dialog', { name: 'Network status' });
+  await popup.getByText('DreamShaper').waitFor();
+  assert.match(await popup.getByRole('listitem').filter({ hasText: 'DreamShaper' }).textContent(), /Image generation.*1 peer/);
+  assert.match(await popup.getByRole('listitem').filter({ hasText: 'TripoSR' }).textContent(), /3D generation.*1 peer.*busy/);
+  assert.equal(await popup.getByText('Local only').count(), 0);
+  assert.equal(await page.evaluate(() => networkRefreshes), 1);
+  await page.keyboard.press('Escape');
+  assert.equal(await popup.isVisible(), false);
+  assert.equal(await button.evaluate(el => document.activeElement === el), true);
+  await button.click();
+  await page.evaluate(() => ui.setEnabled(false));
+  assert.equal(await popup.isVisible(), false);
+  await page.evaluate(() => ui.dispose());
+  assert.equal(await button.count(), 0);
+});
 const target = page => page.getByRole('combobox', { name: 'Chat with', exact: true });
 const transcript = page => page.getByRole('log', { name: 'World conversation', exact: true });
 async function openChat(page) { await page.getByRole('button', { name: /^Chat ·/ }).click(); }

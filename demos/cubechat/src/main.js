@@ -188,6 +188,7 @@ class CubeChat {
         uiFactory: options => {
           const ui = createCubeWorldUi({ ...options,
             roomLabel: this.currentRoom.name,
+            getModelRuntime: () => host?.runtime,
             onRoomSend: ({ text }, { signal } = {}) => {
               if (!this.roomChat) throw new Error('Room chat is still connecting');
               return this.roomChat.send({ text, name: this.network.localPlayer.name || 'Anonymous' }, { signal });

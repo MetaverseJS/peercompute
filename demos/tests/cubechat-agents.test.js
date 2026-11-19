@@ -915,7 +915,7 @@ test('image avatar target height is measured against the six-unit cube even when
   }
 });
 
-test('placed objects use the same uniform size and stay grounded above uneven terrain', async t => {
+test('placed objects retain the physics placement and ground their scaled mesh on the visible floor', async t => {
   const page = await fixture(t);
   const result = await page.evaluate(async () => {
     const { CubeGeneratedObjectLayer } = await import('/demos/cubechat/src/renderer/CubeGeneratedObjectLayer.js');
@@ -937,14 +937,15 @@ test('placed objects use the same uniform size and stay grounded above uneven te
         const entry = objects.entries.get(placement.objectId); entry.group.updateWorldMatrix(true, true);
         const bounds = new THREE.Box3().setFromObject(entry.group);
         measurements.push({ size, dimensions: bounds.getSize(new THREE.Vector3()).toArray(), ground: bounds.min.y,
-          x: entry.group.position.x, bodies: physics.world.bodies.length });
+          placementY: entry.descriptor.placement.position[1], x: entry.group.position.x, bodies: physics.world.bodies.length });
       }
     } finally { objects.dispose(); }
     return { measurements, remaining: objects.entries.size };
   });
   for (const value of result.measurements) {
     value.dimensions.forEach((dimension, axis) => assert(Math.abs(dimension - value.size * (axis ? .5 : 1)) < 1e-6));
-    assert.equal(value.ground, 7); assert.equal(value.x, 6 + value.size / 2); assert.equal(value.bodies, 1);
+    assert.equal(value.placementY, 7); assert(Math.abs(value.ground) < 1e-6);
+    assert.equal(value.x, 6 + value.size / 2); assert.equal(value.bodies, 1);
   }
   assert.equal(result.remaining, 0);
 });

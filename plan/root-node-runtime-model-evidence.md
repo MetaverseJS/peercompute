@@ -2,9 +2,8 @@
 
 Status: experimental browser host plus automatic client model-evidence integration
 implemented November14–15,2026. Real managed WebGPU collection, signed encrypted
-upload, package lookup and persistent root restart are qualified. SecretWorkshop
-deployment remains pending working SSH access; broader hosted-model parity is
-not claimed. See [host setup and boundaries](../root-node/README.md).
+upload, package lookup and persistent root restart are qualified. SecretWorkshop now serves the registry over its public WSS circuit.
+Broader hosted-model parity remains open. See [host setup and boundaries](../root-node/README.md).
 This updates the runtime choice and first slice in [the June root plan](root-node-todo.md).
 
 

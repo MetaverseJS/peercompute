@@ -1,4 +1,5 @@
 import './cubeWorldUi.css';
+import { mountCubeNetworkStatus } from './CubeNetworkStatus.js';
 import { bindChatImageInput } from '../../../shared/chat/chatImageInput.js';
 import { readImageAttachment } from '../../../shared/chat/imageAttachment.js';
 import { createResidentNavigationInspector } from '../../../shared/agents/ResidentNavigationInspector.js';
@@ -77,7 +78,7 @@ function createStandingGoalFields() {
 export function createCubeWorldUi({ container = document.body, worldLabel = 'CubeChat', roomLabel = 'global',
   onSpawn, onSelect, onSend, onModels, onVoice, onRecord, onCancel, onClose, onRemove, onResume, onOpen,
   onRoomSend, onPlayerCaption, onMovement, onAppearance, onWorldChat, onSettings, onEdit, onClone, onMind, onInspect,
-  onAssignGoal, onPauseGoal, onResumeGoal, onCancelGoal } = {}) {
+  onAssignGoal, onPauseGoal, onResumeGoal, onCancelGoal, getModelRuntime } = {}) {
   const root = node('section', undefined, 'cube-native-ui');
   const dock = node('section', undefined, 'cube-native-chat'); dock.setAttribute('aria-label', 'World chat');
   const launcher = button('Chat'); launcher.className = 'cube-native-chat-launcher'; launcher.setAttribute('aria-expanded', 'false');
@@ -109,7 +110,9 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
   const taskStatus = createResidentTaskStatus({ onPauseGoal, onResumeGoal, onCancelGoal });
   const taskSnapshots = new Map();
   composer.append(prompt, attachmentRow, imageFile, actions); chatBody.append(chatHeader, scopeNote, messages, taskStatus.element, status, pendingNote, composer);
-  dock.append(launcher, chatBody);
+  const dockActions = node('div', undefined, 'cube-native-chat-actions'); dockActions.append(launcher);
+  const networkStatus = getModelRuntime && mountCubeNetworkStatus({ container: root, actions: dockActions, getRuntime: getModelRuntime });
+  dock.append(dockActions, chatBody);
 
   const makeDialog = (title) => {
     const dialog = node('dialog', undefined, 'cube-native-dialog');
@@ -772,12 +775,12 @@ export function createCubeWorldUi({ container = document.body, worldLabel = 'Cub
       if (!voiceState.enabled) speak.input.checked = false;
       update();
     },
-    setEnabled(value) { enabled = Boolean(value); if (!enabled) { clearAvatarAttachment(); expanded = false; hideDialog(residents.dialog, false); hideDialog(voice.dialog, false); hideDialog(editor.dialog, false); } update(); },
+    setEnabled(value) { enabled = Boolean(value); networkStatus?.setEnabled(enabled); if (!enabled) { clearAvatarAttachment(); expanded = false; hideDialog(residents.dialog, false); hideDialog(voice.dialog, false); hideDialog(editor.dialog, false); } update(); },
     getTarget: currentKey,
     get selectedKey() { return selected?.key ?? null; },
     dispose() {
       if (disposed) return;
-      disposed = true; voiceEpoch++; recordEpoch++; window.removeEventListener('keydown', onKeyDown, true);
+      disposed = true; networkStatus?.dispose(); voiceEpoch++; recordEpoch++; window.removeEventListener('keydown', onKeyDown, true);
       clearAvatarAttachment(); void imageInput.dispose();
       roomSendController?.abort(new DOMException('Room chat closed', 'AbortError'));
       hideDialog(residents.dialog, false); hideDialog(voice.dialog, false); hideDialog(editor.dialog, false); root.remove();

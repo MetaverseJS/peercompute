@@ -309,5 +309,5 @@ old failures never disable a newly compatible model. Root unavailability does
 not prevent local inference. Requested-buffer high-water counters and WASM
 buffer size are measurements with limited scope, not physical RAM/VRAM readings;
 planning estimates remain separately labeled. Uploads are bounded and survive
-reloads with their original signature. SecretWorkshop root deployment is pending
-working host access; until then, the query view reports root unavailability.
+reloads with their original signature. The browser discovers the live SecretWorkshop registry through its
+[public descriptor](https://secretworkshop.net/peercompute/config/model-evidence.json).

@@ -1,5 +1,17 @@
 Instructions: This file contains high level goals for the project and a roadmap.
 
+November 18 release review: independently verify SecretWorkshop's discovery and
+encrypted receipt lookup, then qualify the demo build from reviewed source.
+
+November18 avatar routing: retry model discovery for network-assisted image and
+3D generation when a provider is briefly missed or saturated. Recheck ownership
+and keep each generation dispatch single-shot. The fix is on the tailnet preview.
+
+November18 CubeChat: show live peer model capabilities in the world HUD with
+the shared inference Network status widget. Refresh on open without loading
+models or creating a second model runtime. Historical root observations are
+not current provider availability. No public deployment in this slice.
+
 November15 model-information integration: StateManager now owns bounded evidence
 journals; the shared inference facade records HF inspections and actual executor
 load/generation/device-loss results. Optional sharing defaults off. Signed outbox
@@ -11,8 +23,10 @@ claimed measured. Real HF inspection, SmolVLM WebGPU execution, WSS/Noise upload
 catalog lookup and root restart pass. Minimal registry deployment packaging is
 prepared and the clean exported registry release passes CPU-only sandboxed
 Chromium startup and full restart with retained identity/records, using only
-Playwright/core and the system browser. SecretWorkshop installation remains
-pending working SSH access.
+Playwright/core and the system browser. The registry is now deployed on
+SecretWorkshop as a sandboxed systemd service. Public discovery and encrypted
+browser submission/query passed, including receipt and identity retention
+after restarting the service.
 No GitHub Pages publication or production relay/TURN change is included.
 
 November14 implementation authorized: build the first persistent Chromium root

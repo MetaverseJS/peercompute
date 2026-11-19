@@ -5741,3 +5741,55 @@ desktop layout and zero browser/cleanup errors. No local inference loaded.
   Its only installed packages are Playwright/core; system Chromium is reused.
   Report: `~/.cache/peercompute-root-host/20261115/release-smoke.json`.
   This proves local packaging, not remote host installation or public routing.
+
+### SecretWorkshop staging smoke — November 18, 2026
+
+- Verified the cc4f6dd7 archive SHA-256 after upload over key-authenticated SSH.
+- With Node v24.14.1 and cached Chrome for Testing, ran the staged release
+  CPU-only with the Chromium sandbox on, relay connectivity and companion off,
+  and a temporary profile. Loopback health reached ready on both supervisor
+  starts and reported the same peer ID. Shutdown left port 5199 free.
+- Root systemd installation, public descriptor, browser submission/query,
+  receipt retention, and relay/TURN regression checks were not run.
+
+### SecretWorkshop live registry — November 18, 2026
+
+- `nginx -t` passed; external HTTPS returned the fresh public evidence descriptor
+  and a WSS circuit address. Root unit is active and enabled.
+- An independent Chromium client used the public descriptor to connect through
+  the relay over Noise, then submitted and queried synthetic inspection evidence
+  with authenticated reporter provenance.
+- After `systemctl restart peercompute-root`, a fresh browser context reached
+  the same peer and retrieved the same receipt. No real model run claimed.
+- Relay and TURN retained their activation timestamps, TURN listeners on 3478
+  remained present, and relay circuit delivery worked. No TURN allocation tested.
+
+### CubeChat network widget — November 18, 2026
+
+- `node --test demos/tests/cubechat-native-ui.test.js demos/tests/cubechat-input.test.js demos/tests/network-status.test.js`: 75 passed. Controlled host rows verify image and 3D labels, peer counts, busy and local exclusion, no refresh before opening, and Escape/disable/dispose behavior.
+- CubeChat `npm run build -- --outDir <external-dir>` passed. Mobile Chromium
+  opened the built HUD widget, showed the connected empty state within the
+  viewport and reported no page errors. No loaded remote models were observed.
+- Additional `cubechat-agents.test.js` regression run: 38 passed, one separate
+  object-grounding assertion failed and reproduced when run alone.
+
+- Tailnet preview `https://fastbox.tail5c077c.ts.net:5176/`: trusted HTTPS 200,
+  matching build HTML, cross-origin isolation, and 390px headless browser
+  showing connected Network status within the viewport; no page errors.
+
+### Avatar provider recovery — November 18, 2026
+
+- `node --test demos/tests/world-mesh-generation.test.js demos/tests/world-generated-host.test.js peercompute/tests/unit/agentModelAdapter.test.js`: 33 passed. Verified missed SF3D poll recovery, single dispatch of image and mesh work, local-only guidance, cancellation, and full queues.
+- External CubeChat production build passed. The exact tailnet preview served
+  matching HTML and entry assets. A fresh mobile client saw live DreamShaper,
+  Qwen Vision and Stable Fast 3D advertisements; no GPU request was submitted
+  as part of this read-only check.
+
+### November 18 Hermes review and release checks
+
+- Isolated Chrome fetched the live registry descriptor, connected over Noise and
+  retrieved the previous synthetic inspection receipt. The probe made no writes.
+- Root suite: 45 passed. CubeChat, network status, mesh and model adapter
+  regressions: 146 passed. Mesh grounding: five passed. Two focused browser
+  regressions verified Escape with chat open and separate recorded versus
+  visible placement heights. Prior Pages helper checks: 51 passed.

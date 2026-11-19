@@ -158,8 +158,8 @@ labeled. Failed operations use bounded reason categories, never raw error text.
 
 [Deployment packaging](deploy/README.md) provides a minimal registry-only release,
 systemd unit and static public discovery route through existing TLS hosting.
-Chromium sandboxing is enabled. SecretWorkshop installation is pending SSH
-access; no public registry is claimed deployed. The root does not yet expose
+The sandboxed SecretWorkshop registry serves model evidence through its
+[public discovery document](https://secretworkshop.net/peercompute/config/model-evidence.json). The root does not yet expose
 model loading/hosted inference, signed root policies, checkpoint authority or a
 desktop installer. Full model parity and independent-device routing remain open.
 

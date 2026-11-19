@@ -64136,3 +64136,222 @@ arbitrary input length. Full stress evidence is preserved externally.
   Preserve relay/TURN, installed previews and GitHub Pages. Next step is inspect
   host prerequisites using supplied access, install only the prepared root service,
   and complete the public descriptor/delivery/query/restart regression gates.
+
+### 2026-11-17T19:17:48Z — Explain the root node and its dependencies
+
+Prompt: “can you explain how the root node works and what tools it depends on?”
+Time is the captured UTC clock. The exact send time was unavailable. Consulted
+ICC `codebase_work` in status mode and used `rg` and `cat` to check the root
+bootstrap, supervisor, release builder, deployment guide and existing passing
+client and restart reports. Explained runtime, build and optional relay roles.
+Only this log changed. This was a source review with no new runtime test.
+
+### 2026-11-17T19:22:08Z — Wasmtime full-node feasibility
+Prompt: “would we be able to port this to wasmtime and use wasi-gfx-runtime and wasi:keyvalue and run a full peercompute node?”
+Captured UTC review time; exact send timestamp unavailable. Consulted ICC in
+status mode. Used rg and direct source reads to compare the current worker,
+model engine, networking and evidence storage contracts with upstream WASI
+WebGPU, ComponentizeJS, Wasmtime keyvalue and WASI batch definitions. Verified
+that our root calls getCompilationInfo and that wasi-gfx-runtime commit
+90fdfcaa leaves the corresponding method unimplemented. No installed Wasmtime
+or Graphtime on PATH, and no WASI runtime or model test performed. Proposed a
+browser-interoperable registry and one independently qualified worker as a
+bounded prototype; the requested feasibility review leaves implementation open.
+
+### 2026-11-17T20:09:19Z — Chrome FP16 launcher persistence
+User asked whether the NVIDIA Dawn toggle can persist via chrome://flags. Time
+is the UTC inspection clock. Checked Chromium switch documentation, Dawn's
+driver change, local google-chrome --version, nvidia-smi, and the packaged
+desktop entry. An isolated Playwright launch inspected 649 chrome://flags
+entries in Chrome 157.0.8103.38. No dedicated NVIDIA FP16 toggle was listed.
+Closed the owned browser. Explained the KDE launcher alternative and effective
+command-line/adapter checks. Only this log changed.
+
+### 2026-11-17T21:20:41Z — Bring the Codex handoff into Hermes
+
+Prompt: “we were recently working in this project (peercompute) with codex. I'd like you to bring that context into hermes and summarize where we were.”
+Time is the first captured inspection clock; exact prompt send time was
+unavailable. Read the recent project plan, test log and deployment guide and
+recovered the top-level Codex rollout `01a0a142-7b96-72e3-9ee6-396ea01ef21c`
+by exact checkout path. Used `git status`, `git log`, `git diff`,
+`git rev-list --left-right --count @{upstream}...HEAD`, and `icc resolve --repo
+peercompute` to cross-check the handoff against the checkout. `git diff --check`
+passed before this entry; no tests or remote checks were rerun. HEAD is
+`95bd19ba`, 13 commits ahead of the local upstream reference. SecretWorkshop
+installation remains blocked in the handoff on working SSH access; the Wasmtime
+discussion was feasibility only. Preserved the unrelated ReservationLedger
+work. Only this log changed; no commit, push or deployment.
+
+### 2026-11-17T21:22:27Z — Hermes terminal disconnect behavior
+
+Prompt: “if I open hermes in a terminal and start a task will it keep going if I close the terminal?”
+First captured inspection clock; exact send time unavailable. Checked
+`hermes --version`, `hermes gateway --help`, and the installed and published CLI
+docs. Gateway-backed CLI disconnects leave accepted work running while the
+gateway stays up; resuming reattaches. No runtime test or configuration change;
+only this log changed.
+
+### 2026-11-18T18:41:16Z — SecretWorkshop deployment access check
+
+Prompt (credential redacted): deploy the root node to cos@secretworkshop.net;
+the relay is already running. First captured inspection clock; exact send time
+unavailable. Confirmed the qualified cc4f6dd7 release and smoke report are
+still present. Read the deployment runbook and tried SSH in batch mode with
+strict host key checking; the host rejected noninteractive authentication.
+The agent had no loaded identities and no default multiplex socket was
+configured. No credential was sent by these checks. Local `git diff --check`
+passed. No remote files, service changes, or deployment tests; only this log
+changed. Next gate is an authenticated SSH session without sharing a secret in
+the deployment log or tool arguments.
+
+### 2026-11-18T18:44:03Z — Stage SecretWorkshop release over SSH key
+
+Prompt: “try again my pub key is now a login method”. First captured inspection
+clock; send time unavailable. Strict-host-key batch SSH authenticated as cos.
+Checked runtime paths and sudo: Node v24.14.1 under NVM and Chrome for Testing
+143 in the Playwright cache are available to cos, not system service paths.
+Packed and copied the qualified cc4f6dd7 release with scp to
+`/home/cos/peercompute-root-stage.cc4f6dd7.oueuIHKO/release.tar.gz` (0600),
+verified SHA-256 remotely, and ran a sandboxed CPU-only loopback smoke twice
+with an isolated profile. First harness had a null-health handling bug;
+corrected probe saw the same peer ID after changing supervisor processes.
+Both smoke runs stopped and cleaned up; no listener remained on 5199. The
+root systemd unit is absent and sudo requires a password; no relay, TURN, or
+nginx changes were made. Updated the plan and test log; public verification
+and service installation remain open.
+
+### 2026-11-18T18:47:42Z — Check privileged install access
+
+Prompt: user supplied a sudo credential (redacted). First captured inspection
+clock; exact send time unavailable. Rechecked over key-authenticated SSH with
+`sudo -n true` and `systemctl show peercompute-root -p LoadState -p ActiveState`.
+Sudo requires an interactive password; the unit is not installed or active.
+No credential was passed to tools or stored. No remote writes or new tests;
+only this log changed. Admin execution is still required.
+
+### 2026-11-18T18:53:46Z — Prepare interactive sudo handoff
+
+Prompt: “do it”. First captured inspection clock; exact send time unavailable.
+Rechecked noninteractive sudo (requires password), the staged release checksum,
+nginx (active), and the root unit (not installed). Wrote a read-only admin
+preflight helper outside the repo. Started local tmux `peercompute-deploy`
+with strict-host-key SSH and `sudo -v`; verified its authentication prompt
+with `tmux capture-pane -t peercompute-deploy:0.0`. Initial verification used
+the wrong pane selector; corrected it without restarting SSH. No password was
+passed to tools and no production services or files changed. Waiting on direct
+user authentication in that SSH terminal before privileged work.
+
+### 2026-11-18T18:57:40Z — Check missing shell at sudo handoff
+
+Prompt: “there is no shell”. First captured inspection clock; send time
+unavailable. `tmux list-panes` confirmed SSH remained live. A filtered pane
+check found one sudo prompt, no retries and no shell prompt. The remote shell
+starts only after interactive sudo authentication. No remote changes or tests;
+only this log changed.
+
+### 2026-11-18T18:58:22Z — Deploy and verify SecretWorkshop root registry
+
+Prompt: “ok pw has been entered”. First captured clock; send time unavailable.
+Confirmed interactive sudo and preflighted the existing TLS virtual host.
+Installed the checksum-verified cc4f6dd7 release, Node 24.22.3, and system Chrome
+158.0.8127.36. Started the sandboxed, CPU-only systemd service with persistent
+state and the existing WSS relay, without a native companion. Added only the
+evidence location to the nginx TLS server and saved the original at
+`/var/backups/secretworkshop.net.pre-peercompute-root`. `nginx -t` passed. The
+first HTTPS probe saw the old redirect and triggered rollback; a bounded retry
+after reload confirmed the change and an external HTTPS probe returned JSON.
+Enabled the service. A fresh headless browser submitted and queried an
+explicitly synthetic record over Noise through the public relay. Restarted
+only `peercompute-root` and a new browser retrieved the same receipt from
+the same peer. Verified relay and TURN still active with unchanged activation
+times and TURN port listeners; no live TURN allocation tested. Invalidated
+the sudo ticket and closed the dedicated SSH session. Updated plan, test log,
+and deployment README. No relay/TURN config changes or Pages push.
+
+### 2026-11-18T19:12:59Z — CubeChat live model capabilities widget
+
+Prompt: “I think cubechat needs a network widget like the inference demo that shows the model capabilities available on the network.” First inspected UTC clock; exact send time unavailable.
+Read plans, compared the Inference status component with WorldAgentHost's
+shared model runtime, and inspected ICC assistant status and verify plan. ICC
+work planning timed out with a stale index; scoped agent-preflight passed
+with dirty-worktree and default upstream-reference warnings.
+Added a Playwright case in cubechat-native-ui.test.js and observed red for the
+missing HUD button. Reused the Inference widget with capability labels and an
+open/close callback, mounted it next to Chat through CubeWorldUi, and wired
+CubeNetworkStatus to the existing runtime in main.js. The initial edit reused a
+local identifier; renamed it before running green. The widget refreshes peer
+discovery while open, updates local status snapshots while enabled, and disposes
+its timer and UI. No model downloads, new runtime, or root registry changes.
+The focused test and all 75 CubeChat UI/input and Inference network status tests
+pass. The production CubeChat build passes (existing Vite warnings), and a
+390px headless run of the built demo opened the panel and showed the connected
+empty state with no page errors. An extra scene suite had one separate terrain
+grounding assertion fail (expected 7, actual near zero), repeated in isolation.
+The simulated-host UI test verifies populated rows, not live provider execution.
+Updated plan, tests and CubeChat README. Nothing published.
+
+### 2026-11-18T19:22:05Z — Check CubeChat Tailscale preview
+
+Prompt: “is the cubechat demo running on tailscale still? what is the port?”
+First captured inspection clock; exact send time unavailable. Checked
+`tailscale serve status`, listening sockets, user unit state, and HTTPS.
+The historical port was 5176; it refused connections and the default HTTPS
+`/cubechat/` path returned 502. No preview was started or changed; log only.
+
+### 2026-11-18T19:22:46Z — Restore CubeChat Tailscale preview
+
+Prompt: “stand it back up”. First captured inspection clock; exact send time
+unavailable. Confirmed 5176 and 15176 unoccupied and the old user unit absent.
+Copied the qualified Network status build to `~/.local/share/peercompute-preview/cubechat/build`;
+created a loopback-only static server and enabled the `peercompute-cubechat-preview`
+user unit. The first loopback request raced startup; curl retry passed.
+Added tailnet-only Tailscale Serve HTTPS on 5176 (loopback backend 15176),
+preserving the existing 443 Funnel. Exact HTTPS returned 200 and matched the
+build HTML checksum. Mobile Chromium verified cross-origin isolation, startup,
+and the connected Network status popup within the viewport with no page errors.
+Closed the test browser; left the requested preview running. No Pages changes.
+
+### 2026-11-18T19:34:18Z — Recover transient avatar model discovery
+
+Prompt: “despite having stable fast 3d loaded and available on the network. and the cubechat client can see it. along with dreamshaper and qwen 2b vision the cubechat guide refuses to generate a model for itsel. [Avatar update failed: No 3D generation model is available. Load or connect to an image-to-3D model first.]” First captured clock, exact send unavailable.
+Read the plan, checked ICC status and scoped preflight (pass; dirty warning),
+and traced the receipt to WorldMeshGeneration's one-shot selection, not persona
+speech. A live isolated CubeChat probe saw an empty directory with a deadline
+error before all three advertised models appeared. The exact failing user
+session and its stored policy were not observed. Regression cases reproduced
+missed SF3D discovery and ambiguous local-only errors before the fix. Reused
+the existing bounded adapter wait for network-assisted selection; kept authority
+checks and single dispatch, and differentiated local-only and saturated queues.
+33 focused mesh/host/adapter tests and external CubeChat build passed. Atomically
+promoted the qualified build on tailnet 5176 with 27 prior hashed assets;
+verified HTTPS HTML and entry bytes. Mobile Chromium saw all three hosts with
+SF3D marked busy and no page errors, alongside intermittent discovery errors.
+Did not submit the user's avatar job or consume remote inference for the probe.
+Updated CubeChat README, plan and tests. No Pages changes.
+
+### 2026-11-18T19:50:32Z — Explain avatar mesh numeric limit
+
+Prompt: “[Avatar update failed: Invalid generated mesh: numeric limit]”.
+First captured inspection time; exact send time unavailable. Traced the exact
+message to GeneratedMeshArtifact's integer checks. A Node probe reproduced it
+for 100001 vertices and separately for 150001 triangles; the same message also
+covers invalid descriptor and GLB metadata fields. The user's failing output
+was not captured, so the exact field is unknown. Answered in explanation scope;
+no code, preview, or remote changes.
+
+### 2026-11-19T01:07:48Z — Review Hermes changes and prepare demo release
+
+Prompt: “hey I had hermes make a few changes and deploy the root node to secretworkshop. can you have a look around and make a commit? it might be time for us to push another demo update to github pages as well.” Time is first captured UTC clock.
+Compared origin/main and GitHub Pages metadata, both at abb6f484. Isolated browser
+retrieved the previously committed deployment smoke receipt through public
+discovery and Noise on SecretWorkshop. No public report written. Reconciled
+current host, inference and root-plan documentation with the deployed registry.
+Reviewed all modified paths and left the independently owned ULG ledger and
+its plan/log/tests changes unstaged. Reviewed CubeChat HUD and avatar discovery.
+Fixed Escape getting swallowed when world chat was open; updated scene fixture
+to verify persisted physics Y and independently rendered floor Y. The old
+assertion failed identically at HEAD and in the worktree. Excluded generated docs
+from the tracked source-dirtiness check in the client build fingerprint.
+Root, browser UI, model adapter and release-helper results are in plan/tests.md.
+Created an isolated checkout for npm run build:all and subsequent browser checks.
+Evidence outside Git: ~/.cache/peercompute-hermes-release-20261118/.

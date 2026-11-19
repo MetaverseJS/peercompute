@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { generateWorldMesh } from '../shared/agents/WorldMeshGeneration.js';
+import { createAgentModelAdapter } from '../inference/src/agentModelAdapter.js';
 import { imageFixture, meshFixture } from './world-generated-fixtures.js';
 
 function provider(task, id, local = false) {
@@ -27,8 +28,45 @@ function fixture({ mode = 'network-assisted', local = false } = {}) {
   const generate = options => generateWorldMesh({ inference, head: { policy: { inferenceMode: mode } },
     description: 'A copper robot', name: 'Robot', signal: controller.signal,
     assertCurrent: () => { if (!state.current) throw new Error('Resident ownership changed'); }, ...options });
-  return { generate, state, calls, queries, output, controller, image, mesh };
+  return { generate, state, calls, queries, output, controller, image, mesh, inference };
 }
+
+test('a missed SF3D poll recovers through the real adapter without replaying either generation', async () => {
+  const f = fixture(); let refreshes = 0;
+  const sf3d = { ...f.mesh, name: 'Stable Fast 3D', runtime: 'stable-fast-3d' };
+  const adapter = createAgentModelAdapter({
+    listInferenceTargets: () => [f.image, ...(refreshes === 1 || refreshes === 4 ? [] : [sf3d])],
+    refreshPeers: async () => { refreshes++; },
+    generate: (key, input) => f.inference.generate({ key }, input),
+  });
+  const events = [];
+  const result = await f.generate({ inference: adapter, onEvent: event => events.push(event) });
+  assert.equal(result.sha256, f.output.sha256);
+  assert.deepEqual(f.calls.map(call => call.candidate.key), [f.image.key, sf3d.key]);
+  assert.equal(refreshes, 5);
+  assert(events.some(event => event.status === 'waiting' && /3D/.test(event.message)));
+});
+
+test('local-only failure explains how to opt in to a remote mesh provider without using one', async () => {
+  const f = fixture({ mode: 'local-only' });
+  await assert.rejects(f.generate(), /Use only models on this device/);
+  assert.equal(f.calls.length, 0);
+});
+
+test('a cancelled discovery wait never dispatches an image or mesh request', async () => {
+  const f = fixture(); f.state.providers = [f.image];
+  f.inference.waitForCandidate = async ({ signal }) => {
+    f.controller.abort(); signal.throwIfAborted();
+  };
+  await assert.rejects(f.generate(), { name: 'AbortError' });
+  assert.equal(f.calls.length, 0);
+});
+
+test('a saturated mesh queue is reported as busy rather than missing', async () => {
+  const f = fixture(); f.state.providers = [f.image, { ...f.mesh, queueAvailable: false }];
+  await assert.rejects(f.generate(), /Compatible 3D generation models are busy/);
+  assert.equal(f.calls.length, 0);
+});
 
 test('missing mesh provider fails before paying for a reference image', async () => {
   const f = fixture(); f.state.providers = [f.image];

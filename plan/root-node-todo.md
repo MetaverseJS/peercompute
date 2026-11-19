@@ -3,15 +3,14 @@
 Status: planning artifact created 2026-06-18 AKDT; runtime/MVP recommendation
 revised 2026-11-14. Experimental persistent browser host, native companion and
 model-evidence RPC/store plus automatic opt-in client collection and model-browser
-queries are implemented. Broader root authority and public deployment remain planned.
+queries are implemented. The SecretWorkshop registry is live. Broader root authority remains planned.
 
-## November15 next deployment gate
+## November 18 deployment checkpoint
 
-Install the prepared registry-only release on SecretWorkshop when SSH access is
-available, publish its expiring descriptor, then validate client upload/query,
-restart persistence and unchanged relay/TURN health. See
-[root deployment](../root-node/deploy/README.md). Do not mark this complete based
-on local qualification alone.
+SecretWorkshop serves the model registry. An external browser retrieved the
+same committed inspection receipt after a service restart. Next, qualify an
+opt-in signed execution report from the published client on this public path.
+See the [root deployment notes](../root-node/deploy/README.md).
 
 ## November 14 revision: client parity and model evidence first
 

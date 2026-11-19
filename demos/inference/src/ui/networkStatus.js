@@ -8,6 +8,11 @@ const node = (tag, className, text) => {
 };
 const count = (value) => Number.isSafeInteger(value) && value >= 0 ? value : null;
 const boundedMessage = (value) => String(value?.message ?? value ?? '').trim().slice(0, 256);
+const taskLabels = new Map([
+  ['text-generation', 'Text generation'], ['image-text-to-text', 'Vision chat'],
+  ['text-to-image', 'Image generation'], ['image-to-3d', '3D generation'],
+  ['automatic-speech-recognition', 'Speech recognition'], ['text-to-speech', 'Speech synthesis'],
+]);
 
 function inferenceModelRows(models) {
   const grouped = new Map();
@@ -15,6 +20,7 @@ function inferenceModelRows(models) {
     const cid = typeof model?.manifestCid === 'string' ? model.manifestCid.trim() : '';
     if (!cid || model.local === true || model.available !== true) continue;
     if (!grouped.has(cid)) grouped.set(cid, { cid, name: boundedMessage(model.name) || 'Unnamed model',
+      capability: taskLabels.get(model.task),
       hosts: new Map(), hasHostList: false, fallbackCount: 0, fallbackBusy: true });
     const group = grouped.get(cid);
     if (Array.isArray(model.hosts)) {
@@ -30,7 +36,7 @@ function inferenceModelRows(models) {
       if (providers > 0) group.fallbackBusy &&= model.busy === true;
     }
   }
-  return [...grouped.values()].map((group) => ({ cid: group.cid, name: group.name,
+  return [...grouped.values()].map((group) => ({ cid: group.cid, name: group.name, capability: group.capability,
     peerCount: group.hasHostList ? group.hosts.size : group.fallbackCount,
     busy: group.hasHostList ? [...group.hosts.values()].every(Boolean) : group.fallbackBusy,
   })).filter((model) => model.peerCount > 0)
@@ -38,7 +44,7 @@ function inferenceModelRows(models) {
 }
 
 /** Display-only network diagnostics. The owner supplies discovery snapshots. */
-export function createNetworkStatus({ container } = {}) {
+export function createNetworkStatus({ container, onVisibilityChange } = {}) {
   if (!container?.append) throw new TypeError('A network status container is required');
   const trigger = node('button', 'pc-network-trigger'); trigger.type = 'button';
   trigger.setAttribute('aria-label', 'Network status'); trigger.setAttribute('aria-haspopup', 'dialog');
@@ -100,12 +106,13 @@ export function createNetworkStatus({ container } = {}) {
     if (nativePopover && element.matches(':popover-open')) element.hidePopover();
     element.hidden = true;
     if (restoreFocus && ownedFocus && trigger.isConnected && !trigger.disabled && trigger.getClientRects().length) trigger.focus({ preventScroll: true });
+    onVisibilityChange?.(false);
   }
   function show() {
     if (disposed || open || !trigger.isConnected || trigger.disabled) return;
     open = true; element.hidden = false; trigger.setAttribute('aria-expanded', 'true');
     if (nativePopover) element.showPopover();
-    position(); element.focus({ preventScroll: true });
+    position(); element.focus({ preventScroll: true }); onVisibilityChange?.(true);
   }
   function onTrigger() { if (open) close(); else show(); }
   function onOutside(event) {
@@ -123,7 +130,7 @@ export function createNetworkStatus({ container } = {}) {
   trigger.addEventListener('click', onTrigger);
   dismiss.addEventListener('click', close);
   document.addEventListener('pointerdown', onOutside, true);
-  document.addEventListener('keydown', onKey);
+  document.addEventListener('keydown', onKey, true);
   element.addEventListener('toggle', onToggle);
   window.addEventListener('resize', position);
   window.addEventListener('scroll', position, true);
@@ -162,7 +169,9 @@ export function createNetworkStatus({ container } = {}) {
       const scrollTop = element.scrollTop;
       modelList.replaceChildren(...models.map((model) => {
         const row = node('li', 'pc-network-model'); row.dataset.modelCid = model.cid;
-        row.append(node('span', 'pc-network-model-name', model.name), node('span', 'pc-network-model-hosts',
+        const label = node('span'); label.append(node('span', 'pc-network-model-name', model.name));
+        if (model.capability) label.append(node('span', 'pc-network-model-capability', model.capability));
+        row.append(label, node('span', 'pc-network-model-hosts',
           `${model.peerCount} peer${model.peerCount === 1 ? '' : 's'}${model.busy ? ' · busy' : ''}`));
         return row;
       }));
@@ -179,7 +188,7 @@ export function createNetworkStatus({ container } = {}) {
       if (disposed) return;
       close({ restoreFocus: false }); disposed = true;
       trigger.removeEventListener('click', onTrigger); dismiss.removeEventListener('click', close);
-      document.removeEventListener('pointerdown', onOutside, true); document.removeEventListener('keydown', onKey);
+      document.removeEventListener('pointerdown', onOutside, true); document.removeEventListener('keydown', onKey, true);
       element.removeEventListener('toggle', onToggle);
       window.removeEventListener('resize', position); window.removeEventListener('scroll', position, true);
       window.visualViewport?.removeEventListener('resize', position); window.visualViewport?.removeEventListener('scroll', position);

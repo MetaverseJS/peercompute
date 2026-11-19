@@ -21,7 +21,7 @@ export function modelEvidenceBuildPlugin() {
   let clientBuild = 'uncommitted';
   try {
     clientBuild = execFileSync('git', ['rev-parse', '--short=12', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
-    try { execFileSync('git', ['diff', '--quiet', 'HEAD'], { cwd: root, stdio: 'ignore' }); } catch { clientBuild += '-dirty'; }
+    try { execFileSync('git', ['diff', '--quiet', 'HEAD', '--', '.', ':(exclude)docs/**'], { cwd: root, stdio: 'ignore' }); } catch { clientBuild += '-dirty'; }
   } catch { /* Source exports retain content hashes. */ }
   return { name: 'peercompute-model-evidence-build', config() { return { define: { __PC_MODEL_EVIDENCE_BUILD__: JSON.stringify({
     clientBuild, inspectorVersion: inspector, policyVersion: policy, runtimeDigest: runtime }) } }; } };

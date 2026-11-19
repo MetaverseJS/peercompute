@@ -67,6 +67,10 @@ Chromium, with its sandbox enabled. CPU-only operation, disabled companion,
 and a full supervisor restart preserve identity and committed model evidence.
 No source tree, Vite, or native relay dependencies are needed at runtime.
 
-**Current status:** release/service configuration is prepared. Public installation
-requires working SecretWorkshop SSH credentials and has not been verified by
-these instructions alone. Do not report deployment based on a local build.
+**Live deployment (2026-11-18):** SecretWorkshop runs release `cc4f6dd7` with
+Node 24 under `/opt/peercompute-root/runtime/node/bin/` and system Chrome.
+Public discovery and encrypted browser submission/query passed. A service
+restart retained the peer identity and committed receipt. The original nginx
+virtual host is backed up at
+`/var/backups/secretworkshop.net.pre-peercompute-root`. Relay and TURN service
+configuration was not changed.

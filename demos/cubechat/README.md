@@ -31,6 +31,11 @@ Shift+Enter adds a line, and Escape returns to the world. The transcript keeps
 full messages while overhead bubbles show a brief excerpt and expire.
 Delivery status reports peer acknowledgments; it is not a read receipt.
 
+Use the **Network status** icon beside **Chat** to see which models peers are
+currently advertising for inference, what each can do, how many peers host it,
+and whether all of those hosts are busy. This is live model discovery, not a
+history of observations from the root registry or a guarantee of queue space.
+
 Open **Residents** in the hamburger menu, name a resident and place it in the world. Click its cube
 or select it as the chat target to use the same composer for a direct
 conversation. Direct visitor histories remain separate from public room chat.
@@ -451,9 +456,10 @@ yourself into a knight”, or “Choose a cool avatar for yourself and generate 
 A structured tool decision runs before the character's conversational reply,
 distinguishes a body change from a separate prop, and chooses a design. The host
 then uses an available image-generation model and
-an image-to-3D model such as TripoSR. Local-only residents require local models;
-other residents can use compatible peer-hosted models. This does not download
-missing models automatically.
+an image-to-3D model such as Stable Fast 3D or TripoSR. Local-only residents
+require local models. Network-assisted residents briefly retry discovery when
+a compatible provider is missing or busy, without retrying generation after
+dispatch. This does not download missing models automatically.
 
 To use your own reference, drag or paste an image into your resident's private
 chat, or choose **+**. Sending it goes directly to the image-to-3D model, without
