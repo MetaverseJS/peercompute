@@ -5,11 +5,6 @@ import { copyBrowserText } from 'exowebtui-clipboard';
 import { createCatalogWindow } from './catalog-window.js';
 import { createFrameWindows, returnFromFramedAtlas } from './frame-windows.js';
 
-const plainUrl = new URL(location.href);
-plainUrl.searchParams.set('view', 'html');
-const nativeUrl = new URL(location.href);
-nativeUrl.searchParams.delete('view');
-
 function wallpaper(audio) {
   let field;
   let disposed = false;
@@ -30,10 +25,12 @@ function wallpaper(audio) {
 }
 
 async function mountDesktop(root, atlas) {
+  const plainUrl = document.querySelector('#plain-directory').href;
   const entries = [...atlas.querySelectorAll('[data-demo-dir]')].map(anchor => ({
     id: 'launch-' + anchor.dataset.demoDir + '-' + anchor.dataset.demoPath,
     title: anchor.querySelector('h2').textContent.trim(),
     description: anchor.querySelector('p').textContent.trim(),
+    summary: anchor.querySelector('.demo-summary')?.textContent.trim() || anchor.querySelector('p').textContent.trim(),
     category: anchor.dataset.category,
     href: anchor.href,
     image: anchor.querySelector('img,canvas'),
@@ -65,12 +62,12 @@ async function mountDesktop(root, atlas) {
   }
   const catalog = createCatalogWindow({ entries, openDemo, openSearch,
     openSettings: () => desktop.openWindow('settings'),
-    openHtml: () => location.assign(plainUrl.href) });
+    openHtml: () => location.assign(plainUrl) });
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const menuLinks = entries.map(entry => ({ id: entry.id, title: entry.title,
     summary: entry.description, href: entry.href }));
   menuLinks.push({ id: 'source', title: 'Project source', summary: 'PeerCompute on GitHub', href: source.href },
-    { id: 'plain', title: 'HTML directory', summary: 'Browse accessible direct links', href: plainUrl.href });
+    { id: 'plain', title: 'HTML directory', summary: 'Browse accessible direct links', href: plainUrl });
 
   desktop = createDesktopApp({
     startLabel: 'PeerCompute', initialWindow: catalog.id,
@@ -86,7 +83,7 @@ async function mountDesktop(root, atlas) {
       const entry = entries.find(demo => demo.href === href);
       if (entry) openDemo(entry.id);
       else if (href === source.href) source.click();
-      else if (href === plainUrl.href) location.assign(plainUrl.href);
+      else if (href === plainUrl) location.assign(plainUrl);
     },
     onWindows: (windows, blocked, theme, _animating, overlays) =>
       frames.project(windows, blocked, theme, desktopWindowStates(), overlays),
@@ -149,12 +146,11 @@ async function mountDesktop(root, atlas) {
   } catch (error) { fallback(error); }
 }
 
-document.querySelector('#plain-directory').href = plainUrl.href;
-document.querySelector('#return-desktop').href = nativeUrl.href;
-const root = document.querySelector('#desktop');
-if (!returnFromFramedAtlas() && new URLSearchParams(location.search).get('view') !== 'html') {
-  mountDesktop(root, document.querySelector('#atlas')).catch(error => {
+export async function startDesktop() {
+  const root = document.querySelector('#desktop');
+  if (returnFromFramedAtlas() || new URLSearchParams(location.search).get('view') === 'html') {
     root.hidden = true;
-    console.warn('Using the HTML demo directory.', error);
-  });
-} else root.hidden = true;
+    return;
+  }
+  await mountDesktop(root, document.querySelector('#atlas'));
+}

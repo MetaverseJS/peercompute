@@ -6,13 +6,37 @@
   <meta name="theme-color" content="#101519">
   <meta name="description" content="Explore PeerCompute demos for peer-hosted AI, multiplayer worlds, Earth data, and distributed simulation.">
   <title>PeerCompute</title>
+  <script>
+    if ('noModule' in HTMLScriptElement.prototype && new URLSearchParams(location.search).get('view') !== 'html') {
+      document.documentElement.classList.add('exowebtui-starting');
+    }
+  </script>
+  <style>
+    #desktop-startup, .exowebtui-starting #atlas { display: none; }
+    .exowebtui-starting #desktop-startup { display: block; }
+  </style>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23c6f582'/%3E%3Cpath d='m6 22 10-16 10 16H6Zm5-7h10M16 7v15' fill='none' stroke='%23151b19' stroke-width='2'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="./assets/gallery.css">
   <script type="module" src="./assets/gallery.js"></script>
-  <script type="module" src="./assets/exowebtui.js"></script>
+  <script type="module">
+    const page = document.documentElement;
+    if (page.classList.contains('exowebtui-starting') || window !== window.parent) {
+      try {
+        const { startDesktop } = await import('./assets/exowebtui.js');
+        await startDesktop();
+      } catch (error) {
+        console.warn('Using the HTML demo directory.', error);
+      } finally {
+        page.classList.remove('exowebtui-starting');
+      }
+    }
+  </script>
 </head>
 <body>
-  <a class="desktop-alternate skip" id="plain-directory" href="?view=html">Browse accessible HTML directory</a>
+  <div id="desktop-entry">
+    <span id="desktop-startup" role="status">Starting PeerCompute…</span>
+    <a class="desktop-alternate" id="plain-directory" href="?view=html">Browse accessible HTML directory</a>
+  </div>
   <div id="desktop" aria-label="ExoWebTUI desktop"></div>
   <dialog id="desktop-search" aria-labelledby="desktop-search-label">
     <form method="dialog">
@@ -59,87 +83,104 @@
           <a class="card" href="./inference/" data-demo-dir="inference" data-demo-port="5189" data-demo-path="/" data-category="AI &amp; network">
             <div class="thumb inference"><canvas id="model-wave" width="600" height="210" aria-hidden="true"></canvas><span class="wave-label">IPFS → WebGPU</span></div>
             <div class="card-body"><span class="category">AI &amp; network</span><h2>Local Model Console</h2>
-              <p>Chat with browser-hosted models. Route text, images, and voice between local and remote peers.</p><span class="arrow" aria-hidden="true">↗</span></div>
+              <p>Chat with browser-hosted models. Route text, images, and voice between local and remote peers.</p>
+              <p class="demo-summary" hidden>Search Hugging Face or your peers for a model, then load it into your browser or chat with one already running on the network. Send a photo for a vision model to describe, dictate a question, or ask an image model to draw. You can also host your loaded models for other peers.</p><span class="arrow" aria-hidden="true">↗</span></div>
           </a>
           <a class="card" href="./cubechat/" data-demo-dir="cubechat" data-demo-port="5176" data-demo-path="/" data-category="Worlds &amp; games">
             <div class="thumb cubechat"><img src="./assets/cubechat.png" alt="" loading="lazy" decoding="async"></div>
             <div class="card-body"><span class="category">Worlds &amp; games</span><h2>CubeChat</h2>
-              <p>Step into a shared 3D room with proximity video chat and AI residents.</p><span class="arrow" aria-hidden="true">↗</span></div>
+              <p>Step into a shared 3D room with proximity video chat and AI residents.</p>
+              <p class="demo-summary" hidden>Walk up to another player’s cube to see and hear them, or type a message that appears above your head. Create an AI resident with its own appearance and goals, then ask it to follow you or build something for the room using models hosted by peers.</p><span class="arrow" aria-hidden="true">↗</span></div>
           </a>
           <a class="card" href="./universes/" data-demo-dir="universes" data-demo-port="5178" data-demo-path="/" data-category="Earth &amp; space">
             <div class="thumb universes"><img src="./assets/universes.png" alt="" loading="lazy" decoding="async"></div>
             <div class="card-body"><span class="category">Earth &amp; space</span><h2>Universes</h2>
-              <p>Generate galaxies and star systems across scales with shared compute workers.</p><span class="arrow" aria-hidden="true">↗</span></div>
+              <p>Generate galaxies and star systems across scales with shared compute workers.</p>
+              <p class="demo-summary" hidden>Follow the autopilot from a field of galaxies into a star system, or choose a target and inspect its spectrum and elemental composition. Pause to examine an orbit, change how fast time passes, or reseed the universe to explore a different sky.</p><span class="arrow" aria-hidden="true">↗</span></div>
           </a>
           <a class="card" href="./multiscale/" data-demo-dir="multiscale" data-demo-port="5185" data-demo-path="/" data-category="Earth &amp; space">
             <div class="thumb multiscale"><img src="./assets/multiscale.svg" alt="" loading="lazy" decoding="async"></div>
             <div class="card-body"><span class="category">Earth &amp; space</span><h2>Multiscale Ladder</h2>
-              <p>Travel from supergalactic structures to orbital clouds in a WebGPU simulation.</p><span class="arrow" aria-hidden="true">↗</span></div>
+              <p>Travel from supergalactic structures to orbital clouds in a WebGPU simulation.</p>
+              <p class="demo-summary" hidden>Zoom from galaxy clusters through weather and materials down to an atom’s orbital cloud. Change gravity, temperature or the electric field and inspect the readings at each scale. The workbench shows which approximations and compute workers are active as you move between layers.</p><span class="arrow" aria-hidden="true">↗</span></div>
           </a>
           <a class="card" href="./planetgen/" data-demo-dir="planetgen" data-demo-port="5177" data-demo-path="/" data-category="Earth &amp; space">
             <div class="thumb planetgen"><img src="./assets/planetgen.png" alt="" loading="lazy" decoding="async"></div>
             <div class="card-body"><span class="category">Earth &amp; space</span><h2>PlanetGen</h2>
-              <p>Shape a procedural planet with GPU-driven oceans, atmosphere, and weather.</p><span class="arrow" aria-hidden="true">↗</span></div>
+              <p>Shape a procedural planet with GPU-driven oceans, atmosphere, and weather.</p>
+              <p class="demo-summary" hidden>Grow a planet by changing its tectonic plates, erosion and sea level. Orbit to find a coastline, then drop to the surface to walk, swim or fly over it. Clouds and oceans draw on a simulated water cycle that carries moisture from evaporation to rain.</p><span class="arrow" aria-hidden="true">↗</span></div>
           </a>
           <a class="card" href="./wxglobe/" data-demo-dir="wxglobe" data-demo-port="5186" data-demo-path="/" data-category="Earth &amp; space">
             <div class="thumb wxglobe"><img src="./assets/wxglobe.png" alt="" loading="lazy" decoding="async"></div>
             <div class="card-body"><span class="category">Earth &amp; space</span><h2>WXGlobe</h2>
-              <p>Explore Earth’s elevation and ocean depths through global topographic contours.</p><span class="arrow" aria-hidden="true">↗</span></div>
+              <p>Explore Earth’s elevation and ocean depths through global topographic contours.</p>
+              <p class="demo-summary" hidden>Follow a mountain range or an undersea trench on a globe drawn with elevation contours. Switch between NOAA and AWS terrain, change the contour spacing, or exaggerate the relief to bring subtle features into view. The NOAA data reaches both poles and extends beneath the ocean surface.</p><span class="arrow" aria-hidden="true">↗</span></div>
           </a>
           <a class="card" href="./earth/" data-demo-dir="earth" data-demo-port="5187" data-demo-path="/" data-category="Earth &amp; space">
             <div class="thumb earth"><img src="./assets/earth.png" alt="" loading="lazy" decoding="async"></div>
             <div class="card-body"><span class="category">Earth &amp; space</span><h2>EarthGrid</h2>
-              <p>Explore NOAA terrain, weather, roads, and buildings in a shared world.</p><span class="arrow" aria-hidden="true">↗</span></div>
+              <p>Explore NOAA terrain, weather, roads, and buildings in a shared world.</p>
+              <p class="demo-summary" hidden>Fly from a global overview down to individual roads, shorelines and building footprints drawn from OpenStreetMap over real terrain. Toggle weather imagery to see conditions over the same landscape, or place a named AI resident at the location you’re exploring and open a conversation with it.</p><span class="arrow" aria-hidden="true">↗</span></div>
           </a>
           <a class="card" href="./motorcycle/" data-demo-dir="motorcycle" data-demo-port="5188" data-demo-path="/" data-category="Worlds &amp; games">
             <div class="thumb motorcycle"><img src="./assets/motorcycle.png" alt="" loading="lazy" decoding="async"></div>
             <div class="card-body"><span class="category">Worlds &amp; games</span><h2>RoadVector</h2>
-              <p>Ride a particle-based motorcycle along real roads with simulated traffic.</p><span class="arrow" aria-hidden="true">↗</span></div>
+              <p>Ride a particle-based motorcycle along real roads with simulated traffic.</p>
+              <p class="demo-summary" hidden>Pick a region on the globe and ride a motorcycle through its real street network. Follow checkpoint gates for a timed lap among simulated traffic. Elevation shapes the road beneath the bike, and a particle simulation handles its suspension and tire contacts.</p><span class="arrow" aria-hidden="true">↗</span></div>
           </a>
           <a class="card" href="./netviz/" data-demo-dir="netviz" data-demo-port="5182" data-demo-path="/" data-category="AI &amp; network">
             <div class="thumb netviz"><img src="./assets/netviz-screenshot.gif" alt="" loading="lazy" decoding="async"></div>
             <div class="card-body"><span class="category">AI &amp; network</span><h2>NetViz</h2>
-              <p>Inspect live peer connections and watch the network topology change.</p><span class="arrow" aria-hidden="true">↗</span></div>
+              <p>Inspect live peer connections and watch the network topology change.</p>
+              <p class="demo-summary" hidden>Connect to see which peers are reporting across the demos and which models they host. Select a link to inspect its traffic and latency, or attach to a single demo room to follow its connections and compute activity as people join and leave.</p><span class="arrow" aria-hidden="true">↗</span></div>
           </a>
           <a class="card" href="./fano-reactor/" data-demo-dir="fano-reactor" data-demo-port="5183" data-demo-path="/" data-category="Simulation">
             <div class="thumb fano-reactor"><img src="./assets/fano-reactor.svg" alt="" loading="lazy" decoding="async"></div>
             <div class="card-body"><span class="category">Simulation</span><h2>Fano Reactor</h2>
-              <p>Explore sedenion bonds, target a Fano map, and probe cascades.</p><span class="arrow" aria-hidden="true">↗</span></div>
+              <p>Explore sedenion bonds, target a Fano map, and probe cascades.</p>
+              <p class="demo-summary" hidden>Choose two mathematical atoms in the Bond Lab and see how their sedenion product classifies the reaction. The Fano map shows which families can interact. Pick a valid target or run the cascade sample to follow a chain of reactions in this algebraic chemistry sandbox.</p><span class="arrow" aria-hidden="true">↗</span></div>
           </a>
           <a class="card" href="./schrodinger/" data-demo-dir="schrodinger" data-demo-port="5184" data-demo-path="/" data-category="Simulation">
             <div class="thumb schrodinger"><img src="./assets/schrodinger.svg" alt="" loading="lazy" decoding="async"></div>
             <div class="card-body"><span class="category">Simulation</span><h2>Schrodinger</h2>
-              <p>Explore atoms, orbitals, and the properties of water and other materials.</p><span class="arrow" aria-hidden="true">↗</span></div>
+              <p>Explore atoms, orbitals, and the properties of water and other materials.</p>
+              <p class="demo-summary" hidden>Choose an element and orbital to see a WebGPU-sampled cloud of possible electron positions. Inspect the calculated orbital energy, then switch to the materials workbench to explore water molecules or try simple bonding experiments under different temperatures and pressures.</p><span class="arrow" aria-hidden="true">↗</span></div>
           </a>
           <a class="card" href="./sneakywoods/" data-demo-dir="sneakywoods" data-demo-port="5180" data-demo-path="/" data-category="Worlds &amp; games">
             <div class="thumb sneakywoods"><img src="./assets/sneakywoods.png" alt="" loading="lazy" decoding="async"></div>
             <div class="card-body"><span class="category">Worlds &amp; games</span><h2>SneakyWoods</h2>
-              <p>Join a multiplayer woodland arena with synchronized player state.</p><span class="arrow" aria-hidden="true">↗</span></div>
+              <p>Join a multiplayer woodland arena with synchronized player state.</p>
+              <p class="demo-summary" hidden>Join a forest arena where another player’s movement or attack can give them away with a flash of their spotlight. Weave between trees and buildings, get close, and strike with a click or the touch controls. Create a password-protected room to play with friends.</p><span class="arrow" aria-hidden="true">↗</span></div>
           </a>
           <a class="card" href="./daddygo/" data-demo-dir="daddygo" data-demo-port="5181" data-demo-path="/" data-category="Worlds &amp; games">
             <div class="thumb daddygo"><img src="./assets/daddygo.png" alt="" loading="lazy" decoding="async"></div>
             <div class="card-body"><span class="category">Worlds &amp; games</span><h2>Daddy Go!</h2>
-              <p>Control a runner with your body and compete for the shared high score.</p><span class="arrow" aria-hidden="true">↗</span></div>
+              <p>Control a runner with your body and compete for the shared high score.</p>
+              <p class="demo-summary" hidden>Use your camera to put a moving skeleton of your own body on a virtual treadmill. Reach for the floating gems and dodge obstacles as each pickup speeds up the course. Your best score joins the scores published by other players.</p><span class="arrow" aria-hidden="true">↗</span></div>
           </a>
           <a class="card" href="./webgpuphys/demos/toychest.html" data-demo-dir="webgpuphys" data-demo-port="5179" data-demo-path="/demos/toychest.html" data-category="Simulation">
             <div class="thumb webgpuphys"><img src="./assets/webgpuphys.png" alt="" loading="lazy" decoding="async"></div>
             <div class="card-body"><span class="category">Simulation</span><h2>Dynamics (WebGpuPhys)</h2>
-              <p>Play with a particle-based dynamics engine in a WebGPU physics sandbox.</p><span class="arrow" aria-hidden="true">↗</span></div>
+              <p>Play with a particle-based dynamics engine in a WebGPU physics sandbox.</p>
+              <p class="demo-summary" hidden>Fill a box with spheres, cylinders or interlocking block shapes and watch a WebGPU solver handle their collisions. Adjust gravity or squeeze the container while it runs. Turn on the particle view to see the small spheres that make up each rigid body.</p><span class="arrow" aria-hidden="true">↗</span></div>
           </a>
           <a class="card" href="./webgpuphys/demos/mpm-visual.html" data-demo-dir="webgpuphys" data-demo-port="5179" data-demo-path="/demos/mpm-visual.html" data-category="Simulation">
             <div class="thumb webgpuphys"><img src="./assets/mpm-visual.png" alt="" loading="lazy" decoding="async"></div>
             <div class="card-body"><span class="category">Simulation</span><h2>MPM Visual (WebGpuPhys)</h2>
-              <p>Experiment with particle materials, thermal effects, and MLS-MPM dynamics.</p><span class="arrow" aria-hidden="true">↗</span></div>
+              <p>Experiment with particle materials, thermal effects, and MLS-MPM dynamics.</p>
+              <p class="demo-summary" hidden>Choose two elements, such as titanium and lead, and watch their particles interact on a shared simulation grid. Move a heated or cooled sphere through the blocks to see how they respond, then change their starting temperature and compare the runs.</p><span class="arrow" aria-hidden="true">↗</span></div>
           </a>
           <a class="card" href="./webgpuphys/demos/ppf-contact-solver.html" data-demo-dir="webgpuphys" data-demo-port="5179" data-demo-path="/demos/ppf-contact-solver.html" data-category="Simulation">
             <div class="thumb webgpuphys"><img src="./assets/ppf-contact-solver.png" alt="" loading="lazy" decoding="async"></div>
             <div class="card-body"><span class="category">Simulation</span><h2>PPF Contact Solver (WebGpuPhys)</h2>
-              <p>Investigate collisions and friction with a GPU-accelerated contact solver.</p><span class="arrow" aria-hidden="true">↗</span></div>
+              <p>Investigate collisions and friction with a GPU-accelerated contact solver.</p>
+              <p class="demo-summary" hidden>Watch a block of particles fall inside a box while a WebGPU solver finds nearby contacts and applies friction. Change the particle count, friction or solver iterations and compare how the particles settle with the frame rate shown on screen.</p><span class="arrow" aria-hidden="true">↗</span></div>
           </a>
           <a class="card" href="./hyperborea/" data-demo-dir="hyperborea" data-demo-port="5175" data-demo-path="/" data-category="Worlds &amp; games">
             <div class="thumb hyperborea"><img src="./assets/hyperborea.png" alt="" loading="lazy" decoding="async"></div>
             <div class="card-body"><span class="category">Worlds &amp; games</span><h2>Hyperborea</h2>
-              <p>Enter a WebXR-ready multiplayer scene backed by a shared GPU hub.</p><span class="arrow" aria-hidden="true">↗</span></div>
+              <p>Enter a WebXR-ready multiplayer scene backed by a shared GPU hub.</p>
+              <p class="demo-summary" hidden>Explore a procedural landscape of boreal forest and mountains with other players in a public or private room. The room shares its clock and seasons, so winter snow reaches the peaks and frozen water becomes walkable. Enter VR on a compatible headset to explore at ground level.</p><span class="arrow" aria-hidden="true">↗</span></div>
           </a>
         </div>
         <div id="empty" hidden><p>No demos match your search.</p><button type="button" id="reset">Show all demos</button></div>

@@ -3,6 +3,13 @@ const demos = [...atlas.querySelectorAll('[data-demo-dir]')];
 const params = new URLSearchParams(location.search);
 const dev = params.get('dev') === '1' || (params.get('prod') !== '1' && location.port === '4173');
 
+const plainUrl = new URL(location.href);
+plainUrl.searchParams.set('view', 'html');
+document.querySelector('#plain-directory').href = plainUrl.href;
+const desktopUrl = new URL(location.href);
+desktopUrl.searchParams.delete('view');
+document.querySelector('#return-desktop').href = desktopUrl.href;
+
 for (const demo of demos) {
   const target = new URL(demo.href);
   if (dev) {

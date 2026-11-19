@@ -10,3 +10,5 @@ Follow-up: use the tech-stack desktop’s cell typography, shaders, wallpaper an
 The screenshot on November 18 clarified the visual requirement. Compose live iframe pixels and desktop cells in the same input texture before all native shader passes, including their desktop-wide distortion. Preserve native controls and gracefully show the live frame on browsers that cannot supply the pixels.
 
 November 18 follow-up: keep all visible clients painting while desktop overlays are open. Only the part physically covered by menus, the switcher or a higher window is obscured. Switching, minimizing and restoring live demos should preserve their running documents and avoid a blank frame.
+
+November 19 follow-up: show the desktop startup state immediately. Keep the HTML directory available during startup and restore it after a bundle or presenter failure. Selecting an entry previews the demo; **Open demo** launches it. Give each of the 17 entries a source-backed summary and make the directory usable as a list above a preview on phones.

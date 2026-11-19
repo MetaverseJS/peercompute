@@ -23,11 +23,11 @@ button { cursor: pointer; }
 [hidden] { display: none !important; }
 #desktop { position: fixed; inset: 0; overflow: hidden; }
 #atlas { container-type: inline-size; position: relative; background: var(--ground); color: var(--type); min-width: 0; scrollbar-color: #56635c var(--ground); }
-.skip:not(:focus) {
+.skip:not(:focus), .exowebtui-ready .desktop-alternate:not(:focus) {
   position: absolute; width: 1px; height: 1px; margin: -1px;
   padding: 0; border: 0; clip-path: inset(50%); overflow: hidden; white-space: nowrap;
 }
-.skip:focus { position: absolute; top: 8px; left: 12px; z-index: 2; padding: 8px 15px; background: var(--lime); color: var(--ground); }
+.skip:focus, .exowebtui-ready .desktop-alternate:focus { position: absolute; top: 8px; left: 12px; z-index: 2; padding: 8px 15px; background: var(--lime); color: var(--ground); }
 .masthead { border-bottom: 1px solid var(--line); }
 .masthead-inner, .page, footer { max-width: 1360px; margin-inline: auto; padding-inline: clamp(18px, 4.2vw, 72px); }
 .masthead-inner { display: flex; align-items: center; justify-content: space-between; min-height: 62px; gap: 12px; }
@@ -122,7 +122,12 @@ footer a { color: var(--soft); }
 #desktop > canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 .exowebtui-ready, .exowebtui-ready body { width: 100%; height: 100%; overflow: hidden; overscroll-behavior: none; }
 .exowebtui-ready #desktop { visibility: visible; cursor: none; }
+.exowebtui-starting #desktop-entry {
+  position: fixed; inset: 0; display: grid; align-content: center; justify-items: center; gap: 1rem;
+  background: #0a0c14; color: #a7cec8; font: 1rem/1.5 var(--mono);
+}
 .desktop-alternate { display: none; }
+.exowebtui-starting .desktop-alternate { display: block; font-size: .8rem; text-decoration: underline; }
 .exowebtui-ready .desktop-alternate { display: block; }
 #desktop-search { max-width: min(92vw, 34rem); padding: 16px; border: 1px solid #5de0d5; background: #0c1e23; color: #e2ecef; font: 14px/1.5 var(--mono); }
 #desktop-search::backdrop { background: #061019aa; }

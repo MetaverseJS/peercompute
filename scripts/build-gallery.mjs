@@ -90,6 +90,23 @@ import { intersects } from "../../src/app/hit_targets.ts";`],
     ['    const engineTransition: SurfaceTransition =', `    if (this.liveClient(id) || this.#liveRects.some(rect => intersects(rect, source.rect))) return;
     const engineTransition: SurfaceTransition =`],
   ], 'animation'));
+  // The gallery stretches its cell canvas to fill the viewport. Include the
+  // remaining partial cell in the display scale used by mouse, wheel and touch.
+  const platformPath = path.join(source, 'src/web/platform.ts');
+  await writeFile(platformPath, patchPinned(await readFile(platformPath, 'utf8'), [
+    [`    const rect = this.#target.getBoundingClientRect();
+    return {
+      x: Math.max(0, Math.floor((event.clientX - rect.left) / this.#cellWidth)),
+      y: Math.max(0, Math.floor((event.clientY - rect.top) / this.#cellHeight)),`,
+      `    const rect = this.#target.getBoundingClientRect();
+    const cellIndex = (offset: number, extent: number, cellSize: number): number => {
+      const cells = Math.max(1, Math.floor(extent / cellSize));
+      return Math.max(0, Math.floor(offset * cells / Math.max(1, extent)));
+    };
+    return {
+      x: cellIndex(event.clientX - rect.left, rect.width, this.#cellWidth),
+      y: cellIndex(event.clientY - rect.top, rect.height, this.#cellHeight),`],
+  ], 'cell coordinates'));
   // Add a pre-upload hook to the pinned presenter. All shader code, pass
   // ordering, uniforms, render targets and the display clock stay upstream.
   const shaderPath = path.join(source, 'src/web/canvas_shader.ts');

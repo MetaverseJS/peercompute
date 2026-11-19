@@ -1,6 +1,6 @@
 # PeerCompute
 
-The demo overview is an ExoWebTUI desktop. Select a demo from the directory or the PeerCompute menu to open it in an iframe window. Use the arrow keys and Enter to launch from the keyboard. Press `/` or tap **Find a demo** to search. The HTML directory provides ordinary links and works with scripts disabled.
+The demo overview is an ExoWebTUI desktop. Click or tap a demo to preview its image and read what you can do. The preview sits beside the list in wide windows and below it in narrow ones. Choose **Open demo** to launch the selected demo in an iframe window. From the keyboard, use the arrow keys to select, Shift + Up/Down to scroll the summary, and Enter to open. Press `/` or tap **Find a demo** to search names, categories and descriptions. The PeerCompute menu also offers direct launch shortcuts. During startup you can follow **Browse accessible HTML directory** for ordinary links. This view also opens automatically if the desktop fails to start or scripts are disabled.
 
 **Settings** controls the desktop theme, wallpaper, window animations and CRT shader stack. The directory and its previews are rendered in terminal cells. Settings are saved in this browser.
 
@@ -18,7 +18,7 @@ For a static preview, mount `docs/` at `/peercompute/` to match the shared runti
 
 ## Maintain it
 
-Edit the card anchors in `docs/index.html` to update both directories and the native launcher. The desktop adapter, catalog, demo windows, HTML capture and shader compositor are in `demos/gallery/`. The HTML alternative uses `docs/assets/gallery.css` and `gallery.js`.
+Edit the card anchors in `docs/index.html` to update both directories and the native launcher. Keep the short card description in the first paragraph and the full desktop preview in `.demo-summary`. The desktop adapter, catalog, demo windows, HTML capture and shader compositor are in `demos/gallery/`. The HTML alternative uses `docs/assets/gallery.css` and `gallery.js`.
 
 To rebuild, place Exotui beside this repository or set `EXOTUI_DIR` to a checkout containing the revision pinned in `scripts/build-gallery.mjs`. Run `npm run build:gallery`. Browsing needs only the static files in `docs/`. The MilkDrop wallpaper bundle loads on demand.
 

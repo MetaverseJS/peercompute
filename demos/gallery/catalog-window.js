@@ -5,7 +5,6 @@ import { glyphTextFont, renderGlyphText } from 'exowebtui-glyphs';
 const heading = title => renderGlyphText(glyphTextFont('small'), title, 'font')
   .map(line => line.trimEnd()).filter(line => line.length);
 const titleArt = heading('PeerCompute');
-const compactTitleArt = [...heading('Peer'), ...heading('Compute')];
 const peerDiagram = [
   '╭──────────╮           ╭──────────╮',
   '│  PEER A  ├── libp2p ─┤  PEER B  │',
@@ -17,11 +16,19 @@ const trim = (text, width) => text.length <= width ? text : text.slice(0, Math.m
 
 function wrap(text, width) {
   const lines = [];
-  for (const word of text.split(/\s+/)) {
-    const last = lines.length - 1;
-    if (last >= 0 && lines[last].length + 1 + word.length <= width) lines[last] += ' ' + word;
-    else lines.push(trim(word, width));
+  let line = '';
+  for (let word of text.trim().split(/\s+/)) {
+    if (line && line.length + 1 + word.length > width) {
+      lines.push(line);
+      line = '';
+    }
+    while (word.length > width) {
+      lines.push(word.slice(0, width));
+      word = word.slice(width);
+    }
+    line = line ? line + ' ' + word : word;
   }
+  if (line) lines.push(line);
   return lines;
 }
 
@@ -56,15 +63,19 @@ export function createCatalogWindow({ entries, openDemo, openSearch, openSetting
   let selected = 0, offset = 0, visibleRows = 1, rowHeight = 1;
   let revision = 0, rendered = {}, hits = [];
   let preview = {};
+  let previewOffset = 0, previewLimit = 0, previewBounds;
+  let scrollingPreview = false;
 
   function changeFilter() {
     const words = search.toLowerCase().trim().split(/\s+/).filter(Boolean);
     filtered = entries.filter(entry => {
-      const text = [entry.title, entry.category, entry.description, entry.id].join(' ').toLowerCase();
+      const text = [entry.title, entry.category, entry.description, entry.summary, entry.id].join(' ').toLowerCase();
       return (category === categories[0] || entry.category === category) && words.every(word => text.includes(word));
     });
     selected = 0;
     offset = 0;
+    previewOffset = 0;
+    scrollingPreview = false;
     revision++;
   }
   function selectCategory(name) {
@@ -72,7 +83,10 @@ export function createCatalogWindow({ entries, openDemo, openSearch, openSetting
     changeFilter();
   }
   function select(index) {
-    selected = clamp(index, 0, Math.max(0, filtered.length - 1));
+    const next = clamp(index, 0, Math.max(0, filtered.length - 1));
+    if (selected !== next) previewOffset = 0;
+    selected = next;
+    scrollingPreview = false;
     const start = selected * rowHeight;
     if (start < offset) offset = start;
     else if (start + rowHeight > offset + visibleRows) offset = start + rowHeight - visibleRows;
@@ -81,6 +95,10 @@ export function createCatalogWindow({ entries, openDemo, openSearch, openSetting
   function scroll(row) {
     const next = clamp(row, 0, Math.max(0, filtered.length * rowHeight - visibleRows));
     if (next !== offset) { offset = next; revision++; }
+  }
+  function scrollPreview(row) {
+    const next = clamp(row, 0, previewLimit);
+    if (next !== previewOffset) { previewOffset = next; revision++; }
   }
   function getImage(entry) {
     const src = entry.image;
@@ -119,13 +137,12 @@ export function createCatalogWindow({ entries, openDemo, openSearch, openSetting
     const end = width - pad - 1;
     const usable = Math.max(1, end - pad);
     let y = 0;
-    const art = titleArt.every(line => line.length <= usable) ? titleArt : compactTitleArt;
-    const banner = height >= 16 + art.length && art.every(line => line.length <= usable);
-    if (height >= 15) {
+    const columns = usable >= 80;
+    if (columns && height >= 15) {
       write(pad, y++, 'DEMO DIRECTORY', theme.muted);
-      if (banner) {
+      if (height >= 16 + titleArt.length && titleArt.every(line => line.length <= usable)) {
         const top = y;
-        for (const line of art) write(pad, y++, line, theme.accent);
+        for (const line of titleArt) write(pad, y++, line, theme.accent);
         if (usable >= 96) {
           const x = end - peerDiagram[0].length;
           peerDiagram.forEach((line, i) => write(x, top + i, line, i === 1 ? theme.text : theme.muted));
@@ -136,11 +153,11 @@ export function createCatalogWindow({ entries, openDemo, openSearch, openSetting
         wrap(intro, usable).forEach(line => write(pad, y++, line));
         y++;
       }
-    }
+    } else if (!columns && height >= 15) write(pad, y++, 'PeerCompute', theme.accent);
     link(pad, y, trim(search ? '[ / ] Find: ' + search : '[ / ] Find a demo', usable),
       () => openSearch(), theme.accent);
     y++;
-    if (height >= 13) {
+    if (height >= (columns ? 13 : 23) && usable >= 32) {
       let x = pad;
       for (const name of categories) {
         const text = name === category ? '[' + name + ']' : ' ' + name + ' ';
@@ -154,20 +171,36 @@ export function createCatalogWindow({ entries, openDemo, openSearch, openSetting
     } else {
       link(pad, y++, trim('Filter: ' + category + '  ›', usable), () => cycle(1));
     }
-    write(pad, y++, '─'.repeat(usable), theme.border);
-    const columns = usable >= 80 && height >= 19;
-    const divider = columns ? pad + Math.floor(usable * .53) : end;
-    const columnWidth = Math.max(1, divider - pad - 2);
-    write(pad, y, filtered.length + (filtered.length === 1 ? ' DEMO' : ' DEMOS'), theme.muted);
-    if (columns) write(divider + 3, y, 'PREVIEW', theme.muted);
-    const top = ++y;
+    if (height >= 15) write(pad, y++, '─'.repeat(usable), theme.border);
+    const divider = columns ? pad + Math.floor(usable * .48) : end;
+    const listWidth = columns ? divider - pad - 1 : usable;
     const footer = height - 1;
-    visibleRows = Math.max(1, footer - 1 - top);
-    rowHeight = height < 18 ? 1 : columns ? 2 : 3;
+    const footerRule = height >= 15;
+    const openRow = footer - (footerRule ? 2 : 1);
+    const listHeading = y;
+    const listTop = listHeading + 1;
+    const bodyRows = Math.max(1, openRow - listTop);
+    const oldRows = visibleRows, oldRowHeight = rowHeight;
+    const selectionWasVisible = selected * rowHeight >= offset && selected * rowHeight < offset + visibleRows;
+    visibleRows = columns || !filtered.length
+      ? bodyRows + 1
+      : Math.max(1, Math.floor((bodyRows - 1) * .43));
+    rowHeight = columns && visibleRows >= 10 ? 2 : 1;
+    if (selectionWasVisible && (oldRows !== visibleRows || oldRowHeight !== rowHeight)) {
+      const start = selected * rowHeight;
+      offset = clamp(offset, start + rowHeight - visibleRows, start);
+    }
     offset = clamp(offset, 0, Math.max(0, filtered.length * rowHeight - visibleRows));
+
+    write(pad, listHeading, filtered.length + (filtered.length === 1 ? ' DEMO' : ' DEMOS'), theme.muted);
+    if (filtered.length * rowHeight > visibleRows && listWidth >= 19) {
+      const pageRows = Math.max(rowHeight, Math.floor(visibleRows / rowHeight) * rowHeight);
+      link(pad + listWidth - 7, listHeading, '[↑]', () => { scrollingPreview = false; scroll(offset - pageRows); });
+      link(pad + listWidth - 3, listHeading, '[↓]', () => { scrollingPreview = false; scroll(offset + pageRows); });
+    }
     if (!filtered.length) {
-      write(pad, y, trim('No matching demos.', usable));
-      link(pad, y + 1, '[ Clear filters ]', () => { search = ''; selectCategory(categories[0]); });
+      write(pad, listTop, trim('No matching demos.', usable));
+      link(pad, listTop + 1, '[ Clear filters ]', () => { search = ''; selectCategory(categories[0]); });
     }
     for (let row = 0; row < visibleRows; row++) {
       const index = Math.floor((row + offset) / rowHeight);
@@ -176,49 +209,78 @@ export function createCatalogWindow({ entries, openDemo, openSearch, openSetting
       const part = (row + offset) % rowHeight;
       const active = selected === index;
       const bg = active ? theme.surfaceStrong : theme.surface;
-      const mark = active ? '› ' : '  ';
-      let label = mark + entry.title;
-      if (part > 0) {
-        const lines = columns ? [entry.category] : wrap(entry.description, Math.max(1, columnWidth - 2));
-        label = '  ' + (lines[part - 1] || '');
-        if (part === rowHeight - 1 && lines.length > part) label = label.trimEnd() + '…';
-      }
-      const titleWidth = part === 0 ? columnWidth - 2 : columnWidth;
-      write(pad, top + row, trim(label, titleWidth).padEnd(columnWidth),
-        part === 0 ? (active ? theme.accent : theme.text) : theme.muted, bg);
-      if (part === 0) write(divider - 3, top + row, '↗', active ? theme.accent : theme.muted, bg);
-      hits.push({ x: pad, y: top + row, width: columnWidth, action: () => { select(index); openDemo(entry.id); } });
+      const label = part ? '  ' + entry.category : (active ? '› ' : '  ') + entry.title;
+      write(pad, listTop + row, trim(label, listWidth).padEnd(listWidth),
+        part ? theme.muted : active ? theme.accent : theme.text, bg);
+      hits.push({ x: pad, y: listTop + row, width: listWidth, action: () => select(index) });
     }
-    if (columns && filtered.length) {
-      for (let row = top; row < footer - 1; row++) write(divider, row, '│', theme.border);
-      const x = divider + 3, available = end - x;
+
+    previewBounds = undefined;
+    previewLimit = 0;
+    if (filtered.length) {
+      const x = columns ? divider + 2 : pad;
+      const available = Math.max(1, end - x);
+      const headingRow = columns ? listHeading : listTop + visibleRows;
+      const previewTop = headingRow + 1;
+      const viewport = Math.max(0, openRow - previewTop);
+      if (columns) {
+        for (let row = headingRow; row <= openRow; row++) write(divider, row, '│', theme.border);
+      } else if (height >= 15) write(x, headingRow, '─'.repeat(available), theme.border);
+      write(x, headingRow, 'PREVIEW', theme.muted);
+      previewBounds = { x, top: headingRow, bottom: openRow };
+
       const entry = filtered[selected];
-      let info = top;
-      const artHeight = Math.max(0, Math.min(Math.round(available / 3), visibleRows - 9, 15));
-      if (artHeight >= 3) {
-        const image = getImage(entry);
-        if (image) {
-          if (preview.image !== image || preview.width !== available || preview.height !== artHeight || preview.theme !== theme) {
-            preview = { image, width: available, height: artHeight, theme,
-              cells: previewCells(image, available, artHeight, theme.surface) };
-          }
-          preview.cells.forEach((line, r) => line.forEach((cell, c) => { frame[info + r][x + c] = cell; }));
-          info += artHeight + 1;
+      const title = wrap(entry.title, available);
+      const summary = wrap(entry.summary || entry.description, available);
+      const showCategory = viewport >= 7;
+      const titleRows = title.length + Number(showCategory);
+      // Fit the summary ahead of the thumbnail when space is scarce. Keep
+      // enough artwork for a recognizable preview in taller windows.
+      const spaceForArt = viewport - titleRows - summary.length - 1;
+      const artHeight = Math.min(columns ? 15 : 8, Math.round(available / 3),
+        Math.max(viewport - titleRows >= 10 ? 4 : 0, spaceForArt));
+      const image = artHeight >= 3 ? getImage(entry) : null;
+      const gap = viewport >= 7 ? 1 : 0;
+      const summaryStart = titleRows + (image ? artHeight : 0) + gap;
+      previewLimit = Math.max(0, summaryStart + summary.length - viewport);
+      previewOffset = clamp(previewOffset, 0, previewLimit);
+      const start = previewTop - previewOffset;
+      const inView = row => row >= previewTop && row < openRow;
+
+      title.forEach((line, i) => { if (inView(start + i)) write(x, start + i, line, theme.accent); });
+      if (showCategory && inView(start + title.length)) write(x, start + title.length, trim(entry.category, available), theme.muted);
+      if (image) {
+        if (preview.image !== image || preview.width !== available || preview.height !== artHeight || preview.theme !== theme) {
+          preview = { image, width: available, height: artHeight, theme,
+            cells: previewCells(image, available, artHeight, theme.surface) };
         }
+        preview.cells.forEach((line, r) => {
+          const row = start + titleRows + r;
+          if (inView(row)) line.forEach((cell, c) => { frame[row][x + c] = cell; });
+        });
       }
-      for (const line of wrap(entry.title, available)) write(x, info++, line, theme.accent);
-      write(x, info++, trim(entry.category, available), theme.muted);
-      info++;
-      for (const line of wrap(entry.description, available)) {
-        if (info >= footer - 3) break;
-        write(x, info++, line);
+      summary.forEach((line, i) => {
+        const row = start + summaryStart + i;
+        if (inView(row)) write(x, row, line);
+      });
+      link(x, openRow, '[ Open demo ↗ ]', () => openDemo(entry.id));
+      if (previewLimit) {
+        const page = Math.max(1, viewport - 1);
+        const narrow = available < 22;
+        link(end - (narrow ? 3 : 7), openRow, narrow ? '↑' : '[↑]', () => scrollPreview(previewOffset - page),
+          previewOffset ? theme.accent : theme.muted);
+        link(end - (narrow ? 1 : 3), openRow, narrow ? '↓' : '[↓]', () => scrollPreview(previewOffset + page),
+          previewOffset < previewLimit ? theme.accent : theme.muted);
       }
-      link(x, Math.min(info + 1, footer - 2), '[ Open demo ↗ ]', () => openDemo(entry.id));
     }
-    write(pad, footer - 1, '─'.repeat(usable), theme.border);
+    if (footerRule) write(pad, footer - 1, '─'.repeat(usable), theme.border);
     link(pad, footer, '[ Settings ]', openSettings);
-    if (usable >= 22) link(pad + 14, footer, '[ HTML view ]', openHtml);
-    if (usable >= 75) write(end - 31, footer, '↑ ↓ select  ·  Enter to open', theme.muted);
+    if (usable >= 46) link(pad + 14, footer, '[ HTML view ]', openHtml);
+    else if (usable >= 21) link(pad + 13, footer, '[ HTML ]', openHtml);
+    if (usable >= 75) {
+      const hint = '↑ ↓ select  ·  Enter to open';
+      write(width - 12 - hint.length, footer, hint, theme.muted);
+    }
     return frame;
   }
   function cycle(direction) {
@@ -242,8 +304,8 @@ export function createCatalogWindow({ entries, openDemo, openSearch, openSetting
         case '/': openSearch(); break;
         case 'left': cycle(-1); break;
         case 'right': cycle(1); break;
-        case 'up': select(selected - 1); break;
-        case 'down': select(selected + 1); break;
+        case 'up': event.shift ? scrollPreview(previewOffset - 1) : select(selected - 1); break;
+        case 'down': event.shift ? scrollPreview(previewOffset + 1) : select(selected + 1); break;
         case 'home': select(0); break;
         case 'end': select(filtered.length - 1); break;
         case 'pageup': select(selected - Math.max(1, Math.floor(visibleRows / rowHeight))); break;
@@ -257,10 +319,18 @@ export function createCatalogWindow({ entries, openDemo, openSearch, openSetting
       const hit = hits.find(item => item.y === row && column >= item.x && column < item.x + item.width);
       hit?.action();
     },
-    onWheel(direction) { scroll(offset + direction * rowHeight); return true; },
-    scrollTo: scroll,
+    onWheel(direction, column, row) {
+      const overPreview = previewBounds && column >= previewBounds.x && row >= previewBounds.top && row <= previewBounds.bottom;
+      scrollingPreview = Boolean(overPreview && previewLimit);
+      if (overPreview) scrollPreview(previewOffset + direction * 3);
+      else scroll(offset + direction * rowHeight);
+      return true;
+    },
+    scrollTo(row) { scrollingPreview ? scrollPreview(row) : scroll(row); },
     vscroll(_width, height) {
-      return { offset, total: height + Math.max(0, filtered.length * rowHeight - visibleRows) };
+      return scrollingPreview
+        ? { offset: previewOffset, total: height + previewLimit }
+        : { offset, total: height + Math.max(0, filtered.length * rowHeight - visibleRows) };
     },
   };
 }
