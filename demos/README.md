@@ -6,6 +6,8 @@ do not join the peer network. Start with the
 [published overview](https://metaversejs.github.io/peercompute/) or the
 [library guide](../peercompute/README.md).
 
+The [Demo Atlas guide](gallery/README.md) covers the ExoWebTUI launcher, directory filters, and rebuilding the landing page.
+
 ## Run locally
 
 Run commands from the repository root with Node.js 24 LTS:

@@ -2,3 +2,4 @@
 # upstream whitespace verbatim; source files remain under the normal checks.
 docs/*/assets/** -whitespace
 docs/*/cesium/** -whitespace
+docs/assets/exowebtui.js -whitespace

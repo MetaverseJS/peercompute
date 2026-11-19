@@ -64396,3 +64396,19 @@ its text; the traced retry passed and showed an inference discovery deadline
 while connected. No public inference generation was requested for this test.
 Public reports and screenshots: ~/.cache/peercompute-hermes-release-20261118/.
 Updated plan and tests locally. Unrelated ULG source and notes remain unstaged.
+
+## 2026-11-18 17:29:08 AKST — ExoWebTUI Demo Atlas
+
+Prompt (first observed request clock): “I'd like you to use exowebtui (found in projects exotui) to make a new demo landing page for peercompute. make this in a new branch off of the current branch and stand it up locally so I can test it”
+
+Created a separate worktree from the current feature tip with `git worktree add -b feature/exowebtui-demo-gallery /home/cos/projects/peercompute-exowebtui HEAD`. The parent was 18a2182d. Refreshed ICC with `icc reindex --repo peercompute --full` after the initial stale-index refusal, then recorded the task and disjoint desktop/gallery leases. Used Exotui’s own browser desktop from pinned commit 8637fcc39d19959550ca179fe91c258766c2fa62. The full web barrel pulled in native PTY code during exploration. The narrow presenter and desktop entries bundle for the browser.
+
+Replaced the old overview in docs/index.html with a semantic directory and added docs/assets/gallery.{css,js}, demos/gallery/desktop.js, scripts/build-gallery.mjs, the built exowebtui.js and its third-party license. The native window and launcher share one set of demo links. The page supports category filters, search, real screenshot previews, narrow windows, and a script-free directory. Updated package.json, demos/README.md, demos/gallery/README.md, plan/plan.md, plan/tests.md, and the branch plan. The existing tile-order check initially treated the former repository card as a demo. Updated demos/tests/demo-release.test.js to check the repository link separately and verify the exact order and count of all 17 demo anchors. Added demos/tests/gallery-browser.mjs for the native launcher, filtering, mobile sizing and plain HTML.
+
+Ran `npm run build:gallery` twice with matching module hashes. Ran `CHROME_BIN=/usr/bin/google-chrome node --test demos/tests/gallery-browser.mjs demos/tests/demo-ports.test.js demos/tests/demo-release.test.js demos/tests/console-navigation.test.js` (48 passed). Served docs at /peercompute/ via a loopback static server in peercompute-exowebtui-preview.service and `tailscale serve --bg --yes --https=5190 http://127.0.0.1:15190`. Trusted HTTPS returned 200. On the first Chrome run some subresource requests reported ERR_CERT_VERIFIER_CHANGED. Repeated the desktop and emulated-phone checks against the exact tailnet URL, decoded the card images, requested all 17 destinations and opened CubeChat; the final run recorded zero browser, request or console errors. Visually inspected both layouts and corrected the black rectangle behind the WXGlobe artwork. Also verified native menu/reopen/theme actions, query forwarding and same-tab demo navigation. Reports and screenshots are under ~/.cache/peercompute-exo-gallery. The preview stays up for user testing.
+
+### 2026-11-18 17:42 AKST — Preview address
+
+Prompt: “where is it so I can try?” Provided the already-running Tailscale URL https://fastbox.tail5c077c.ts.net:5190/peercompute/ and checked HTTP 200 with successful certificate verification from that exact URL.
+
+The generated desktop bundle embeds an upstream font header with a trailing space. Extended the existing generated-asset whitespace attributes to that single output in .gitattributes, preserving verbatim font data. The staged source check then passed.

@@ -83,6 +83,7 @@
     "chaos-lab:image:build": "npm --prefix net-chaos-lab run image:build --",
     "chaos-lab:cleanup": "npm --prefix net-chaos-lab run cleanup --",
     "chaos-lab:deps": "npm --prefix net-chaos-lab run deps:python --",
+    "build:gallery": "node scripts/build-gallery.mjs",
     "docs:dev": "vite --config vite.docs.config.mjs",
     "docs:preview": "vite preview --config vite.docs.config.mjs",
     "test:runtime": "node demos/tests/runtime-smoke.mjs && node demos/tests/runtime-p2p.mjs",

@@ -1,717 +1,143 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <link rel="icon" href="data:,">
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>PeerCompute Demos</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap" rel="stylesheet">
-  <style>
-    :root {
-      color-scheme: dark;
-      --term-green: #00ff6a;
-      --term-glow: rgba(0, 255, 106, 0.55);
-      --term-bg: #030509;
-      --panel: rgba(0, 15, 0, 0.9);
-      --panel-soft: rgba(0, 20, 0, 0.8);
-      --line: rgba(0, 255, 106, 0.9);
-      --grid: #00ff6a;
-      --hot: #ff4fb3;
-      --shadow: rgba(0, 0, 0, 0.5);
-    }
-
-    * {
-      box-sizing: border-box;
-    }
-
-    body {
-      margin: 0;
-      font-family: "Silkscreen", "Cascadia Mono", "Consolas", monospace;
-      background: var(--term-bg);
-      color: var(--term-green);
-      line-height: 1.5;
-      min-height: 100vh;
-      overflow-x: hidden;
-      text-shadow: 0 0 2px var(--term-glow), 0 0 8px var(--term-glow);
-      -webkit-font-smoothing: none;
-    }
-
-    #grid {
-      position: fixed;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      z-index: 0;
-      image-rendering: pixelated;
-      image-rendering: crisp-edges;
-      opacity: 0.9;
-      filter: saturate(1.3) contrast(1.15);
-    }
-
-    .scanlines {
-      position: fixed;
-      inset: 0;
-      background: repeating-linear-gradient(
-        180deg,
-        rgba(2, 8, 12, 0.2) 0,
-        rgba(2, 8, 12, 0.2) 2px,
-        rgba(0, 0, 0, 0) 4px,
-        rgba(0, 0, 0, 0) 6px
-      );
-      opacity: 0.55;
-      pointer-events: none;
-      z-index: 1;
-      mix-blend-mode: screen;
-    }
-
-    #crt-overlay {
-      position: fixed;
-      inset: 0;
-      z-index: 3;
-      pointer-events: none;
-      background: transparent;
-      mix-blend-mode: screen;
-    }
-
-    .crt-effects {
-      animation: textShadow 1.6s infinite;
-    }
-
-    .crt-effects::before {
-      content: " ";
-      display: block;
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.3) 50%),
-        linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.08), rgba(0, 0, 255, 0.06));
-      z-index: 4;
-      background-size: 100% 2px, 3px 100%;
-      pointer-events: none;
-    }
-
-    .crt-effects::after {
-      content: " ";
-      display: block;
-      position: absolute;
-      inset: 0;
-      background: rgba(18, 16, 16, 0.1);
-      opacity: 0;
-      z-index: 4;
-      pointer-events: none;
-      animation: flicker 0.15s infinite;
-    }
-
-    .vignette {
-      position: fixed;
-      inset: 0;
-      background: radial-gradient(circle at center, rgba(0, 0, 0, 0) 0%, rgba(5, 6, 10, 0.75) 70%);
-      pointer-events: none;
-      z-index: 1;
-    }
-
-    .page {
-      position: relative;
-      z-index: 2;
-      padding: 52px 6vw 64px;
-      filter: url(#crt-warp) saturate(1.1) contrast(1.05);
-      animation: crtShift 6s infinite;
-    }
-
-    header {
-      display: grid;
-      grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
-      gap: 24px;
-      align-items: stretch;
-      margin-bottom: 36px;
-      animation: rise 0.8s ease-out both;
-    }
-
-    @keyframes rise {
-      from { opacity: 0; transform: translateY(16px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-
-    h1 {
-      margin: 0 0 12px;
-      font-family: "Silkscreen", "Cascadia Mono", "Consolas", monospace;
-      font-size: clamp(2.1rem, 5vw, 3.4rem);
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-      text-shadow:
-        0 0 6px rgba(0, 255, 106, 0.8),
-        0 0 18px rgba(0, 255, 106, 0.5),
-        0 0 36px rgba(0, 255, 106, 0.35),
-        0 0 60px rgba(0, 255, 106, 0.2);
-      filter: drop-shadow(0 0 18px rgba(0, 255, 106, 0.55))
-        drop-shadow(0 0 36px rgba(0, 255, 106, 0.35));
-    }
-
-    p {
-      margin: 0 0 16px;
-      max-width: 720px;
-      color: rgba(0, 255, 106, 0.7);
-    }
-
-    .panel {
-      background: linear-gradient(140deg, var(--panel) 0%, var(--panel-soft) 100%);
-      border: 3px solid var(--line);
-      border-radius: 0;
-      padding: 20px 22px;
-      box-shadow: 0 0 22px rgba(0, 255, 106, 0.45), inset 0 0 24px rgba(0, 50, 0, 0.4);
-      position: relative;
-      overflow: hidden;
-    }
-
-    .panel::before,
-    .card::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(rgba(0, 0, 0, 0) 50%, rgba(0, 0, 0, 0.3) 50%);
-      background-size: 100% 2px;
-      opacity: 0.25;
-      pointer-events: none;
-    }
-
-    .panel::after {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background: radial-gradient(circle at top left, rgba(0, 255, 106, 0.18), transparent 55%);
-      opacity: 0.4;
-      pointer-events: none;
-    }
-
-    .panel-title {
-      font-size: 0.78rem;
-      letter-spacing: 0.16em;
-      text-transform: uppercase;
-      color: var(--term-green);
-      margin-bottom: 12px;
-    }
-
-    .hero-meta {
-      display: grid;
-      gap: 10px;
-      font-size: 0.9rem;
-      color: rgba(0, 255, 106, 0.7);
-    }
-
-    .hero-meta span {
-      color: var(--term-green);
-    }
-
-    .hero-links {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      margin-top: 14px;
-    }
-
-    .hero-links a {
-      text-decoration: none;
-      color: var(--term-green);
-      border: 2px solid rgba(0, 255, 106, 0.7);
-      padding: 6px 12px;
-      border-radius: 0;
-      font-size: 0.82rem;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      background: rgba(0, 12, 0, 0.7);
-      transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
-    }
-
-    .hero-links a:hover {
-      transform: translateY(-2px);
-      border-color: var(--hot);
-      box-shadow: 0 0 12px rgba(255, 79, 179, 0.35);
-    }
-
-    main {
-      display: grid;
-      gap: 20px;
-    }
-
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-      gap: 18px;
-    }
-
-    .card {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      padding: 18px 18px 20px;
-      background: rgba(0, 14, 0, 0.86);
-      border: 3px solid rgba(0, 255, 106, 0.95);
-      border-radius: 0;
-      box-shadow: 0 0 22px rgba(0, 255, 106, 0.6), inset 0 0 20px rgba(0, 50, 0, 0.5);
-      text-decoration: none;
-      color: inherit;
-      transition: transform 0.2s ease, border-color 0.35s ease, box-shadow 0.35s ease;
-      position: relative;
-      overflow: hidden;
-      animation: cardIn 0.6s ease both;
-      animation-delay: calc(var(--i, 0) * 80ms);
-    }
-
-    .card:hover {
-      transform: translateY(-2px);
-      border-color: #ff5dd6;
-      box-shadow: 0 0 24px rgba(255, 79, 179, 0.8), 0 0 60px rgba(255, 79, 179, 0.65);
-    }
-
-    .card::after {
-      content: "";
-      position: absolute;
-      inset: -4px;
-      border: 2px solid transparent;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 0.2s ease;
-    }
-
-    .card:hover::after {
-      opacity: 1;
-      border-color: var(--hot);
-      animation: neonPulse 1.2s ease-in-out infinite;
-      box-shadow:
-        0 0 18px rgba(255, 79, 179, 0.95),
-        0 0 34px rgba(255, 79, 179, 0.75),
-        0 0 62px rgba(255, 79, 179, 0.6);
-    }
-
-    @keyframes cardIn {
-      from { opacity: 0; transform: translateY(12px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-
-    .thumb {
-      border-radius: 0;
-      border: 2px solid rgba(0, 255, 106, 0.45);
-      overflow: hidden;
-      background: linear-gradient(180deg, rgba(0, 16, 0, 0.85), rgba(0, 8, 0, 0.95));
-    }
-
-    .thumb img {
-      width: 100%;
-      height: 160px;
-      object-fit: cover;
-      display: block;
-      filter: saturate(1.1) contrast(1.05);
-    }
-
-    .card h2 {
-      margin: 0;
-      font-size: 1.25rem;
-      font-family: "Silkscreen", "Cascadia Mono", "Consolas", monospace;
-      text-transform: uppercase;
-    }
-
-    .card span {
-      font-size: 0.95rem;
-      color: rgba(0, 255, 106, 0.7);
-    }
-
-    .links {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 6px;
-    }
-
-    .links a {
-      font-size: 0.85rem;
-      text-decoration: none;
-      color: var(--term-green);
-      padding: 4px 8px;
-      border-radius: 0;
-      border: 2px solid rgba(0, 255, 106, 0.55);
-    }
-
-    footer {
-      padding: 0 6vw 32px;
-      color: rgba(0, 255, 106, 0.55);
-      font-size: 0.9rem;
-    }
-
-    @keyframes flicker {
-      0% { opacity: 0.027951; }
-      5% { opacity: 0.048283; }
-      10% { opacity: 0.041688; }
-      15% { opacity: 0.086208; }
-      20% { opacity: 0.076896; }
-      25% { opacity: 0.046968; }
-      30% { opacity: 0.057372; }
-      35% { opacity: 0.063702; }
-      40% { opacity: 0.052601; }
-      45% { opacity: 0.093379; }
-      50% { opacity: 0.027056; }
-      55% { opacity: 0.076846; }
-      60% { opacity: 0.072237; }
-      65% { opacity: 0.074603; }
-      70% { opacity: 0.023249; }
-      75% { opacity: 0.079218; }
-      80% { opacity: 0.079361; }
-      85% { opacity: 0.029237; }
-      90% { opacity: 0.046422; }
-      95% { opacity: 0.091153; }
-      100% { opacity: 0.093375; }
-    }
-
-    @keyframes textShadow {
-      0% {
-        text-shadow: 0 0 2px rgba(0, 255, 106, 0.6), 0 0 6px rgba(0, 255, 106, 0.35);
-      }
-      50% {
-        text-shadow: 0 0 1px rgba(0, 255, 106, 0.65), 0 0 10px rgba(0, 255, 106, 0.45);
-      }
-      100% {
-        text-shadow: 0 0 2px rgba(0, 255, 106, 0.6), 0 0 6px rgba(0, 255, 106, 0.35);
-      }
-    }
-
-    @keyframes neonPulse {
-      0% {
-        box-shadow:
-          0 0 14px rgba(255, 79, 179, 0.75),
-          0 0 26px rgba(255, 79, 179, 0.55),
-          0 0 42px rgba(255, 79, 179, 0.4);
-      }
-      50% {
-        box-shadow:
-          0 0 22px rgba(255, 79, 179, 1),
-          0 0 40px rgba(255, 79, 179, 0.8),
-          0 0 70px rgba(255, 79, 179, 0.65);
-      }
-      100% {
-        box-shadow:
-          0 0 16px rgba(255, 79, 179, 0.85),
-          0 0 30px rgba(255, 79, 179, 0.65),
-          0 0 54px rgba(255, 79, 179, 0.5);
-      }
-    }
-
-    @keyframes crtShift {
-      0%, 100% { transform: translate(0, 0); }
-      20% { transform: translate(0.6px, -0.4px); }
-      40% { transform: translate(-0.5px, 0.3px); }
-      60% { transform: translate(0.4px, 0.2px); }
-      80% { transform: translate(-0.3px, -0.2px); }
-    }
-
-    @media (max-width: 960px) {
-      header {
-        grid-template-columns: 1fr;
-      }
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      * {
-        animation: none !important;
-        transition: none !important;
-      }
-    }
-  </style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101519">
+  <meta name="description" content="Explore PeerCompute demos for peer-hosted AI, multiplayer worlds, Earth data, and distributed simulation.">
+  <title>Demo Atlas · PeerCompute</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23c6f582'/%3E%3Cpath d='m6 22 10-16 10 16H6Zm5-7h10M16 7v15' fill='none' stroke='%23151b19' stroke-width='2'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="./assets/gallery.css">
+  <script type="module" src="./assets/gallery.js"></script>
+  <script type="module" src="./assets/exowebtui.js"></script>
 </head>
 <body>
-  <canvas id="grid" aria-hidden="true"></canvas>
-  <div class="scanlines" aria-hidden="true"></div>
-  <div id="crt-overlay" class="crt-effects" aria-hidden="true"></div>
-  <div class="vignette" aria-hidden="true"></div>
-  <svg class="filters" aria-hidden="true" width="0" height="0" viewBox="0 0 0 0">
-    <filter id="crt-warp">
-      <feTurbulence type="fractalNoise" baseFrequency="0.006" numOctaves="1" seed="2" result="noise">
-        <animate attributeName="baseFrequency" dur="6s" values="0.004;0.008;0.006;0.01;0.004" repeatCount="indefinite" />
-      </feTurbulence>
-      <feDisplacementMap in="SourceGraphic" in2="noise" scale="5" xChannelSelector="R" yChannelSelector="G" />
-    </filter>
-  </svg>
-
-  <div class="page">
-    <header>
-      <section class="panel">
-        <div class="panel-title">System Console</div>
-        <h1>PeerCompute</h1>
-      </section>
-      <aside class="panel">
-        <div class="panel-title">Live Status</div>
-        <div class="hero-meta">
-          <div>Grid Renderer: <span>ONLINE</span></div>
-          <div>Compute Pool: <span>READY</span></div>
-          <div>Relay Link: <span>STANDBY</span></div>
-          <div>XR Layers: <span>ARMED</span></div>
-        </div>
-      </aside>
+  <div id="desktop" aria-label="ExoWebTUI desktop"></div>
+  <div id="atlas">
+    <a class="skip" href="#directory">Skip to demos</a>
+    <header class="masthead">
+      <div class="masthead-inner">
+        <div class="brand"><span class="brand-mark" aria-hidden="true">⟁</span> PeerCompute</div>
+        <a class="source" href="https://github.com/MetaverseJS/peercompute" target="_blank" rel="noreferrer" aria-label="PeerCompute source code on GitHub">
+          Source code <span aria-hidden="true">↗</span>
+        </a>
+      </div>
     </header>
-
-    <main>
-      <section class="grid">
-        <a class="card" href="https://github.com/MetaverseJS/peercompute" target="_blank" rel="noreferrer" style="--i: 0;">
-          <div class="thumb">
-            <img src="./assets/peercompute-block-diagram.png" alt="PeerCompute block diagram" loading="lazy">
-          </div>
-          <h2>PeerCompute (GitHub)</h2>
-          <span>PeerCompute is a browser-based P2P networking and distributed compute library built on libp2p.</span>
+    <main class="page">
+      <section class="hero" aria-labelledby="atlas-title">
+        <div class="hero-intro">
+          <p class="eyebrow"><span class="square"></span> Distributed computing</p>
+          <h1 id="atlas-title">Demo atlas<span>.</span></h1>
+          <p class="intro">Explore what browsers can build together. Run AI models, enter shared worlds, and simulate physical systems on PeerCompute.</p>
+        </div>
+        <a class="globe-plate" href="./wxglobe/" data-feature="wxglobe" aria-label="Open WXGlobe topography demo">
+          <div class="globe-orbit"><img src="./assets/wxglobe.png" alt="" fetchpriority="high"></div>
+          <span class="plate-caption">WXGlobe <span aria-hidden="true">↗</span></span>
         </a>
-        <a class="card" href="./inference/" data-demo-dir="inference" data-demo-port="5189" data-demo-path="/" style="--i: 1;">
-          <div class="thumb" aria-hidden="true" style="display:grid;place-items:center;font:clamp(22px,4vw,42px) monospace;letter-spacing:.12em;color:#8fffd4;background:linear-gradient(135deg,#071716,#133a2a)">IPFS → GPU</div>
-          <h2>Local Model Console</h2>
-          <span>IPFS model hosting, WebGPU chat and vision agents. Also available inside CubeChat and EarthGrid.</span>
-        </a>
-        <a class="card" href="./cubechat/" data-demo-dir="cubechat" data-demo-port="5176" data-demo-path="/" style="--i: 2;">
-          <div class="thumb">
-            <img src="./assets/cubechat.png" alt="CubeChat screenshot" loading="lazy">
-          </div>
-          <h2>CubeChat</h2>
-          <span>PeerCompute relay + WebRTC proximity video chat.</span>
-        </a>
-        <a class="card" href="./universes/" data-demo-dir="universes" data-demo-port="5178" data-demo-path="/" style="--i: 3;">
-          <div class="thumb">
-            <img src="./assets/universes.png" alt="Universes screenshot" loading="lazy">
-          </div>
-          <h2>Universes</h2>
-          <span>Universe + galaxy generator with ComputeManager offload.</span>
-        </a>
-        <a class="card" href="./multiscale/" data-demo-dir="multiscale" data-demo-port="5185" data-demo-path="/" style="--i: 4;">
-          <div class="thumb">
-            <img src="./assets/multiscale.svg" alt="Multiscale ladder schematic" loading="lazy">
-          </div>
-          <h2>Multiscale Ladder</h2>
-          <span>WebGPU-first zoomable scaffold from supergalactic structure to orbital clouds.</span>
-        </a>
-        <a class="card" href="./planetgen/" data-demo-dir="planetgen" data-demo-port="5177" data-demo-path="/" style="--i: 5;">
-          <div class="thumb">
-            <img src="./assets/planetgen.png" alt="PlanetGen screenshot" loading="lazy">
-          </div>
-          <h2>PlanetGen</h2>
-          <span>Procedural planet generator with GPU-driven oceans and weather.</span>
-        </a>
-        <a class="card" href="./wxglobe/" data-demo-dir="wxglobe" data-demo-port="5186" data-demo-path="/" style="--i: 6;">
-          <div class="thumb">
-            <img src="./assets/wxglobe.png" alt="WXGlobe green topographic Earth screenshot" loading="lazy">
-          </div>
-          <h2>WXGlobe</h2>
-          <span>Imagery-free Cesium terrain with whole-world elevation and bathymetry contours.</span>
-        </a>
-        <a class="card" href="./earth/" data-demo-dir="earth" data-demo-port="5187" data-demo-path="/" style="--i: 7;">
-          <div class="thumb">
-            <img src="./assets/earth.png" alt="EarthGrid real-data terrain with flat blue water, roads, buildings, and weather controls" loading="lazy">
-          </div>
-          <h2>EarthGrid</h2>
-          <span>Real NOAA terrain and weather with flat blue OSM water plus bounded road and building context.</span>
-        </a>
-        <a class="card" href="./motorcycle/" data-demo-dir="motorcycle" data-demo-port="5188" data-demo-path="/" style="--i: 8;">
-          <div class="thumb">
-            <img src="./assets/motorcycle.png" alt="RoadVector particle motorcycle on bright real-world topographic roads" loading="lazy">
-          </div>
-          <h2>RoadVector</h2>
-          <span>Particle-component motorcycle riding real OSM roads with synthetic traffic and desktop, mobile, gamepad, and WebXR input.</span>
-        </a>
-        <a class="card" href="./netviz/" data-demo-dir="netviz" data-demo-port="5182" data-demo-path="/" style="--i: 9;">
-          <div class="thumb">
-            <img src="./assets/netviz-screenshot.gif" alt="NetViz screenshot" loading="lazy">
-          </div>
-          <h2>NetViz</h2>
-          <span>Live topology + telemetry view powered by warm deltas.</span>
-        </a>
-        <a class="card" href="./fano-reactor/" data-demo-dir="fano-reactor" data-demo-port="5183" data-demo-path="/" style="--i: 10;">
-          <div class="thumb">
-            <img src="./assets/fano-reactor.svg" alt="Fano Reactor schematic" loading="lazy">
-          </div>
-          <h2>Fano Reactor</h2>
-          <span>Exact sedenion bond lab with Fano-map targeting and cascade probes.</span>
-        </a>
-        <a class="card" href="./schrodinger/" data-demo-dir="schrodinger" data-demo-port="5184" data-demo-path="/" style="--i: 11;">
-          <div class="thumb">
-            <img src="./assets/schrodinger.svg" alt="Schrodinger materials console schematic" loading="lazy">
-          </div>
-          <h2>Schrodinger</h2>
-          <span>Atom/orbital visualizer with water and material property packets.</span>
-        </a>
-        <a class="card" href="./sneakywoods/" data-demo-dir="sneakywoods" data-demo-port="5180" data-demo-path="/" style="--i: 12;">
-          <div class="thumb">
-            <img src="./assets/sneakywoods.png" alt="SneakyWoods screenshot" loading="lazy">
-          </div>
-          <h2>SneakyWoods</h2>
-          <span>Lightweight multiplayer arena with shared state sync.</span>
-        </a>
-        <a class="card" href="./daddygo/" data-demo-dir="daddygo" data-demo-port="5181" data-demo-path="/" style="--i: 13;">
-          <div class="thumb">
-            <img src="./assets/daddygo.png" alt="Daddy Go screenshot" loading="lazy">
-          </div>
-          <h2>Daddy Go!</h2>
-          <span>Pose-controlled runner with shared global high score.</span>
-        </a>
-        <a class="card" href="./webgpuphys/demos/toychest.html" data-demo-dir="webgpuphys" data-demo-port="5179" data-demo-path="/demos/toychest.html" style="--i: 14;">
-          <div class="thumb">
-            <img src="./assets/webgpuphys.png" alt="WebGPUPhys screenshot" loading="lazy">
-          </div>
-          <h2>Dynamics (WebGpuPhys)</h2>
-          <span>A particle based dynamics engine </span>
-        </a>
-        <a class="card" href="./webgpuphys/demos/mpm-visual.html" data-demo-dir="webgpuphys" data-demo-port="5179" data-demo-path="/demos/mpm-visual.html" style="--i: 15;">
-          <div class="thumb">
-            <img src="./assets/mpm-visual.png" alt="MPM Visual screenshot" loading="lazy">
-          </div>
-          <h2>MPM Visual (WebGpuPhys)</h2>
-          <span>Rendered MLS-MPM particles with orbit controls, materials, and thermal effects.</span>
-        </a>
-        <a class="card" href="./webgpuphys/demos/ppf-contact-solver.html" data-demo-dir="webgpuphys" data-demo-port="5179" data-demo-path="/demos/ppf-contact-solver.html" style="--i: 16;">
-          <div class="thumb">
-            <img src="./assets/ppf-contact-solver.png" alt="PPF contact solver screenshot" loading="lazy">
-          </div>
-          <h2>PPF Contact Solver (WebGpuPhys)</h2>
-          <span>Iterative cubic barrier contacts with friction and uniform-grid acceleration.</span>
-        </a>
-        <a class="card" href="./hyperborea/" data-demo-dir="hyperborea" data-demo-port="5175" data-demo-path="/" style="--i: 17;">
-          <div class="thumb">
-            <img src="./assets/hyperborea.png" alt="Hyperborea screenshot" loading="lazy">
-          </div>
-          <h2>Hyperborea</h2>
-          <span>WebXR-ready multiplayer scene with shared GPU hub.</span>
-        </a>
-
+      </section>
+      <section id="directory" aria-labelledby="directory-title" tabindex="-1">
+        <div class="directory-head">
+          <div class="directory-title"><h2 id="directory-title">Demo directory</h2><output id="result-count" aria-live="polite">17 demos</output></div>
+          <label class="search" hidden><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="Find a demo" aria-label="Find a demo" autocomplete="off"><kbd aria-hidden="true">/</kbd></label>
+        </div>
+        <div class="filters" role="group" aria-label="Filter demos by category" hidden>
+          <button type="button" aria-pressed="true">All demos</button>
+          <button type="button" aria-pressed="false">AI &amp; network</button>
+          <button type="button" aria-pressed="false">Worlds &amp; games</button>
+          <button type="button" aria-pressed="false">Earth &amp; space</button>
+          <button type="button" aria-pressed="false">Simulation</button>
+        </div>
+        <div class="grid" id="demos">
+          <a class="card" href="./inference/" data-demo-dir="inference" data-demo-port="5189" data-demo-path="/" data-category="AI &amp; network">
+            <div class="thumb inference"><canvas id="model-wave" width="600" height="210" aria-hidden="true"></canvas><span class="wave-label">IPFS → WebGPU</span></div>
+            <div class="card-body"><span class="category">AI &amp; network</span><h2>Local Model Console</h2>
+              <p>Chat with browser-hosted models. Route text, images, and voice between local and remote peers.</p><span class="arrow" aria-hidden="true">↗</span></div>
+          </a>
+          <a class="card" href="./cubechat/" data-demo-dir="cubechat" data-demo-port="5176" data-demo-path="/" data-category="Worlds &amp; games">
+            <div class="thumb cubechat"><img src="./assets/cubechat.png" alt="" loading="lazy" decoding="async"></div>
+            <div class="card-body"><span class="category">Worlds &amp; games</span><h2>CubeChat</h2>
+              <p>Step into a shared 3D room with proximity video chat and AI residents.</p><span class="arrow" aria-hidden="true">↗</span></div>
+          </a>
+          <a class="card" href="./universes/" data-demo-dir="universes" data-demo-port="5178" data-demo-path="/" data-category="Earth &amp; space">
+            <div class="thumb universes"><img src="./assets/universes.png" alt="" loading="lazy" decoding="async"></div>
+            <div class="card-body"><span class="category">Earth &amp; space</span><h2>Universes</h2>
+              <p>Generate galaxies and star systems across scales with shared compute workers.</p><span class="arrow" aria-hidden="true">↗</span></div>
+          </a>
+          <a class="card" href="./multiscale/" data-demo-dir="multiscale" data-demo-port="5185" data-demo-path="/" data-category="Earth &amp; space">
+            <div class="thumb multiscale"><img src="./assets/multiscale.svg" alt="" loading="lazy" decoding="async"></div>
+            <div class="card-body"><span class="category">Earth &amp; space</span><h2>Multiscale Ladder</h2>
+              <p>Travel from supergalactic structures to orbital clouds in a WebGPU simulation.</p><span class="arrow" aria-hidden="true">↗</span></div>
+          </a>
+          <a class="card" href="./planetgen/" data-demo-dir="planetgen" data-demo-port="5177" data-demo-path="/" data-category="Earth &amp; space">
+            <div class="thumb planetgen"><img src="./assets/planetgen.png" alt="" loading="lazy" decoding="async"></div>
+            <div class="card-body"><span class="category">Earth &amp; space</span><h2>PlanetGen</h2>
+              <p>Shape a procedural planet with GPU-driven oceans, atmosphere, and weather.</p><span class="arrow" aria-hidden="true">↗</span></div>
+          </a>
+          <a class="card" href="./wxglobe/" data-demo-dir="wxglobe" data-demo-port="5186" data-demo-path="/" data-category="Earth &amp; space">
+            <div class="thumb wxglobe"><img src="./assets/wxglobe.png" alt="" loading="lazy" decoding="async"></div>
+            <div class="card-body"><span class="category">Earth &amp; space</span><h2>WXGlobe</h2>
+              <p>Explore Earth’s elevation and ocean depths through global topographic contours.</p><span class="arrow" aria-hidden="true">↗</span></div>
+          </a>
+          <a class="card" href="./earth/" data-demo-dir="earth" data-demo-port="5187" data-demo-path="/" data-category="Earth &amp; space">
+            <div class="thumb earth"><img src="./assets/earth.png" alt="" loading="lazy" decoding="async"></div>
+            <div class="card-body"><span class="category">Earth &amp; space</span><h2>EarthGrid</h2>
+              <p>Explore NOAA terrain, weather, roads, and buildings in a shared world.</p><span class="arrow" aria-hidden="true">↗</span></div>
+          </a>
+          <a class="card" href="./motorcycle/" data-demo-dir="motorcycle" data-demo-port="5188" data-demo-path="/" data-category="Worlds &amp; games">
+            <div class="thumb motorcycle"><img src="./assets/motorcycle.png" alt="" loading="lazy" decoding="async"></div>
+            <div class="card-body"><span class="category">Worlds &amp; games</span><h2>RoadVector</h2>
+              <p>Ride a particle-based motorcycle along real roads with simulated traffic.</p><span class="arrow" aria-hidden="true">↗</span></div>
+          </a>
+          <a class="card" href="./netviz/" data-demo-dir="netviz" data-demo-port="5182" data-demo-path="/" data-category="AI &amp; network">
+            <div class="thumb netviz"><img src="./assets/netviz-screenshot.gif" alt="" loading="lazy" decoding="async"></div>
+            <div class="card-body"><span class="category">AI &amp; network</span><h2>NetViz</h2>
+              <p>Inspect live peer connections and watch the network topology change.</p><span class="arrow" aria-hidden="true">↗</span></div>
+          </a>
+          <a class="card" href="./fano-reactor/" data-demo-dir="fano-reactor" data-demo-port="5183" data-demo-path="/" data-category="Simulation">
+            <div class="thumb fano-reactor"><img src="./assets/fano-reactor.svg" alt="" loading="lazy" decoding="async"></div>
+            <div class="card-body"><span class="category">Simulation</span><h2>Fano Reactor</h2>
+              <p>Explore sedenion bonds, target a Fano map, and probe cascades.</p><span class="arrow" aria-hidden="true">↗</span></div>
+          </a>
+          <a class="card" href="./schrodinger/" data-demo-dir="schrodinger" data-demo-port="5184" data-demo-path="/" data-category="Simulation">
+            <div class="thumb schrodinger"><img src="./assets/schrodinger.svg" alt="" loading="lazy" decoding="async"></div>
+            <div class="card-body"><span class="category">Simulation</span><h2>Schrodinger</h2>
+              <p>Explore atoms, orbitals, and the properties of water and other materials.</p><span class="arrow" aria-hidden="true">↗</span></div>
+          </a>
+          <a class="card" href="./sneakywoods/" data-demo-dir="sneakywoods" data-demo-port="5180" data-demo-path="/" data-category="Worlds &amp; games">
+            <div class="thumb sneakywoods"><img src="./assets/sneakywoods.png" alt="" loading="lazy" decoding="async"></div>
+            <div class="card-body"><span class="category">Worlds &amp; games</span><h2>SneakyWoods</h2>
+              <p>Join a multiplayer woodland arena with synchronized player state.</p><span class="arrow" aria-hidden="true">↗</span></div>
+          </a>
+          <a class="card" href="./daddygo/" data-demo-dir="daddygo" data-demo-port="5181" data-demo-path="/" data-category="Worlds &amp; games">
+            <div class="thumb daddygo"><img src="./assets/daddygo.png" alt="" loading="lazy" decoding="async"></div>
+            <div class="card-body"><span class="category">Worlds &amp; games</span><h2>Daddy Go!</h2>
+              <p>Control a runner with your body and compete for the shared high score.</p><span class="arrow" aria-hidden="true">↗</span></div>
+          </a>
+          <a class="card" href="./webgpuphys/demos/toychest.html" data-demo-dir="webgpuphys" data-demo-port="5179" data-demo-path="/demos/toychest.html" data-category="Simulation">
+            <div class="thumb webgpuphys"><img src="./assets/webgpuphys.png" alt="" loading="lazy" decoding="async"></div>
+            <div class="card-body"><span class="category">Simulation</span><h2>Dynamics (WebGpuPhys)</h2>
+              <p>Play with a particle-based dynamics engine in a WebGPU physics sandbox.</p><span class="arrow" aria-hidden="true">↗</span></div>
+          </a>
+          <a class="card" href="./webgpuphys/demos/mpm-visual.html" data-demo-dir="webgpuphys" data-demo-port="5179" data-demo-path="/demos/mpm-visual.html" data-category="Simulation">
+            <div class="thumb webgpuphys"><img src="./assets/mpm-visual.png" alt="" loading="lazy" decoding="async"></div>
+            <div class="card-body"><span class="category">Simulation</span><h2>MPM Visual (WebGpuPhys)</h2>
+              <p>Experiment with particle materials, thermal effects, and MLS-MPM dynamics.</p><span class="arrow" aria-hidden="true">↗</span></div>
+          </a>
+          <a class="card" href="./webgpuphys/demos/ppf-contact-solver.html" data-demo-dir="webgpuphys" data-demo-port="5179" data-demo-path="/demos/ppf-contact-solver.html" data-category="Simulation">
+            <div class="thumb webgpuphys"><img src="./assets/ppf-contact-solver.png" alt="" loading="lazy" decoding="async"></div>
+            <div class="card-body"><span class="category">Simulation</span><h2>PPF Contact Solver (WebGpuPhys)</h2>
+              <p>Investigate collisions and friction with a GPU-accelerated contact solver.</p><span class="arrow" aria-hidden="true">↗</span></div>
+          </a>
+          <a class="card" href="./hyperborea/" data-demo-dir="hyperborea" data-demo-port="5175" data-demo-path="/" data-category="Worlds &amp; games">
+            <div class="thumb hyperborea"><img src="./assets/hyperborea.png" alt="" loading="lazy" decoding="async"></div>
+            <div class="card-body"><span class="category">Worlds &amp; games</span><h2>Hyperborea</h2>
+              <p>Enter a WebXR-ready multiplayer scene backed by a shared GPU hub.</p><span class="arrow" aria-hidden="true">↗</span></div>
+          </a>
+        </div>
+        <div id="empty" hidden><p>No demos match your search.</p><button type="button" id="reset">Show all demos</button></div>
       </section>
     </main>
-    <footer>
-      Some demos require WebGPU and a modern Chromium build. Multiplayer demos expect a reachable PeerCompute relay.
-    </footer>
+    <footer><span>PeerCompute</span><span>Desktop powered by <a href="https://github.com/ubernaut/exotui" target="_blank" rel="noreferrer">ExoWebTUI ↗</a></span></footer>
   </div>
-
-  <script>
-    const demoLinks = document.querySelectorAll('[data-demo-dir]');
-    const originSearch = window.location.search;
-    const searchParams = new URLSearchParams(originSearch);
-    const forceDevLinks = searchParams.get('dev') === '1';
-    const forceProdLinks = searchParams.get('prod') === '1';
-    const useDevLinks = forceDevLinks || (!forceProdLinks && window.location.port === '4173');
-
-    const normalizePath = (rawPath) => {
-      const value = typeof rawPath === 'string' ? rawPath.trim() : '';
-      if (!value || value === '/') return '/';
-      return value.startsWith('/') ? value : `/${value}`;
-    };
-
-    const buildDevHref = (port, rawPath) => {
-      const path = normalizePath(rawPath);
-      const url = new URL(window.location.href);
-      url.port = port;
-      url.pathname = path;
-      url.search = originSearch;
-      url.hash = '';
-      return url.toString();
-    };
-
-    demoLinks.forEach((link) => {
-      const path = link.dataset.demoPath || '/';
-      const demoDir = (link.dataset.demoDir || '').replace(/^\.?\//, '').replace(/\/+$/, '');
-      if (!demoDir) return;
-
-      if (useDevLinks) {
-        const port = link.dataset.demoPort;
-        if (!port) return;
-        link.href = buildDevHref(port, path);
-        return;
-      }
-
-      const normalizedPath = normalizePath(path);
-      const relativeTarget = normalizedPath === '/' ? `./${demoDir}/` : `./${demoDir}${normalizedPath}`;
-      const url = new URL(relativeTarget, window.location.href);
-      url.search = originSearch;
-      url.hash = '';
-      link.href = url.toString();
-    });
-
-    const canvas = document.getElementById('grid');
-    const ctx = canvas.getContext('2d');
-    const state = { offset: 0 };
-
-    function resize() {
-      const scale = 0.12;
-      const width = Math.max(320, Math.floor(window.innerWidth * scale));
-      const height = Math.max(200, Math.floor(window.innerHeight * scale));
-      canvas.width = width;
-      canvas.height = height;
-      ctx.imageSmoothingEnabled = false;
-    }
-
-    function project(x, z, w, h, horizon) {
-      const p = 1 / (z + 0.35);
-      return {
-        x: w / 2 + x * w * 0.5 * p,
-        y: horizon + (1 - p) * h * 0.9
-      };
-    }
-
-    function draw() {
-      const w = canvas.width;
-      const h = canvas.height;
-      ctx.clearRect(0, 0, w, h);
-
-      const sky = ctx.createLinearGradient(0, 0, 0, h);
-      sky.addColorStop(0, '#020609');
-      sky.addColorStop(0.55, '#040b0a');
-      sky.addColorStop(1, '#010304');
-      ctx.fillStyle = sky;
-      ctx.fillRect(0, 0, w, h);
-
-      const horizon = h * 0.35;
-      const sun = ctx.createRadialGradient(w / 2, horizon + 6, 2, w / 2, horizon + 6, h * 0.22);
-      sun.addColorStop(0, 'rgba(0, 255, 106, 0.55)');
-      sun.addColorStop(0.4, 'rgba(0, 255, 106, 0.25)');
-      sun.addColorStop(1, 'rgba(0, 255, 106, 0)');
-      ctx.fillStyle = sun;
-      ctx.fillRect(0, 0, w, h);
-
-      const depth = 3.6;
-      const gridWidth = 3.0;
-      const rows = 24;
-      const cols = 20;
-
-      state.offset = (state.offset + 0.02) % 1;
-
-      ctx.lineWidth = 1;
-      ctx.strokeStyle = 'rgba(0, 255, 106, 0.75)';
-      ctx.shadowColor = 'rgba(0, 255, 106, 0.6)';
-      ctx.shadowBlur = 8;
-
-      for (let i = 0; i <= rows; i += 1) {
-        const z = (i + state.offset) / rows * depth;
-        const alpha = 1 - z / depth;
-        ctx.strokeStyle = `rgba(0, 255, 106, ${0.18 + alpha * 0.65})`;
-        const left = project(-gridWidth, z, w, h, horizon);
-        const right = project(gridWidth, z, w, h, horizon);
-        ctx.beginPath();
-        ctx.moveTo(left.x, left.y);
-        ctx.lineTo(right.x, right.y);
-        ctx.stroke();
-      }
-
-      for (let i = 0; i <= cols; i += 1) {
-        const x = -gridWidth + (2 * gridWidth * i) / cols;
-        const start = project(x, 0.12, w, h, horizon);
-        const end = project(x, depth, w, h, horizon);
-        ctx.strokeStyle = 'rgba(0, 255, 106, 0.55)';
-        ctx.beginPath();
-        ctx.moveTo(start.x, start.y);
-        ctx.lineTo(end.x, end.y);
-        ctx.stroke();
-      }
-
-      requestAnimationFrame(draw);
-    }
-
-    resize();
-    window.addEventListener('resize', resize);
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      draw();
-    } else {
-      requestAnimationFrame(draw);
-    }
-  </script>
 </body>
 </html>

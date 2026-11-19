@@ -125,9 +125,10 @@ test('docs index includes all demos and screenshots', () => {
 
 test('docs overview keeps expected tile order', () => {
   const html = read('docs/index.html');
-  const names = [...html.matchAll(/<h2>([^<]+)<\/h2>/g)].map((match) => match[1]);
+  assert.match(html, /href="https:\/\/github\.com\/MetaverseJS\/peercompute"/i);
+  const cards = [...html.matchAll(/<a\b[^>]*\bdata-demo-dir="[^"]+"[^>]*>([\s\S]*?)<\/a>/g)];
+  const names = cards.map(([, card]) => card.match(/<h2>([^<]+)<\/h2>/)?.[1]);
   const expected = [
-    'PeerCompute (GitHub)',
     'Local Model Console',
     'CubeChat',
     'Universes',
@@ -146,7 +147,7 @@ test('docs overview keeps expected tile order', () => {
     'PPF Contact Solver (WebGpuPhys)',
     'Hyperborea'
   ];
-  assert.deepEqual(names.slice(0, expected.length), expected, 'docs overview tile order mismatch');
+  assert.deepEqual(names, expected, 'docs overview tile order mismatch');
 });
 
 test('wxglobe release wiring is imagery-free and excludes retired weather data', () => {
