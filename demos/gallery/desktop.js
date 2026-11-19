@@ -1,164 +1,159 @@
-import { createDesktopApp } from 'exowebtui-desktop';
+import { createDesktopApp, desktopWindowStates, focusDesktopWindow, closeDesktopWindow } from 'exowebtui-desktop';
 import { webPresenter } from 'exowebtui-presenter';
+import { browserAudioSource } from 'exowebtui-audio';
+import { copyBrowserText } from 'exowebtui-clipboard';
+import { createCatalogWindow } from './catalog-window.js';
+import { createFrameWindows, returnFromFramedAtlas } from './frame-windows.js';
 
-const WINDOW_ID = 'demo-atlas';
-const CELL_WIDTH = 8;
-const CELL_HEIGHT = 16;
+const plainUrl = new URL(location.href);
+plainUrl.searchParams.set('view', 'html');
+const nativeUrl = new URL(location.href);
+nativeUrl.searchParams.delete('view');
 
-async function mountDesktop(root, atlas) {
-  // The gallery is a semantic HTML client of a real ExoWebTUI window. Only
-  // the desktop canvas owns window state, chrome, input and menu hit testing.
-  const originalStyle = atlas.getAttribute('style');
-  Object.assign(root.style, { position: 'fixed', inset: '0', overflow: 'hidden', visibility: 'hidden' });
-  const presenter = webPresenter({
-    root, storeDatabase: 'peercompute-demo-atlas',
-    host: {
-      sinkOptions: { cellWidth: CELL_WIDTH, cellHeight: CELL_HEIGHT, font: '13px ui-monospace, monospace' },
-      platformOptions: { textInput: 'target' },
-    },
-  });
-  // Present the canvas only when the window state changes. The DOM client scrolls
-  // independently and needs no idle rendering from the desktop behind it.
-  presenter.host.renderLoop.stop();
-  root.tabIndex = -1;
-  const canvas = presenter.host.element;
-  canvas.setAttribute('aria-hidden', 'true');
-  canvas.style.cssText = 'display:block;position:absolute;left:0;top:0;max-width:none;max-height:none';
-  const restore = document.createElement('button');
-  restore.type = 'button';
-  restore.textContent = 'Open demo atlas';
-  restore.hidden = true;
-  restore.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;padding:.8em 1.2em';
-  root.after(restore);
-
-  let app;
+function wallpaper(audio) {
+  let field;
   let disposed = false;
-  let frameId = 0;
-  let animationUntil = 0;
-  let ready = false;
-  const removeEvents = [];
-
-  function fallback(error) {
-    if (disposed) return;
-    disposed = true;
-    if (error) console.warn('The demo atlas is using the HTML view.', error);
-    cancelAnimationFrame(frameId);
-    for (const remove of removeEvents) remove();
-    presenter.dispose();
-    root.hidden = true;
-    restore.remove();
-    if (originalStyle === null) atlas.removeAttribute('style');
-    else atlas.setAttribute('style', originalStyle);
-    atlas.hidden = false;
-    document.documentElement.classList.remove('exowebtui-ready');
-  }
-
-  function project(windows, blocked, _theme, animating) {
-    const top = windows.at(-1);
-    const visible = top?.id === WINDOW_ID && top.state !== 'minimized' && top.clientRect.width > 0 && top.clientRect.height > 0;
-    if (visible && !ready) {
-      ready = true;
-      document.documentElement.classList.add('exowebtui-ready');
-      root.style.visibility = 'visible';
-      Object.assign(atlas.style, { position: 'fixed', margin: '0', boxSizing: 'border-box', overflow: 'auto' });
-    }
-    if (!ready) return;
-    atlas.hidden = blocked || animating || !visible;
-    restore.hidden = blocked || animating || windows.some(window => window.state !== 'minimized');
-    if (visible && !atlas.hidden) {
-      const { column, row, width, height } = top.clientRect;
-      Object.assign(atlas.style, {
-        left: `${column * CELL_WIDTH}px`, top: `${row * CELL_HEIGHT}px`,
-        width: `${width * CELL_WIDTH}px`, height: `${height * CELL_HEIGHT}px`,
-      });
-    }
-    if (animating) animationUntil = Math.max(animationUntil, performance.now() + 120);
-  }
-
-  function render(now) {
-    frameId = 0;
-    if (disposed || document.hidden) return;
-    try {
-      const size = presenter.size();
-      canvas.style.width = `${size.columns * CELL_WIDTH}px`;
-      canvas.style.height = `${size.rows * CELL_HEIGHT}px`;
-      presenter.present(app.frame(now, size));
-      presenter.host.canvas.render();
-      if (now < animationUntil) schedule();
-    } catch (error) {
-      fallback(error);
-    }
-  }
-
-  function schedule() {
-    if (!frameId && !disposed && !document.hidden) frameId = requestAnimationFrame(render);
-  }
-
-  const atlasWindow = {
-    id: WINDOW_ID, title: 'Demo Atlas', summary: 'Browse and launch PeerCompute demos.',
-    window: { width: 512, height: 256, minWidth: 18, minHeight: 6, widthRatio: 0.97, heightRatio: 0.97, fullscreenBelow: 800 },
-    // The HTML client renders the window contents. When menus take focus the
-    // shell's underlying client surface remains available for compositing.
-    render: () => [],
+  const url = new URL('./desktop-butterchurn.js', import.meta.url);
+  // Load the upstream MilkDrop catalog only when this wallpaper is selected.
+  import(url.href).then(({ createButterchurnBackground }) => {
+    if (!disposed) field = createButterchurnBackground(audio);
+  }).catch(error => console.warn('Butterchurn wallpaper unavailable.', error));
+  return {
+    advance: options => field?.advance(options) ?? false,
+    rasterizeCells: (bounds, theme) => field?.rasterizeCells(bounds, theme) ?? [],
+    setPointer: (point, now) => field?.setPointer(point, now),
+    clearPointer: () => field?.clearPointer(),
+    pick: (column, row, now) => field?.pick?.(column, row, now) ?? false,
+    get presetIndex() { return field?.presetIndex; },
+    dispose() { disposed = true; field?.dispose?.(); },
   };
-  // Read the anchors after the gallery has applied its preview or Pages URLs.
-  // Activating the same anchors preserves browser navigation and query handling.
-  const demos = [...atlas.querySelectorAll('a[data-demo-dir]')];
-  const linkByUrl = new Map(demos.map(anchor => [anchor.href, anchor]));
-  const menuLinks = demos.map(anchor => ({
-    id: `launch-${anchor.dataset.demoDir}-${anchor.dataset.demoPath}`,
-    title: anchor.querySelector('h2').textContent.trim(),
-    summary: anchor.querySelector('p').textContent.trim(),
-    href: anchor.href,
-  }));
-  const source = atlas.querySelector('a.source[href]');
-  if (source) menuLinks.push({ id: 'source', title: 'Project source', summary: 'Open the PeerCompute repository.', href: source.href });
-  try {
-    app = createDesktopApp({
-      applications: [atlasWindow], initialWindow: WINDOW_ID, startLabel: 'PeerCompute',
-      viewportWidth: () => root.clientWidth,
-      reducedMotion: () => matchMedia('(prefers-reduced-motion: reduce)').matches,
-      hiddenMenuIds: ['about', 'exomonitor', 'neon', 'viz', 'three', 'clock', 'font-generator', 'builder', 'settings', 'help', 'workbench', 'jsr', 'github'],
-      menuLinks,
-      openExternal: url => {
-        const demo = linkByUrl.get(url);
-        if (demo) demo.click();
-        else if (source && url === source.href) source.click();
-      },
-      onWindows: project,
-    });
-    await app.init(presenter);
-    for (const [subscribe, handle] of [['onKey', 'key'], ['onPointer', 'pointer'], ['onWheel', 'wheel'], ['onResize', 'resize']]) {
-      removeEvents.push(presenter[subscribe](event => {
-        app[handle](event);
-        schedule();
-      }));
-    }
-    const reopen = () => {
-      app.openWindow(WINDOW_ID);
-      schedule();
-      requestAnimationFrame(() => atlas.querySelector('a[href],button:not([disabled])')?.focus());
-    };
-    restore.addEventListener('click', reopen);
-    document.addEventListener('visibilitychange', schedule);
-    window.addEventListener('pageshow', schedule);
-    window.addEventListener('resize', schedule);
-    const clock = setInterval(schedule, 60_000);
-    removeEvents.push(() => {
-      clearInterval(clock);
-      document.removeEventListener('visibilitychange', schedule);
-      window.removeEventListener('pageshow', schedule);
-      window.removeEventListener('resize', schedule);
-    });
-    schedule();
-  } catch (error) {
-    fallback(error);
-  }
 }
 
-const desktop = document.getElementById('desktop');
-const atlas = document.getElementById('atlas');
-if (desktop && atlas) mountDesktop(desktop, atlas).catch(error => {
-  desktop.hidden = true;
-  console.warn('The demo atlas is using the HTML view.', error);
-});
+async function mountDesktop(root, atlas) {
+  const entries = [...atlas.querySelectorAll('[data-demo-dir]')].map(anchor => ({
+    id: 'launch-' + anchor.dataset.demoDir + '-' + anchor.dataset.demoPath,
+    title: anchor.querySelector('h2').textContent.trim(),
+    description: anchor.querySelector('p').textContent.trim(),
+    category: anchor.dataset.category,
+    href: anchor.href,
+    image: anchor.querySelector('img,canvas'),
+  }));
+  const source = atlas.querySelector('.source');
+  const dialog = document.querySelector('#desktop-search');
+  const input = dialog.querySelector('input');
+  const audio = browserAudioSource();
+  const presenter = webPresenter({ root, storeDatabase: 'peercompute-demo-atlas',
+    host: { platformOptions: { textInput: 'target' } } });
+  let desktop;
+  let animation = 0;
+  let stopped = false;
+  let lastFrame = 0;
+  const focusDesktop = () => presenter.focus();
+  const frames = createFrameWindows({ entries, root, presenter, focusDesktop,
+    focusWindow: focusDesktopWindow, closeWindow: closeDesktopWindow,
+    openAtlas: () => { desktop.openWindow(catalog.id); focusDesktop(); } });
+  function openDemo(id) {
+    frames.open(id);
+    desktop.openWindow(id);
+  }
+  function openSearch() {
+    if (dialog.open) return;
+    input.value = catalog.getSearch();
+    dialog.showModal();
+    input.focus();
+    input.select();
+  }
+  const catalog = createCatalogWindow({ entries, openDemo, openSearch,
+    openSettings: () => desktop.openWindow('settings'),
+    openHtml: () => location.assign(plainUrl.href) });
+  const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  const menuLinks = entries.map(entry => ({ id: entry.id, title: entry.title,
+    summary: entry.description, href: entry.href }));
+  menuLinks.push({ id: 'source', title: 'Project source', summary: 'PeerCompute on GitHub', href: source.href },
+    { id: 'plain', title: 'HTML directory', summary: 'Browse accessible direct links', href: plainUrl.href });
+
+  desktop = createDesktopApp({
+    startLabel: 'PeerCompute', initialWindow: catalog.id,
+    applications: [catalog, ...frames.applications],
+    hiddenMenuIds: ['about', 'exomonitor', 'neon', 'viz', 'three', 'clock', 'workbench', 'jsr', 'github'],
+    menuLinks, audio,
+    shader: { ...presenter.shader, degauss() { presenter.shader.degauss(); frames.degauss(); } },
+    reducedMotion: () => reducedMotion.matches,
+    viewportWidth: () => root.clientWidth,
+    extraBackgrounds: [{ id: 'butterchurn', label: 'Butterchurn — audio-reactive MilkDrop', fps: 30, create: () => wallpaper(audio) }],
+    copyText: copyBrowserText, selectionText: () => getSelection()?.toString() ?? '',
+    openExternal(href) {
+      const entry = entries.find(demo => demo.href === href);
+      if (entry) openDemo(entry.id);
+      else if (href === source.href) source.click();
+      else if (href === plainUrl.href) location.assign(plainUrl.href);
+    },
+    onWindows: (windows, blocked, theme, animating) => frames.project(windows, blocked, theme, animating, desktopWindowStates()),
+  });
+
+  const remove = [];
+  const listeners = new AbortController();
+  const options = { signal: listeners.signal };
+  function dispose() {
+    if (stopped) return;
+    stopped = true;
+    cancelAnimationFrame(animation);
+    listeners.abort();
+    if (dialog.open) dialog.close();
+    for (const off of remove) off();
+    frames.dispose();
+    audio.close();
+    presenter.dispose();
+  }
+  function fallback(error) {
+    dispose();
+    document.documentElement.classList.remove('exowebtui-ready');
+    atlas.hidden = false;
+    root.hidden = true;
+    console.warn('Switched to the HTML demo directory.', error);
+  }
+  // The presenter animates the GLSL passes independently. The shell redraws
+  // at a bounded cadence so an open demo still has time to render its own GPU scene.
+  function tick(now) {
+    if (stopped) return;
+    try {
+      if (now - lastFrame >= 1000 / 30) {
+        presenter.present(desktop.frame(now, presenter.size()));
+        lastFrame = now;
+      }
+      animation = requestAnimationFrame(tick);
+    } catch (error) { fallback(error); }
+  }
+  try {
+    input.addEventListener('input', () => catalog.setSearch(input.value), options);
+    dialog.addEventListener('close', focusDesktop, options);
+    await desktop.init(presenter);
+    for (const [subscribe, handle] of [['onKey', 'key'], ['onPointer', 'pointer'], ['onWheel', 'wheel'], ['onResize', 'resize']]) {
+      remove.push(presenter[subscribe](event => desktop[handle](event)));
+    }
+    // Keep normal link semantics for the standalone HTML view and modifier clicks.
+    // Programmatic activation (including assistive controls) uses the native windows here.
+    atlas.addEventListener('click', event => {
+      const anchor = event.target.closest('a[href]');
+      if (!anchor || event.defaultPrevented || event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const entry = entries.find(demo => demo.href === anchor.href);
+      if (entry) { event.preventDefault(); openDemo(entry.id); }
+    }, options);
+    presenter.present(desktop.frame(performance.now(), presenter.size()));
+    document.documentElement.classList.add('exowebtui-ready');
+    atlas.hidden = true;
+    focusDesktop();
+    animation = requestAnimationFrame(tick);
+    window.addEventListener('pagehide', event => { if (!event.persisted) dispose(); }, options);
+  } catch (error) { fallback(error); }
+}
+
+document.querySelector('#plain-directory').href = plainUrl.href;
+document.querySelector('#return-desktop').href = nativeUrl.href;
+const root = document.querySelector('#desktop');
+if (!returnFromFramedAtlas() && new URLSearchParams(location.search).get('view') !== 'html') {
+  mountDesktop(root, document.querySelector('#atlas')).catch(error => {
+    root.hidden = true;
+    console.warn('Using the HTML demo directory.', error);
+  });
+} else root.hidden = true;

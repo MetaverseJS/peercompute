@@ -3,7 +3,7 @@
 
 ### ExoWebTUI demo overview
 
-Run `node --test demos/tests/gallery-browser.mjs demos/tests/demo-release.test.js demos/tests/demo-ports.test.js demos/tests/console-navigation.test.js`. Verify native menu links match all HTML anchors at desktop and phone sizes, search and category filters combine, directory width fits, and all demos have ordinary links with scripts disabled. For a tailnet handoff, request every destination and open a demo from the exact preview origin.
+Run `node --test demos/tests/gallery-browser.mjs demos/tests/frame-effects-browser.mjs demos/tests/demo-release.test.js demos/tests/demo-ports.test.js demos/tests/console-navigation.test.js`. Verify native menu links match all HTML anchors at desktop and phone sizes, search and category filters combine, directory width fits, and all demos have ordinary links with scripts disabled. Test location stability on iframe launch, different live frames, minimize/restore, close, native settings persistence, on/off frame effects, touch input, and keyboard navigation. Check SharedArrayBuffer from inside an embedded model console on the actual isolated HTTPS preview.
 
 ### Owner avatar authoring before speech — November 13
 

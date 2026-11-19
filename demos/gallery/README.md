@@ -1,15 +1,21 @@
-# PeerCompute Demo Atlas
+# PeerCompute
 
-The demo overview opens as a window in the ExoWebTUI desktop. Pick an experiment from the directory or the PeerCompute launcher. Type in the search box (or press `/`) to search titles, descriptions, and demo directories. Category filters combine with the search. Each card remains a standard link, including when JavaScript is disabled.
+The demo overview is an ExoWebTUI desktop. Select a demo from the directory or the PeerCompute menu to open it in an iframe window. Use the arrow keys and Enter to launch from the keyboard. Press `/` or tap **Find a demo** to search. The HTML directory provides ordinary links and works with scripts disabled.
+
+**Settings** controls the desktop theme, wallpaper, window animations and CRT shader stack. The directory and its previews are rendered in terminal cells. Demo windows use compositor filters on their live content so embedded HTML, video, canvas and controls remain interactive. Settings are saved in this browser.
+
+**Back to PeerCompute** returns to the directory and keeps the demo running. Minimize or switch windows to keep a session, or close the window to release it. **Open in tab** opens the standalone demo.
 
 ## Run it
 
-From the repository root, run `npm run docs:dev` and visit `https://localhost:4173/?prod=1` to browse the checked-in demos. Port 4173 otherwise opens each demo’s development server. A static host should mount `docs/` at `/peercompute/` to match the shared runtime asset paths used by the published demos.
+From the repository root run `npm run docs:dev` and visit `https://localhost:4173/?prod=1` for the built demos. Port 4173 otherwise points to the individual development servers. Add `view=html` for the searchable HTML directory.
+
+For a static preview, mount `docs/` at `/peercompute/` to match the shared runtime asset URLs. Threaded WASM and GGUF inference in an iframe require cross-origin isolation on the top-level page and the child. The docs development and preview servers set `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: credentialless`. A host that cannot set these headers can still launch the model console in a separate tab.
 
 ## Maintain it
 
-Edit the cards in `docs/index.html`. Both the directory and native launcher read those anchors, including their development ports and paths. Presentation and filtering live in `docs/assets/gallery.css` and `docs/assets/gallery.js`.
+Edit the card anchors in `docs/index.html` to update both directories and the native launcher. The desktop adapter, catalog, demo windows, and frame effects are in `demos/gallery/`. The HTML alternative uses `docs/assets/gallery.css` and `gallery.js`.
 
-The window adapter is `demos/gallery/desktop.js`. To rebuild it, place the Exotui repository beside PeerCompute or set `EXOTUI_DIR` to a checkout containing the revision pinned in `scripts/build-gallery.mjs`. Run `npm run build:gallery` with the root dependencies installed. The builder reads the pinned Git tree. Browsing only needs the generated module and its accompanying license in `docs/assets/`.
+To rebuild, place Exotui beside this repository or set `EXOTUI_DIR` to a checkout containing the revision pinned in `scripts/build-gallery.mjs`. Run `npm run build:gallery`. Browsing needs only the static files in `docs/`. The MilkDrop wallpaper bundle loads on demand.
 
-Run `node --test demos/tests/gallery-browser.mjs` for desktop, mobile, and script-free coverage. Set `CHROME_BIN` to a system Chromium executable if Playwright’s browser is unavailable.
+Run `node --test demos/tests/gallery-browser.mjs demos/tests/frame-effects-browser.mjs` for browser coverage. Set `CHROME_BIN` to a system Chromium executable if Playwright’s browser is unavailable.

@@ -5,14 +5,22 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#101519">
   <meta name="description" content="Explore PeerCompute demos for peer-hosted AI, multiplayer worlds, Earth data, and distributed simulation.">
-  <title>Demo Atlas · PeerCompute</title>
+  <title>PeerCompute</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23c6f582'/%3E%3Cpath d='m6 22 10-16 10 16H6Zm5-7h10M16 7v15' fill='none' stroke='%23151b19' stroke-width='2'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="./assets/gallery.css">
   <script type="module" src="./assets/gallery.js"></script>
   <script type="module" src="./assets/exowebtui.js"></script>
 </head>
 <body>
+  <a class="desktop-alternate skip" id="plain-directory" href="?view=html">Browse accessible HTML directory</a>
   <div id="desktop" aria-label="ExoWebTUI desktop"></div>
+  <dialog id="desktop-search" aria-labelledby="desktop-search-label">
+    <form method="dialog">
+      <label id="desktop-search-label" for="native-query">Find a demo</label>
+      <input type="search" id="native-query" placeholder="Name, description, or category" autocomplete="off">
+      <button>Done</button>
+    </form>
+  </dialog>
   <div id="atlas">
     <a class="skip" href="#directory">Skip to demos</a>
     <header class="masthead">
@@ -27,7 +35,7 @@
       <section class="hero" aria-labelledby="atlas-title">
         <div class="hero-intro">
           <p class="eyebrow"><span class="square"></span> Distributed computing</p>
-          <h1 id="atlas-title">Demo atlas<span>.</span></h1>
+          <h1 id="atlas-title">PeerCompute<span>.</span></h1>
           <p class="intro">Explore what browsers can build together. Run AI models, enter shared worlds, and simulate physical systems on PeerCompute.</p>
         </div>
         <a class="globe-plate" href="./wxglobe/" data-feature="wxglobe" aria-label="Open WXGlobe topography demo">
@@ -137,7 +145,7 @@
         <div id="empty" hidden><p>No demos match your search.</p><button type="button" id="reset">Show all demos</button></div>
       </section>
     </main>
-    <footer><span>PeerCompute</span><span>Desktop powered by <a href="https://github.com/ubernaut/exotui" target="_blank" rel="noreferrer">ExoWebTUI ↗</a></span></footer>
+    <footer><a id="return-desktop" href="./">Open ExoWebTUI desktop</a><span>Desktop powered by <a href="https://github.com/ubernaut/exotui" target="_blank" rel="noreferrer">ExoWebTUI ↗</a></span></footer>
   </div>
 </body>
 </html>

@@ -1,7 +1,7 @@
 Instructions: This file contains high level goals for the project and a roadmap.
 
 
-November 18 demo overview: the ExoWebTUI Demo Atlas and its native launcher share the same 17 destinations. The branch is available for local review. See [the gallery plan](branch/exowebtui-demo-gallery.md).
+November 18 demo overview: the PeerCompute desktop and its native launcher share the same 17 destinations. The cell-rendered directory opens demos in live iframe windows with theme and display controls. The branch is available for local review. See [the gallery plan](branch/exowebtui-demo-gallery.md).
 
 November 18 release review: independently verify SecretWorkshop's discovery and
 encrypted receipt lookup, then qualify the demo build from reviewed source.

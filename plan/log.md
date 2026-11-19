@@ -64412,3 +64412,27 @@ Ran `npm run build:gallery` twice with matching module hashes. Ran `CHROME_BIN=/
 Prompt: “where is it so I can try?” Provided the already-running Tailscale URL https://fastbox.tail5c077c.ts.net:5190/peercompute/ and checked HTTP 200 with successful certificate verification from that exact URL.
 
 The generated desktop bundle embeds an upstream font header with a trailing space. Extended the existing generated-asset whitespace attributes to that single output in .gitattributes, preserving verbatim font data. The staged source check then passed.
+
+### 2026-11-18 17:49:22 AKST — Tech-stack desktop and live demo windows
+
+Prompt (first observed locally): “good first pass but it should really look more like the projects/tech-stack website in terms of shaders and settings and text rendering and whatnot. it would also be cool if clicking a demo opened it in a window which was actually an iframe. can you do that?”
+
+Resumed the isolated feature/exowebtui-demo-gallery worktree with ICC assistant-status, work, source-drift, a saved plan and disjoint agent leases under atlas-desktop-windows-20261118. Compared the tech-stack shell and pinned Exotui sources. Rebuilt the directory with native cell text, responsive FIGlet, half-block previews from the existing HTML cards, wallpaper and display settings. Added per-demo browsing contexts with draggable/resizable native frames, a focus shield for overlapping windows, minimize/restore, explicit close, and standalone links. Demo sessions retain input when switching back to the directory. The accessible HTML directory remains available without JavaScript.
+
+Touched demos/gallery/{desktop,catalog-window,frame-windows}.js, scripts/build-gallery.mjs, docs/index.html, docs/assets/{gallery.css,exowebtui.js,desktop-butterchurn.js}, vite.docs.config.mjs, demos/tests/gallery-browser.mjs, demos/{README.md,gallery/README.md}, plan/{plan,tests}.md and plan/branch/exowebtui-demo-gallery.md. Enabled COOP same-origin and COEP credentialless on the local preview and docs servers for embedded threaded WASM. Kept the existing Tailscale address on port 5190, now serving the isolated preview from 127.0.0.1:15191.
+
+Headless Chrome validated actual Fano Reactor and model console frames on the preview, keyboard and phone touch navigation, session restoration, settings persistence and the ordinary HTML route. A settings probe initially missed a case-sensitive label; the corrected probe verified the plain wallpaper and disabled VHS survived reload. The final two-frame probe found crossOriginIsolated in the parent and model console, SharedArrayBuffer available in the model console, and zero uncaught errors. It did not download inference weights.
+
+### 2026-11-18 18:02:02 AKST — Apply display effects to running iframe content
+
+Prompt (first observed locally): “ahh looking better. are we not able to render the iframe through the shader effects too so it fits in with the rest of the content?”
+
+The baseline on/off screenshots showed identical pixels inside Fano while the surrounding shell changed. Added demos/gallery/frame-effects.js to composite the terminal display settings over the live frame and its toolbar. This keeps pointer and keyboard events in the original document. Same-origin demos use per-channel RGB separation and bright-pass bloom. A cross-site Chrome fixture showed its compositor bypassed parent SVG filters on a foreign iframe, so cross-origin frames use native CSS blur and tint for those settings. Both paths share the raster, vignette, tracking overlays and reduced-motion handling. Wired the same degauss action through the desktop and frame host. Added demos/tests/frame-effects-browser.mjs.
+
+Captured the same region of real Fano UI with scanlines off, at zero, at half strength, and with the full preset. Half strength changed every other row (50% of pixels), and zero exactly restored the baseline. Real Fano controls still worked in all four runs. Live same- and cross-origin fixtures retained input and document identity through setting changes. The same-origin grayscale edge showed blue separation from [20,20,20] to [20,20,220]; off-origin blur and tint were separately visible, and disabling all effects restored the original pixels. Evidence is under ~/.cache/peercompute-atlas-windows.
+
+### 2026-11-18 18:03 AKST — PeerCompute branding
+
+Prompt (first observed locally to the minute): “also you should rename "Demo Atlas" to "PeerCompute"”.
+
+Changed the browser tab, cell wordmark, native window title, HTML heading, desktop return control, and gallery README. Kept the existing internal persistence key to preserve browser settings. Ran npm run build:gallery twice on Node v24.18.0 and compared SHA-256 for both generated bundles. Ran CHROME_BIN=/usr/bin/google-chrome node --test demos/tests/frame-effects-browser.mjs demos/tests/gallery-browser.mjs demos/tests/console-navigation.test.js demos/tests/demo-release.test.js demos/tests/demo-ports.test.js (49 passed, 0 failed). The browser test checks the exact document title and return control. Rechecked the two-frame probe, git diff --check, the preview response headers, and the deployed-on-tailnet bundle hash. Preview: https://fastbox.tail5c077c.ts.net:5190/peercompute/.

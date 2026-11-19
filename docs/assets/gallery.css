@@ -114,3 +114,20 @@ footer a { color: var(--soft); }
   footer { flex-wrap: wrap; }
 }
 @container (max-width: 330px) { .globe-plate { display: none; } }
+
+#desktop {
+  width: 100vw; height: 100dvh; outline: 0; touch-action: none; user-select: none;
+  background: #0a0c14; visibility: hidden;
+}
+#desktop > canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.exowebtui-ready, .exowebtui-ready body { width: 100%; height: 100%; overflow: hidden; overscroll-behavior: none; }
+.exowebtui-ready #desktop { visibility: visible; cursor: none; }
+.desktop-alternate { display: none; }
+.exowebtui-ready .desktop-alternate { display: block; }
+#desktop-search { max-width: min(92vw, 34rem); padding: 16px; border: 1px solid #5de0d5; background: #0c1e23; color: #e2ecef; font: 14px/1.5 var(--mono); }
+#desktop-search::backdrop { background: #061019aa; }
+#desktop-search form { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; }
+#desktop-search label { grid-column: 1 / -1; }
+#desktop-search input, #desktop-search button { border: 1px solid #638681; padding: .45rem .65rem; min-width: 0; font: inherit; }
+#desktop-search input { background: #071316; color: #ecf9f7; font-size: 16px; }
+#desktop-search button { background: #75ded4; color: #091a1b; }
