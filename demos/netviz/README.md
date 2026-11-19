@@ -1,6 +1,22 @@
 # NetViz
 
-NetViz is a minimal network telemetry visualizer for PeerCompute. It renders a live node/edge view and surfaces per-peer traffic stats.
+## Overview
+
+Connect to see which peers are reporting across PeerCompute demos, which links they see and which models they host. Select a node or edge for traffic and latency details. Attach to one demo room to follow its compute workers and tasks as the session changes.
+
+## How the graph is assembled
+
+```mermaid
+flowchart TD
+    reports["Operational reports from reachable peers"] --> aggregate["Merge reporting nodes, links and model hosts"]
+    beacons["Session beacons"] --> scope["Attach to a game, room and topology"]
+    scope --> deltas["Warm telemetry deltas"]
+    deltas --> store["Latest scoped snapshot per peer"]
+    aggregate --> view["Three.js graph and inspectors"]
+    store --> view
+```
+
+An edge may be reported from either end. When two reports describe the same link, the aggregate pairs send and receive directions to avoid counting the same bytes twice. A peer mentioned by its neighbor can appear as an inferred endpoint before it publishes a report of its own. A relay, an inferred endpoint and a reporting peer therefore have different meanings even if all three appear in one graph. [Aggregate model](src/observedNetwork.js) · [Scoped telemetry store](src/telemetryStore.js) · [Graph renderer](src/visualizer.js)
 
 ## Run From Repo Root
 ```bash

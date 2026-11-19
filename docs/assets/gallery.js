@@ -34,8 +34,9 @@ function updateResults() {
   for (const demo of demos) {
     const text = (demo.dataset.demoDir + ' ' + demo.textContent).toLowerCase();
     const inCategory = category === choices[0] || demo.dataset.category === category.textContent;
-    demo.hidden = !(inCategory && words.every(word => text.includes(word)));
-    if (!demo.hidden) matches++;
+    const card = demo.closest('.card');
+    card.hidden = !(inCategory && words.every(word => text.includes(word)));
+    if (!card.hidden) matches++;
   }
   count.textContent = matches + (matches === 1 ? ' demo' : ' demos');
   empty.hidden = matches > 0;

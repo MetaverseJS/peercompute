@@ -176,10 +176,10 @@ export function createCatalogWindow({ entries, openDemo, openSearch, openSetting
     const listWidth = columns ? divider - pad - 1 : usable;
     const footer = height - 1;
     const footerRule = height >= 15;
-    const openRow = footer - (footerRule ? 2 : 1);
+    const lastBodyRow = footer - (footerRule ? 2 : 1);
     const listHeading = y;
     const listTop = listHeading + 1;
-    const bodyRows = Math.max(1, openRow - listTop);
+    const bodyRows = Math.max(1, lastBodyRow - listTop);
     const oldRows = visibleRows, oldRowHeight = rowHeight;
     const selectionWasVisible = selected * rowHeight >= offset && selected * rowHeight < offset + visibleRows;
     visibleRows = columns || !filtered.length
@@ -221,41 +221,46 @@ export function createCatalogWindow({ entries, openDemo, openSearch, openSetting
       const x = columns ? divider + 2 : pad;
       const available = Math.max(1, end - x);
       const headingRow = columns ? listHeading : listTop + visibleRows;
-      const previewTop = headingRow + 1;
-      const viewport = Math.max(0, openRow - previewTop);
       if (columns) {
-        for (let row = headingRow; row <= openRow; row++) write(divider, row, '│', theme.border);
+        for (let row = headingRow; row <= lastBodyRow; row++) write(divider, row, '│', theme.border);
       } else if (height >= 15) write(x, headingRow, '─'.repeat(available), theme.border);
       write(x, headingRow, 'PREVIEW', theme.muted);
-      previewBounds = { x, top: headingRow, bottom: openRow };
+      previewBounds = { x, top: headingRow, bottom: lastBodyRow };
 
       const entry = filtered[selected];
-      const title = wrap(entry.title, available);
-      const summary = wrap(entry.summary || entry.description, available);
-      const showCategory = viewport >= 7;
-      const titleRows = title.length + Number(showCategory);
-      // Fit the summary ahead of the thumbnail when space is scarce. Keep
-      // enough artwork for a recognizable preview in taller windows.
-      const spaceForArt = viewport - titleRows - summary.length - 1;
+      const headerSpace = lastBodyRow - headingRow - 1;
+      const title = wrap(entry.title, available).slice(0, Math.max(0, headerSpace));
+      title.forEach((line, i) => write(x, headingRow + 1 + i, line, theme.accent));
+      let actionRow = headingRow + 1 + title.length;
+      if (headerSpace - title.length >= 6) write(x, actionRow++, trim(entry.category, available), theme.muted);
+      link(x, actionRow, '[ Open demo ↗ ]', () => openDemo(entry.id));
+      const guideText = available >= 31 ? '[ Read guide ]' : '[Guide]';
+      if (available >= 16 + guideText.length) {
+        link(x + 16, actionRow, guideText, () => openDemo('guide-' + entry.id));
+      } else if (actionRow < lastBodyRow) {
+        link(x, ++actionRow, guideText, () => openDemo('guide-' + entry.id));
+      }
+      const previewTop = actionRow + 1;
+      const viewport = Math.max(0, lastBodyRow - previewTop + 1);
+      const summary = (entry.summary || entry.description).split(/\n\s*\n/)
+        .flatMap((paragraph, i) => [...(i ? [''] : []), ...wrap(paragraph, available)]);
+      const spaceForArt = viewport - summary.length - 1;
       const artHeight = Math.min(columns ? 15 : 8, Math.round(available / 3),
-        Math.max(viewport - titleRows >= 10 ? 4 : 0, spaceForArt));
+        Math.max(viewport >= 10 ? 4 : 0, spaceForArt));
       const image = artHeight >= 3 ? getImage(entry) : null;
       const gap = viewport >= 7 ? 1 : 0;
-      const summaryStart = titleRows + (image ? artHeight : 0) + gap;
+      const summaryStart = (image ? artHeight : 0) + gap;
       previewLimit = Math.max(0, summaryStart + summary.length - viewport);
       previewOffset = clamp(previewOffset, 0, previewLimit);
       const start = previewTop - previewOffset;
-      const inView = row => row >= previewTop && row < openRow;
-
-      title.forEach((line, i) => { if (inView(start + i)) write(x, start + i, line, theme.accent); });
-      if (showCategory && inView(start + title.length)) write(x, start + title.length, trim(entry.category, available), theme.muted);
+      const inView = row => row >= previewTop && row <= lastBodyRow;
       if (image) {
         if (preview.image !== image || preview.width !== available || preview.height !== artHeight || preview.theme !== theme) {
           preview = { image, width: available, height: artHeight, theme,
             cells: previewCells(image, available, artHeight, theme.surface) };
         }
         preview.cells.forEach((line, r) => {
-          const row = start + titleRows + r;
+          const row = start + r;
           if (inView(row)) line.forEach((cell, c) => { frame[row][x + c] = cell; });
         });
       }
@@ -263,13 +268,12 @@ export function createCatalogWindow({ entries, openDemo, openSearch, openSetting
         const row = start + summaryStart + i;
         if (inView(row)) write(x, row, line);
       });
-      link(x, openRow, '[ Open demo ↗ ]', () => openDemo(entry.id));
-      if (previewLimit) {
+      if (previewLimit && viewport) {
         const page = Math.max(1, viewport - 1);
         const narrow = available < 22;
-        link(end - (narrow ? 3 : 7), openRow, narrow ? '↑' : '[↑]', () => scrollPreview(previewOffset - page),
+        link(end - (narrow ? 3 : 7), headingRow, narrow ? '↑' : '[↑]', () => scrollPreview(previewOffset - page),
           previewOffset ? theme.accent : theme.muted);
-        link(end - (narrow ? 1 : 3), openRow, narrow ? '↓' : '[↓]', () => scrollPreview(previewOffset + page),
+        link(end - (narrow ? 1 : 3), headingRow, narrow ? '↓' : '[↓]', () => scrollPreview(previewOffset + page),
           previewOffset < previewLimit ? theme.accent : theme.muted);
       }
     }
@@ -278,7 +282,7 @@ export function createCatalogWindow({ entries, openDemo, openSearch, openSetting
     if (usable >= 46) link(pad + 14, footer, '[ HTML view ]', openHtml);
     else if (usable >= 21) link(pad + 13, footer, '[ HTML ]', openHtml);
     if (usable >= 75) {
-      const hint = '↑ ↓ select  ·  Enter to open';
+      const hint = usable >= 93 ? '↑ ↓ select  ·  Enter open  ·  Shift+Enter guide' : '↑ ↓ select  ·  Enter to open';
       write(width - 12 - hint.length, footer, hint, theme.muted);
     }
     return frame;
@@ -310,7 +314,11 @@ export function createCatalogWindow({ entries, openDemo, openSearch, openSetting
         case 'end': select(filtered.length - 1); break;
         case 'pageup': select(selected - Math.max(1, Math.floor(visibleRows / rowHeight))); break;
         case 'pagedown': select(selected + Math.max(1, Math.floor(visibleRows / rowHeight))); break;
-        case 'return': if (filtered[selected]) openDemo(filtered[selected].id); break;
+        case 'return': {
+          const entry = filtered[selected];
+          if (entry) openDemo(event.shift ? 'guide-' + entry.id : entry.id);
+          break;
+        }
         default: return false;
       }
       return true;

@@ -1,5 +1,27 @@
 # EarthGrid Real-Data Platform
 
+## Overview
+
+Fly from a globe-wide view down to the streets of a town. Roads, buildings, shorelines and elevation contours come from geographic data, and you can add timestamped weather imagery or place a resident at a location. Select the resident on the globe to start a conversation while keeping the map in view.
+
+## Architecture
+
+```mermaid
+flowchart TD
+    Heights[Terrarium or ETOPO] --> Ground[Cesium terrain]
+    OSM[Shortbread and local OSM] --> Vectors[Vector geometry]
+    Ground --> Vectors
+    Vectors --> Globe[Globe view]
+    Ground --> Globe
+    NOAA[NOAA radar or satellite] --> Globe
+    Host[Shared agent host] --> Bodies[Resident markers]
+    Bodies --> Globe
+```
+
+Terrain samples give lines and polygons a height on the globe. Shortbread tiles supply global features, while the geodata service supplies a bounded region of detailed OpenStreetMap features. At the same location, an agent body can carry a public label and open a conversation through the shared agent host. Only the body descriptor enters the map layer. The host owns resident memory and inference. [Vector geometry](src/layers/shortbreadGeometry.js) · [Region loading](src/localRegion.js) · [Resident layer](src/agents/EarthAgentLayer.js)
+
+## Terrain and vector layers
+
 EarthGrid is the reusable, non-aviation Earth/GIS base for PeerCompute demos.
 It combines NOAA/AWS elevation with actual Cesium buffer geometry derived from
 official OpenStreetMap Shortbread: blue polygons for ocean and inland water,

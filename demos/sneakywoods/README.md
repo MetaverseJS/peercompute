@@ -1,6 +1,24 @@
 # SneakyWoods
 
-SneakyWoods is a lightweight multiplayer arena with shared state sync, mobile controls, and simple combat. It uses PeerCompute for discovery and real-time state updates.
+## Overview
+
+Join a dark forest arena where moving or attacking gives away your position with a spotlight. Weave through trees and buildings, get close to an opponent and strike, then watch for the next flash. Join friends in the same room using the Settings menu.
+
+## How peers reconstruct a round
+
+```mermaid
+flowchart TD
+    coords["Grid coordinates and world seed"] --> local["Local terrain and obstacles"]
+    input["Keyboard, touch or bot actions"] --> player["Local movement and attack checks"]
+    local --> player
+    player --> position["Scoped player record"]
+    player --> attack["Timestamped attack record"]
+    position --> remote["Remote avatars, names and spotlights"]
+    attack --> hit["Receiving client checks its own hit box"]
+    hit --> respawn["On hit, reset score and respawn"]
+```
+
+A repeatable random sequence for each grid coordinate gives peers the same scenery without sending meshes. A visible tab publishes player records at roughly ten updates per second. Attacks use a separate key per attacker so a receiver can discard duplicates and evaluate a hit against its current position. Each browser decides what happened to its own player. [Arena loop, grid generation and room sync](main.js)
 
 ## Controls
 - WASD / arrow keys: Move

@@ -1,9 +1,28 @@
 # Models and agents
 
-This demo uses PeerCompute to retain model files, host inference for other peers
-and route chat to loaded text, vision, image and speech models. Persistent general
-agents use the same model services and conversation interface. It is an example
-application of the [PeerCompute library](../../peercompute/README.md).
+## Overview
+
+Search Hugging Face or other peers for a model to run in your browser, or send a request to someone already hosting one. Use the same chat to describe a photograph, transcribe speech or generate an image. Sharing a saved model lets a peer fetch its files even when you have unloaded it from GPU memory.
+
+## How a request reaches a model
+
+```mermaid
+flowchart TD
+    sources["Hugging Face or sharing peer"] --> import["Inspect and import model package"]
+    import --> store["Verified blocks and manifest in IndexedDB"]
+    store --> load["ComputeManager loads a model worker"]
+    load --> local["Loaded local models"]
+    discovery["NetworkManager receives peer advertisements"] --> remote["Reachable inference hosts"]
+    chat["Chat or agent request"] --> router["Resolve task, provider policy and availability"]
+    local --> router
+    remote --> router
+    router -->|local| worker["Managed inference worker"]
+    router -->|peer| stream["Encrypted request to hosting peer"]
+    worker --> reply["Response to originating chat"]
+    stream --> reply
+```
+
+The package manifest identifies the model by content. A peer offering its bytes can help you load the package without serving inference. A peer advertising a loaded model can answer a prompt without transferring its weights. With **Mixed** selected, the runtime first looks for a compatible local model and then an online host. The UI can keep several local workers loaded for different tasks. [Runtime](src/runtime.js) · [Peer connection](src/modelNetworkConnection.js) · [PeerCompute library](../../peercompute/README.md)
 
 [Open the demo](https://metaversejs.github.io/peercompute/inference/) ·
 [All demos](../README.md) · [Architecture and plan](../../plan/demos/inference/multimodal-console.md)

@@ -6,7 +6,7 @@ This project is a WebGPU port and modernization of the incredible **gpu-physics.
 Original Repository: [https://github.com/schteppe/gpu-physics.js/](https://github.com/schteppe/gpu-physics.js/)
 
 We heap massive praise upon Schteppe for his pioneering work in GPU-accelerated physics simulation on the web. His original WebGL 2 implementation paved the way for high-performance rigid body simulations in the browser, demonstrating ingenious techniques for mapping physics concepts to graphics hardware. This project stands on the shoulders of that giant, leveraging the modern compute capabilities of WebGPU to push the boundaries even further.
-![screenshot](image.png)
+![Rigid bodies in the Dynamics demo](dynamics-screenshot.png)
 
 ## Run
 ```bash
@@ -21,7 +21,13 @@ Open `https://localhost:5179/`.
 https://ubernaut.github.io/webGPUphysics/demos/toychest.html 
 WebGPU Physics is a high-performance, GPU-accelerated 3D rigid body physics engine. It runs the entire physics simulation loop on the GPU using WebGPU Compute Shaders (WGSL), allowing for the simulation of tens of thousands of interacting bodies in real-time.
 
-Local demos:
+The three demos in the PeerCompute launcher have separate guides.
+
+- [Dynamics](dynamics/README.md) covers rigid-body collision samples and force aggregation.
+- [MPM Visual](mpm/README.md) follows material particles through the grid and into the fluid renderer.
+- [PPF Contact Solver](ppf/README.md) explains the iterative particle contact and friction experiment.
+
+Local entry points:
 - `/demos/toychest.html` (rigid bodies)
 - `/demos/ppf-cubic-barrier.html` (cubic barrier contact demo)
 - `/demos/ppf-contact-solver.html` (PPF solver with friction + grid)
@@ -31,7 +37,7 @@ Local demos:
 The core idea is to represent rigid bodies as clouds of spherical particles. Collision detection and response are performed at the particle level, and the resulting forces are aggregated to drive the motion of the rigid bodies.
 
 ## PeerCompute Integration
-The headless and visual MLS-MPM demos can run via PeerCompute `ComputeManager`.
+The headless MLS-MPM demo can run via PeerCompute `ComputeManager`. The visual demo runs the solver and renderer together on its WebGPU device.
 
 ```js
 const manager = new ComputeManager({ maxWorkers: 1 });
@@ -46,7 +52,7 @@ await manager.submitTask({
 
 ## MLS-MPM (Materials) Progress
 - New WebGPU MLS-MPM scaffolding (water-first) lives under `src/domains/mpm/` with:
-  - Schema: 128B particle layout, 16B cell layout, fixed-point atomics helpers.
+  - Schema: 160-byte particle layout, 32-byte cell layout, fixed-point atomics helpers.
   - WGSL kernels: clearGrid, p2g1, p2g2, updateGrid, g2p, copyPosition.
   - Factories/headless helper: buffer/pipeline/bind-group setup, block particle initialization, and a `createHeadlessMpm` runner.
 - A minimal `Engine` (`src/engine.js`) sequences domains; exported from `src/index.js` along with the `mpm` namespace.

@@ -1,6 +1,29 @@
 # Schrodinger Materials Console
 
-Standalone atom/orbital and material-property workbench for the Schrodinger/materials branch.
+## Overview
+
+Choose an element and orbital to see where an electron is likely to be found, then compare its calculated energy with the reference value. Switch to the material cell to explore water at different temperatures and pressures, or mix atoms in the reactive sandbox to watch a simple bonding model evolve.
+
+## Try the console
+
+Choose **Orbital cloud**, select an element, and vary the principal, angular or magnetic quantum number. Look at the radial solver's energy, node count and residual as well as the cloud itself. **Material cell** changes the question to bulk properties. **Reactive atoms** lets you add atoms and observe bonds in a toy simulation.
+
+## From quantum numbers to shareable results
+
+```mermaid
+flowchart TD
+    selection["Element and quantum numbers"] --> grid["WebGPU orbital density grid"]
+    grid --> samples["GPU point samples for the orbital cloud"]
+    grid -->|effective charge| solve["WebGPU radial Hamiltonian evaluator"]
+    solve --> stats["Energy, residual and radial nodes"]
+    environment["Material, temperature and pressure"] --> properties["Estimate properties and build a labeled packet"]
+    samples --> screen["Three.js view and live diagnostics"]
+    stats --> screen
+    properties --> screen
+    properties -->|optional PeerCompute attachment| share["Publish material packet and multiscale closure"]
+```
+
+The samples represent an electron probability distribution. The radial solve reports the state's energy, node count and residual, making convergence visible even when two clouds look alike. Published packets identify the model and its validation status, so another demo can interpret a result within the assumptions that produced it. The peer session publishes results computed here. [GPU solvers](src/quantum/webgpuWaveSolver.js) · [Property estimates](src/materials/materialProperties.js) · [Peer publication](src/peercompute/session.js)
 
 ## Development
 

@@ -5,6 +5,26 @@ import { chromium } from 'playwright';
 import { ensureDevHttpsCert } from '../../scripts/https.mjs';
 import { createPagesServer } from './pages-runtime.mjs';
 
+async function galleryBaseUrl(t) {
+  if (process.env.PAGES_BASE_URL) return new URL(process.env.PAGES_BASE_URL).href;
+  const server = await createPagesServer({
+    docsRoot: fileURLToPath(new URL('../../docs/', import.meta.url)), ...ensureDevHttpsCert(),
+  });
+  t.after(() => server.close());
+  return server.baseUrl;
+}
+
+async function assertFanoGuide(guide, summary) {
+  await guide.getByRole('heading', { name: 'Fano Reactor', exact: true }).waitFor();
+  assert.equal(await guide.locator('#overview + p').textContent(), summary);
+  const diagram = guide.getByRole('img', { name: 'Fano Reactor architecture diagram' });
+  assert.ok(await diagram.locator('svg').isVisible());
+  assert.match(await diagram.locator('svg').textContent(), /norm defect/i);
+  const demo = guide.getByRole('link', { name: 'Open demo' });
+  const target = await demo.evaluate(anchor => anchor.href);
+  assert.equal(new URL(target).pathname.split('/').filter(Boolean).at(-1), 'fano-reactor');
+}
+
 async function waitForCells(page, text) {
   await page.waitForFunction(needle => {
     const desktop = window.__desktop;
@@ -35,11 +55,8 @@ async function clickCells(page, text, touch = false) {
   }
 }
 
-test('PeerCompute directory search launches a live iframe and restores its session; direct links remain available', async t => {
-  const server = await createPagesServer({
-    docsRoot: fileURLToPath(new URL('../../docs/', import.meta.url)), ...ensureDevHttpsCert(),
-  });
-  t.after(() => server.close());
+test('PeerCompute previews a selection, opens its guide or live demo, and preserves direct HTML links', async t => {
+  const baseUrl = await galleryBaseUrl(t);
   const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN || undefined });
   t.after(() => browser.close());
 
@@ -49,7 +66,7 @@ test('PeerCompute directory search launches a live iframe and restores its sessi
     const page = await context.newPage();
     const errors = [];
     page.on('pageerror', error => errors.push(String(error)));
-    const url = server.baseUrl + '?prod=1';
+    const url = baseUrl + '?prod=1';
     await page.goto(url);
     await waitForCells(page, '17 DEMOS');
     assert.equal(await page.title(), 'PeerCompute');
@@ -71,7 +88,9 @@ test('PeerCompute directory search launches a live iframe and restores its sessi
     assert.ok(summaries.every(text => text.split(/\s+/).length >= 30));
     await clickCells(page, 'CubeChat', touch);
     await waitForCells(page, '› CubeChat');
-    await waitForCells(page, 'Walk up to');
+    const actionPoint = await cellPoint(page, '[ Open demo ↗ ]');
+    const summaryPoint = await cellPoint(page, 'Walk up to');
+    assert.ok(actionPoint[1] < summaryPoint[1], 'Open demo should be above the README overview');
     await clickCells(page, '› CubeChat', touch);
     assert.equal(await page.locator('iframe').count(), 0);
     await page.keyboard.press('/');
@@ -80,18 +99,40 @@ test('PeerCompute directory search launches a live iframe and restores its sessi
     await waitForCells(page, '1 DEMO');
     await clickCells(page, '› Fano Reactor', touch);
     assert.equal(await page.locator('iframe').count(), 0);
+    const fanoSummary = await page.locator('[data-demo-dir="fano-reactor"] .demo-summary').textContent();
+    const guideLabel = await page.evaluate(() =>
+      Array.from({ length: __desktop.stats().rows }, (_, row) => __desktop.row(row))
+        .some(row => row.includes('[ Read guide ]')) ? '[ Read guide ]' : '[Guide]');
+    await clickCells(page, guideLabel, touch);
+    const guide = page.frameLocator('iframe[title="Fano Reactor guide"]');
+    await assertFanoGuide(guide, fanoSummary);
+    assert.equal(await page.locator('iframe[title="Fano Reactor"]').count(), 0);
+    const guideStage = page.locator('.pc-demo-stage').filter({ has: page.locator('iframe[title="Fano Reactor guide"]') });
+    const guideBack = guideStage.getByRole('button', { name: 'Back to PeerCompute' });
+    await guideBack.click();
+    await waitForCells(page, '› Fano Reactor');
+    if (!touch) {
+      const originalGuide = await guide.locator('html').elementHandle();
+      await page.keyboard.press('Shift+Enter');
+      await page.waitForFunction(() => __desktop.windows().some(win => win.active && win.title === 'Fano Reactor guide'));
+      assert.equal(await originalGuide.evaluate(el => el === document.documentElement), true);
+      assert.equal(await page.locator('iframe').count(), 1);
+      await guideBack.click();
+      await waitForCells(page, '› Fano Reactor');
+    }
     await clickCells(page, '[ Open demo ↗ ]', touch);
     const frame = page.frameLocator('iframe[title="Fano Reactor"]');
     await frame.locator('#product-label').waitFor({ state: 'attached' });
     assert.match(await frame.locator('html').evaluate(() => location.href), /\/fano-reactor\/\?prod=1$/);
     assert.equal(page.url(), url);
     const originalDocument = await frame.locator('html').elementHandle();
-    await page.locator('.pc-demo-stage:visible').getByRole('button', { name: 'Back to PeerCompute' }).click();
+    const demoStage = page.locator('.pc-demo-stage').filter({ has: page.locator('iframe[title="Fano Reactor"]') });
+    await demoStage.getByRole('button', { name: 'Back to PeerCompute' }).click();
     await waitForCells(page, '1 DEMO');
     await page.keyboard.press('Enter');
     await page.locator('iframe[title="Fano Reactor"]').waitFor();
     assert.equal(await originalDocument.evaluate(el => el === document.documentElement), true);
-    assert.equal(await page.locator('iframe').count(), 1);
+    assert.equal(await page.locator('iframe[title="Fano Reactor"]').count(), 1);
     assert.deepEqual(errors, []);
     await context.close();
   }
@@ -100,26 +141,32 @@ test('PeerCompute directory search launches a live iframe and restores its sessi
     const page = await browser.newPage({ javaScriptEnabled, ignoreHTTPSErrors: true });
     const desktopRequests = [];
     page.on('request', request => { if (request.url().endsWith('/exowebtui.js')) desktopRequests.push(request.url()); });
-    await page.goto(server.baseUrl + (javaScriptEnabled ? '?view=html&dev=1' : ''));
+    await page.goto(baseUrl + (javaScriptEnabled ? '?view=html&dev=1' : ''));
     assert.deepEqual(desktopRequests, []);
     assert.equal(await page.locator('a[data-demo-dir]:visible').count(), 17);
+    const guides = page.locator('a.guide-link:visible');
+    assert.equal(await guides.count(), 17);
     if (javaScriptEnabled) {
       assert.equal(new URL(await page.locator('#return-desktop').getAttribute('href')).search, '?dev=1');
       await page.getByRole('button', { name: 'AI & network' }).click();
       assert.equal(await page.locator('#result-count').textContent(), '2 demos');
+      assert.equal(await guides.count(), 2);
       await page.getByRole('searchbox').fill('xyz-unmatched');
       await page.getByRole('button', { name: 'Show all demos' }).click();
       assert.equal(await page.locator('#result-count').textContent(), '17 demos');
     }
+    const fanoCard = page.locator('.card').filter({ has: page.getByRole('heading', { name: 'Fano Reactor' }) });
+    const fanoSummary = await fanoCard.locator('.demo-summary').textContent();
+    await fanoCard.getByRole('link', { name: 'Read the Fano Reactor guide' }).click();
+    await assertFanoGuide(page, fanoSummary);
+    assert.equal(new URL(page.url()).pathname, new URL('guides/fano-reactor.html', baseUrl).pathname);
+    assert.deepEqual(desktopRequests, []);
     await page.close();
   }
 });
 
 test('cold startup shows progress until the desktop paints or falls back to the directory', async t => {
-  const server = await createPagesServer({
-    docsRoot: fileURLToPath(new URL('../../docs/', import.meta.url)), ...ensureDevHttpsCert(),
-  });
-  t.after(() => server.close());
+  const baseUrl = await galleryBaseUrl(t);
   const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN || undefined });
   t.after(() => browser.close());
 
@@ -149,7 +196,7 @@ test('cold startup shows progress until the desktop paints or falls back to the 
     });
     const bar = page.getByRole('progressbar', { name: 'Loading PeerCompute' });
     try {
-      await page.goto(server.baseUrl + '?prod=1', { waitUntil: 'commit' });
+      await page.goto(baseUrl + '?prod=1', { waitUntil: 'commit' });
       await bar.waitFor();
       assert.equal(await bar.getAttribute('aria-valuenow'), '0');
       const alternate = page.locator('#boot-directory');
@@ -184,10 +231,7 @@ test('cold startup shows progress until the desktop paints or falls back to the 
 });
 
 test('the gallery starts with fast scrolling and random window effects and restores saved choices', async t => {
-  const server = await createPagesServer({
-    docsRoot: fileURLToPath(new URL('../../docs/', import.meta.url)), ...ensureDevHttpsCert(),
-  });
-  t.after(() => server.close());
+  const baseUrl = await galleryBaseUrl(t);
   const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN || undefined });
   t.after(() => browser.close());
   const page = await browser.newPage({ ignoreHTTPSErrors: true, reducedMotion: 'reduce',
@@ -205,7 +249,7 @@ test('the gallery starts with fast scrolling and random window effects and resto
       return heading >= 0 && __desktop.row(heading + 1).includes(title);
     }, expectedFirst);
   }
-  await page.goto(server.baseUrl);
+  await page.goto(baseUrl);
   await wheelOnce('PlanetGen');
   const transitions = ['open', 'close', 'minimize', 'maximize', 'restore', 'raise', 'lower'];
   const kinds = Object.fromEntries(transitions.map(kind => [kind, 'random']));

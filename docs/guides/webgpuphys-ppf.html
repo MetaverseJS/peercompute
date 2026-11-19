@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PPF Contact Solver (WebGpuPhys) guide · PeerCompute</title><link rel="stylesheet" href="../assets/gallery-guide.css"></head>
+<body><nav aria-label="Demo navigation"><a href="../">← PeerCompute</a><a href="../webgpuphys/demos/ppf-contact-solver.html" target="_blank" rel="noopener">Open demo in tab ↗</a></nav>
+<main><h1 id="ppf-contact-solver">PPF Contact Solver</h1>
+<h2 id="overview">Overview</h2>
+<p>Drop a block of particles into a box and watch the pile spread as it hits the floor. Turn friction down to see it slide, then increase the number of solver iterations. The live particle count and frame rate let you compare the cost of refining contacts as the pile grows.</p>
+<h2 id="try-it">Try it</h2>
+<p>From the repository root, run <code>npm run dev:webgpuphys</code> and open <a href="https://localhost:5179/demos/ppf-contact-solver.html">PPF Contact Solver</a> in a WebGPU-capable browser. Start with the default 1,024 particles and eight iterations. Change <strong>Friction</strong> while keeping particle count fixed, then vary the iterations. Use the particle count field to reset the run with a different population. The address accepts <code>?particles=4096</code> for a repeatable starting count.</p>
+<h2 id="architecture">Architecture</h2>
+<figure><div class="diagram" tabindex="0" role="img" aria-label="PPF Contact Solver (WebGpuPhys) architecture diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 614.6935000000001 246.70000000000002" width="614.6935000000001" height="246.70000000000002" style="--bg:#101918;--fg:#e0eee4;--line:#82b59b;--accent:#c3ed8e;background:var(--bg)">
+<style>
+
+  text { font-family: 'Inter', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="arrowhead" markerWidth="8" markerHeight="5" refX="7" refY="2.5" orient="auto">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+  <marker id="arrowhead-start" markerWidth="8" markerHeight="5" refX="1" refY="2.5" orient="auto-start-reverse">
+    <polygon points="8 0, 0 2.5, 8 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+</defs>
+<polyline class="edge" data-from="Start" data-to="History" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="135.31800000000004,56.900000000000006 135.31800000000004,83.9 96.1795,83.9 96.1795,110.9" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="Start" data-to="Grid" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="135.31800000000004,56.900000000000006 135.31800000000004,83.9 276.909,83.9 276.909,110.9" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="Grid" data-to="Solve" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="276.909,147.8 276.909,165.8 292.21900000000005,165.8 292.21900000000005,183.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="History" data-to="Solve" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="96.1795,147.8 96.1795,165.8 292.21900000000005,165.8 292.21900000000005,183.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="Solve" data-to="Buffers" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="307.52900000000005,183.8 307.52900000000005,153.8 423.80950000000007,153.8 423.80950000000007,147.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="Buffers" data-to="Solve" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="466.1600000000001,147.8 466.1600000000001,165.8 292.21900000000005,165.8 292.21900000000005,183.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="Buffers" data-to="Draw" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="466.1600000000001,147.8 466.1600000000001,165.8 508.5105000000001,165.8 508.5105000000001,183.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<g class="node" data-id="Start" data-label="Frame-start positions" data-shape="rectangle">
+  <rect x="52.099000000000004" y="20" width="166.43800000000005" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="135.31800000000004" y="38.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Frame-start positions</text>
+</g>
+<g class="node" data-id="History" data-label="Previous positions" data-shape="rectangle">
+  <rect x="20" y="110.9" width="152.359" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="96.1795" y="129.35000000000002" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Previous positions</text>
+</g>
+<g class="node" data-id="Grid" data-label="Build neighbor grid" data-shape="rectangle">
+  <rect x="200.359" y="110.9" width="153.10000000000002" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="276.909" y="129.35000000000002" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Build neighbor grid</text>
+</g>
+<g class="node" data-id="Solve" data-label="Contact and friction" data-shape="rectangle">
+  <rect x="215.66900000000004" y="183.8" width="153.10000000000002" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="292.21900000000005" y="202.25" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Contact and friction</text>
+</g>
+<g class="node" data-id="Buffers" data-label="Alternate state buffers" data-shape="rectangle">
+  <rect x="381.45900000000006" y="110.9" width="169.402" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="466.1600000000001" y="129.35000000000002" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Alternate state buffers</text>
+</g>
+<g class="node" data-id="Draw" data-label="Draw particle spheres" data-shape="rectangle">
+  <rect x="422.3275000000001" y="183.8" width="172.36599999999999" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="508.5105000000001" y="202.25" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Draw particle spheres</text>
+</g>
+</svg></div><details><summary>Mermaid source</summary><pre>flowchart TD
+    Start[Frame-start positions] --&gt; History[Previous positions]
+    Start --&gt; Grid[Build neighbor grid]
+    Grid --&gt; Solve[Contact and friction]
+    History --&gt; Solve
+    Solve --&gt; Buffers[Alternate state buffers]
+    Buffers --&gt; Solve
+    Buffers --&gt; Draw[Draw particle spheres]</pre></details></figure>
+<p>Once per frame the solver saves the starting positions and bins particles into a uniform grid. Within each iteration a particle examines its neighboring cells and box walls. A cubic barrier term repels nearby surfaces, while tangential displacement from the saved position determines friction. Each pass reads one state buffer and writes another, so neighbors in an iteration see a consistent input. The final position buffer feeds the renderer directly. <a href="https://github.com/MetaverseJS/peercompute/blob/main/demos/webgpuphys/demos/ppf-contact-solver.js">Solver and inline WGSL</a></p>
+<p>The grid has a fixed capacity per cell. A very dense pile can exceed that capacity, leaving some neighbor pairs unexamined. Increasing iterations repeats the solve over the same frame&#39;s grid. For comparison, the package includes a <a href="https://github.com/MetaverseJS/peercompute/blob/main/demos/webgpuphys/demos/ppf-cubic-barrier.html">simpler cubic barrier example</a>. <a href="https://github.com/MetaverseJS/peercompute/blob/main/demos/webgpuphys/README.md">Package guide</a></p>
+</main></body></html>

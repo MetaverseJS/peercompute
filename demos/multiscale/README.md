@@ -1,6 +1,26 @@
 # Multiscale Ladder Demo
 
-Zoomable PeerCompute workbench for the multiscale physics runtime concept.
+## Overview
+
+Zoom from a field of galaxies through clouds, materials and molecules to an orbital cloud. Change the temperature, gravity or electric field and watch the active layer respond. The workbench lets you inspect what each scale receives from its surroundings, what its solver computes and which results it passes to neighboring scales.
+
+## Architecture
+
+```mermaid
+flowchart TD
+    Input[Zoom and environment] --> Model[Multiscale model]
+    Model --> Packet[Scale packet]
+    Packet --> Scene[Active layer view]
+    Packet --> Queue[Compute orchestrator]
+    Queue --> Workers[Selected solver workers]
+    Workers --> Deltas[Results and diagnostics]
+    Deltas --> State[Local StateManager]
+    Deltas --> HUD[Execution readouts]
+```
+
+A scale packet carries boundary conditions down the ladder and summaries of finer-scale behavior back up. Each result identifies its scale and solver, giving the viewer a way to tell whether a parameter change produced a worker result, a visual approximation or a request for refinement. For example, change the electric field at orbital scale and inspect the reported field-response proxy alongside the cloud. Solver budgets and execution records appear alongside the detailed contracts below. [Scale model](src/simulation/multiscaleModel.js) · [Compute orchestration](src/compute/scaleComputeOrchestrator.js) · [Application and readouts](src/main.js)
+
+## Runtime contracts
 
 This first pass is an integrated visualization scaffold, not a scientific simulator. It shows the intended ladder from supergalactic structure down to Schrodinger-style orbital clouds and emits a warm-delta packet with model tier, boundary conditions, closure summaries, refinement requests, and conservation placeholders.
 

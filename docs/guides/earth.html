@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EarthGrid guide · PeerCompute</title><link rel="stylesheet" href="../assets/gallery-guide.css"></head>
+<body><nav aria-label="Demo navigation"><a href="../">← PeerCompute</a><a href="../earth/" target="_blank" rel="noopener">Open demo in tab ↗</a></nav>
+<main><h1 id="earthgrid-real-data-platform">EarthGrid Real-Data Platform</h1>
+<h2 id="overview">Overview</h2>
+<p>Fly from a globe-wide view down to the streets of a town. Roads, buildings, shorelines and elevation contours come from geographic data, and you can add timestamped weather imagery or place a resident at a location. Select the resident on the globe to start a conversation while keeping the map in view.</p>
+<h2 id="architecture">Architecture</h2>
+<figure><div class="diagram" tabindex="0" role="img" aria-label="EarthGrid architecture diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 789.752 331.6" width="789.752" height="331.6" style="--bg:#101918;--fg:#e0eee4;--line:#82b59b;--accent:#c3ed8e;background:var(--bg)">
+<style>
+
+  text { font-family: 'Inter', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="arrowhead" markerWidth="8" markerHeight="5" refX="7" refY="2.5" orient="auto">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+  <marker id="arrowhead-start" markerWidth="8" markerHeight="5" refX="1" refY="2.5" orient="auto-start-reverse">
+    <polygon points="8 0, 0 2.5, 8 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+</defs>
+<polyline class="edge" data-from="Heights" data-to="Ground" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="687.2739999999999,56.900000000000006 687.2739999999999,116.9" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="OSM" data-to="Vectors" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="497.6525,153.8 497.6525,201.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="Ground" data-to="Vectors" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="687.2739999999999,153.8 687.2739999999999,177.8 520.8226666666667,177.8 520.8226666666667,201.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="Vectors" data-to="Globe" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="520.8226666666667,238.70000000000002 520.8226666666667,256.70000000000005 409.0545833333333,256.70000000000005 409.0545833333333,274.70000000000005" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="Ground" data-to="Globe" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="687.2739999999999,153.8 687.2739999999999,177.8 409.0545833333333,177.8 409.0545833333333,274.70000000000005" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="NOAA" data-to="Globe" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="108.03549999999998,238.70000000000002 108.03549999999998,256.70000000000005 409.0545833333333,256.70000000000005 409.0545833333333,274.70000000000005" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="Host" data-to="Bodies" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="297.2865,153.8 297.2865,201.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="Bodies" data-to="Globe" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="297.2865,238.70000000000002 297.2865,256.70000000000005 409.0545833333333,256.70000000000005 409.0545833333333,274.70000000000005" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<g class="node" data-id="Heights" data-label="Terrarium or ETOPO" data-shape="rectangle">
+  <rect x="604.796" y="20" width="164.956" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="687.274" y="38.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Terrarium or ETOPO</text>
+</g>
+<g class="node" data-id="Ground" data-label="Cesium terrain" data-shape="rectangle">
+  <rect x="623.6914999999999" y="116.9" width="127.165" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="687.2739999999999" y="135.35000000000002" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Cesium terrain</text>
+</g>
+<g class="node" data-id="OSM" data-label="Shortbread and local OSM" data-shape="rectangle">
+  <rect x="399.6135" y="116.9" width="196.078" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="497.6525" y="135.35000000000002" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Shortbread and local OSM</text>
+</g>
+<g class="node" data-id="Vectors" data-label="Vector geometry" data-shape="rectangle">
+  <rect x="451.31216666666666" y="201.8" width="139.021" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="520.8226666666667" y="220.25" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Vector geometry</text>
+</g>
+<g class="node" data-id="Globe" data-label="Globe view" data-shape="rectangle">
+  <rect x="356.58708333333334" y="274.70000000000005" width="104.93499999999999" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="409.0545833333333" y="293.15000000000003" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Globe view</text>
+</g>
+<g class="node" data-id="NOAA" data-label="NOAA radar or satellite" data-shape="rectangle">
+  <rect x="20" y="201.8" width="176.07099999999997" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="108.03549999999998" y="220.25" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">NOAA radar or satellite</text>
+</g>
+<g class="node" data-id="Host" data-label="Shared agent host" data-shape="rectangle">
+  <rect x="222.9595" y="116.9" width="148.654" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="297.2865" y="135.35000000000002" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Shared agent host</text>
+</g>
+<g class="node" data-id="Bodies" data-label="Resident markers" data-shape="rectangle">
+  <rect x="224.071" y="201.8" width="146.43099999999998" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="297.2865" y="220.25" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Resident markers</text>
+</g>
+</svg></div><details><summary>Mermaid source</summary><pre>flowchart TD
+    Heights[Terrarium or ETOPO] --&gt; Ground[Cesium terrain]
+    OSM[Shortbread and local OSM] --&gt; Vectors[Vector geometry]
+    Ground --&gt; Vectors
+    Vectors --&gt; Globe[Globe view]
+    Ground --&gt; Globe
+    NOAA[NOAA radar or satellite] --&gt; Globe
+    Host[Shared agent host] --&gt; Bodies[Resident markers]
+    Bodies --&gt; Globe</pre></details></figure>
+<p>Terrain samples give lines and polygons a height on the globe. Shortbread tiles supply global features, while the geodata service supplies a bounded region of detailed OpenStreetMap features. At the same location, an agent body can carry a public label and open a conversation through the shared agent host. Only the body descriptor enters the map layer. The host owns resident memory and inference. <a href="https://github.com/MetaverseJS/peercompute/blob/main/demos/earth/src/layers/shortbreadGeometry.js">Vector geometry</a> · <a href="https://github.com/MetaverseJS/peercompute/blob/main/demos/earth/src/localRegion.js">Region loading</a> · <a href="https://github.com/MetaverseJS/peercompute/blob/main/demos/earth/src/agents/EarthAgentLayer.js">Resident layer</a></p>
+<h2 id="terrain-and-vector-layers">Terrain and vector layers</h2>
+<p>EarthGrid is the reusable, non-aviation Earth/GIS base for PeerCompute demos.
+It combines NOAA/AWS elevation with actual Cesium buffer geometry derived from
+official OpenStreetMap Shortbread: blue polygons for ocean and inland water,
+degree-one NURBS shoreline polylines with separate green land-side companion
+curves, building footprint wires, solid road curves, and degree-one NURBS
+elevation contours. The green companion is display-derived actual geometry
+offset beside the source shoreline; it is not glow, a halo, or a second source
+boundary. Water is non-extruded,
+non-animated geometry with opacity exactly <code>0.5</code>. Terrain contours at or below
+the active provider&#39;s native zero-height reference use the shoreline blue;
+positive contours use green. Cesium&#39;s buffer API has no public ground z-index,
+so every category carries an explicit source/sampled height and a small
+monotonic radial bias: terrain contours <code>0.25 m</code>, water <code>0.5 m</code>, shorelines
+<code>0.75 m</code>, shoreline land-side companions <code>0.875 m</code>, building wires <code>1 m</code>,
+global roads <code>2 m</code>, and local roads <code>4 m</code>.
+Roads therefore remain above water regardless of decoder order. The normal GIS
+base uses no canvas-painted imagery, texture glow, blur, bloom, halo, or
+duplicate line pass. Optional time-qualified NOAA nowCOAST radar or satellite
+imagery remains source raster data and is the sole permitted imagery overlay.</p>
+<p>The display is for visualization and gameplay only. It is not a navigation,
+routing, warning, or traffic product. OpenStreetMap content and the normalized
+road graph are an ODbL-derived database and retain visible attribution.
+AWS Terrarium is the default interactive terrain source, capped at z10 with a
+six-pixel Cesium screen-space error so a regional view cannot fan out into
+unbounded source work. Terrain-driven vector-height rebuilds wait for a
+quiescent request burst, avoiding repeated full geometry snapshots while the
+camera is still filling its terrain working set.
+This keeps the overview from generating hundreds of higher-LOD PNG requests;
+NOAA ETOPO 2022
+remains a selectable pole-to-pole source rather than a startup dependency.
+For each loaded local region the UI exposes the OSM base timestamp, adapter
+fetch time, freshness boundary, cache state, provider mode, and whether a
+verified stale-on-error response is being shown.</p>
+<h2 id="inhabited-agents">Inhabited agents</h2>
+<p>EarthGrid uses the same persistent general-agent host as CubeChat. An agent has
+a named, colored body at a longitude/latitude/height position, with a visible
+marker at globe scale and a status/caption label nearby. Selecting its body opens
+the shared conversation interface; focusing an agent brings the camera close to
+it. New agents spawn at the terrain under the center of the view, or at the
+camera&#39;s longitude/latitude using resident terrain height (zero if unavailable).
+The globe camera&#39;s orbital altitude is never used as the spawn height.</p>
+<p>Identity, goals, context and conversation records belong to the private
+PeerCompute agent store. The Earth renderer holds only bounded public body
+descriptors; it neither runs models nor creates a second agent-memory store.
+The shared host owns model selection, typed/spoken conversations, capability
+checks and authenticated peer interactions. Models are loaded explicitly.
+Closing a conversation does not remove its agent. Private records remain scoped
+to the browser origin; separate development ports do not share IndexedDB.</p>
+<p>The selected owned agent&#39;s <strong>Mind</strong> control opens the shared people/place memory
+viewer. It shows provenance, age and public/private scope and supports correcting
+or forgetting retained knowledge. Knowledge uses a separate StateManager-owned
+IndexedDB store and follows the existing clone-history sharing choices. The
+physical remember-and-return acceptance is qualified in CubeChat; Earth-specific
+navigation remains governed by its own terrain and spatial adapter.</p>
+<p>Agent bodies use a dedicated, lazily created Cesium data source. They do not
+change OSM&#39;s buffer renderer, source geometry counts, cache quotas, or the
+local-only terrain/road cache networking policy. <code>__earthDemo.getState().agents</code>
+reports this separate layer, and <code>__earthDemo.dispose()</code> awaits agent cleanup
+before destroying cache managers and the viewer. Page termination can interrupt
+asynchronous cleanup; it does not provide a background-agent hosting guarantee.</p>
+<p>Focused renderer checks (no model download or hardware inference):</p>
+<pre><code class="language-bash">node --test demos/earth/tests/agentLayer.test.mjs
+node --test demos/tests/earth-agent-browser.test.mjs
+</code></pre>
+<p>The browser fixture explicitly uses and verifies SwiftShader software rendering,
+tests globe-scale picking and near-body focus, and contacts no external services.
+Shared host, speech-model and two-peer acceptance are separate integration gates.</p>
+<h2 id="development">Development</h2>
+<p>From the repository root:</p>
+<pre><code class="language-bash">npm run dev:geodata:public
+npm run dev:earth
+</code></pre>
+<p>The public Overpass command is explicitly a low-volume development fallback.
+For sustained use, set <code>GEODATA_OVERPASS_URL</code> to a controlled/self-hosted
+compatible interpreter and run <code>npm run dev:geodata</code>. Earth&#39;s Vite server is
+HTTPS on port 5187 and proxies <code>/healthz</code> plus <code>/api</code> to the loopback service on
+8788, avoiding mixed content and cross-origin coordinate disclosure.</p>
+<p>The current private Tailnet development listener is
+<code>https://100.68.165.52:5187/</code>. It binds directly to the Tailnet IP with the
+same IP-SAN self-signed development certificate as RoadVector and does not use
+Tailscale Serve or Funnel. Accept or install that certificate on the viewing
+device first; <code>/api</code> remains a same-origin proxy to loopback <code>8788</code>.</p>
+<p>Browser geolocation is user-triggered, requires a secure context, is rounded to
+four decimal places, and the exact coordinate is retained in memory only. The
+bounded source tiles around a selected region may be retained in the local-only
+artifact cache described below. The local query starts at
+a 1.2 km radius and retries bounded 800 m and 500 m regions when source or
+normalized-result density exceeds a hard cap.</p>
+<h2 id="production">Production</h2>
+<p>The static build intentionally has no implicit cross-origin backend. Either:</p>
+<ul>
+<li>terminate HTTPS in front of the built app and reverse-proxy <code>/api</code> and
+<code>/healthz</code> to the loopback geodata service, then build with
+<code>VITE_GEODATA_SAME_ORIGIN=true</code> (or
+<code>VITE_GEODATA_API_URL=same-origin</code>); or</li>
+<li>set <code>VITE_GEODATA_API_URL=https://geo.example</code> at build time and add the
+exact Earth origin to <code>GEODATA_CORS_ORIGINS</code>.</li>
+</ul>
+<p><code>VITE_GEODATA_API_URL</code> must be an origin without credentials, a path prefix,
+query, or fragment. An HTTPS Earth page will reject an HTTP API. Production
+geodata requires <code>GEODATA_OVERPASS_URL</code>; <code>GEODATA_ALLOW_PUBLIC_OVERPASS</code> is
+rejected under <code>NODE_ENV=production</code>.</p>
+<p>For an already-built diagnostic preview, <code>?geodata=same-origin</code> opts into the
+same root-relative <code>/api</code> and <code>/healthz</code> routes, while <code>?geodata=off</code> disables
+the local adapter. Neither query option accepts an arbitrary upstream URL.</p>
+<p>All geodata JSON, Shortbread TileJSON/MVT, and nowCOAST capabilities bodies are
+read through decoded response streams with hard byte caps; a missing or
+compressed <code>Content-Length</code> cannot bypass those caps. Successful geodata
+responses are accepted only when their exact schema discriminator, source,
+status/freshness, bbox, counts, graph references, and OSM/ODbL provenance are
+coherent.</p>
+<p>Official Shortbread road/water vector bytes and default AWS Terrarium PNG bytes
+use two bounded cache tiers. In the browser, a PeerCompute <code>StateManager</code> owns a
+32 MiB local road cache and a 64 MiB local terrain cache in memory/IndexedDB.
+That artifact tier is deliberately separate from its Yjs document, so source
+bytes, tile keys, and access metadata are never replicated to peers. With a
+configured same-origin backend, fixed
+<code>/api/v1/cache/...</code> routes add a second byte-bounded, coalescing cache with
+strong ETags, conditional <code>304</code> responses, and visible hit/miss/stale headers.
+No route accepts an arbitrary upstream URL. Normalized detailed OSM regions
+continue through the backend&#39;s existing bounded semantic cache. NOAA ETOPO
+queries remain direct-source rather than entering the fixed tile proxy.</p>
+<p>EarthGrid opts into the official Shortbread <code>ocean</code> and <code>water_polygons</code>
+layers. It renders oceans plus non-glacier polygonal lakes, reservoirs, wide
+rivers, basins, docks, and canals. Glaciers are not classified as water, and
+centerline-only <code>water_lines</code> (including narrow streams) are intentionally
+outside this surface-only layer. One camera-bounded Shortbread scheduler feeds
+immutable <code>Cesium.BufferPolygonCollection</code> and
+<code>Cesium.BufferPolylineCollection</code> snapshots: at most 24 active tiles, six
+concurrent requests, a 96-record decoded-and-compiled LRU, 2 MiB per source
+tile, 25,000 decoded features per tile, and 4,000,000 resident vertices.
+Inactive compiled buffers are detached from Cesium but remain resident, so an
+unchanged-height A→B→A camera move reattaches the exact prior buffer without
+another fetch, decode, or geometry build. A 192 MiB compiled-buffer cap evicts
+and destroys the least-recent inactive resident before admission. Height
+refreshes mark every compiled resident stale, rebuild active tiles eagerly,
+and lazily exact-compare/rebuild an inactive tile when it is revisited. That
+keeps inactive buffers resident without reusing stale elevations or requiring
+a source refetch. The separate 192 MiB source response counter remains a
+lifetime session budget rather than resident-cache accounting. Cesium is
+pinned to exact <code>1.144.0</code> because the high-throughput
+Buffer geometry API is explicitly experimental and is not covered by Cesium&#39;s
+normal deprecation policy.</p>
+<p>The whole-world camera intentionally defers detailed Shortbread buffer
+construction below zoom 5. That state is exposed as a successful, settled
+<code>viewDeferred</code> revision with no invented GPU submission; moving to a regional
+view requests and atomically presents the bounded vector buffers. This avoids
+feeding the global z0 ocean-with-holes polygon to Cesium as one unbounded
+triangulation job while preserving the transparent terrain globe and its real
+NURBS elevation contours.</p>
+<p>Sparse WGS84 lines are subdivided as bounded RHUMB segments before packing,
+and water polygons use Cesium&#39;s synchronous curved-ellipsoid triangulation.
+This prevents low-zoom roads or water triangles from becoming straight ECEF
+chords hidden inside the globe. Added line, polygon, and triangle work is
+charged to explicit vertex/operation caps. Global roads test their tile-space
+segments against an indexed set of water bodies; bounded local roads query the
+same active-water index and use the higher of terrain, zero, or matched water
+level before applying their category offset.</p>
+<p>The shoreline renderer preserves every source vertex with unit-weight,
+open-clamped degree-one NURBS fragments. It suppresses synthetic MVT tile-edge
+closure segments, retains holes and multipart bodies, never downsamples, and
+rejects a tile before changing the active Cesium buffer snapshot if its 4,096-ring,
+8,192-curve, 65,536-source-point, or 131,072-sampled-vertex hard limit is
+exceeded. Telemetry exposes open/closed curves, clipped segments, fully clipped
+rings, cap rejections, and zero source deviation.</p>
+<p>Every accepted blue shoreline fragment has exactly one green degree-one NURBS
+land-side companion. The companion is offset by two tile pixels in unwrapped
+global Web Mercator space, uses source ring role rather than winding assumptions
+to choose the land side, applies bounded miter/bevel joins, tapers to shared
+tile-edge endpoints, and splits safely at the dateline. Pairing, offset work,
+source/output vertices, seam tapers, and cap rejections are all exposed in
+telemetry and charged to the same transactional geometry budgets.</p>
+<p>Shortbread does not publish numeric lake/river/ocean elevations. Oceans use the
+active terrain source&#39;s native-zero display level. Each inland polygon uses
+one bounded median derived from available terrain samples, and its shoreline
+reuses that exact flat level; unresolved bodies visibly fall back to
+source-native zero until an atomic height refresh. These are display
+elevations, not measured per-body isocontours. Terrain contour geometry
+classifies source levels <code>&lt;= 0</code> in the active terrain provider&#39;s native
+reference. NOAA ETOPO 2022 supplies EGM2008 heights; the optional Terrarium
+provider retains its provider-native reference. EarthGrid does not mislabel
+both as universal MSL or claim that elevated inland-lake beds are source water
+masks.</p>
+<h2 id="validation">Validation</h2>
+<p>Resident chat also exposes <strong>Resident</strong> details: the shared owner-editable
+profile, tasks/memory, cached model routes and private Activity log. Other hosts&#39;
+residents expose only public information. Inspection does not run inference,
+load a model or fetch private peer history. Diagnostic records persist separately
+from conversation memory and preserve failures after automatic recovery.</p>
+<pre><code class="language-bash">npm --prefix demos/earth test
+npm --prefix demos/earth run build
+npm run test:earth-platform
+</code></pre>
+<p><code>window.__earthDemo.getState()</code> exposes bounded source status, actual OSM
+freshness/provenance/notes, rendered/omitted counts, chosen local radius,
+same-origin/external/unconfigured backend mode, terrain telemetry, and weather
+time for browser gates. It also exposes <code>waterStatus</code>, <code>waterVisible</code>, exact
+water geometry metadata, NURBS shoreline and terrain-curve telemetry, category
+order and physical height offsets, explicit <code>rasterPainted:false</code> /
+<code>glow:false</code>, exact buffer/vertex counts, post-render submission state, and the
+source-native-zero contour contract. With weather off,
+the imagery-layer count is zero; enabling a current nowCOAST source makes it
+exactly one.</p>
+<p>Geometry readiness is revision-specific: a non-empty detailed revision needs
+exact CPU buffer counts followed by a successful public Cesium
+<code>scene.postRender</code>; a deliberately deferred broad-view revision settles empty
+without claiming GPU work. A current <code>scene.renderError</code>, source/cap failure,
+or stale replacement invalidates ready state. EarthGrid does not use private
+renderer state or claim an unintended blank layer is live.</p>
+</main></body></html>

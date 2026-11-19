@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hyperborea guide · PeerCompute</title><link rel="stylesheet" href="../assets/gallery-guide.css"></head>
+<body><nav aria-label="Demo navigation"><a href="../">← PeerCompute</a><a href="../hyperborea/" target="_blank" rel="noopener">Open demo in tab ↗</a></nav>
+<main><h1 id="hyperborea">Hyperborea</h1>
+<h2 id="overview">Overview</h2>
+<p>Explore a procedural landscape of boreal forest and mountains with other players. The room shares its clock and seasons, so winter changes the snow cover and lets you walk on frozen water. Try the same landscape from ground level in an immersive session on a compatible headset.</p>
+<h2 id="explore-the-world">Explore the world</h2>
+<p>On desktop, click the scene for mouse look, use WASD to walk and press Space to jump. In winter, try crossing a low area that was open water in another season. Players in the same room can compare the time of day and snow cover from different points on the map.</p>
+<h2 id="shared-time-and-local-terrain">Shared time and local terrain</h2>
+<figure><div class="diagram" tabindex="0" role="img" aria-label="Hyperborea architecture diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 905.0519999999999 331.6" width="905.0519999999999" height="331.6" style="--bg:#101918;--fg:#e0eee4;--line:#82b59b;--accent:#c3ed8e;background:var(--bg)">
+<style>
+
+  text { font-family: 'Inter', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="arrowhead" markerWidth="8" markerHeight="5" refX="7" refY="2.5" orient="auto">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+  <marker id="arrowhead-start" markerWidth="8" markerHeight="5" refX="1" refY="2.5" orient="auto-start-reverse">
+    <polygon points="8 0, 0 2.5, 8 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+</defs>
+<polyline class="edge" data-from="seed" data-to="terrain" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="177.31899999999996,68.9 177.319,116.9" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="terrain" data-to="chunks" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="177.319,153.8 177.319,201.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="anchor" data-to="clock" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="487.35299999999995,68.9 487.35299999999995,116.9" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="clock" data-to="season" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="487.35299999999995,153.8 487.35299999999995,201.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="chunks" data-to="scene" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="177.319,238.70000000000002 177.319,256.70000000000005 487.35299999999995,256.70000000000005 487.35299999999995,274.70000000000005" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="season" data-to="scene" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="487.35299999999995,238.70000000000002 487.35299999999995,256.70000000000005 487.35299999999995,256.70000000000005 487.35299999999995,274.70000000000005" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="peers" data-to="avatars" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="756.6320000000001,153.8 756.632,201.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="avatars" data-to="scene" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="756.632,238.70000000000002 756.632,256.70000000000005 487.35299999999995,256.70000000000005 487.35299999999995,274.70000000000005" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<g class="node" data-id="seed" data-label="World seed and coordinates" data-shape="rectangle">
+  <rect x="74.09299999999999" y="32" width="206.45199999999994" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="177.31899999999996" y="50.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">World seed and coordinates</text>
+</g>
+<g class="node" data-id="terrain" data-label="TerrainGenerator samples height and moisture" data-shape="rectangle">
+  <rect x="20" y="116.9" width="314.638" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="177.319" y="135.35000000000002" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">TerrainGenerator samples height and moisture</text>
+</g>
+<g class="node" data-id="chunks" data-label="Locally built terrain chunks and trees" data-shape="rectangle">
+  <rect x="47.787499999999994" y="201.8" width="259.063" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="177.319" y="220.25" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Locally built terrain chunks and trees</text>
+</g>
+<g class="node" data-id="anchor" data-label="Room time, multiplier and timestamp" data-shape="rectangle">
+  <rect x="367.825" y="32" width="239.05599999999995" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="487.35299999999995" y="50.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Room time, multiplier and timestamp</text>
+</g>
+<g class="node" data-id="clock" data-label="TimeSystem advances a local clock" data-shape="rectangle">
+  <rect x="362.638" y="116.9" width="249.42999999999995" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="487.35299999999995" y="135.35000000000002" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">TimeSystem advances a local clock</text>
+</g>
+<g class="node" data-id="season" data-label="Lighting, snow and frozen water" data-shape="rectangle">
+  <rect x="374.49399999999997" y="201.8" width="225.718" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="487.35299999999995" y="220.25" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Lighting, snow and frozen water</text>
+</g>
+<g class="node" data-id="scene" data-label="Three.js world or WebXR view" data-shape="rectangle">
+  <rect x="378.56949999999995" y="274.70000000000005" width="217.56699999999998" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="487.35299999999995" y="293.15000000000003" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Three.js world or WebXR view</text>
+</g>
+<g class="node" data-id="peers" data-label="Room network snapshots" data-shape="rectangle">
+  <rect x="662.298" y="116.9" width="188.668" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="756.6320000000001" y="135.35000000000002" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Room network snapshots</text>
+</g>
+<g class="node" data-id="avatars" data-label="Player position, facing and equipment" data-shape="rectangle">
+  <rect x="628.212" y="201.8" width="256.84" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="756.632" y="220.25" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Player position, facing and equipment</text>
+</g>
+</svg></div><details><summary>Mermaid source</summary><pre>flowchart TD
+    seed[&quot;World seed and coordinates&quot;] --&gt; terrain[&quot;TerrainGenerator samples height and moisture&quot;]
+    terrain --&gt; chunks[&quot;Locally built terrain chunks and trees&quot;]
+    anchor[&quot;Room time, multiplier and timestamp&quot;] --&gt; clock[&quot;TimeSystem advances a local clock&quot;]
+    clock --&gt; season[&quot;Lighting, snow and frozen water&quot;]
+    chunks --&gt; scene[&quot;Three.js world or WebXR view&quot;]
+    season --&gt; scene
+    peers[&quot;Room network snapshots&quot;] --&gt; avatars[&quot;Player position, facing and equipment&quot;]
+    avatars --&gt; scene</pre></details></figure>
+<p>The room&#39;s time anchor carries the simulation time, its rate and when it was sent. A joining browser compensates for elapsed time and can calculate daylight and seasons between updates. Terrain height comes from several scales of noise, so each browser builds the chunks around its own player. Player snapshots carry compact position and equipment state independently of the environment. <a href="https://github.com/MetaverseJS/peercompute/blob/main/demos/hyperborea/src/game/Game.js">World and room integration</a> · <a href="https://github.com/MetaverseJS/peercompute/blob/main/demos/hyperborea/src/systems/terrainGenerator.js">Terrain generator</a> · <a href="https://github.com/MetaverseJS/peercompute/blob/main/demos/hyperborea/src/systems/timeSystem.js">Time system</a></p>
+<h2 id="run">Run</h2>
+<pre><code class="language-bash">cd demos/hyperborea
+npm install
+npm run dev
+</code></pre>
+<p>Open <code>https://localhost:5175/</code>.</p>
+<h2 id="rooms-settings">Rooms + Settings</h2>
+<p>Use the Settings menu to change your player name/color and join public or private rooms.</p>
+<h2 id="peercompute-integration">PeerCompute Integration</h2>
+<p>Hyperborea uses the NetworkScheduler snapshots for player state and event sync.</p>
+<pre><code class="language-js">const node = new NodeKernel({
+  bootstrapPeers,
+  enablePersistence: false,
+  gameId: &#39;hyperborea&#39;,
+  roomId: &#39;global&#39;
+});
+
+await node.initialize();
+await node.start();
+
+const network = node.getNetworkManager();
+network.configureScheduler({ snapshotHz: 20, keepaliveMs: 1500 });
+</code></pre>
+<h2 id="notes">Notes</h2>
+<ul>
+<li>Update <code>public/relay-config.json</code> with your relay bootstrap multiaddr.</li>
+</ul>
+</main></body></html>

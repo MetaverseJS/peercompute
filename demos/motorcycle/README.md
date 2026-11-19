@@ -1,5 +1,28 @@
 # RoadVector
 
+## Overview
+
+Pick a road on the globe, drop into the saddle and follow a race course built from connected OpenStreetMap roads. Your tires meet the actual triangles used for the road and terrain. Ride beyond the starting area and the terrain keeps streaming under the bike as the race and local traffic fall behind.
+
+## Architecture
+
+```mermaid
+flowchart TD
+    Globe[Cesium globe selection] --> Seed[Seed road graph]
+    Seed --> Race[Race and traffic]
+    Seed --> Surface[Road and terrain collider]
+    Tiles[Streaming Terrarium tiles] --> Surface
+    Surface --> Bike[Local motorcycle physics]
+    Race --> Ride[Three.js ride view]
+    Bike --> Ride
+    Bike --> Pose[Globe position]
+    Pose --> Tiles
+```
+
+The bike has a persistent globe position, while its six-body physics solver works in a local frame measured in metres. Rebasing that frame keeps the solver near its origin as the rider travels. The streamer publishes complete collision surfaces to the solver. When required tiles are missing, the physics clock waits so the tires cannot fall through a temporary hole. Road contacts retain segment identifiers, tying the race and the tire model to the same source network. [Surface streaming](src/runtime/globeSurfaceStream.js) · [Road collider](src/world/roadSurfaceCollider.js) · [Ride runtime](src/runtime/gameRuntime.js)
+
+## Globe and riding surface
+
 RoadVector is a location-based motorcycle racing demo built from reusable
 PeerCompute geospatial, particle-rigid, traffic, and WebXR modules. It loads a
 bounded OpenStreetMap-derived seed road scene from `services/geodata`, then

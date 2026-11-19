@@ -83,6 +83,8 @@
     "chaos-lab:image:build": "npm --prefix net-chaos-lab run image:build --",
     "chaos-lab:cleanup": "npm --prefix net-chaos-lab run cleanup --",
     "chaos-lab:deps": "npm --prefix net-chaos-lab run deps:python --",
+    "prebuild:gallery": "node scripts/gallery-guides.mjs",
+    "prebuild:demos": "node scripts/gallery-guides.mjs",
     "build:gallery": "node scripts/build-gallery.mjs",
     "docs:dev": "vite --config vite.docs.config.mjs",
     "docs:preview": "vite preview --config vite.docs.config.mjs",
@@ -148,10 +150,12 @@
     "test:root-host:client": "node root-node/tests/client-evidence.mjs"
   },
   "devDependencies": {
+    "beautiful-mermaid": "^1.1.3",
     "concurrently": "^9.2.1",
     "esbuild": "0.25.12",
     "geojson-vt": "^4.0.3",
     "mapshaper": "^0.7.55",
+    "marked": "^18.2.1",
     "vite": "^6.4.1",
     "vt-pbf": "^3.1.3"
   },

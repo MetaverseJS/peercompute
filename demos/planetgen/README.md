@@ -1,6 +1,27 @@
 # Worldgen (Planet Gen)
 
-An interactive WebGL planet generator that simulates plate tectonics, hydraulic erosion, and atmospheric/cloud layers. Build and orbit procedural worlds, then drop into a Tiny Planet first-person explorer to walk, swim, or fly across the surface.
+## Overview
+
+Build a planet by choosing its tectonic plates, applying erosion and setting the sea level. Orbit until you find a coastline, then drop to the surface and follow it on foot, swim offshore or fly over the ice. Optional weather and ocean simulations let you see how winds aloft affect waves below.
+
+## Architecture
+
+```mermaid
+flowchart TD
+    Plates[Plate and erosion controls] --> Ground[Height and drainage maps]
+    Ground --> Planet[Terrain and water meshes]
+    Ground --> Explorer[Surface explorer]
+    Device[Shared WebGPU device] --> Weather[Water cycle]
+    Device --> Ocean[Ocean waves]
+    Weather --> Wind[Sampled wind field]
+    Wind --> Ocean
+    Ocean --> Planet
+    Weather --> Sky[Cloud and rain layers]
+    Planet --> View[Three.js view]
+    Sky --> View
+```
+
+The heightfield supplies both the rendered terrain and the data the explorer uses to find the surface. The weather and ocean systems can also exchange a wind field. The ocean advances wave heights in alternating GPU buffers, then reads back a texture of height, normals and foam that the WebGL material can sample. The mesh, wave solver and explorer therefore work at different resolutions. [World generator](src/worldgen.js) · [Ocean simulation](src/OceanComputeSystem.js) · [Surface controls](src/TinyPlanetControls.js)
 
 ## Screenshots
 - ![Planet overview](images/planet-view.png)
@@ -17,14 +38,14 @@ An interactive WebGL planet generator that simulates plate tectonics, hydraulic 
 - **Shared GPU hub**: Ocean + weather compute use the PeerCompute GPU hub device when available (fallbacks to local WebGPU).
 
 ## PeerCompute Integration
-PlanetGen tries to reuse the PeerCompute GPU hub device so compute buffers can be shared with the renderer.
+PlanetGen tries to reuse the PeerCompute GPU hub device for the ocean and weather compute systems. The WebGL renderer samples their published textures.
 
 ```js
-import { getSharedDevice } from './peercomputeDevice.js';
-import { OceanComputeSystem } from './OceanComputeSystem.js';
+import { getSharedDevice } from './src/peercomputeDevice.js';
+import { OceanComputeSystem } from './src/OceanComputeSystem.js';
 
 const device = await getSharedDevice();
-const ocean = new OceanComputeSystem({ device });
+const ocean = await OceanComputeSystem.create({ device });
 ```
 
 ## Controls
@@ -42,7 +63,6 @@ const ocean = new OceanComputeSystem({ device });
 - **Swimming polish**: further refine shallow-water handling and orientation resets.
 - **Water/ice visuals**: extra polish for polar blending and shoreline detail.
 
-## Getting Started
-1. Install dependencies: `npm install`
-2. Run dev server: `npm run dev`
-3. Open the app in your browser; use presets and controls to generate and explore planets.
+## Run locally
+
+From the repository root with demo dependencies installed, run `npm run dev:planetgen` and visit `https://localhost:5177/`. Choose a terrain preset and use the surface button to explore the generated world.

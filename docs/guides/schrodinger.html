@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Schrodinger guide · PeerCompute</title><link rel="stylesheet" href="../assets/gallery-guide.css"></head>
+<body><nav aria-label="Demo navigation"><a href="../">← PeerCompute</a><a href="../schrodinger/" target="_blank" rel="noopener">Open demo in tab ↗</a></nav>
+<main><h1 id="schrodinger-materials-console">Schrodinger Materials Console</h1>
+<h2 id="overview">Overview</h2>
+<p>Choose an element and orbital to see where an electron is likely to be found, then compare its calculated energy with the reference value. Switch to the material cell to explore water at different temperatures and pressures, or mix atoms in the reactive sandbox to watch a simple bonding model evolve.</p>
+<h2 id="try-the-console">Try the console</h2>
+<p>Choose <strong>Orbital cloud</strong>, select an element, and vary the principal, angular or magnetic quantum number. Look at the radial solver&#39;s energy, node count and residual as well as the cloud itself. <strong>Material cell</strong> changes the question to bulk properties. <strong>Reactive atoms</strong> lets you add atoms and observe bonds in a toy simulation.</p>
+<h2 id="from-quantum-numbers-to-shareable-results">From quantum numbers to shareable results</h2>
+<figure><div class="diagram" tabindex="0" role="img" aria-label="Schrodinger architecture diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 881.5811666666666 501.4" width="881.5811666666666" height="501.4" style="--bg:#101918;--fg:#e0eee4;--line:#82b59b;--accent:#c3ed8e;background:var(--bg)">
+<style>
+
+  text { font-family: 'Inter', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="arrowhead" markerWidth="8" markerHeight="5" refX="7" refY="2.5" orient="auto">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+  <marker id="arrowhead-start" markerWidth="8" markerHeight="5" refX="1" refY="2.5" orient="auto-start-reverse">
+    <polygon points="8 0, 0 2.5, 8 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+</defs>
+<polyline class="edge" data-from="selection" data-to="grid" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="252.57599999999994,56.900000000000006 252.57599999999994,104.9" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="grid" data-to="samples" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="218.41433333333327,141.8 218.41433333333327,177.8 151.38399999999996,177.8 151.38399999999996,186.1" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="grid" data-to="solve" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="effective charge" points="286.73766666666666,141.8 286.73766666666666,177.8 353.7679999999999,177.8 353.7679999999999,271" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="solve" data-to="stats" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="353.7679999999999,307.9 353.7679999999999,359.6" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="environment" data-to="properties" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="655.651,223 655.6509999999998,271" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="samples" data-to="screen" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="151.38399999999996,223 151.38399999999996,414.5 353.7679999999999,414.5 353.7679999999999,432.5" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="stats" data-to="screen" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="353.7679999999999,396.5 353.7679999999999,414.5 353.7679999999999,414.5 353.7679999999999,432.5" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="properties" data-to="screen" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="655.6509999999998,307.9 655.6509999999998,414.5 353.7679999999999,414.5 353.7679999999999,432.5" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="properties" data-to="share" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="optional PeerCompute attachment" points="706.8556666666666,307.90000000000003 706.8556666666666,432.5" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<g class="edge-label" data-from="grid" data-to="solve" data-label="effective charge">
+  <rect x="306.7679999999999" y="201.4" width="93.08800000000002" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="353.3119999999999" y="216.55" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">effective charge</text>
+</g>
+<g class="edge-label" data-from="properties" data-to="share" data-label="optional PeerCompute attachment">
+  <rect x="620.3556666666666" y="347.2" width="172.08999999999997" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="706.4006666666666" y="362.34999999999997" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">optional PeerCompute attachment</text>
+</g>
+<g class="node" data-id="selection" data-label="Element and quantum numbers" data-shape="rectangle">
+  <rect x="143.79249999999996" y="20" width="217.56699999999998" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="252.57599999999996" y="38.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Element and quantum numbers</text>
+</g>
+<g class="node" data-id="grid" data-label="WebGPU orbital density grid" data-shape="rectangle">
+  <rect x="150.09099999999995" y="104.9" width="204.96999999999997" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="252.57599999999994" y="123.35000000000001" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">WebGPU orbital density grid</text>
+</g>
+<g class="node" data-id="samples" data-label="GPU point samples for the orbital cloud" data-shape="rectangle">
+  <rect x="20" y="186.1" width="262.7679999999999" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="151.38399999999996" y="204.55" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">GPU point samples for the orbital cloud</text>
+</g>
+<g class="node" data-id="solve" data-label="WebGPU radial Hamiltonian evaluator" data-shape="rectangle">
+  <rect x="224.60699999999994" y="271" width="258.32199999999995" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="353.7679999999999" y="289.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">WebGPU radial Hamiltonian evaluator</text>
+</g>
+<g class="node" data-id="stats" data-label="Energy, residual and radial nodes" data-shape="rectangle">
+  <rect x="233.4989999999999" y="359.6" width="240.53799999999998" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="353.7679999999999" y="378.05" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Energy, residual and radial nodes</text>
+</g>
+<g class="node" data-id="environment" data-label="Material, temperature and pressure" data-shape="rectangle">
+  <rect x="530.9359999999999" y="186.1" width="249.43000000000004" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="655.651" y="204.55" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Material, temperature and pressure</text>
+</g>
+<g class="node" data-id="properties" data-label="Estimate properties and build a labeled packet" data-shape="rectangle">
+  <rect x="502.0369999999999" y="271" width="307.22799999999995" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="655.6509999999998" y="289.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Estimate properties and build a labeled packet</text>
+</g>
+<g class="node" data-id="screen" data-label="Three.js view and live diagnostics" data-shape="rectangle">
+  <rect x="234.23999999999995" y="432.5" width="239.05599999999995" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="353.7679999999999" y="450.95" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Three.js view and live diagnostics</text>
+</g>
+<g class="node" data-id="share" data-label="Publish material packet and multiscale closure" data-shape="rectangle">
+  <rect x="552.1301666666666" y="432.5" width="309.45099999999996" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="706.8556666666666" y="450.95" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Publish material packet and multiscale closure</text>
+</g>
+</svg></div><details><summary>Mermaid source</summary><pre>flowchart TD
+    selection[&quot;Element and quantum numbers&quot;] --&gt; grid[&quot;WebGPU orbital density grid&quot;]
+    grid --&gt; samples[&quot;GPU point samples for the orbital cloud&quot;]
+    grid --&gt;|effective charge| solve[&quot;WebGPU radial Hamiltonian evaluator&quot;]
+    solve --&gt; stats[&quot;Energy, residual and radial nodes&quot;]
+    environment[&quot;Material, temperature and pressure&quot;] --&gt; properties[&quot;Estimate properties and build a labeled packet&quot;]
+    samples --&gt; screen[&quot;Three.js view and live diagnostics&quot;]
+    stats --&gt; screen
+    properties --&gt; screen
+    properties --&gt;|optional PeerCompute attachment| share[&quot;Publish material packet and multiscale closure&quot;]</pre></details></figure>
+<p>The samples represent an electron probability distribution. The radial solve reports the state&#39;s energy, node count and residual, making convergence visible even when two clouds look alike. Published packets identify the model and its validation status, so another demo can interpret a result within the assumptions that produced it. The peer session publishes results computed here. <a href="https://github.com/MetaverseJS/peercompute/blob/main/demos/schrodinger/src/quantum/webgpuWaveSolver.js">GPU solvers</a> · <a href="https://github.com/MetaverseJS/peercompute/blob/main/demos/schrodinger/src/materials/materialProperties.js">Property estimates</a> · <a href="https://github.com/MetaverseJS/peercompute/blob/main/demos/schrodinger/src/peercompute/session.js">Peer publication</a></p>
+<h2 id="development">Development</h2>
+<pre><code class="language-bash">npm --prefix demos/schrodinger run dev -- --host
+</code></pre>
+<p>Default local URL:</p>
+<ul>
+<li><code>https://localhost:5184/</code></li>
+</ul>
+<h2 id="current-scope">Current Scope</h2>
+<ul>
+<li>WebGPU-generated hydrogenic/effective-charge orbital probability grid plus WebGPU-sampled point cloud visualization for selected elements.</li>
+<li>WebGPU-first one-electron radial Schrodinger basis/Hamiltonian evaluator for selected <code>n/l</code> states, with energy/error/residual/node diagnostics shown in the live stats panel. If WebGPU is unavailable, the orbital grid and radial solve report unavailable instead of using a CPU fallback.</li>
+<li>Water-first material-cell visualization with explicit H2O geometry, visible covalent/ionic bond classes, and molecule property packets across temperature and pressure conditions.</li>
+<li>Reactive atom sandbox with environment controls for temperature, ambient pressure, and gravity, plus toy real-time bonding for selected element pairs.</li>
+<li>Browser WebGPU capability/probability smoke plus orbital-grid, orbital point-sampling, and radial-Hamiltonian compute passes.</li>
+<li>Optional PeerCompute attach for warm property-packet publication plus shared <code>ClosureState -&gt; ClosureResult</code> deltas under <code>multiscale-closures</code>.</li>
+</ul>
+<p>The demo reports validation status and model IDs in every property packet. Property packets stay as the UI compatibility layer, while shared closure adapters let multiscale consumers read thermodynamic, transport, mechanics, electromagnetic, chemistry, phase, validity, uncertainty, and conservation fields consistently. The reactive atom sandbox is labeled <code>toy-reactive-atoms-v0</code>; it is for interaction design and does not claim ab initio molecular accuracy.</p>
+</main></body></html>

@@ -1,9 +1,10 @@
 import { execFileSync } from 'node:child_process';
-import { copyFile, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
+import { buildButterchurn } from './butterchurn-build.mjs';
 
 // ExoWebTUI's desktop application seam lives in examples/ in the source distribution.
 const revision = 'e89d2136a96dba9479ecbc984fb28e0927dfd8aa';
@@ -24,7 +25,7 @@ try {
   if (object !== revision) throw new Error(`The Exotui checkout must contain ${revision}.`);
   // Build the pinned tree even if someone is actively working in the sibling checkout.
   const archive = path.join(source, 'exotui.tar');
-  execFileSync('git', ['-C', checkout, 'archive', `--output=${archive}`, revision, 'src', 'app', 'examples/web', 'packages/exomux/audio.ts', 'docs/assets/desktop-butterchurn.js', 'LICENSE.md']);
+  execFileSync('git', ['-C', checkout, 'archive', `--output=${archive}`, revision, 'src', 'app', 'examples/web', 'packages/exomux/*.ts', 'LICENSE.md']);
   execFileSync('tar', ['-xf', archive, '-C', source]);
   // The pinned demo desktop exposes only openWindow. Bridge its native
   // controller for iframe lifetime and focus without trying to infer a close
@@ -52,6 +53,13 @@ try {
     ['? { windowId: top.id, startY: y,', '? { windowId: top.id, clientX: x - top.clientRect.column, clientY: y - top.clientRect.row, startY: y,'],
     ['demo?.onWheel?.(1, x, y);', 'demo?.onWheel?.(1, touchScroll.clientX, touchScroll.clientY);'],
     ['demo?.onWheel?.(-1, x, y);', 'demo?.onWheel?.(-1, touchScroll.clientX, touchScroll.clientY);'],
+    ['  if (style === "plain") return;', `  if ((style === "plain" || style === "dots") && backgroundFieldId === "butterchurn") {
+    (backgroundField as ShellDisposableBackground)?.dispose?.();
+    backgroundField = undefined;
+    backgroundFieldId = "";
+    backgroundCells = undefined;
+  }
+  if (style === "plain") return;`],
     ['function paintDesktop(now: number)', 'function paintDesktop(now: number, covers: Rectangle[])'],
     ['    paintShellSwitcher(frameSurface(frame)', '    const switcherRect = paintShellSwitcher(frameSurface(frame)'],
     ['  }\n  if (projection.snapPreview) {', '    covers.push(switcherRect);\n  }\n  if (projection.snapPreview) {'],
@@ -174,6 +182,7 @@ import { intersects } from "../../src/app/hit_targets.ts";`],
     format: 'esm', platform: 'browser', target: 'es2022', bundle: true, minify: true,
     alias: {
       'exowebtui-desktop': desktop,
+      'exowebtui-cell-sink': path.join(source, 'src/web/cell_canvas_sink.ts'),
       'exowebtui-glyphs': path.join(source, 'src/content/ascii_fonts.ts'),
       'exowebtui-audio': path.join(source, 'examples/web/browser_audio_source.ts'),
       'exowebtui-clipboard': path.join(source, 'examples/web/browser_clipboard.ts'),
@@ -196,8 +205,7 @@ import { intersects } from "../../src/app/hit_targets.ts";`],
   const slot = /(<template id="desktop-boot">)[\s\S]*?(<\/template>)/;
   if (!slot.test(markup)) throw new Error('Gallery is missing the desktop boot template');
   await writeFile(index, markup.replace(slot, (_, start, end) => start + '\n' + boot + '\n' + end));
-  await copyFile(path.join(source, 'docs/assets/desktop-butterchurn.js'),
-    path.join(root, 'docs/assets/desktop-butterchurn.js'));
+  await buildButterchurn({ root, source, patchPinned });
   await writeFile(path.join(root, 'docs/assets/exowebtui-LICENSE.txt'), license.join('\n\n'));
 } finally {
   await rm(source, { recursive: true, force: true });

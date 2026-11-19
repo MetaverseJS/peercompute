@@ -69,7 +69,9 @@ kbd { line-height: 1.2; padding: 0 4px; border: 1px solid var(--line); border-ra
 .filters button:hover { border-color: var(--lime); }
 .grid { margin-top: 20px; display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 17px; }
 .card { min-width: 0; overflow: hidden; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; display: flex; flex-direction: column; }
-.card:hover, .card:focus-visible { border-color: var(--lime); }
+.card:hover, .card:focus-within { border-color: var(--lime); }
+.demo-link { display: flex; flex: 1; flex-direction: column; }
+.guide-link { align-self: flex-start; margin: 0 16px 15px; font: 12px var(--mono); color: var(--lime); text-decoration: underline; }
 .thumb { background: #0c1218; height: clamp(115px, 11vw, 175px); position: relative; overflow: hidden; border-bottom: 1px solid var(--line); }
 .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .thumb.wxglobe img { object-position: 50% 56%; }

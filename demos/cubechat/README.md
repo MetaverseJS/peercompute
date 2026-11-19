@@ -1,6 +1,29 @@
 # CubeChat
 
-CubeChat is a proximity chat playground: each player is a cube in a Tron-inspired grid, with WebRTC video/audio streams piped through PeerCompute for signaling and discovery.
+## Overview
+
+Walk up to another player’s cube to see and hear them, or type a message that appears above your head. Place a resident with its own appearance and goals. You can ask it to follow someone, look around, or build an object using models available locally or through other peers.
+
+## From conversation to action
+
+```mermaid
+flowchart TD
+    player["Keyboard, touch or microphone"] --> chat["Room chat or resident conversation"]
+    chat -->|room message| room["Chat service, peer delivery and speech bubbles"]
+    chat -->|resident turn| host["World agent host"]
+    sense["Nearby players, objects and movement feedback"] --> host
+    history["Resident identity, goals and memory in IndexedDB"] <--> host
+    host <--> inference["Local or peer-hosted model"]
+    host -->|movement intent| motor["Resident motor"]
+    motor --> physics["Local physics and scene"]
+    physics --> sense
+    host -->|accepted object task| mesh["Image and mesh generation"]
+    mesh --> object["Placed object with a content address"]
+    object --> scene["Local and peer world views"]
+    physics --> scene
+```
+
+A resident can keep walking while a language model prepares its next turn. Its motor receives a target and local clearance measurements. Physics reports whether it reached the target, so an agent can distinguish saying it moved from actually getting there. Room snapshots distribute body state, WebRTC carries player media, and generated meshes travel separately as verified artifacts. [World entry point](src/main.js) · [Resident motor](src/agents/CubeResidentMotor.js) · [Generated objects](src/renderer/CubeGeneratedObjectLayer.js)
 
 ## Run
 ```bash

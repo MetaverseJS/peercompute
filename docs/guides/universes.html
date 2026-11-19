@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Universes guide · PeerCompute</title><link rel="stylesheet" href="../assets/gallery-guide.css"></head>
+<body><nav aria-label="Demo navigation"><a href="../">← PeerCompute</a><a href="../universes/" target="_blank" rel="noopener">Open demo in tab ↗</a></nav>
+<main><h1 id="universes">Universes</h1>
+<h2 id="overview">Overview</h2>
+<p>Follow a filament of galaxies into a single star system, inspect a planet, then return to orbit and choose another destination. Autopilot will take the tour for you. A seed determines the distribution of galaxies and stars, so the browser can build the next scale as you explore it.</p>
+<h2 id="architecture">Architecture</h2>
+<figure><div class="diagram" tabindex="0" role="img" aria-label="Universes architecture diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 380.869 501.4" width="380.869" height="501.4" style="--bg:#101918;--fg:#e0eee4;--line:#82b59b;--accent:#c3ed8e;background:var(--bg)">
+<style>
+
+  text { font-family: 'Inter', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="arrowhead" markerWidth="8" markerHeight="5" refX="7" refY="2.5" orient="auto">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+  <marker id="arrowhead-start" markerWidth="8" markerHeight="5" refX="1" refY="2.5" orient="auto-start-reverse">
+    <polygon points="8 0, 0 2.5, 8 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+</defs>
+<polyline class="edge" data-from="View" data-to="Task" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="208.03324999999998,56.900000000000006 208.03324999999998,104.9" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="Task" data-to="Pool" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="208.03324999999998,141.8 208.03324999999998,165.8 115.81599999999999,165.8 115.81599999999999,189.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="Task" data-to="Fallback" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="208.03324999999998,141.8 208.03324999999998,165.8 300.2505,165.8 300.2505,189.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="Pool" data-to="Data" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="115.81599999999999,226.70000000000002 115.81599999999999,250.70000000000005 208.03324999999998,250.70000000000005 208.03324999999998,274.70000000000005" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="Fallback" data-to="Data" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="300.2505,226.70000000000002 300.2505,250.70000000000005 208.03324999999998,250.70000000000005 208.03324999999998,274.70000000000005" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="Data" data-to="Check" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="208.03324999999998,311.6 208.03324999999998,359.6" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="Check" data-to="Scene" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="208.03324999999998,396.5 208.03324999999998,444.5" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<g class="node" data-id="View" data-label="Camera and selected target" data-shape="rectangle">
+  <rect x="107.40074999999999" y="20" width="201.265" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="208.03324999999998" y="38.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Camera and selected target</text>
+</g>
+<g class="node" data-id="Task" data-label="Seeded generation request" data-shape="rectangle">
+  <rect x="107.03025" y="104.9" width="202.00599999999997" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="208.03324999999998" y="123.35000000000001" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Seeded generation request</text>
+</g>
+<g class="node" data-id="Pool" data-label="ComputeManager worker" data-shape="rectangle">
+  <rect x="20" y="189.8" width="191.63199999999998" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="115.81599999999999" y="208.25" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">ComputeManager worker</text>
+</g>
+<g class="node" data-id="Fallback" data-label="Inline fallback" data-shape="rectangle">
+  <rect x="239.63199999999998" y="189.8" width="121.237" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="300.2505" y="208.25" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Inline fallback</text>
+</g>
+<g class="node" data-id="Data" data-label="Density and star arrays" data-shape="rectangle">
+  <rect x="117.77474999999998" y="274.70000000000005" width="180.517" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="208.03324999999998" y="293.15000000000003" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Density and star arrays</text>
+</g>
+<g class="node" data-id="Check" data-label="Check generation token" data-shape="rectangle">
+  <rect x="117.40424999999998" y="359.6" width="181.258" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="208.03324999999998" y="378.05" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Check generation token</text>
+</g>
+<g class="node" data-id="Scene" data-label="Three.js scene" data-shape="rectangle">
+  <rect x="142.22775000000001" y="444.5" width="131.611" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="208.03325" y="462.95" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Three.js scene</text>
+</g>
+</svg></div><details><summary>Mermaid source</summary><pre>flowchart TD
+    View[Camera and selected target] --&gt; Task[Seeded generation request]
+    Task --&gt; Pool[ComputeManager worker]
+    Task --&gt; Fallback[Inline fallback]
+    Pool --&gt; Data[Density and star arrays]
+    Fallback --&gt; Data
+    Data --&gt; Check[Check generation token]
+    Check --&gt; Scene[Three.js scene]</pre></details></figure>
+<p>The generator places clusters, connects sampled pairs with filaments and scatters points around them. It can generate a voxel density field for the large-scale view and a separate set of points for picking targets. At galaxy scale it returns typed arrays for stars and their orbits. The scene checks a generation token before accepting asynchronous results so reseeding mid-flight cannot install an old galaxy over the new one. The worker pool runs locally in this demo. The objects and spectra are procedurally generated. <a href="https://github.com/MetaverseJS/peercompute/blob/main/demos/universes/compute/universeTasks.js">Generation functions</a> · <a href="https://github.com/MetaverseJS/peercompute/blob/main/demos/universes/main.js">Scene and worker integration</a></p>
+<h2 id="taking-a-tour">Taking a tour</h2>
+<p>Open <strong>Sim</strong> and leave <strong>Autopilot</strong> enabled for a guided trip. For a manual trip, switch it off, select a target and use <strong>Initiate Hyperdrive</strong>. <strong>Return to Orbit</strong> takes you back up a level. <strong>Reseed Universe</strong> changes the distribution. <strong>Config</strong> provides quality presets for adjusting rendering cost.</p>
+<h2 id="run">Run</h2>
+<pre><code class="language-bash">cd demos/universes
+npm install
+npm run dev
+</code></pre>
+<p>Open <code>https://localhost:5178/</code>.</p>
+<h2 id="peercompute-integration">PeerCompute Integration</h2>
+<p>The demo submits compute tasks to the worker pool and falls back to main-thread generation if unavailable.</p>
+<pre><code class="language-js">const manager = new ComputeManager({ maxWorkers: 1 });
+await manager.initialize();
+
+const result = await manager.submitTask({
+  module: new URL(&#39;./compute/universeTasks.js&#39;, import.meta.url).href,
+  exportName: &#39;generateUniverseData&#39;,
+  data: { seed }
+});
+</code></pre>
+</main></body></html>

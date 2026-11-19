@@ -1,9 +1,23 @@
 # WXGlobe
 
-WXGlobe is a token-free Cesium terrain and bathymetry viewer. It renders black
-terrain with green equal-elevation contours, including heights below sea level,
-without tiled imagery. It is a local visualization and geospatial foundation;
-it does not currently join PeerCompute or distribute a compute workload.
+## Overview
+
+Follow a contour from a mountain slope down to the ocean floor on a globe drawn entirely from elevation data. Change the contour interval or exaggerate the relief to reveal a trench, then switch terrain sources to see how resolution and polar coverage affect the same place.
+
+## Architecture
+
+```mermaid
+flowchart TD
+    NOAA[NOAA ETOPO 2022] --> Geographic[Geographic height tiles]
+    AWS[AWS Terrarium] --> Mercator[Mercator height tiles]
+    Geographic --> Terrain[Cesium terrain]
+    Mercator --> Terrain
+    Terrain --> Material[Contour material]
+    Controls[Interval and line weight] --> Material
+    Material --> View[Globe view]
+```
+
+The selected provider decodes heights and supplies matching edge samples to adjacent tiles, so a contour can cross a tile boundary. A Cesium material derives the lines from surface height. Adjusting the line spacing reuses the terrain already loaded in the browser. The same provider modules also supply elevation to other demos. WXGlobe runs locally and works without an imagery service or Cesium ion token. [Provider adapters](src/terrain/) · [Application](src/main.js)
 
 [Open the demo](https://metaversejs.github.io/peercompute/wxglobe/) ·
 [All demos](../README.md)

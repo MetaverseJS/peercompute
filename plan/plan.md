@@ -1,6 +1,8 @@
 Instructions: This file contains high level goals for the project and a roadmap.
 
 
+The launcher now builds all 17 previews and illustrated guides from the demo READMEs. Open demo and Read guide appear above the preview text. Butterchurn follows display refresh up to 120 Hz with a pipelined WebGPU readback and cached glyph rendering. The [gallery guide](../demos/gallery/README.md) includes the build and benchmark commands.
+
 November 19 gallery shader fix: on resize and restore, return each live iframe and its toolbar to the shared shader stack as soon as its capture repaints. Window focus stays with the user.
 
 November 19 ExoWebTUI update: the demo gallery uses Exotui main at `e89d2136`. Track the bundle download until the first frame, use the saved wheel speed and longer touch glide, and keep live iframes visible within snap outlines.
