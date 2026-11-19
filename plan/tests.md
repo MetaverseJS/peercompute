@@ -5793,3 +5793,9 @@ desktop layout and zero browser/cleanup errors. No local inference loaded.
   regressions: 146 passed. Mesh grounding: five passed. Two focused browser
   regressions verified Escape with chat open and separate recorded versus
   visible placement heights. Prior Pages helper checks: 51 passed.
+
+- The complete Pages build from 253752b3 passed 68 static checks and browser
+  startup on 23 routes. Compared manifest hashes, previous immutable URLs and
+  source fingerprints against deployed abb6f484. The four physics routes
+  also passed separate reduced visual runs. Mobile CubeChat Network status
+  passed after the normal Enter gesture. All 39 CubeChat scene tests passed.

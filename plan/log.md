@@ -64355,3 +64355,25 @@ from the tracked source-dirtiness check in the client build fingerprint.
 Root, browser UI, model adapter and release-helper results are in plan/tests.md.
 Created an isolated checkout for npm run build:all and subsequent browser checks.
 Evidence outside Git: ~/.cache/peercompute-hermes-release-20261118/.
+
+### 2026-11-19T01:19:48Z — Pages candidate acceptance for the Hermes review
+
+Built all 15 demos from clean source 253752b3 with Node 24 and npm run build:all
+in an isolated worktree. The staged docs contain 2,876 active files and 376
+retained assets, 644,829,634 bytes with the manifest. All 560 previous immutable
+asset URLs resolve with original contents. All 3,253 files are covered by Git
+and the inventory. The source SHA embedded in all three model clients is clean.
+All 68 static release tests, 39 scene tests and 23 unique browser routes passed.
+The four physics routes additionally passed software presentation checks.
+Desktop/mobile captures and live SecretWorkshop connection checks are in
+~/.cache/peercompute-hermes-release-20261118/. The raw JS reference scanner
+repeated the prior release's 34 heuristic findings with no new findings.
+The first extra widget probe omitted the visitor's Enter gesture and timed
+out. With normal entry it displayed a connected popup within 390x844 and
+closed without errors. No new inference request was made. Pages candidate
+qualified locally. Production publication is a separate step.
+Full staged ICC guard flags 81 generated file deletions and 10,674 policy-counted
+lines during bundle rotation. Independent manifest verification attributes every
+removed path (164 without rename detection) to the former retained generation.
+All 560 immediately prior immutable URLs verified by hash. The generic guard
+remains flagged; the scoped authored diff and release-specific checks are separate.
