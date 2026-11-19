@@ -3,8 +3,8 @@ Instructions: This file contains high level goals for the project and a roadmap.
 November 18 release review: independently verify SecretWorkshop's discovery and
 encrypted receipt lookup, then qualify the demo build from reviewed source.
 
-November 18 Pages candidate from 253752b3: complete demo build, retained assets,
-23 browser routes and public registry lookup verified. See the release log.
+November 18 Pages release 12fa545b is live from main at /peercompute/. All 23
+public demo routes passed, and 861 public assets matched the release.
 
 November18 avatar routing: retry model discovery for network-assisted image and
 3D generation when a provider is briefly missed or saturated. Recheck ownership

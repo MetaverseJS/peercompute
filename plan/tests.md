@@ -5799,3 +5799,9 @@ desktop layout and zero browser/cleanup errors. No local inference loaded.
   source fingerprints against deployed abb6f484. The four physics routes
   also passed separate reduced visual runs. Mobile CubeChat Network status
   passed after the normal Enter gesture. All 39 CubeChat scene tests passed.
+
+- Approved 12fa545b passed on the live GitHub Pages origin. Deployment
+  44437215960 and the public manifest matched the local release. Verified 861
+  public asset hashes/MIME/lengths and 23 browser routes, including actual
+  SecretWorkshop connections. A separate mobile CubeChat check passed on
+  traced retry and recorded a peer inference discovery timeout in the panel.

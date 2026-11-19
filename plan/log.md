@@ -64377,3 +64377,22 @@ lines during bundle rotation. Independent manifest verification attributes every
 removed path (164 without rename detection) to the former retained generation.
 All 560 immediately prior immutable URLs verified by hash. The generic guard
 remains flagged; the scoped authored diff and release-specific checks are separate.
+
+### 2026-11-19T01:27:28Z — Publish the approved Pages release
+
+Prompt: “yes”, in reply to the request to push the verified 12fa545b build
+to main. Timestamp is the first observed UTC request clock. Confirmed origin
+main at abb6f484 and fast-forward ancestry, then ran
+`git push origin 12fa545b:refs/heads/main`. GitHub Pages deployment
+44437215960 succeeded for 12fa545b422833532234a0787b8db879c3cbe19d.
+The ordinary public release-manifest.json and the checked-in copy both hash
+to 1f3f58d7e2787ae11d17f301d36ad1f7365fecdf523852f6c586f91c61f2e1cd.
+The independent public verifier checked 861 files (192,248,933 bytes), their
+size, MIME and hash, with no errors. The public browser matrix passed all 23
+unique routes and the additional four physics presentation runs. Inference,
+CubeChat and Earth connected to SecretWorkshop. Inspected screenshots. An
+additional mobile widget probe recorded a console error without preserving
+its text; the traced retry passed and showed an inference discovery deadline
+while connected. No public inference generation was requested for this test.
+Public reports and screenshots: ~/.cache/peercompute-hermes-release-20261118/.
+Updated plan and tests locally. Unrelated ULG source and notes remain unstaged.
