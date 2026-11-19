@@ -10,6 +10,15 @@ const revision = '8637fcc39d19959550ca179fe91c258766c2fa62';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const checkout = process.env.EXOTUI_DIR || path.resolve(root, '../exotui');
 const source = await mkdtemp(path.join(tmpdir(), 'peercompute-gallery-'));
+// Adapt only the pinned working copy. A changed seam must fail the build.
+function patchPinned(source, changes, name) {
+  for (const [before, after] of changes) {
+    if (source.split(before).length !== 2) throw new Error(`Pinned ${name} hook mismatch: ${before}`);
+    source = source.replace(before, () => after);
+  }
+  return source;
+}
+
 try {
   const object = execFileSync('git', ['-C', checkout, 'rev-parse', '--verify', `${revision}^{commit}`], { encoding: 'utf8' }).trim();
   if (object !== revision) throw new Error(`The Exotui checkout must contain ${revision}.`);
@@ -22,16 +31,69 @@ try {
   // from the visible projection (which also omits minimized windows).
   const desktop = path.join(source, 'examples/web/desktop_app.ts');
   const upstream = await readFile(desktop, 'utf8');
-  await writeFile(desktop, upstream + `
+  // Project the same cell rectangles the native desktop paints above its
+  // windows, so a live pixel layer can leave only those portions uncovered.
+  const projected = patchPinned(upstream, [
+    ['export interface DesktopDemo {', 'export interface DesktopDemo {\n  readonly liveClient?: boolean;'],
+    ['new DesktopWindowAnimations();',
+      'new DesktopWindowAnimations(id => demoById.get(id)?.liveClient === true);'],
+    ['    animating: boolean,', '    animating: boolean,\n    covers: readonly Rectangle[],'],
+    ['function paintDesktop(now: number)', 'function paintDesktop(now: number, covers: Rectangle[])'],
+    ['    paintShellSwitcher(frameSurface(frame)', '    const switcherRect = paintShellSwitcher(frameSurface(frame)'],
+    ['  }\n  if (projection.snapPreview) {', '    covers.push(switcherRect);\n  }\n  if (projection.snapPreview) {'],
+    ['    const preview = projection.snapPreview.rect;', `    const preview = projection.snapPreview.rect;
+    covers.push({ ...preview, height: 1 });`],
+    ['function paintStartMenu(frame: VizCell[][]): void {\n  const layout = startMenuLayout();',
+      'function paintStartMenu(frame: VizCell[][], layout: StartMenuLayout): void {'],
+    ['  if (startMenuOpen) paintStartMenu(frame);', `  covers.push(barBounds());
+  if (startMenuOpen) {
+    const layout = startMenuLayout();
+    covers.push(layout.rect);
+    paintStartMenu(frame, layout);
+  }
+  if (contextMenu) covers.push(contextMenu.rect);
+  if (degaussAlertOpen) covers.push(degaussAlertGeometry().rect);`],
+    ['  if (chip && services.shader) {', '  if (chip && services.shader) {\n    covers.push(chip);'],
+    ['  const frame = paintDesktop(now);', '  const covers: Rectangle[] = [];\n  const frame = paintDesktop(now, covers);'],
+    ['    windowAnimations.status().length > 0,', '    windowAnimations.status().length > 0,\n    covers,'],
+  ], 'desktop');
+  await writeFile(desktop, projected + `
 export const desktopWindowStates = () => windowHost.controller.inspect().windows;
 export const focusDesktopWindow = id => windowHost.execute({ kind: "focus", id }, bodyBounds(), projectionOptions());
 export const closeDesktopWindow = id => windowHost.execute({ kind: "close", id }, bodyBounds(), projectionOptions());
 `);
+  // Detached animation snapshots contain terminal glyphs. Paint real window
+  // chrome immediately if a transition would snapshot a live iframe region.
+  const animationsPath = path.join(source, 'examples/web/desktop_animations.ts');
+  await writeFile(animationsPath, patchPinned(await readFile(animationsPath, 'utf8'), [
+    ['import type { Rectangle } from "../../src/types.ts";', `import type { Rectangle } from "../../src/types.ts";
+import { intersects } from "../../src/app/hit_targets.ts";`],
+    ['export class DesktopWindowAnimations {', `export class DesktopWindowAnimations {
+  constructor(private readonly liveClient: (id: string) => boolean = () => false) {}
+  #liveRects: readonly Rectangle[] = [];`],
+    ['    this.#bounds = options.bounds;', `    this.#bounds = options.bounds;
+    this.#liveRects = options.windows.filter(window => this.liveClient(window.id)).map(window => window.rect);
+    for (const [id, entry] of this.#playing) {
+      if (this.#liveRects.some(rect => intersects(rect, entry.snapshot.rect))) {
+        this.#animator.cancel(id);
+        this.#playing.delete(id);
+      }
+    }`],
+    ['    const incoming = this.#pending.get(window.id);', `    if (this.liveClient(window.id)) {
+      this.#pending.delete(window.id);
+      paint();
+      return;
+    }
+    const incoming = this.#pending.get(window.id);`],
+    ['        active && active !== this.#active &&', `        active && !this.liveClient(active) && !(this.#active && this.liveClient(this.#active)) &&
+        active !== this.#active &&`],
+    ['    const engineTransition: SurfaceTransition =', `    if (this.liveClient(id) || this.#liveRects.some(rect => intersects(rect, source.rect))) return;
+    const engineTransition: SurfaceTransition =`],
+  ], 'animation'));
   // Add a pre-upload hook to the pinned presenter. All shader code, pass
   // ordering, uniforms, render targets and the display clock stay upstream.
   const shaderPath = path.join(source, 'src/web/canvas_shader.ts');
-  let shader = await readFile(shaderPath, 'utf8');
-  for (const [before, after] of [
+  const shader = patchPinned(await readFile(shaderPath, 'utf8'), [
     ['  list(): readonly CanvasShaderDefinition[];', `  setSourceComposer(composer: ((source: HTMLCanvasElement) => HTMLCanvasElement) | null): void;
   isPresenting(): boolean;
   list(): readonly CanvasShaderDefinition[];`],
@@ -45,10 +107,7 @@ export const closeDesktopWindow = id => windowHost.execute({ kind: "close", id }
     ['    list: () => CANVAS_SHADERS,', `    setSourceComposer(composer) { composeSource = composer; },
     isPresenting: () => presented && !!gl && !gl.isContextLost(),
     list: () => CANVAS_SHADERS,`],
-  ]) {
-    if (shader.split(before).length !== 2) throw new Error(`Pinned shader hook mismatch: ${before}`);
-    shader = shader.replace(before, after);
-  }
+  ], 'shader');
   await writeFile(shaderPath, shader);
   const three = fileURLToPath(import.meta.resolve('three'));
   const license = [

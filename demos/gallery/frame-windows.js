@@ -18,6 +18,7 @@ const frameCss = `
 .pc-demo-stage { position: fixed; display: flex; flex-direction: column;
   overflow: hidden; z-index: 1; background: #0a1014; color: #cfefea; }
 .pc-demo-stage[data-presentation="shader"] { opacity: 0; }
+.pc-demo-stage[inert] { pointer-events: none; }
 .pc-demo-stage[hidden] { display: none !important; }
 .pc-demo-surface { position: relative; display: flex; flex: 1; min-height: 0; flex-direction: column; overflow: hidden; }
 .pc-demo-stage nav { display: flex; justify-content: space-between; align-items: center;
@@ -181,30 +182,20 @@ export function createFrameWindows({ entries, root, presenter, openAtlas, focusD
     root.after(stage);
   }
   const applications = entries.map(entry => ({
-    id: entry.id, title: entry.title, summary: entry.description, menu: false,
+    id: entry.id, title: entry.title, summary: entry.description, menu: false, liveClient: true,
     window: { width: 160, height: 64, minWidth: 24, minHeight: 9,
       widthRatio: .87, heightRatio: .88, fullscreenBelow: 800 },
     render: (width, _height, _now, theme) => [
       Array.from(entry.title.slice(0, width), char => ({ char, foreground: theme?.accent })),
     ],
   }));
-  function project(windows, blocked, theme, animating, states) {
-    // The projection omits both minimized and closed windows. Only a real close
-    // may tear down a running model, multiplayer room, or simulation.
+  function project(windows, blocked, theme, states, overlays) {
+    // Window visibility and input ownership are separate. Menus can take input
+    // while every underlying document stays mounted and continues painting.
     for (const state of states) if (state.state === 'closed') remove(state.id);
-    const active = windows.find(win => win.active);
-    if (active && !blocked && !animating) open(active.id);
+    for (const win of windows) open(win.id);
     if (!sessions.size) {
       compositor.setLayers([]);
-      return;
-    }
-    if (blocked || animating) {
-      compositor.setLayers([]);
-      for (const { stage, input } of sessions.values()) {
-        stage.hidden = true;
-        input?.setActive(false);
-      }
-      lastLayout = '';
       return;
     }
     const size = presenter.size();
@@ -214,7 +205,8 @@ export function createFrameWindows({ entries, root, presenter, openAtlas, focusD
     const presenting = shader.isPresenting();
     const captureStates = Array.from(sessions.values(), ({ capture, stage }) =>
       capture?.canvas.parentElement === stage ? (capture.isReady() ? 'ready' : 'painting') : 'native');
-    const key = [presenting, devicePixelRatio, ...captureStates, size.columns, size.rows,
+    const key = [presenting, blocked, devicePixelRatio, ...captureStates, size.columns, size.rows,
+      ...overlays.map(rect => [rect.column, rect.row, rect.width, rect.height].join(',')),
       bounds.left, bounds.top, bounds.width, bounds.height,
       theme.id, curve, ...windows.map(win => [win.id, win.active, ...Object.values(win.rect),
         ...Object.values(win.clientRect)].join(','))].join('|');
@@ -228,14 +220,19 @@ export function createFrameWindows({ entries, root, presenter, openAtlas, focusD
       left: bounds.left + rect.left * bounds.width, top: bounds.top + rect.top * bounds.height,
       width: rect.width * bounds.width, height: rect.height * bounds.height,
     });
-    const rawCovers = windows.map(win => unitBox(win.rect));
-    const curvedCovers = windows.map(win => pixelBounds(win.rect, size.columns, size.rows, bounds, curve, true));
-    const visibleIds = new Set();
+    // Overlays are painted above every window. Subtract the host's actual
+    // footprint in both the shader source and the unshaded browser fallback.
+    const coverRects = [...windows.map(win => win.rect), ...overlays];
+    const rawCovers = coverRects.map(unitBox);
+    const curvedCovers = coverRects.map(rect => pixelBounds(rect, size.columns, size.rows, bounds, curve, true));
+    const projectedIds = new Set();
     const layers = [];
     windows.forEach((win, index) => {
       const session = sessions.get(win.id);
       if (!session) return;
       const { stage, surface, nav, mode, frame, shield, capture, input } = session;
+      projectedIds.add(win.id);
+      stage.hidden = false;
       const raw = unitBox(win.clientRect);
       const pixels = toPixels(raw);
       const hasCapture = capture && capture.canvas.parentElement === stage;
@@ -243,17 +240,17 @@ export function createFrameWindows({ entries, root, presenter, openAtlas, focusD
       const composite = presenting && hasCapture && capture.isReady();
       const parts = rawCovers.slice(index + 1).reduce(
         (visible, cover) => visible.flatMap(part => subtract(part, cover)), [raw]);
-      if (!parts.length) return;
-      if (composite) layers.push({ canvas: capture.canvas, box: raw, parts });
+      if (composite && parts.length) layers.push({ canvas: capture.canvas, box: raw, parts });
 
       // The shader sees raw cell coordinates. Only a native fallback needs
       // a straight rectangle fitted inside the already-curved window frame.
       const box = hasCapture ? pixels : pixelBounds(win.clientRect, size.columns, size.rows, bounds, curve);
       const hitParts = hasCapture ? parts.map(toPixels) : curvedCovers.slice(index + 1).reduce(
         (visible, cover) => visible.flatMap(part => subtract(part, cover)), [box]);
-      if (!hitParts.length) return;
-      visibleIds.add(win.id);
-      stage.hidden = false;
+      const covered = hitParts.length === 0;
+      if (session.covered && !covered && hasCapture) capture.canvas.requestPaint();
+      session.covered = covered;
+      stage.inert = blocked || covered;
       stage.dataset.presentation = composite ? 'shader' : 'native';
       mode.hidden = hasCapture || !presenting;
       if (!mode.hidden) {
@@ -263,18 +260,22 @@ export function createFrameWindows({ entries, root, presenter, openAtlas, focusD
             ? 'Your browser could not include this scene in the desktop shaders.'
             : 'Your browser uses a standard iframe for this demo.';
       }
-      input?.setActive(Boolean(composite && win.active));
+      input?.setActive(Boolean(composite && win.active && !stage.inert));
       shield.hidden = win.active;
-      nav.inert = frame.inert = !win.active;
+      nav.inert = frame.inert = !win.active || stage.inert;
       stage.style.color = 'rgb(' + theme.accent.join(',') + ')';
       surface.style.backgroundColor = stage.style.backgroundColor = 'rgb(' + theme.surface.join(',') + ')';
       for (const [name, value] of Object.entries(box)) stage.style[name] = value + 'px';
       const paths = hitParts.map(part => `M${part.left - box.left},${part.top - box.top}h${part.width}v${part.height}h${-part.width}Z`);
-      stage.style.clipPath = `path("${paths.join(' ')}")`;
+      stage.style.clipPath = covered ? 'inset(50%)' : `path("${paths.join(' ')}")`;
     });
     compositor.setLayers(layers);
     for (const [id, { stage, input }] of sessions) {
-      if (!visibleIds.has(id)) { stage.hidden = true; input?.setActive(false); }
+      if (!projectedIds.has(id)) {
+        stage.hidden = true;
+        stage.inert = true;
+        input?.setActive(false);
+      }
     }
   }
   function dispose() {

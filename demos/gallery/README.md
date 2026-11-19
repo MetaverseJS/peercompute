@@ -6,6 +6,8 @@ The demo overview is an ExoWebTUI desktop. Select a demo from the directory or t
 
 In browsers with HTML-in-Canvas, each same-origin demo supplies its live pixels to the desktop before ExoWebTUI runs its shader passes. The title bar, toolbar, and demo share one CRT curve, scanline grid and degauss clock. The iframe keeps its original document, focus and session. Foreign origins, unsupported browsers, and scenes the browser cannot capture use a regular interactive iframe, labeled **Standard view** when desktop effects are on. Use `?prod=1` on port 4173 to open the same-origin built demos. At maximum curvature Chrome can deliver the initial touch-down at the unwarped location before activating the control under your finger.
 
+Menus and the task switcher cover only their own area. Demos continue loading and repainting underneath. Switching between live demos keeps their documents and takes effect immediately.
+
 **Back to PeerCompute** returns to the directory and keeps the demo running. Minimize or switch windows to keep a session, or close the window to release it. **Open in tab** opens the standalone demo.
 
 ## Run it
@@ -20,4 +22,4 @@ Edit the card anchors in `docs/index.html` to update both directories and the na
 
 To rebuild, place Exotui beside this repository or set `EXOTUI_DIR` to a checkout containing the revision pinned in `scripts/build-gallery.mjs`. Run `npm run build:gallery`. Browsing needs only the static files in `docs/`. The MilkDrop wallpaper bundle loads on demand.
 
-Run `node --test demos/tests/gallery-browser.mjs demos/tests/frame-effects-browser.mjs` for browser coverage. Set `CHROME_BIN` to a system Chromium executable if Playwright’s browser is unavailable.
+Run `node --test demos/tests/gallery-browser.mjs demos/tests/frame-effects-browser.mjs demos/tests/gallery-overlays-browser.mjs` for browser coverage. Set `CHROME_BIN` to a system Chromium executable if Playwright’s browser is unavailable.

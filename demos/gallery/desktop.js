@@ -88,7 +88,8 @@ async function mountDesktop(root, atlas) {
       else if (href === source.href) source.click();
       else if (href === plainUrl.href) location.assign(plainUrl.href);
     },
-    onWindows: (windows, blocked, theme, animating) => frames.project(windows, blocked, theme, animating, desktopWindowStates()),
+    onWindows: (windows, blocked, theme, _animating, overlays) =>
+      frames.project(windows, blocked, theme, desktopWindowStates(), overlays),
   });
 
   const remove = [];

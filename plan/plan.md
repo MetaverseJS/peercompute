@@ -1,7 +1,7 @@
 Instructions: This file contains high level goals for the project and a roadmap.
 
 
-November 18 demo overview: the PeerCompute desktop and its native launcher share the same 17 destinations. Supported same-origin iframe clients are composited with the cell desktop before its native shader stack, so window chrome and live demo content share the CRT distortion. The branch is available for local review. See [the gallery plan](branch/exowebtui-demo-gallery.md).
+November 18 demo overview: the PeerCompute desktop and its native launcher share the same 17 destinations. Supported same-origin iframe clients are composited with the cell desktop before its native shader stack, so window chrome and live demo content share the CRT distortion. Foreground menus clip only their own area and demo focus changes preserve the running image. The branch is available for local review. See [the gallery plan](branch/exowebtui-demo-gallery.md).
 
 November 18 release review: independently verify SecretWorkshop's discovery and
 encrypted receipt lookup, then qualify the demo build from reviewed source.

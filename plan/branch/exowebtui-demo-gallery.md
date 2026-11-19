@@ -8,3 +8,5 @@ Branch `feature/exowebtui-demo-gallery` starts at `18a2182d` on `feature/ipfs-ar
 Follow-up: use the tech-stack desktop’s cell typography, shaders, wallpaper and settings. Launch demos in independently managed iframe windows with the same visual treatment as the desktop. The visible product name is **PeerCompute**.
 
 The screenshot on November 18 clarified the visual requirement. Compose live iframe pixels and desktop cells in the same input texture before all native shader passes, including their desktop-wide distortion. Preserve native controls and gracefully show the live frame on browsers that cannot supply the pixels.
+
+November 18 follow-up: keep all visible clients painting while desktop overlays are open. Only the part physically covered by menus, the switcher or a higher window is obscured. Switching, minimizing and restoring live demos should preserve their running documents and avoid a blank frame.
