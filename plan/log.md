@@ -64508,3 +64508,13 @@ Extended `demos/tests/frame-effects-browser.mjs` to keep two iframes open, resiz
 Repeated the actual PlanetGen/Universes interaction against the updated tailnet preview. Both returned to shader mode with focus untouched and the GPU scene still running. The toolbar separator showed the desktop’s curvature. The Fano resize probe also passed at all five widths. Captures and event traces live under `/tmp/pc-actual-shader/`; the focused before/after runs are in `/tmp/pc-shader-resize-{old2,new2}.log`. `npm run build:gallery` on Node v24.18.0 produced identical HTML and bundle hashes on repeat, and HTTP 200 contents at https://fastbox.tail5c077c.ts.net:5190/peercompute/ matched the local build. `git diff --check` passed.
 
 Final regression command: `CHROME_BIN=/usr/bin/google-chrome node --test demos/tests/gallery-overlays-browser.mjs demos/tests/frame-effects-browser.mjs demos/tests/gallery-browser.mjs demos/tests/console-navigation.test.js demos/tests/demo-release.test.js demos/tests/demo-ports.test.js`. All 57 checks passed, including native fallback, shader pixels and input, window switching and gallery startup.
+
+### 2026-11-19 13:27:35 AKST — Gallery scrolling and window animation defaults
+
+Prompt (first observed locally): “by default, the scroll speed should be fast, and all window animations should be set to random.”
+
+Changed the pinned desktop adaptation in `scripts/build-gallery.mjs`. Both startup and the saved-preference reader use fast scrolling as the fallback. The animation defaults now derive from the desktop’s own transition list. Each valid saved effect and animation speed still takes precedence. Updated `demos/gallery/README.md`, `plan/plan.md`, `plan/tests.md`, and `plan/branch/exowebtui-demo-gallery.md`. Rebuilt `docs/assets/exowebtui.js` and its download-size hint in `docs/index.html` with `npm run build:gallery` under Node v24.18.0.
+
+Updated `demos/tests/gallery-browser.mjs` to check the distance of a real wheel event, all seven defaults, and saved choices after changing Settings and reloading. Separately checked fresh, partially configured, and fully configured browser profiles on the running Tailscale preview. All six boot/reload combinations passed. A missing or invalid effect fell back to random, and an explicit effect, speed setting, or disabled animation setting was retained. The served HTML and JS on :5190 both matched the rebuilt files byte for byte.
+
+All 57 checks passed with `CHROME_BIN=/usr/bin/google-chrome node --test demos/tests/gallery-overlays-browser.mjs demos/tests/frame-effects-browser.mjs demos/tests/gallery-browser.mjs demos/tests/console-navigation.test.js demos/tests/demo-release.test.js demos/tests/demo-ports.test.js`. `git diff --check` passed.

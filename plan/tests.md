@@ -11,6 +11,8 @@ When updating Exotui, hold the bundle download and module load separately, then 
 
 Resize the gallery with two captured iframes open and leave focus alone. Check that the active scene and toolbar return to the shared shader output, the background window remains correctly clipped, and each iframe keeps its document. A canvas that cannot be captured must still use the standard view.
 
+In a fresh profile, check that one wheel tick advances four entries and all seven window transitions use random effects. Change the speed and one transition in Settings, reload, and check both the wheel distance and the saved effect. With partial older settings, verify each missing or invalid effect falls back to random.
+
 ### Owner avatar authoring before speech — November 13
 
 - `world-intent-decision`: original user prompt, neutral owner-authoring classifier,

@@ -34,6 +34,9 @@ try {
   // Project the same cell rectangles the native desktop paints above its
   // windows, so a live pixel layer can leave only those portions uncovered.
   const projected = patchPinned(upstream, [
+    ['const desktopSettings = {', 'const defaultScrollSpeed = DESKTOP_SCROLL_SPEEDS.indexOf("fast");\nconst desktopSettings = {'],
+    ['  /** Index into DESKTOP_SCROLL_SPEEDS; medium is the default. */\n  scrollSpeed: 1,', '  scrollSpeed: defaultScrollSpeed,'],
+    ['speed < 0 ? 1 : speed', 'speed < 0 ? defaultScrollSpeed : speed'],
     ['export interface DesktopDemo {', 'export interface DesktopDemo {\n  readonly liveClient?: boolean;'],
     ['new DesktopWindowAnimations();',
       'new DesktopWindowAnimations(id => demoById.get(id)?.liveClient === true);'],
@@ -76,6 +79,15 @@ export const closeDesktopWindow = id => windowHost.execute({ kind: "close", id }
   // chrome immediately if a transition would snapshot a live iframe region.
   const animationsPath = path.join(source, 'examples/web/desktop_animations.ts');
   await writeFile(animationsPath, patchPinned(await readFile(animationsPath, 'utf8'), [
+    [`  kinds: {
+    open: "fade",
+    close: "disintegrate",
+    minimize: "fly",
+    maximize: "fade",
+    restore: "fly",
+    raise: "fade",
+    lower: "fade",
+  },`, `  kinds: Object.fromEntries(DESKTOP_WINDOW_TRANSITIONS.map(kind => [kind, "random"])) as DesktopAnimationSettings["kinds"],`],
     ['import type { Rectangle } from "../../src/types.ts";', `import type { Rectangle } from "../../src/types.ts";
 import { intersects } from "../../src/app/hit_targets.ts";`],
     ['export class DesktopWindowAnimations {', `export class DesktopWindowAnimations {

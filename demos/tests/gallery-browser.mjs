@@ -183,7 +183,7 @@ test('cold startup shows progress until the desktop paints or falls back to the 
   }
 });
 
-test('the gallery applies the default wheel speed and restores changes from desktop settings', async t => {
+test('the gallery starts with fast scrolling and random window effects and restores saved choices', async t => {
   const server = await createPagesServer({
     docsRoot: fileURLToPath(new URL('../../docs/', import.meta.url)), ...ensureDevHttpsCert(),
   });
@@ -206,7 +206,10 @@ test('the gallery applies the default wheel speed and restores changes from desk
     }, expectedFirst);
   }
   await page.goto(server.baseUrl);
-  await wheelOnce('Universes');
+  await wheelOnce('PlanetGen');
+  const transitions = ['open', 'close', 'minimize', 'maximize', 'restore', 'raise', 'lower'];
+  const kinds = Object.fromEntries(transitions.map(kind => [kind, 'random']));
+  assert.deepEqual(await page.evaluate(() => __desktop.animationSettings()), { speed: 'normal', kinds });
   await clickCells(page, '[ Settings ]');
   await page.waitForFunction(() => __desktop.windows().some(w => w.active && w.id === 'settings'));
   // The Windows settings follow the variable-length wallpaper and shader lists.
@@ -219,9 +222,13 @@ test('the gallery applies the default wheel speed and restores changes from desk
   await page.mouse.move(...center);
   for (let i = 0; i < 20; i++) await page.mouse.wheel(0, 120);
   await page.mouse.move(0, 0);
-  await waitForCells(page, 'scroll speed ◂ medium ▸');
-  await clickCells(page, 'medium ▸');
   await waitForCells(page, 'scroll speed ◂ fast ▸');
+  await clickCells(page, 'fast ▸');
+  await waitForCells(page, 'scroll speed ◂ slow ▸');
+  await clickCells(page, 'open ◂ random ▸');
+  const savedOpen = await page.evaluate(() => __desktop.animationSettings().kinds.open);
+  assert.notEqual(savedOpen, 'random');
   await page.reload();
-  await wheelOnce('PlanetGen');
+  await wheelOnce('CubeChat');
+  assert.deepEqual(await page.evaluate(() => __desktop.animationSettings().kinds), { ...kinds, open: savedOpen });
 });

@@ -16,3 +16,5 @@ November 19 follow-up: show the desktop startup state immediately. Keep the HTML
 November 19 upstream update: pin the sibling Exotui main revision for reproducible gallery builds. Use its byte-progress loading panel, wheel speed choices, touch coast and rectangular snap preview. Verify both shader and standard iframe presentation while dragging.
 
 November 19 shader follow-up: reproduce the persistent unfiltered client by resizing PlanetGen over Universes. Reconcile capture readiness after changing the backing-store size and verify the shader handoff without switching windows.
+
+November 19 preference update: default wheel scrolling to fast and all seven transition effects to random. Honor each browser’s saved choices.
