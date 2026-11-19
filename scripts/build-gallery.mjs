@@ -34,6 +34,11 @@ try {
   // Project the same cell rectangles the native desktop paints above its
   // windows, so a live pixel layer can leave only those portions uncovered.
   const projected = patchPinned(upstream, [
+    ['const active = windowHost.controller.inspect().activeWindowId;',
+      'const { activeWindowId: active, windows } = windowHost.controller.inspect();'],
+    ['const fullscreen = defaultFullscreen(active);', `const focused = windows.find(window => window.id === active);
+    const arranged = focused?.snapTarget || focused?.placement === "tiled";
+    const fullscreen = arranged ? mobileLayout() : defaultFullscreen(active);`],
     ['const desktopSettings = {', 'const defaultScrollSpeed = DESKTOP_SCROLL_SPEEDS.indexOf("fast");\nconst desktopSettings = {'],
     ['  /** Index into DESKTOP_SCROLL_SPEEDS; medium is the default. */\n  scrollSpeed: 1,', '  scrollSpeed: defaultScrollSpeed,'],
     ['speed < 0 ? 1 : speed', 'speed < 0 ? defaultScrollSpeed : speed'],
@@ -75,6 +80,13 @@ export const desktopWindowStates = () => windowHost.controller.inspect().windows
 export const focusDesktopWindow = id => windowHost.execute({ kind: "focus", id }, bodyBounds(), projectionOptions());
 export const closeDesktopWindow = id => windowHost.execute({ kind: "close", id }, bodyBounds(), projectionOptions());
 `);
+  // Snaps are already projected against current bounds. Recovering their old
+  // floating rectangles would discard the anchor on the first viewport resize.
+  const hostPath = path.join(source, 'src/app/workbench_window_host.ts');
+  await writeFile(hostPath, patchPinned(await readFile(hostPath, 'utf8'), [
+    ['window.placement === "floating" && window.declaredVisible &&',
+      'window.placement === "floating" && !window.snapTarget && window.declaredVisible &&'],
+  ], 'window recovery'));
   // Detached animation snapshots contain terminal glyphs. Paint real window
   // chrome immediately if a transition would snapshot a live iframe region.
   const animationsPath = path.join(source, 'examples/web/desktop_animations.ts');

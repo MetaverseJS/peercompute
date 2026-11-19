@@ -192,3 +192,88 @@ test('desktop overlays preserve visible iframe contents and allow a second demo 
     }
   });
 });
+
+test('edge and corner snaps refit together after a viewport resize and keep both demos running', async t => {
+  const server = await createPagesServer({
+    docsRoot: fileURLToPath(new URL('../../docs/', import.meta.url)), ...ensureDevHttpsCert(),
+  });
+  t.after(() => server.close());
+  const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN || undefined });
+  t.after(() => browser.close());
+  const page = await browser.newPage({ viewport: { width: 1360, height: 810 },
+    ignoreHTTPSErrors: true, reducedMotion: 'reduce' });
+  await configure(page, server.baseUrl, 'shaders off');
+  for (const dir of ['fano-reactor', 'schrodinger']) {
+    await page.route(url => url.pathname.endsWith('/' + dir + '/'), route => route.fulfill(fixture(colors.gold, dir)));
+  }
+  await page.goto(server.baseUrl + '?prod=1');
+  await page.waitForSelector('.exowebtui-ready', { state: 'attached' });
+
+  async function snap(title, edge) {
+    const points = await page.evaluate(({ title, edge }) => {
+      const { rect } = __desktop.windows().find(win => win.title === title);
+      const { columns, rows } = __desktop.stats();
+      const cell = (x, y) => [(x + .5) * innerWidth / columns, (y + .5) * innerHeight / rows];
+      const to = edge === 'top' ? cell(columns / 2, 1) : cell(edge === 'left' ? 0 : columns - 1, rows - 1);
+      return { from: cell(rect.column + 5, rect.row), to };
+    }, { title, edge });
+    await page.mouse.move(...points.from);
+    await page.mouse.down();
+    await page.mouse.move(...points.to, { steps: 8 });
+    await page.mouse.up();
+  }
+
+  async function assertFitted() {
+    await page.waitForFunction(() => {
+      const { columns, rows } = __desktop.stats();
+      if (columns !== Math.floor(innerWidth / 9) || rows !== Math.floor(innerHeight / 18)) return false;
+      const windows = __desktop.windows();
+      // The controller can accept the snap one frame before its iframe is
+      // laid out. Wait for that projection before using its width as a baseline.
+      for (const win of windows.filter(w => w.title === 'Fano Reactor' || w.title === 'Schrodinger')) {
+        const iframe = document.querySelector('iframe[title="' + win.title + '"]');
+        if (!iframe || Math.abs(iframe.clientWidth - win.clientRect.width * innerWidth / columns) > 1) return false;
+      }
+      const rects = Object.fromEntries(windows.map(win => [win.title, win.rect]));
+      const top = rects.PeerCompute, left = rects['Fano Reactor'], right = rects.Schrodinger;
+      return top && left && right && top.column === 0 && top.row === 1 && top.width === columns &&
+        top.height === Math.ceil((rows - 1) / 2) && left.column === 0 && left.width === Math.ceil(columns / 2) &&
+        left.row === 1 + top.height && right.row === left.row && right.column === left.width &&
+        right.column + right.width === columns && left.row + left.height === rows && right.row + right.height === rows;
+    });
+  }
+
+  await snap('PeerCompute', 'top');
+  for (const [dir, title, edge] of [['fano-reactor', 'Fano Reactor', 'left'], ['schrodinger', 'Schrodinger', 'right']]) {
+    await page.locator('a[data-demo-dir="' + dir + '"]').evaluate(link => link.click());
+    await page.frameLocator('iframe[title="' + title + '"]').getByRole('textbox').fill(title + ' draft');
+    await snap(title, edge);
+  }
+  await assertFitted();
+  // Focus the catalog, whose ordinary floating window would maximize below 1280px.
+  await page.mouse.click(130, 27);
+  await page.waitForFunction(() => __desktop.windows().some(w => w.title === 'PeerCompute' && w.active));
+
+  // Advance browser time explicitly so that each resize event is delivered,
+  // even when the test runner is busy. An unfinished drag must not resize the demos.
+  const initialSize = await page.locator('iframe').evaluateAll(frames => frames.map(f => [f.clientWidth, f.clientHeight]));
+  await page.clock.install({ time: new Date('2026-01-01T12:00:00Z') });
+  await page.clock.pauseAt(new Date('2026-01-01T12:01:00Z'));
+  for (const size of [{ width: 1450, height: 840 }, { width: 1500, height: 880 }, { width: 1600, height: 980 }]) {
+    await page.setViewportSize(size);
+    await page.evaluate(() => new Promise(resolve => {
+      const observer = new ResizeObserver(() => { observer.disconnect(); resolve(); });
+      observer.observe(document.querySelector('#desktop'));
+    }));
+    await page.clock.runFor(40);
+    assert.deepEqual(await page.locator('iframe').evaluateAll(frames => frames.map(f => [f.clientWidth, f.clientHeight])), initialSize);
+  }
+  await page.clock.runFor(350);
+  await assertFitted();
+  await page.setViewportSize({ width: 1000, height: 720 });
+  await page.clock.runFor(400);
+  await assertFitted();
+  for (const title of ['Fano Reactor', 'Schrodinger']) {
+    assert.equal(await page.frameLocator('iframe[title="' + title + '"]').getByRole('textbox').inputValue(), title + ' draft');
+  }
+});

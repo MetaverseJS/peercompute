@@ -18,3 +18,5 @@ November 19 upstream update: pin the sibling Exotui main revision for reproducib
 November 19 shader follow-up: reproduce the persistent unfiltered client by resizing PlanetGen over Universes. Reconcile capture readiness after changing the backing-store size and verify the shader handoff without switching windows.
 
 November 19 preference update: default wheel scrolling to fast and all seven transition effects to random. Honor each browser’s saved choices.
+
+November 19 resize update: keep snapped edges, corners and tiled splits anchored through browser resizes. Defer layout until the viewport settles so live demos resize once per drag.

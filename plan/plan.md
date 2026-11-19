@@ -7,6 +7,8 @@ November 19 ExoWebTUI update: the demo gallery uses Exotui main at `e89d2136`. T
 
 New gallery profiles start with fast wheel scrolling and random effects for all seven window transitions. Saved preferences take precedence per setting.
 
+Resizing the browser preserves the gallery’s edge snaps, corner snaps and tiled splits. The desktop and its live demos refit together once the resize settles.
+
 November 19 demo overview: select a demo to read its full preview before launch. Wide windows show the list and preview side by side; narrow windows stack them. The desktop starts on a small loading screen and the existing HTML directory remains available as a fallback.
 
 November 18 demo overview: the PeerCompute desktop and its native launcher share the same 17 destinations. Supported same-origin iframe clients are composited with the cell desktop before its native shader stack, so window chrome and live demo content share the CRT distortion. Foreground menus clip only their own area and demo focus changes preserve the running image. The branch is available for local review. See [the gallery plan](branch/exowebtui-demo-gallery.md).

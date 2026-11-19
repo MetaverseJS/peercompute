@@ -13,6 +13,8 @@ Resize the gallery with two captured iframes open and leave focus alone. Check t
 
 In a fresh profile, check that one wheel tick advances four entries and all seven window transitions use random effects. Change the speed and one transition in Settings, reload, and check both the wheel distance and the saved effect. With partial older settings, verify each missing or invalid effect falls back to random.
 
+Snap the directory to the top half and two running demos to the lower corners. Grow the browser in quick steps, then shrink it past the directory’s floating-window breakpoint. Check that demo sizes hold during the burst, the three rectangles fill the final grid without overlap, and both iframe drafts survive. Also check a **G** tiled workspace and the shared shader against the running preview.
+
 ### Owner avatar authoring before speech — November 13
 
 - `world-intent-decision`: original user prompt, neutral owner-authoring classifier,

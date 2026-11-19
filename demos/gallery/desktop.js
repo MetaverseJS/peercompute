@@ -24,7 +24,15 @@ function wallpaper(audio) {
   };
 }
 
-async function mountDesktop(root, atlas) {
+async function mountDesktop(viewport, atlas) {
+  const root = viewport.querySelector('.desktop-surface');
+  // Commit one pixel size for the cell grid, shader surface and live iframe
+  // captures. Resizing those independently can repeatedly reset a demo's GPU canvas.
+  const fitSurface = () => {
+    root.style.width = viewport.clientWidth + 'px';
+    root.style.height = viewport.clientHeight + 'px';
+  };
+  fitSurface();
   const plainUrl = document.querySelector('#plain-directory').href;
   const entries = [...atlas.querySelectorAll('[data-demo-dir]')].map(anchor => ({
     id: 'launch-' + anchor.dataset.demoDir + '-' + anchor.dataset.demoPath,
@@ -92,10 +100,18 @@ async function mountDesktop(root, atlas) {
   const remove = [];
   const listeners = new AbortController();
   const options = { signal: listeners.signal };
+  let resizeTimer;
+  const resizeObserver = new ResizeObserver(() => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(fitSurface, 160);
+  });
+  resizeObserver.observe(viewport);
   function dispose() {
     if (stopped) return;
     stopped = true;
     cancelAnimationFrame(animation);
+    resizeObserver.disconnect();
+    clearTimeout(resizeTimer);
     listeners.abort();
     if (dialog.open) dialog.close();
     for (const off of remove) off();
@@ -107,7 +123,7 @@ async function mountDesktop(root, atlas) {
     dispose();
     document.documentElement.classList.remove('exowebtui-ready');
     atlas.hidden = false;
-    root.hidden = true;
+    viewport.hidden = true;
     console.warn('Switched to the HTML demo directory.', error);
   }
   // The presenter animates the GLSL passes independently. The shell redraws

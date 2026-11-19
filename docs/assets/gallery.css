@@ -119,7 +119,8 @@ footer a { color: var(--soft); }
   width: 100vw; height: 100dvh; outline: 0; touch-action: none; user-select: none;
   background: #0a0c14; visibility: hidden;
 }
-#desktop > canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.desktop-surface { position: relative; width: 100%; height: 100%; }
+.desktop-surface > canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 .exowebtui-ready, .exowebtui-ready body { width: 100%; height: 100%; overflow: hidden; overscroll-behavior: none; }
 .exowebtui-ready #desktop { visibility: visible; cursor: none; }
 .desktop-alternate { display: none; }

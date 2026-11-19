@@ -8,6 +8,8 @@ In browsers with HTML-in-Canvas, each same-origin demo supplies its live pixels 
 
 Menus and the task switcher cover only their own area. Demos continue loading and repainting underneath. Switching between live demos keeps their documents and takes effect immediately.
 
+Drag a title bar to an edge or corner to snap it, or press **G** to tile the focused window. When you resize the browser, the layout refits after you stop dragging. Open demos keep running in their tiles.
+
 **Back to PeerCompute** returns to the directory and keeps the demo running. Minimize or switch windows to keep a session, or close the window to release it. **Open in tab** opens the standalone demo.
 
 ## Run it
