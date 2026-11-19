@@ -12,3 +12,5 @@ The screenshot on November 18 clarified the visual requirement. Compose live ifr
 November 18 follow-up: keep all visible clients painting while desktop overlays are open. Only the part physically covered by menus, the switcher or a higher window is obscured. Switching, minimizing and restoring live demos should preserve their running documents and avoid a blank frame.
 
 November 19 follow-up: show the desktop startup state immediately. Keep the HTML directory available during startup and restore it after a bundle or presenter failure. Selecting an entry previews the demo; **Open demo** launches it. Give each of the 17 entries a source-backed summary and make the directory usable as a list above a preview on phones.
+
+November 19 upstream update: pin the sibling Exotui main revision for reproducible gallery builds. Use its byte-progress loading panel, wheel speed choices, touch coast and rectangular snap preview. Verify both shader and standard iframe presentation while dragging.

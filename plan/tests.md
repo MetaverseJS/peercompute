@@ -7,6 +7,8 @@ Run `node --test demos/tests/gallery-browser.mjs demos/tests/frame-effects-brows
 
 For startup, delay and reject the desktop bundle independently. Check the first paint, the escape link, automatic HTML recovery, explicit HTML without downloading the desktop, and script-free navigation. Exercise a real click on desktop and touch on a phone: selecting a demo (even twice) updates its preview without creating an iframe. The selected demo must launch using **Open demo** and remain available on keyboard Enter. Inspect list and preview placement and reach the end of a long summary on a small screen.
 
+When updating Exotui, hold the bundle download and module load separately, then fail both download and presenter startup to check the HTML fallback. Verify the byte count and ready state, saved wheel speed after reload, and a flick that crosses from preview into list. While snapping a window over an iframe, check all four outline edges and the live pixels inside them in shader and ordinary iframe mode.
+
 ### Owner avatar authoring before speech — November 13
 
 - `world-intent-decision`: original user prompt, neutral owner-authoring classifier,

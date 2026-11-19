@@ -122,12 +122,7 @@ footer a { color: var(--soft); }
 #desktop > canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 .exowebtui-ready, .exowebtui-ready body { width: 100%; height: 100%; overflow: hidden; overscroll-behavior: none; }
 .exowebtui-ready #desktop { visibility: visible; cursor: none; }
-.exowebtui-starting #desktop-entry {
-  position: fixed; inset: 0; display: grid; align-content: center; justify-items: center; gap: 1rem;
-  background: #0a0c14; color: #a7cec8; font: 1rem/1.5 var(--mono);
-}
 .desktop-alternate { display: none; }
-.exowebtui-starting .desktop-alternate { display: block; font-size: .8rem; text-decoration: underline; }
 .exowebtui-ready .desktop-alternate { display: block; }
 #desktop-search { max-width: min(92vw, 34rem); padding: 16px; border: 1px solid #5de0d5; background: #0c1e23; color: #e2ecef; font: 14px/1.5 var(--mono); }
 #desktop-search::backdrop { background: #061019aa; }

@@ -321,7 +321,7 @@ export function createCatalogWindow({ entries, openDemo, openSearch, openSetting
     },
     onWheel(direction, column, row) {
       const overPreview = previewBounds && column >= previewBounds.x && row >= previewBounds.top && row <= previewBounds.bottom;
-      scrollingPreview = Boolean(overPreview && previewLimit);
+      scrollingPreview = Boolean(overPreview);
       if (overPreview) scrollPreview(previewOffset + direction * 3);
       else scroll(offset + direction * rowHeight);
       return true;

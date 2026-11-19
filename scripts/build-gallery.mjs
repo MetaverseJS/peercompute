@@ -1,12 +1,12 @@
 import { execFileSync } from 'node:child_process';
-import { copyFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 
 // ExoWebTUI's desktop application seam lives in examples/ in the source distribution.
-const revision = '8637fcc39d19959550ca179fe91c258766c2fa62';
+const revision = 'e89d2136a96dba9479ecbc984fb28e0927dfd8aa';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const checkout = process.env.EXOTUI_DIR || path.resolve(root, '../exotui');
 const source = await mkdtemp(path.join(tmpdir(), 'peercompute-gallery-'));
@@ -38,11 +38,21 @@ try {
     ['new DesktopWindowAnimations();',
       'new DesktopWindowAnimations(id => demoById.get(id)?.liveClient === true);'],
     ['    animating: boolean,', '    animating: boolean,\n    covers: readonly Rectangle[],'],
+    // Keep a flick in the pane where it started, even when the finger crosses
+    // from the preview to the list. Gallery hit regions use client coordinates.
+    ['let touchScroll: {', 'let touchScroll: {\n  clientX: number;\n  clientY: number;'],
+    ['? { windowId: top.id, startY: y,', '? { windowId: top.id, clientX: x - top.clientRect.column, clientY: y - top.clientRect.row, startY: y,'],
+    ['demo?.onWheel?.(1, x, y);', 'demo?.onWheel?.(1, touchScroll.clientX, touchScroll.clientY);'],
+    ['demo?.onWheel?.(-1, x, y);', 'demo?.onWheel?.(-1, touchScroll.clientX, touchScroll.clientY);'],
     ['function paintDesktop(now: number)', 'function paintDesktop(now: number, covers: Rectangle[])'],
     ['    paintShellSwitcher(frameSurface(frame)', '    const switcherRect = paintShellSwitcher(frameSurface(frame)'],
     ['  }\n  if (projection.snapPreview) {', '    covers.push(switcherRect);\n  }\n  if (projection.snapPreview) {'],
-    ['    const preview = projection.snapPreview.rect;', `    const preview = projection.snapPreview.rect;
-    covers.push({ ...preview, height: 1 });`],
+    ['    // The whole outline of where the window will land.', `    const { column, row, width, height } = projection.snapPreview.rect;
+    covers.push({ column, row, width, height: 1 },
+      { column, row: row + height - 1, width, height: 1 },
+      { column, row, width: 1, height },
+      { column: column + width - 1, row, width: 1, height });
+    // The whole outline of where the window will land.`],
     ['function paintStartMenu(frame: VizCell[][]): void {\n  const layout = startMenuLayout();',
       'function paintStartMenu(frame: VizCell[][], layout: StartMenuLayout): void {'],
     ['  if (startMenuOpen) paintStartMenu(frame);', `  covers.push(barBounds());
@@ -149,6 +159,19 @@ import { intersects } from "../../src/app/hit_targets.ts";`],
     },
     banner: { js: `/*! Built from Exotui ${revision}. See exowebtui-LICENSE.txt. */` },
   });
+  // Render upstream's progress panel into the initial document. Keep it inert
+  // for the plain HTML directory and size its fallback meter from this build.
+  const { bootProgressHtml } = await import(pathToFileURL(path.join(source, 'examples/web/boot_progress.ts')).href);
+  const boot = bootProgressHtml({
+    name: 'PeerCompute', src: './assets/exowebtui.js', ready: 'manual',
+    bytes: (await stat(path.join(root, 'docs/assets/exowebtui.js'))).size,
+    fallbackHtml: '<a id="boot-directory" href="?view=html">Browse accessible HTML directory</a>',
+  });
+  const index = path.join(root, 'docs/index.html');
+  const markup = await readFile(index, 'utf8');
+  const slot = /(<template id="desktop-boot">)[\s\S]*?(<\/template>)/;
+  if (!slot.test(markup)) throw new Error('Gallery is missing the desktop boot template');
+  await writeFile(index, markup.replace(slot, (_, start, end) => start + '\n' + boot + '\n' + end));
   await copyFile(path.join(source, 'docs/assets/desktop-butterchurn.js'),
     path.join(root, 'docs/assets/desktop-butterchurn.js'));
   await writeFile(path.join(root, 'docs/assets/exowebtui-LICENSE.txt'), license.join('\n\n'));

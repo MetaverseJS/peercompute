@@ -1,4 +1,4 @@
-ExoWebTUI · https://github.com/ubernaut/exotui/tree/8637fcc39d19959550ca179fe91c258766c2fa62
+ExoWebTUI · https://github.com/ubernaut/exotui/tree/e89d2136a96dba9479ecbc984fb28e0927dfd8aa
 
 # The MIT License (MIT)
 

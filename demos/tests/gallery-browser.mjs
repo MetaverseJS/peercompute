@@ -12,9 +12,9 @@ async function waitForCells(page, text) {
   }, text);
 }
 
-async function clickCells(page, text, touch = false) {
+async function cellPoint(page, text) {
   await waitForCells(page, text);
-  const point = await page.evaluate(text => {
+  return page.evaluate(text => {
     const { columns, rows } = __desktop.stats();
     for (let row = 0; row < rows; row++) {
       const line = __desktop.row(row);
@@ -23,6 +23,10 @@ async function clickCells(page, text, touch = false) {
         (row + 0.5) * innerHeight / rows];
     }
   }, text);
+}
+
+async function clickCells(page, text, touch = false) {
+  const point = await cellPoint(page, text);
   if (touch) await page.touchscreen.tap(...point);
   else {
     await page.mouse.click(...point);
@@ -119,33 +123,105 @@ test('cold startup shows progress until the desktop paints or falls back to the 
   const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN || undefined });
   t.after(() => browser.close());
 
-  for (const fail of [false, true]) {
+  for (const failure of [null, 'download', 'initialize']) {
     const page = await browser.newPage({ ignoreHTTPSErrors: true, reducedMotion: 'reduce' });
-    const requested = Promise.withResolvers();
+    const bundle = '**/assets/exowebtui.js';
     const release = Promise.withResolvers();
-    await page.route('**/assets/exowebtui.js', async route => {
-      requested.resolve();
-      await release.promise;
-      return fail ? route.abort() : route.continue();
+    const runModule = Promise.withResolvers();
+    const types = [];
+    const scriptRequested = page.waitForRequest(request =>
+      request.url().endsWith('/assets/exowebtui.js') && request.resourceType() === 'script');
+    if (failure === 'initialize') {
+      // Fail during the real shell's first present, after its module loads.
+      await page.addInitScript(() => {
+        const getContext = HTMLCanvasElement.prototype.getContext;
+        HTMLCanvasElement.prototype.getContext = function (...args) {
+          if (this.closest('#desktop') && args[0] === '2d') throw new Error('Presenter unavailable.');
+          return getContext.apply(this, args);
+        };
+      });
+    }
+    await page.route(bundle, async route => {
+      const type = route.request().resourceType();
+      types.push(type);
+      await (type === 'xhr' ? release.promise : runModule.promise);
+      return failure === 'download' ? route.abort() : route.continue();
     });
+    const bar = page.getByRole('progressbar', { name: 'Loading PeerCompute' });
     try {
-      await page.goto(server.baseUrl, { waitUntil: 'commit' });
-      await requested.promise;
-      await page.getByRole('status', { name: '' }).filter({ hasText: 'Starting PeerCompute' }).waitFor();
-      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      await page.goto(server.baseUrl + '?prod=1', { waitUntil: 'commit' });
+      await bar.waitFor();
+      assert.equal(await bar.getAttribute('aria-valuenow'), '0');
+      const alternate = page.locator('#boot-directory');
+      assert.ok(await alternate.isVisible());
+      const alternateUrl = new URL(await alternate.getAttribute('href'), page.url());
+      assert.equal(alternateUrl.searchParams.get('view'), 'html');
       assert.equal(await page.locator('#atlas').isVisible(), false);
-      assert.ok(await page.locator('#plain-directory').isVisible());
+      release.resolve();
+      await scriptRequested;
+      // The HTML directory already has a canvas. Only the first native desktop
+      // frame may dismiss the download meter.
+      assert.ok(await bar.isVisible());
+      assert.ok(Number(await bar.getAttribute('aria-valuenow')) > 0);
+      assert.equal(await page.locator('#atlas').isVisible(), false);
     } finally {
       release.resolve();
+      runModule.resolve();
     }
-    if (fail) {
+    if (failure) {
       await page.locator('#atlas').waitFor();
       assert.equal(await page.locator('a[data-demo-dir]:visible').count(), 17);
     } else {
       await waitForCells(page, '17 DEMOS');
       assert.equal(await page.locator('#atlas').isVisible(), false);
+      await page.keyboard.press('ArrowDown');
+      await waitForCells(page, '› CubeChat');
     }
-    assert.equal(await page.locator('#desktop-startup').isVisible(), false);
+    await bar.waitFor({ state: 'hidden' });
+    assert.deepEqual(types, ['xhr', 'script']);
     await page.close();
   }
+});
+
+test('the gallery applies the default wheel speed and restores changes from desktop settings', async t => {
+  const server = await createPagesServer({
+    docsRoot: fileURLToPath(new URL('../../docs/', import.meta.url)), ...ensureDevHttpsCert(),
+  });
+  t.after(() => server.close());
+  const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN || undefined });
+  t.after(() => browser.close());
+  const page = await browser.newPage({ ignoreHTTPSErrors: true, reducedMotion: 'reduce',
+    viewport: { width: 390, height: 700 } });
+
+  async function wheelOnce(expectedFirst) {
+    const point = await cellPoint(page, '› Local Model Console');
+    await page.mouse.move(...point);
+    await page.mouse.wheel(0, 120);
+    await page.mouse.move(0, 0);
+    await page.waitForFunction(title => {
+      const { rows } = __desktop.stats();
+      const heading = Array.from({ length: rows }, (_, row) => __desktop.row(row))
+        .findIndex(line => line.includes('17 DEMOS'));
+      return heading >= 0 && __desktop.row(heading + 1).includes(title);
+    }, expectedFirst);
+  }
+  await page.goto(server.baseUrl);
+  await wheelOnce('Universes');
+  await clickCells(page, '[ Settings ]');
+  await page.waitForFunction(() => __desktop.windows().some(w => w.active && w.id === 'settings'));
+  // The Windows settings follow the variable-length wallpaper and shader lists.
+  // Wheel to the bottom, where the scroll speed is visible on this viewport.
+  const center = await page.evaluate(() => {
+    const { columns, rows } = __desktop.stats();
+    const c = __desktop.windows().find(w => w.id === 'settings').clientRect;
+    return [(c.column + c.width / 2) * innerWidth / columns, (c.row + c.height / 2) * innerHeight / rows];
+  });
+  await page.mouse.move(...center);
+  for (let i = 0; i < 20; i++) await page.mouse.wheel(0, 120);
+  await page.mouse.move(0, 0);
+  await waitForCells(page, 'scroll speed ◂ medium ▸');
+  await clickCells(page, 'medium ▸');
+  await waitForCells(page, 'scroll speed ◂ fast ▸');
+  await page.reload();
+  await wheelOnce('PlanetGen');
 });
