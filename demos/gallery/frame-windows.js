@@ -1,4 +1,6 @@
-import { createFrameEffects } from './frame-effects.js';
+import { createFrameCompositor } from './frame-compositor.js';
+import { createFrameCapture } from './frame-capture.js';
+import { createFrameInput } from './frame-input.js';
 
 // This name and signal let an overview reached by a demo's own Back link
 // hand control to the containing desktop, including on dedicated dev ports.
@@ -15,6 +17,7 @@ export function returnFromFramedAtlas() {
 const frameCss = `
 .pc-demo-stage { position: fixed; display: flex; flex-direction: column;
   overflow: hidden; z-index: 1; background: #0a1014; color: #cfefea; }
+.pc-demo-stage[data-presentation="shader"] { opacity: 0; }
 .pc-demo-stage[hidden] { display: none !important; }
 .pc-demo-surface { position: relative; display: flex; flex: 1; min-height: 0; flex-direction: column; overflow: hidden; }
 .pc-demo-stage nav { display: flex; justify-content: space-between; align-items: center;
@@ -75,7 +78,7 @@ function subtract(box, cover) {
 export function createFrameWindows({ entries, root, presenter, openAtlas, focusDesktop, focusWindow, closeWindow }) {
   const catalog = new Map(entries.map(entry => [entry.id, entry]));
   const sessions = new Map();
-  const effects = createFrameEffects(presenter.shader);
+  const compositor = createFrameCompositor(presenter.shader);
   const style = document.createElement('style');
   style.textContent = frameCss;
   document.head.append(style);
@@ -86,6 +89,8 @@ export function createFrameWindows({ entries, root, presenter, openAtlas, focusD
   function remove(id) {
     const session = sessions.get(id);
     if (!session) return;
+    session.input?.dispose();
+    session.capture?.dispose();
     session.stage.remove(); // Discard this browsing context and its workers.
     sessions.delete(id);
     lastLayout = '';
@@ -143,7 +148,10 @@ export function createFrameWindows({ entries, root, presenter, openAtlas, focusD
     direct.href = entry.href;
     direct.target = '_blank';
     direct.rel = 'noopener';
-    nav.append(atlas, direct);
+    const mode = document.createElement('small');
+    mode.textContent = 'Standard view';
+    mode.hidden = true;
+    nav.append(atlas, mode, direct);
     const frame = document.createElement('iframe');
     frame.title = entry.title;
     frame.name = FRAME_PREFIX + id;
@@ -161,10 +169,13 @@ export function createFrameWindows({ entries, root, presenter, openAtlas, focusD
     shield.addEventListener('click', () => focusWindow(id));
     const surface = document.createElement('div');
     surface.className = 'pc-demo-surface';
-    surface.toggleAttribute('data-pc-foreign', new URL(entry.href, location.href).origin !== location.origin);
     surface.append(nav, frame);
-    stage.append(surface, shield);
-    sessions.set(id, { stage, frame, nav, shield });
+    const sameOrigin = new URL(entry.href, location.href).origin === location.origin;
+    const capture = sameOrigin ? createFrameCapture({ stage, surface, frame }) : null;
+    if (!capture) stage.append(surface);
+    const input = capture ? createFrameInput({ stage, frame, root, shader: presenter.shader }) : null;
+    stage.append(shield);
+    sessions.set(id, { stage, surface, frame, nav, mode, shield, capture, input, sameOrigin });
     lastLayout = '';
     frame.src = entry.href;
     root.after(stage);
@@ -183,51 +194,95 @@ export function createFrameWindows({ entries, root, presenter, openAtlas, focusD
     for (const state of states) if (state.state === 'closed') remove(state.id);
     const active = windows.find(win => win.active);
     if (active && !blocked && !animating) open(active.id);
-    if (!sessions.size) return;
+    if (!sessions.size) {
+      compositor.setLayers([]);
+      return;
+    }
     if (blocked || animating) {
-      for (const { stage } of sessions.values()) stage.hidden = true;
+      compositor.setLayers([]);
+      for (const { stage, input } of sessions.values()) {
+        stage.hidden = true;
+        input?.setActive(false);
+      }
       lastLayout = '';
       return;
     }
-    effects.sync();
     const size = presenter.size();
     const bounds = root.getBoundingClientRect();
     const shader = presenter.shader;
     const curve = shader.enabled().includes('crt') ? shader.option('crt', 'curve') ?? 0 : 0;
-    const key = [size.columns, size.rows, bounds.left, bounds.top, bounds.width, bounds.height,
+    const presenting = shader.isPresenting();
+    const captureStates = Array.from(sessions.values(), ({ capture, stage }) =>
+      capture?.canvas.parentElement === stage ? (capture.isReady() ? 'ready' : 'painting') : 'native');
+    const key = [presenting, devicePixelRatio, ...captureStates, size.columns, size.rows,
+      bounds.left, bounds.top, bounds.width, bounds.height,
       theme.id, curve, ...windows.map(win => [win.id, win.active, ...Object.values(win.rect),
         ...Object.values(win.clientRect)].join(','))].join('|');
     if (lastLayout === key) return;
     lastLayout = key;
-    const projectRect = (rect, outer) => pixelBounds(rect, size.columns, size.rows, bounds, curve, outer);
-    const covers = windows.map(win => projectRect(win.rect, true));
+    const unitBox = rect => ({
+      left: rect.column / size.columns, top: rect.row / size.rows,
+      width: rect.width / size.columns, height: rect.height / size.rows,
+    });
+    const toPixels = rect => ({
+      left: bounds.left + rect.left * bounds.width, top: bounds.top + rect.top * bounds.height,
+      width: rect.width * bounds.width, height: rect.height * bounds.height,
+    });
+    const rawCovers = windows.map(win => unitBox(win.rect));
+    const curvedCovers = windows.map(win => pixelBounds(win.rect, size.columns, size.rows, bounds, curve, true));
     const visibleIds = new Set();
+    const layers = [];
     windows.forEach((win, index) => {
       const session = sessions.get(win.id);
       if (!session) return;
-      const { stage, nav, frame, shield } = session;
-      const box = projectRect(win.clientRect, false);
-      let parts = [box];
-      for (const cover of covers.slice(index + 1)) parts = parts.flatMap(part => subtract(part, cover));
+      const { stage, surface, nav, mode, frame, shield, capture, input } = session;
+      const raw = unitBox(win.clientRect);
+      const pixels = toPixels(raw);
+      const hasCapture = capture && capture.canvas.parentElement === stage;
+      if (hasCapture) capture.resize(pixels.width, pixels.height);
+      const composite = presenting && hasCapture && capture.isReady();
+      const parts = rawCovers.slice(index + 1).reduce(
+        (visible, cover) => visible.flatMap(part => subtract(part, cover)), [raw]);
       if (!parts.length) return;
+      if (composite) layers.push({ canvas: capture.canvas, box: raw, parts });
+
+      // The shader sees raw cell coordinates. Only a native fallback needs
+      // a straight rectangle fitted inside the already-curved window frame.
+      const box = hasCapture ? pixels : pixelBounds(win.clientRect, size.columns, size.rows, bounds, curve);
+      const hitParts = hasCapture ? parts.map(toPixels) : curvedCovers.slice(index + 1).reduce(
+        (visible, cover) => visible.flatMap(part => subtract(part, cover)), [box]);
+      if (!hitParts.length) return;
       visibleIds.add(win.id);
       stage.hidden = false;
+      stage.dataset.presentation = composite ? 'shader' : 'native';
+      mode.hidden = hasCapture || !presenting;
+      if (!mode.hidden) {
+        mode.title = !session.sameOrigin || stage.dataset.captureFallback === 'foreign-document'
+          ? 'This demo is on a different origin.'
+          : stage.dataset.captureFallback
+            ? 'Your browser could not include this scene in the desktop shaders.'
+            : 'Your browser uses a standard iframe for this demo.';
+      }
+      input?.setActive(Boolean(composite && win.active));
       shield.hidden = win.active;
       nav.inert = frame.inert = !win.active;
       stage.style.color = 'rgb(' + theme.accent.join(',') + ')';
-      stage.style.backgroundColor = 'rgb(' + theme.surface.join(',') + ')';
+      surface.style.backgroundColor = stage.style.backgroundColor = 'rgb(' + theme.surface.join(',') + ')';
       for (const [name, value] of Object.entries(box)) stage.style[name] = value + 'px';
-      const paths = parts.map(part => `M${part.left - box.left},${part.top - box.top}h${part.width}v${part.height}h${-part.width}Z`);
-      stage.style.clipPath = parts[0] === box ? '' : `path("${paths.join(' ')}")`;
+      const paths = hitParts.map(part => `M${part.left - box.left},${part.top - box.top}h${part.width}v${part.height}h${-part.width}Z`);
+      stage.style.clipPath = `path("${paths.join(' ')}")`;
     });
-    for (const [id, { stage }] of sessions) if (!visibleIds.has(id)) stage.hidden = true;
+    compositor.setLayers(layers);
+    for (const [id, { stage, input }] of sessions) {
+      if (!visibleIds.has(id)) { stage.hidden = true; input?.setActive(false); }
+    }
   }
   function dispose() {
-    effects.dispose();
+    compositor.dispose();
     events.abort();
     enablePointer();
     for (const id of sessions.keys()) remove(id);
     style.remove();
   }
-  return { applications, open, project, degauss: effects.degauss, dispose };
+  return { applications, open, project, dispose };
 }

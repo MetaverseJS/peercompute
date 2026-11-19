@@ -3,7 +3,7 @@
 
 ### ExoWebTUI demo overview
 
-Run `node --test demos/tests/gallery-browser.mjs demos/tests/frame-effects-browser.mjs demos/tests/demo-release.test.js demos/tests/demo-ports.test.js demos/tests/console-navigation.test.js`. Verify native menu links match all HTML anchors at desktop and phone sizes, search and category filters combine, directory width fits, and all demos have ordinary links with scripts disabled. Test location stability on iframe launch, different live frames, minimize/restore, close, native settings persistence, on/off frame effects, touch input, and keyboard navigation. Check SharedArrayBuffer from inside an embedded model console on the actual isolated HTTPS preview.
+Run `node --test demos/tests/gallery-browser.mjs demos/tests/frame-effects-browser.mjs demos/tests/demo-release.test.js demos/tests/demo-ports.test.js demos/tests/console-navigation.test.js`. Verify native menu links match all HTML anchors at desktop and phone sizes, search and category filters combine, directory width fits, and all demos have ordinary links with scripts disabled. Test location stability on iframe launch, different live frames, minimize/restore, close, native settings persistence, on/off frame effects, touch input, and keyboard navigation. Check SharedArrayBuffer from inside an embedded model console on the actual isolated HTTPS preview. Detect a curved horizontal rule in live Fano pixels and click a small control at its displayed coordinates. Check GPU scene and DOM capture, window occlusion, browser fallback and lossless restoration of an existing iframe when capture fails.
 
 ### Owner avatar authoring before speech — November 13
 

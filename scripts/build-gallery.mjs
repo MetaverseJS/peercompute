@@ -27,6 +27,29 @@ export const desktopWindowStates = () => windowHost.controller.inspect().windows
 export const focusDesktopWindow = id => windowHost.execute({ kind: "focus", id }, bodyBounds(), projectionOptions());
 export const closeDesktopWindow = id => windowHost.execute({ kind: "close", id }, bodyBounds(), projectionOptions());
 `);
+  // Add a pre-upload hook to the pinned presenter. All shader code, pass
+  // ordering, uniforms, render targets and the display clock stay upstream.
+  const shaderPath = path.join(source, 'src/web/canvas_shader.ts');
+  let shader = await readFile(shaderPath, 'utf8');
+  for (const [before, after] of [
+    ['  list(): readonly CanvasShaderDefinition[];', `  setSourceComposer(composer: ((source: HTMLCanvasElement) => HTMLCanvasElement) | null): void;
+  isPresenting(): boolean;
+  list(): readonly CanvasShaderDefinition[];`],
+    ['  let raf = 0;', `  let composeSource: ((source: HTMLCanvasElement) => HTMLCanvasElement) | null = null;
+  let presented = false;
+  let raf = 0;`],
+    ['    raf = 0;', '    raf = 0;\n    presented = false;'],
+    ['context.UNSIGNED_BYTE, source);', 'context.UNSIGNED_BYTE, composeSource?.(source) ?? source);'],
+    ['      // A zero-sized canvas mid-resize;', '      presented = false;\n      // A zero-sized canvas mid-resize;'],
+    ['    raf = requestAnimationFrame(frame);\n  };', '    presented = true;\n    raf = requestAnimationFrame(frame);\n  };'],
+    ['    list: () => CANVAS_SHADERS,', `    setSourceComposer(composer) { composeSource = composer; },
+    isPresenting: () => presented && !!gl && !gl.isContextLost(),
+    list: () => CANVAS_SHADERS,`],
+  ]) {
+    if (shader.split(before).length !== 2) throw new Error(`Pinned shader hook mismatch: ${before}`);
+    shader = shader.replace(before, after);
+  }
+  await writeFile(shaderPath, shader);
   const three = fileURLToPath(import.meta.resolve('three'));
   const license = [
     `ExoWebTUI · https://github.com/ubernaut/exotui/tree/${revision}`,

@@ -77,7 +77,7 @@ async function mountDesktop(root, atlas) {
     applications: [catalog, ...frames.applications],
     hiddenMenuIds: ['about', 'exomonitor', 'neon', 'viz', 'three', 'clock', 'workbench', 'jsr', 'github'],
     menuLinks, audio,
-    shader: { ...presenter.shader, degauss() { presenter.shader.degauss(); frames.degauss(); } },
+    shader: presenter.shader,
     reducedMotion: () => reducedMotion.matches,
     viewportWidth: () => root.clientWidth,
     extraBackgrounds: [{ id: 'butterchurn', label: 'Butterchurn — audio-reactive MilkDrop', fps: 30, create: () => wallpaper(audio) }],
