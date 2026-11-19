@@ -203,15 +203,6 @@ export function createFrameWindows({ entries, root, presenter, openAtlas, focusD
     const shader = presenter.shader;
     const curve = shader.enabled().includes('crt') ? shader.option('crt', 'curve') ?? 0 : 0;
     const presenting = shader.isPresenting();
-    const captureStates = Array.from(sessions.values(), ({ capture, stage }) =>
-      capture?.canvas.parentElement === stage ? (capture.isReady() ? 'ready' : 'painting') : 'native');
-    const key = [presenting, blocked, devicePixelRatio, ...captureStates, size.columns, size.rows,
-      ...overlays.map(rect => [rect.column, rect.row, rect.width, rect.height].join(',')),
-      bounds.left, bounds.top, bounds.width, bounds.height,
-      theme.id, curve, ...windows.map(win => [win.id, win.active, ...Object.values(win.rect),
-        ...Object.values(win.clientRect)].join(','))].join('|');
-    if (lastLayout === key) return;
-    lastLayout = key;
     const unitBox = rect => ({
       left: rect.column / size.columns, top: rect.row / size.rows,
       width: rect.width / size.columns, height: rect.height / size.rows,
@@ -220,6 +211,23 @@ export function createFrameWindows({ entries, root, presenter, openAtlas, focusD
       left: bounds.left + rect.left * bounds.width, top: bounds.top + rect.top * bounds.height,
       width: rect.width * bounds.width, height: rect.height * bounds.height,
     });
+    // Resizing clears readiness until the browser paints the new backing store.
+    // Cache the same post-resize state that selects the visible presentation.
+    const captureStates = windows.map(win => {
+      const session = sessions.get(win.id);
+      const capture = session?.capture;
+      if (!capture || capture.canvas.parentElement !== session.stage) return 'native';
+      const { width, height } = unitBox(win.clientRect);
+      capture.resize(width * bounds.width, height * bounds.height);
+      return capture.isReady() ? 'ready' : 'painting';
+    });
+    const key = [presenting, blocked, devicePixelRatio, ...captureStates, size.columns, size.rows,
+      ...overlays.map(rect => [rect.column, rect.row, rect.width, rect.height].join(',')),
+      bounds.left, bounds.top, bounds.width, bounds.height,
+      theme.id, curve, ...windows.map(win => [win.id, win.active, ...Object.values(win.rect),
+        ...Object.values(win.clientRect)].join(','))].join('|');
+    if (lastLayout === key) return;
+    lastLayout = key;
     // Overlays are painted above every window. Subtract the host's actual
     // footprint in both the shader source and the unshaded browser fallback.
     const coverRects = [...windows.map(win => win.rect), ...overlays];
@@ -232,12 +240,12 @@ export function createFrameWindows({ entries, root, presenter, openAtlas, focusD
       if (!session) return;
       const { stage, surface, nav, mode, frame, shield, capture, input } = session;
       projectedIds.add(win.id);
+      const wasHidden = stage.hidden;
       stage.hidden = false;
       const raw = unitBox(win.clientRect);
       const pixels = toPixels(raw);
-      const hasCapture = capture && capture.canvas.parentElement === stage;
-      if (hasCapture) capture.resize(pixels.width, pixels.height);
-      const composite = presenting && hasCapture && capture.isReady();
+      const hasCapture = captureStates[index] !== 'native';
+      const composite = presenting && captureStates[index] === 'ready';
       const parts = rawCovers.slice(index + 1).reduce(
         (visible, cover) => visible.flatMap(part => subtract(part, cover)), [raw]);
       if (composite && parts.length) layers.push({ canvas: capture.canvas, box: raw, parts });
@@ -248,7 +256,7 @@ export function createFrameWindows({ entries, root, presenter, openAtlas, focusD
       const hitParts = hasCapture ? parts.map(toPixels) : curvedCovers.slice(index + 1).reduce(
         (visible, cover) => visible.flatMap(part => subtract(part, cover)), [box]);
       const covered = hitParts.length === 0;
-      if (session.covered && !covered && hasCapture) capture.canvas.requestPaint();
+      if ((wasHidden || session.covered) && !covered && hasCapture) capture.canvas.requestPaint();
       session.covered = covered;
       stage.inert = blocked || covered;
       stage.dataset.presentation = composite ? 'shader' : 'native';

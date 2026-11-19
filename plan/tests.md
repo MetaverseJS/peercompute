@@ -9,6 +9,8 @@ For startup, delay and reject the desktop bundle independently. Check the first 
 
 When updating Exotui, hold the bundle download and module load separately, then fail both download and presenter startup to check the HTML fallback. Verify the byte count and ready state, saved wheel speed after reload, and a flick that crosses from preview into list. While snapping a window over an iframe, check all four outline edges and the live pixels inside them in shader and ordinary iframe mode.
 
+Resize the gallery with two captured iframes open and leave focus alone. Check that the active scene and toolbar return to the shared shader output, the background window remains correctly clipped, and each iframe keeps its document. A canvas that cannot be captured must still use the standard view.
+
 ### Owner avatar authoring before speech — November 13
 
 - `world-intent-decision`: original user prompt, neutral owner-authoring classifier,
