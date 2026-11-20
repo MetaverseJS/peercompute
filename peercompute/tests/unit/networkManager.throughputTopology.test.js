@@ -87,11 +87,18 @@ test('a node at its target trials a peer it already exchanges work with', () => 
   // While the link is being negotiated the trial stays open and nothing else is tried.
   assert.equal(manager.throughputTopologyState.trialPeerId, 'peer-y');
   assert.equal(manager.throughputTopologyState.exploreDelayMs, null);
-  // If the request expires unanswered, the trial counts as failed.
+  // A real link takes seconds to set up after the peer agrees: the trial stays
+  // open well past the request's own ten-second reservation.
   manager.pendingTopologyRequests.clear();
-  tickWithWork(manager, now + 1000, { 'peer-a': 5, 'peer-b': 3 });
-  assert.equal(manager.throughputTopologyState.trialPeerId, null);
-  assert.ok(manager.throughputTopologyState.exploreDelayMs > 0);
+  tickWithWork(manager, now + 12000, { 'peer-a': 5, 'peer-b': 3 });
+  assert.equal(manager.throughputTopologyState.trialPeerId, 'peer-y');
+  // A refusal ends it at once.
+  manager._handleTopologyConnectReferral('peer-y', { peers: [] });
+  tickWithWork(manager, now + 13000, { 'peer-a': 5, 'peer-b': 3 });
+  // The failed trial doubles the wait and puts the peer in cooldown; enough
+  // time has passed that the next trial, to another peer, starts at once.
+  assert.equal(manager.throughputTopologyState.trialPeerId, 'peer-x');
+  assert.equal(manager.throughputTopologyState.exploreDelayMs, 6000);
   assert.ok(manager.throughputTopologyState.cooldown.has('peer-y'));
 });
 

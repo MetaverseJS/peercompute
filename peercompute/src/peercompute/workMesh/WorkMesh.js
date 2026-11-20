@@ -12,9 +12,8 @@
  * keeps a distance to each job's origin: the cheapest sum of those costs over
  * any path, learned from its neighbours' distances. Results go to a neighbour
  * that is nearer by that measure, and work moves only to a neighbour that is
- * farther, so tasks cannot circulate. Work left behind by a route change
- * waits for its node to run it; the origin offers it again if that takes too
- * long. Measuring cost rather than counting hops lets a strong peer be fed
+ * farther, so tasks cannot circulate. Work stranded by a route change is
+ * handed back to a nearer neighbour, across a gap of seconds only. Measuring cost rather than counting hops lets a strong peer be fed
  * through a fast two-link path instead of a slow direct link.
  *
  * No node knows the whole network: it sees only its neighbours' queues, rates
@@ -45,9 +44,10 @@ export const WORK_MESH_DEFAULTS = Object.freeze({
   costWindow: 8, // recent batches whose fastest crossing defines a link's cost
   distanceHold: 0.2, // a node keeps its distance until the measured value moves by this share
   fartherMargin: 0.1, // and a neighbour must be this much farther to be given work
+  handBackGapSeconds: 2, // waiting-time gap at which stranded work goes back toward the origin
   maxDistance: 30, // seconds; beyond this an origin counts as unreachable
   taskTimeoutMs: 60000, // the origin offers a task again if no result has come back
-  forgetMs: 5000 // drop a job's leftovers once no neighbour has known a way to its origin for this long
+  forgetMs: 60000 // drop a job's leftovers once no neighbour has known a way to its origin for this long
 });
 
 export class WorkMesh {
@@ -70,7 +70,7 @@ export class WorkMesh {
     this.distances = new Map(); // jobId -> seconds per task from this node to the origin, as advertised (held steady)
     this.liveDistances = new Map(); // jobId -> the same, recomputed every tick
     this.unreachableSince = new Map(); // jobId -> when its origin was last reachable
-    this.counters = { executed: 0, forwarded: 0, returned: 0, reissued: 0, duplicates: 0 };
+    this.counters = { executed: 0, forwarded: 0, handedBack: 0, returned: 0, reissued: 0, duplicates: 0 };
     this.rate = 0; // tasks per second this node runs or passes on, smoothed
     this.rateSample = null; // { at, drained }
     this.now = 0;
@@ -140,6 +140,7 @@ export class WorkMesh {
       case 'work-ack':
         if (link.work) {
           this.counters.forwarded += link.work.length;
+          if (link.work.handedBack) this.counters.handedBack += link.work.length;
           this._moved(peerId, link.work.length);
         }
         link.work = null;
@@ -210,16 +211,23 @@ export class WorkMesh {
         // waits behind this node's own executor for longer than the queue.
         const batch = [];
         const rest = [];
+        let handedBack = false;
         for (const task of this.queue) {
           // Distances are measured with results, by the node that sends them,
           // so the only comparison both ends agree on is which is farther.
-          const farther = (link.distances.get(task.jobId) ?? Number.POSITIVE_INFINITY)
-            > (1 + this.config.fartherMargin) * (this.distances.get(task.jobId) ?? 0);
-          if (farther && batch.length < share) batch.push(task); else rest.push(task);
+          const theirs = link.distances.get(task.jobId) ?? Number.POSITIVE_INFINITY;
+          const here = this.distances.get(task.jobId) ?? 0;
+          const farther = theirs > (1 + this.config.fartherMargin) * here;
+          // A route change can leave a relay holding a queue sized for a rate
+          // it no longer has. Across a gap of seconds it hands that work back
+          // to a nearer neighbour, which can send it out another way.
+          const back = !farther && theirs * (1 + this.config.fartherMargin) < here && gap >= this.config.handBackGapSeconds;
+          if ((farther || back) && batch.length < share) { batch.push(task); if (back) handedBack = true; } else rest.push(task);
         }
         if (batch.length) {
           this.queue = rest;
           batch.sentAt = this.clock();
+          batch.handedBack = handedBack;
           // The origin's clock for a task starts when the task leaves it; a
           // task still queued here is not missing.
           for (const task of batch) this.jobs.get(task.jobId)?.issued.set(task.taskId, this.now);
@@ -260,7 +268,9 @@ export class WorkMesh {
   }
 
   _measure(now) {
-    const drained = this.counters.executed + this.counters.forwarded;
+    // Work handed back is not progress: counting it would make this node look
+    // faster and invite the same work straight back.
+    const drained = this.counters.executed + this.counters.forwarded - this.counters.handedBack;
     if (this.rateSample && now > this.rateSample.at) {
       const elapsed = now - this.rateSample.at;
       this.rate += ((drained - this.rateSample.drained) * 1000 / elapsed - this.rate) * (1 - Math.exp(-elapsed / this.config.rateTauMs));
@@ -333,7 +343,10 @@ export class WorkMesh {
   _accept(result) {
     const job = this.jobs.get(result.jobId);
     if (!job) {
-      if (this.origins.has(result.jobId)) this.results.push(result); // otherwise the job is over
+      // Finished work is kept even if this node has just lost its way to the
+      // origin: links come and go. It is dropped only after `forgetMs`.
+      if (!this.origins.has(result.jobId) && result.origin) this.origins.set(result.jobId, result.origin);
+      if (this.origins.has(result.jobId)) this.results.push(result);
       return;
     }
     if (job.finished[result.taskId]) { this.counters.duplicates += 1; return; }

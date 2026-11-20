@@ -823,6 +823,7 @@ export class NetworkManager {
     // throughput-driven ('throughput') topology rule.
     this.peerWork = new Map();
     this.topologyLinkReleasers = new Set();
+    this.throughputPendingLinks = new Map(); // peerId -> time until which a requested link may still be setting up
     this.staticTopologyPeers = null;
     this.throughputTopologyState = createThroughputTopologyState();
     this.topologyController = this.config.enableTopologyController
@@ -3427,11 +3428,12 @@ export class NetworkManager {
       return { peerId: peer.peerId, flow: rate(peer.peerId), since: meta?.linkSince ?? now };
     });
     for (const [peerId, meta] of this.peers) if (!linked.has(peerId) && meta?.linkSince) delete meta.linkSince;
-    // A requested link that is still being negotiated counts as a link under
-    // trial, so the rule waits for it instead of judging it refused.
+    // A requested link that is still being set up counts as a link under trial,
+    // so the rule waits for it instead of judging it refused. A WebRTC link
+    // commonly takes five to ten seconds after the peer agrees.
     this._prunePendingLogicalReservations(now);
-    for (const peerId of this.pendingTopologyRequests.keys()) {
-      if (linked.has(peerId) || this.bootstrapPeerIds.has(peerId)) continue;
+    for (const [peerId, until] of this.throughputPendingLinks) {
+      if (until <= now || linked.has(peerId)) { this.throughputPendingLinks.delete(peerId); continue; }
       links.push({ peerId, flow: 0, since: now });
       linked.add(peerId);
     }
@@ -3458,9 +3460,15 @@ export class NetworkManager {
       this._closeConnectionsToPeer(peerId);
     }
     if (decision.connect) linked.add(decision.connect);
-    // Dials outside this set are refused once the node is at its target.
+    // Only peers in this set are dialled. A peer this node has just agreed to
+    // link with is included, or its side of the connection would never complete.
+    for (const peerId of this.pendingTopologyAccepts.keys()) linked.add(peerId);
     if (this.topologyController) this.topologyController.desiredPeers = linked;
-    if (decision.connect) this._ensureTopologyConnections(new Set([decision.connect]));
+    if (decision.connect) {
+      const wait = Number.isFinite(this.config.throughputTopology?.linkSetupMs) ? this.config.throughputTopology.linkSetupMs : 25000;
+      this.throughputPendingLinks.set(decision.connect, now + wait);
+      this._ensureTopologyConnections(new Set([decision.connect]));
+    }
   }
 
   _pruneExcessTopologyConnections(desiredPeers, peers, connections) {
@@ -3734,6 +3742,7 @@ export class NetworkManager {
         reservedAt: now,
         expiresAt: now + PENDING_LOGICAL_CONNECTION_TTL_MS
       });
+      if (this.config.topology === 'throughput') this.topologyController?.desiredPeers?.add(peerId);
       this.sendToPeer(peerId, { type: 'topology-connect-accept' }).catch(() => {
         this.pendingTopologyAccepts.delete(peerId);
       });
@@ -3862,6 +3871,7 @@ export class NetworkManager {
 
   _handleTopologyConnectReferral(peerId, payload) {
     this.pendingTopologyRequests.delete(peerId);
+    this.throughputPendingLinks.delete(peerId); // refused: no link is coming
     const peers = Array.isArray(payload?.peers) ? payload.peers : [];
     if (this.topologyController) {
       this.topologyController.addReferralPeers(peers);

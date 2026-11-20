@@ -33,9 +33,10 @@ function network({ speeds, links, delayMs = 10, config = {} }) {
     }
     now = untilMs;
   };
+  const restore = (a, b) => up.add([a, b].sort().join('|'));
   const cut = (a, b) => { up.delete([a, b].sort().join('|')); nodes.get(a)?.linkDown(b); nodes.get(b)?.linkDown(a); };
   const kill = (id) => { for (const peer of [...nodes.keys()]) if (peer !== id) cut(id, peer); nodes.get(id).destroy(); nodes.delete(id); };
-  return { nodes, run, cut, kill, moved, clock: () => now };
+  return { nodes, run, cut, restore, kill, moved, clock: () => now };
 }
 
 const payloads = (count) => Array.from({ length: count }, (_, i) => i);
@@ -81,7 +82,10 @@ test('a node stops computing when it cannot hand its results on', () => {
   // b finishes at most a buffer's worth, then waits; once the origin has been
   // unreachable for long enough it drops the leftovers.
   assert.ok(b.counters.executed - before <= 4 + 1);
-  net.run(15000);
+  // The leftovers are kept for a minute in case the link returns, then dropped.
+  net.run(30000);
+  assert.ok(b.results.length > 0);
+  net.run(80000);
   assert.deepEqual([b.queue.length, b.results.length, b.origins.size], [0, 0, 0]);
 });
 
@@ -216,6 +220,23 @@ test('results keep flowing on a stable network whose link timings drift', () => 
     assert.ok(returned[minute] - returned[minute - 1] > 0.9 * 1440, `minute ${minute}: ${returned[minute] - returned[minute - 1]} results`);
   }
   for (const node of nodes.values()) assert.ok(node.results.length < node.config.resultBuffer, `${node.nodeId} holds ${node.results.length} results`);
+});
+
+test('results survive a break of several seconds in the only path home', async () => {
+  const net = network({ speeds: { a: 0.5, b: 20 }, links: [['a', 'b']], config: { taskTimeoutMs: 600000 } });
+  let values = null;
+  net.nodes.get('a').submitJob({ jobId: 'j', tasks: payloads(120) }).then((out) => { values = out; });
+  net.run(3000);
+  net.cut('a', 'b');
+  net.run(13000); // ten seconds apart: b finishes what it holds and keeps the results
+  assert.ok(net.nodes.get('b').results.length > 0);
+  // The same link comes back.
+  net.nodes.get('a').linkUp('b'); net.nodes.get('b').linkUp('a'); net.restore('a', 'b');
+  net.run(60000);
+  await Promise.resolve();
+  assert.ok(values, 'the job completes');
+  assert.equal(net.nodes.get('a').counters.reissued, 0);
+  assert.ok(values.filter((entry) => entry.by === 'b').length > 100);
 });
 
 test('bad input is rejected and foreign messages are ignored', () => {

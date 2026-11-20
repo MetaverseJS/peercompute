@@ -68,6 +68,33 @@ manager.libp2p.addEventListener('connection:close', (event) => {
   const kind = address.includes('/webrtc') ? 'webrtc' : address.includes('/p2p-circuit') ? 'circuit' : 'other';
   trace.closedKinds[kind] = (trace.closedKinds[kind] || 0) + 1;
 });
+const dialAfterAccept = {};
+const maybeDial = manager._maybeDialPeer.bind(manager);
+manager._maybeDialPeer = (peerId, source, ...rest) => {
+  if (source === 'topology-accept') {
+    const now = Date.now();
+    const active = manager._getConnectionsForPeer(peerId);
+    const why = manager.peerConnectionRecovery?.pending.has(peerId) ? 'recovery pending'
+      : active.some((conn) => String(conn.remoteAddr).includes('/webrtc')) ? 'already direct'
+        : !manager._hasAvailableLogicalPeerSlot(peerId, now) ? 'no logical slot'
+          : manager._getDialBackoffEntry(peerId, now) ? 'dial backoff'
+            : now - (manager.recentDialAttempts.get(peerId) || 0) < 5000 ? 'throttled' : 'dialled';
+    dialAfterAccept[why] = (dialAfterAccept[why] || 0) + 1;
+    if (why === 'dialled') {
+      const started = now;
+      const check = setInterval(() => {
+        const direct = manager._getConnectionsForPeer(peerId).some((conn) => conn.status === 'open' && String(conn.remoteAddr).includes('/webrtc'));
+        const waited = Date.now() - started;
+        if (direct || waited > 30000) {
+          clearInterval(check);
+          const bucket = direct ? `direct in ${Math.ceil(waited / 5000) * 5}s` : 'no direct link in 30s';
+          dialAfterAccept[bucket] = (dialAfterAccept[bucket] || 0) + 1;
+        }
+      }, 250);
+    }
+  }
+  return maybeDial(peerId, source, ...rest);
+};
 const sendToPeer = manager.sendToPeer.bind(manager);
 manager.sendToPeer = (peerId, message) => {
   if (message?.type === 'topology-connect-request') trace.requests += 1;
@@ -106,6 +133,24 @@ mesh._drop = (peerId) => {
   drop(peerId);
 };
 
+// Follow the throughput rule's trials: how many start, and how each ends.
+const trials = { started: 0, kept: 0, noGain: 0, neverLinked: 0 };
+let watched = null;
+setInterval(() => {
+  const state = manager.throughputTopologyState;
+  const direct = (peerId) => Boolean(mesh._directConnection(peerId));
+  if (!watched && state.trialPeerId) { watched = { peerId: state.trialPeerId, linked: false }; trials.started += 1; }
+  if (watched) {
+    watched.linked = watched.linked || direct(watched.peerId);
+    if (state.trialPeerId !== watched.peerId) {
+      if (state.established.has(watched.peerId)) trials.kept += 1;
+      else if (watched.linked) trials.noGain += 1;
+      else trials.neverLinked += 1;
+      watched = null;
+    }
+  }
+}, 250);
+
 window.__conjecture = {
   peerId: manager.peerId, index, isSource: index === scenario.source,
   setPeers(entries) { for (const [peerId, peerIndex] of entries) indexOf.set(peerId, peerIndex); },
@@ -127,7 +172,7 @@ window.__conjecture = {
       meshLinks: mesh.snapshot().peers.map(name), pending: [...manager.pendingTopologyRequests.keys()].map(name),
       rule: { exploreS: state.exploreDelayMs && state.exploreDelayMs / 1000, repairS: state.repairDelayMs / 1000, trial: state.trialPeerId && name(state.trialPeerId),
         established: [...state.established].map(name), cooldown: [...state.cooldown.keys()].map(name) },
-      trace,
+      trace, trials, dialAfterAccept,
       scheduler: { queue: mesh.mesh.queue.length, running: mesh.mesh.running, results: mesh.mesh.results.length, rate: Number(mesh.mesh.rate.toFixed(2)),
         distances: [...mesh.mesh.distances].map(([job, value]) => [job, Number(value.toFixed(4))]), counters: mesh.mesh.counters,
         links: [...mesh.mesh.links].map(([peerId, link]) => ({ peer: name(peerId), queued: link.queued, rate: Number(link.rate.toFixed(2)), cost: Number(link.cost.toFixed(4)),
