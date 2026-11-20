@@ -5848,3 +5848,11 @@ The gallery browser test observes the original CubeChat PNG reaching the 2D comp
 ### Launcher window fit (November 19)
 
 `demos/tests/gallery-browser.mjs` loads the directory at 1920×1080, narrows to 872×700, opens a demo and returns with Back. The directory rectangle must be identical before, during and after, and every window must lie inside the desktop body. A second pass opens a demo on the large screen and narrows to 1000×640: both windows must fit and the demo must stay in front. The frame-effects resize test also guards the stacking order after a refit.
+
+### Conjecture experiment (November 19)
+
+`node --test peercompute/tests/unit/throughputTopologyPolicy.test.js peercompute/tests/unit/conjectureSimulation.test.js` (10 cases). The policy cases cover repair, a single trial link, dropping the lowest-flow links, the replacement margin, backoff, cooldown and referrals. The simulation cases require seeded scenarios and runs to repeat exactly, every baseline graph to respect the connection limit, no policy to exceed the ceiling, exact work conservation (including work lost on failed peers), total compute in the uniform ample-bandwidth control, source-only compute when isolated, and continued operation after losing a quarter of the peers.
+
+`node peercompute/experiments/conjecture/run.mjs` and `controls.mjs` produce the comparison data in `peercompute/experiments/conjecture/results/`. These are measurements of a model, not pass/fail gates.
+
+Core unit baseline: `node --test --test-concurrency=2 tests/unit/*.test.js` inside `peercompute/` gives 1316 of 1317 when run without other load. The remaining failure is the staged ULG Eshkol artifact test, which reads a file in the sibling ULG repository. `agentRecordStoreBrowser.test.js` can fail under heavy CPU load and passes alone. The chaos-lab Python tests need pytest, which is not installed on this host.

@@ -21,7 +21,10 @@ test('additional text packages pin distinct q4 exports and their full runtime si
       sha256: 'a4ffda96e65beafc6f6cef0cbcf9fdc1cbdd79c230906bf3897d190547c7a596',
       totalBytes: 391327556, architecture: 'llama', count: 9 },
   };
-  assert.deepEqual(Object.keys(ADDITIONAL_MODEL_CATALOG), Object.keys(expected));
+  // Nemotron Nano 4B has its own license, layout and memory profile; its pins
+  // are checked with the larger suggested models.
+  assert.deepEqual(Object.keys(ADDITIONAL_MODEL_CATALOG).sort(),
+    ['nemotron-3-nano-4b-q4', ...Object.keys(expected)].sort());
   for (const [id, pin] of Object.entries(expected)) {
     const entry = ADDITIONAL_MODEL_CATALOG[id];
     assert.equal(MODEL_CATALOG[id], entry);
@@ -60,7 +63,8 @@ test('new causal architectures cannot claim vision tasks or omit their selected 
     input.files = input.files.filter((file) => !file.path.endsWith('.onnx'));
     assert.throws(() => validateModelManifest(input), /Incomplete model package/);
     input.model.architecture = 'unapproved-causal';
-    assert.throws(() => validateModelManifest(input), /not approved/);
+    // A package with a memory profile is rejected by the profile check first.
+    assert.throws(() => validateModelManifest(input), /not approved|Model memory architecture mismatch/);
   }
 });
 

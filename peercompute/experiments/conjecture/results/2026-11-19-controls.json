@@ -1,0 +1,533 @@
+{
+  "seeds": 20,
+  "rows": [
+    {
+      "source": "typical",
+      "regime": "balanced",
+      "scenario": "sites",
+      "seeds": 20,
+      "variants": {
+        "spatial": {
+          "throughput": 89.48205318608186,
+          "linkChangesPerNodeMinute": 0
+        },
+        "adaptive": {
+          "throughput": 109.1753898663321,
+          "linkChangesPerNodeMinute": 7.99765625
+        },
+        "blind-rewire": {
+          "throughput": 87.63322655916136,
+          "linkChangesPerNodeMinute": 8.55390625
+        },
+        "no-referrals": {
+          "throughput": 109.18485898028287,
+          "linkChangesPerNodeMinute": 8.034375
+        },
+        "referrals-only": {
+          "throughput": 109.19007458205704,
+          "linkChangesPerNodeMinute": 7.87578125
+        },
+        "trial-3s": {
+          "throughput": 109.19580675120672,
+          "linkChangesPerNodeMinute": 8.41875
+        },
+        "trial-12s": {
+          "throughput": 109.19083754369949,
+          "linkChangesPerNodeMinute": 4.56484375
+        },
+        "no-backoff": {
+          "throughput": 109.16852417326963,
+          "linkChangesPerNodeMinute": 8.68203125
+        },
+        "slow-backoff": {
+          "throughput": 109.15092844689741,
+          "linkChangesPerNodeMinute": 7.9375
+        }
+      }
+    },
+    {
+      "source": "typical",
+      "regime": "balanced",
+      "scenario": "decorrelated",
+      "seeds": 20,
+      "variants": {
+        "spatial": {
+          "throughput": 102.40418184737094,
+          "linkChangesPerNodeMinute": 0
+        },
+        "adaptive": {
+          "throughput": 113.86461908678682,
+          "linkChangesPerNodeMinute": 7.9359375
+        },
+        "blind-rewire": {
+          "throughput": 96.9955626501613,
+          "linkChangesPerNodeMinute": 8.55390625
+        },
+        "no-referrals": {
+          "throughput": 113.8807690730886,
+          "linkChangesPerNodeMinute": 7.965625
+        },
+        "referrals-only": {
+          "throughput": 113.86491291362623,
+          "linkChangesPerNodeMinute": 7.59453125
+        },
+        "trial-3s": {
+          "throughput": 113.87349963119973,
+          "linkChangesPerNodeMinute": 7.77734375
+        },
+        "trial-12s": {
+          "throughput": 113.86338607489506,
+          "linkChangesPerNodeMinute": 4.5953125
+        },
+        "no-backoff": {
+          "throughput": 113.86984298857496,
+          "linkChangesPerNodeMinute": 8.60390625
+        },
+        "slow-backoff": {
+          "throughput": 113.88057785975096,
+          "linkChangesPerNodeMinute": 7.87578125
+        }
+      }
+    },
+    {
+      "source": "typical",
+      "regime": "balanced",
+      "scenario": "far-compute",
+      "seeds": 20,
+      "variants": {
+        "spatial": {
+          "throughput": 63.28027885411067,
+          "linkChangesPerNodeMinute": 0
+        },
+        "adaptive": {
+          "throughput": 103.68586331151157,
+          "linkChangesPerNodeMinute": 7.8484375
+        },
+        "blind-rewire": {
+          "throughput": 77.1100135179256,
+          "linkChangesPerNodeMinute": 8.55390625
+        },
+        "no-referrals": {
+          "throughput": 103.71841675779226,
+          "linkChangesPerNodeMinute": 7.93046875
+        },
+        "referrals-only": {
+          "throughput": 103.6067420352285,
+          "linkChangesPerNodeMinute": 7.78515625
+        },
+        "trial-3s": {
+          "throughput": 103.59643705523744,
+          "linkChangesPerNodeMinute": 7.5
+        },
+        "trial-12s": {
+          "throughput": 103.68012834873613,
+          "linkChangesPerNodeMinute": 4.5671875
+        },
+        "no-backoff": {
+          "throughput": 103.71621099201359,
+          "linkChangesPerNodeMinute": 8.61796875
+        },
+        "slow-backoff": {
+          "throughput": 103.69631174763022,
+          "linkChangesPerNodeMinute": 7.765625
+        }
+      }
+    },
+    {
+      "source": "typical",
+      "regime": "data-bound",
+      "scenario": "sites",
+      "seeds": 20,
+      "variants": {
+        "spatial": {
+          "throughput": 27.413895932342122,
+          "linkChangesPerNodeMinute": 0
+        },
+        "adaptive": {
+          "throughput": 29.362363262346,
+          "linkChangesPerNodeMinute": 8.17421875
+        },
+        "blind-rewire": {
+          "throughput": 23.252218893726834,
+          "linkChangesPerNodeMinute": 8.55390625
+        },
+        "no-referrals": {
+          "throughput": 29.376505724417722,
+          "linkChangesPerNodeMinute": 8.05625
+        },
+        "referrals-only": {
+          "throughput": 29.376757342298475,
+          "linkChangesPerNodeMinute": 7.796875
+        },
+        "trial-3s": {
+          "throughput": 29.376179214160715,
+          "linkChangesPerNodeMinute": 10.33984375
+        },
+        "trial-12s": {
+          "throughput": 29.37629914549232,
+          "linkChangesPerNodeMinute": 4.6296875
+        },
+        "no-backoff": {
+          "throughput": 29.377581147816404,
+          "linkChangesPerNodeMinute": 8.7125
+        },
+        "slow-backoff": {
+          "throughput": 29.37571569305843,
+          "linkChangesPerNodeMinute": 8.0796875
+        }
+      }
+    },
+    {
+      "source": "typical",
+      "regime": "data-bound",
+      "scenario": "decorrelated",
+      "seeds": 20,
+      "variants": {
+        "spatial": {
+          "throughput": 26.20538225475027,
+          "linkChangesPerNodeMinute": 0
+        },
+        "adaptive": {
+          "throughput": 31.487907120735382,
+          "linkChangesPerNodeMinute": 8.16171875
+        },
+        "blind-rewire": {
+          "throughput": 24.465958619700434,
+          "linkChangesPerNodeMinute": 8.55390625
+        },
+        "no-referrals": {
+          "throughput": 31.487381245532028,
+          "linkChangesPerNodeMinute": 8.1859375
+        },
+        "referrals-only": {
+          "throughput": 31.48649984380102,
+          "linkChangesPerNodeMinute": 7.72421875
+        },
+        "trial-3s": {
+          "throughput": 31.487927850216305,
+          "linkChangesPerNodeMinute": 9.86796875
+        },
+        "trial-12s": {
+          "throughput": 31.488009346589553,
+          "linkChangesPerNodeMinute": 4.66953125
+        },
+        "no-backoff": {
+          "throughput": 31.486616838191814,
+          "linkChangesPerNodeMinute": 8.7109375
+        },
+        "slow-backoff": {
+          "throughput": 31.48514698465583,
+          "linkChangesPerNodeMinute": 7.996875
+        }
+      }
+    },
+    {
+      "source": "typical",
+      "regime": "data-bound",
+      "scenario": "far-compute",
+      "seeds": 20,
+      "variants": {
+        "spatial": {
+          "throughput": 19.870958144378893,
+          "linkChangesPerNodeMinute": 0
+        },
+        "adaptive": {
+          "throughput": 27.72555598543759,
+          "linkChangesPerNodeMinute": 8.00859375
+        },
+        "blind-rewire": {
+          "throughput": 17.63346812376065,
+          "linkChangesPerNodeMinute": 8.55390625
+        },
+        "no-referrals": {
+          "throughput": 27.387690546252042,
+          "linkChangesPerNodeMinute": 7.95546875
+        },
+        "referrals-only": {
+          "throughput": 26.870919778426888,
+          "linkChangesPerNodeMinute": 7.67734375
+        },
+        "trial-3s": {
+          "throughput": 27.51497204691851,
+          "linkChangesPerNodeMinute": 8.7703125
+        },
+        "trial-12s": {
+          "throughput": 27.555153731253462,
+          "linkChangesPerNodeMinute": 4.59453125
+        },
+        "no-backoff": {
+          "throughput": 27.713582758681945,
+          "linkChangesPerNodeMinute": 8.6046875
+        },
+        "slow-backoff": {
+          "throughput": 27.732558655734238,
+          "linkChangesPerNodeMinute": 7.93828125
+        }
+      }
+    },
+    {
+      "source": "provisioned",
+      "regime": "balanced",
+      "scenario": "sites",
+      "seeds": 20,
+      "variants": {
+        "spatial": {
+          "throughput": 119.46566939718014,
+          "linkChangesPerNodeMinute": 0
+        },
+        "adaptive": {
+          "throughput": 164.94255715366165,
+          "linkChangesPerNodeMinute": 7.8546875
+        },
+        "blind-rewire": {
+          "throughput": 125.8622346874162,
+          "linkChangesPerNodeMinute": 8.55390625
+        },
+        "no-referrals": {
+          "throughput": 164.93746306253644,
+          "linkChangesPerNodeMinute": 7.71796875
+        },
+        "referrals-only": {
+          "throughput": 164.93902730122994,
+          "linkChangesPerNodeMinute": 7.55390625
+        },
+        "trial-3s": {
+          "throughput": 164.97982207552894,
+          "linkChangesPerNodeMinute": 7.4203125
+        },
+        "trial-12s": {
+          "throughput": 164.93480846451777,
+          "linkChangesPerNodeMinute": 4.67109375
+        },
+        "no-backoff": {
+          "throughput": 164.92265025096583,
+          "linkChangesPerNodeMinute": 8.6265625
+        },
+        "slow-backoff": {
+          "throughput": 164.96031325277164,
+          "linkChangesPerNodeMinute": 7.84296875
+        }
+      }
+    },
+    {
+      "source": "provisioned",
+      "regime": "balanced",
+      "scenario": "decorrelated",
+      "seeds": 20,
+      "variants": {
+        "spatial": {
+          "throughput": 135.11438987707706,
+          "linkChangesPerNodeMinute": 0
+        },
+        "adaptive": {
+          "throughput": 169.91216409521388,
+          "linkChangesPerNodeMinute": 7.9484375
+        },
+        "blind-rewire": {
+          "throughput": 139.89939284060102,
+          "linkChangesPerNodeMinute": 8.55390625
+        },
+        "no-referrals": {
+          "throughput": 169.9091442342406,
+          "linkChangesPerNodeMinute": 7.8578125
+        },
+        "referrals-only": {
+          "throughput": 169.89451012176704,
+          "linkChangesPerNodeMinute": 7.63359375
+        },
+        "trial-3s": {
+          "throughput": 169.9220110380556,
+          "linkChangesPerNodeMinute": 7.58515625
+        },
+        "trial-12s": {
+          "throughput": 169.87962673258966,
+          "linkChangesPerNodeMinute": 4.5609375
+        },
+        "no-backoff": {
+          "throughput": 169.8694959168609,
+          "linkChangesPerNodeMinute": 8.57421875
+        },
+        "slow-backoff": {
+          "throughput": 169.91778155865072,
+          "linkChangesPerNodeMinute": 7.69453125
+        }
+      }
+    },
+    {
+      "source": "provisioned",
+      "regime": "balanced",
+      "scenario": "far-compute",
+      "seeds": 20,
+      "variants": {
+        "spatial": {
+          "throughput": 74.08059594827347,
+          "linkChangesPerNodeMinute": 0
+        },
+        "adaptive": {
+          "throughput": 144.52597190230586,
+          "linkChangesPerNodeMinute": 7.8046875
+        },
+        "blind-rewire": {
+          "throughput": 108.02560880961337,
+          "linkChangesPerNodeMinute": 8.55390625
+        },
+        "no-referrals": {
+          "throughput": 144.58480937635017,
+          "linkChangesPerNodeMinute": 7.65078125
+        },
+        "referrals-only": {
+          "throughput": 144.5618354335709,
+          "linkChangesPerNodeMinute": 7.65
+        },
+        "trial-3s": {
+          "throughput": 144.61239885329914,
+          "linkChangesPerNodeMinute": 8.18515625
+        },
+        "trial-12s": {
+          "throughput": 144.4671454031565,
+          "linkChangesPerNodeMinute": 4.56875
+        },
+        "no-backoff": {
+          "throughput": 144.5284759333784,
+          "linkChangesPerNodeMinute": 8.60625
+        },
+        "slow-backoff": {
+          "throughput": 144.57426443800898,
+          "linkChangesPerNodeMinute": 7.7703125
+        }
+      }
+    },
+    {
+      "source": "provisioned",
+      "regime": "data-bound",
+      "scenario": "sites",
+      "seeds": 20,
+      "variants": {
+        "spatial": {
+          "throughput": 52.459969248653536,
+          "linkChangesPerNodeMinute": 0
+        },
+        "adaptive": {
+          "throughput": 115.37435465194346,
+          "linkChangesPerNodeMinute": 7.61484375
+        },
+        "blind-rewire": {
+          "throughput": 37.542003499024716,
+          "linkChangesPerNodeMinute": 8.55390625
+        },
+        "no-referrals": {
+          "throughput": 112.66120559095911,
+          "linkChangesPerNodeMinute": 7.5734375
+        },
+        "referrals-only": {
+          "throughput": 108.38808216985163,
+          "linkChangesPerNodeMinute": 7.684375
+        },
+        "trial-3s": {
+          "throughput": 106.63188473577671,
+          "linkChangesPerNodeMinute": 8.51015625
+        },
+        "trial-12s": {
+          "throughput": 104.52260875493948,
+          "linkChangesPerNodeMinute": 4.55234375
+        },
+        "no-backoff": {
+          "throughput": 117.41711376290273,
+          "linkChangesPerNodeMinute": 8.54765625
+        },
+        "slow-backoff": {
+          "throughput": 114.91107586757217,
+          "linkChangesPerNodeMinute": 7.6484375
+        }
+      }
+    },
+    {
+      "source": "provisioned",
+      "regime": "data-bound",
+      "scenario": "decorrelated",
+      "seeds": 20,
+      "variants": {
+        "spatial": {
+          "throughput": 46.40144504798858,
+          "linkChangesPerNodeMinute": 0
+        },
+        "adaptive": {
+          "throughput": 124.15488742835957,
+          "linkChangesPerNodeMinute": 7.6296875
+        },
+        "blind-rewire": {
+          "throughput": 44.23149204888368,
+          "linkChangesPerNodeMinute": 8.55390625
+        },
+        "no-referrals": {
+          "throughput": 121.9087846622923,
+          "linkChangesPerNodeMinute": 7.60546875
+        },
+        "referrals-only": {
+          "throughput": 117.25459506856608,
+          "linkChangesPerNodeMinute": 7.48203125
+        },
+        "trial-3s": {
+          "throughput": 123.58940523785205,
+          "linkChangesPerNodeMinute": 7.29375
+        },
+        "trial-12s": {
+          "throughput": 122.95588528705102,
+          "linkChangesPerNodeMinute": 4.49453125
+        },
+        "no-backoff": {
+          "throughput": 128.28893387558747,
+          "linkChangesPerNodeMinute": 8.47578125
+        },
+        "slow-backoff": {
+          "throughput": 128.5693886647138,
+          "linkChangesPerNodeMinute": 7.48203125
+        }
+      }
+    },
+    {
+      "source": "provisioned",
+      "regime": "data-bound",
+      "scenario": "far-compute",
+      "seeds": 20,
+      "variants": {
+        "spatial": {
+          "throughput": 27.328014639816775,
+          "linkChangesPerNodeMinute": 0
+        },
+        "adaptive": {
+          "throughput": 85.65439804946739,
+          "linkChangesPerNodeMinute": 7.353125
+        },
+        "blind-rewire": {
+          "throughput": 29.06177789040732,
+          "linkChangesPerNodeMinute": 8.55390625
+        },
+        "no-referrals": {
+          "throughput": 85.36459302045867,
+          "linkChangesPerNodeMinute": 7.375
+        },
+        "referrals-only": {
+          "throughput": 82.51439868659745,
+          "linkChangesPerNodeMinute": 7.38828125
+        },
+        "trial-3s": {
+          "throughput": 79.89078828720913,
+          "linkChangesPerNodeMinute": 7.77421875
+        },
+        "trial-12s": {
+          "throughput": 85.41743458678363,
+          "linkChangesPerNodeMinute": 4.421875
+        },
+        "no-backoff": {
+          "throughput": 85.85826768627051,
+          "linkChangesPerNodeMinute": 8.4359375
+        },
+        "slow-backoff": {
+          "throughput": 84.74034067348038,
+          "linkChangesPerNodeMinute": 7.2640625
+        }
+      }
+    }
+  ]
+}
