@@ -1,0 +1,72 @@
+{
+  "nodes": 40,
+  "durationS": 420,
+  "rows": [
+    {
+      "scenario": "sites",
+      "source": "provisioned",
+      "seed": 1,
+      "nodes": 40,
+      "ceiling": 242.83539222253063,
+      "spatial": 91.425,
+      "random": 128.11666666666667,
+      "greedy": 199.15833333333333,
+      "adaptive": 239.68333333333334
+    },
+    {
+      "scenario": "sites",
+      "source": "provisioned",
+      "seed": 2,
+      "nodes": 40,
+      "ceiling": 192.68843841183488,
+      "spatial": 97.95833333333333,
+      "random": 128.65833333333333,
+      "greedy": 127.74166666666666,
+      "adaptive": 185.825
+    },
+    {
+      "scenario": "sites",
+      "source": "provisioned",
+      "seed": 3,
+      "nodes": 40,
+      "ceiling": 145.91496638995727,
+      "spatial": 145.95833333333334,
+      "random": 145.90833333333333,
+      "greedy": 145.80833333333334,
+      "adaptive": 145.725
+    },
+    {
+      "scenario": "far-compute",
+      "source": "typical",
+      "seed": 1,
+      "nodes": 40,
+      "ceiling": 135.79282954187755,
+      "spatial": 53.25,
+      "random": 111.20833333333333,
+      "greedy": 93.51666666666667,
+      "adaptive": 134.20833333333334
+    },
+    {
+      "scenario": "far-compute",
+      "source": "typical",
+      "seed": 2,
+      "nodes": 40,
+      "ceiling": 162.8196811709445,
+      "spatial": 77.71666666666667,
+      "random": 126.525,
+      "greedy": 75.65,
+      "adaptive": 95.525
+    },
+    {
+      "scenario": "far-compute",
+      "source": "typical",
+      "seed": 3,
+      "nodes": 40,
+      "ceiling": 38.145418144938375,
+      "spatial": 37.6,
+      "random": 37.86666666666667,
+      "greedy": 38.25833333333333,
+      "adaptive": 37.63333333333333
+    }
+  ]
+}
