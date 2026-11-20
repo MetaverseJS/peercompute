@@ -26,8 +26,8 @@
       "bytes": 3452
     },
     "assets/exowebtui.js": {
-      "sha256": "688830d9c12a32be253ae88e89b2486c727618efa017f1b382d127985f65fe42",
-      "bytes": 951702
+      "sha256": "a32d108ca6a9006e1355ff121b255a8df33199f7cbe4688adc4f8d676c38bfa1",
+      "bytes": 952494
     },
     "assets/fano-reactor.svg": {
       "sha256": "638d762ff72f2ef02e59e64b5c2bf44c0f9489a55f2206e385195a87ab845abd",
@@ -2714,7 +2714,7 @@
       "bytes": 1064
     },
     "index.html": {
-      "sha256": "af0dcd4ac4b3e3f069ab6da23e5f74567a17b734f093ef35cf82927bfe293706",
+      "sha256": "b94c3d1166a2a3de50bdb71538924de93453651523baff5d2ea2b1484c4afced",
       "bytes": 29595
     },
     "inference/assets/ArtifactManifest-B3C6-snl.js": {
