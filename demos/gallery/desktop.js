@@ -3,6 +3,9 @@ import { webPresenter } from 'exowebtui-presenter';
 import { browserAudioSource } from 'exowebtui-audio';
 import { copyBrowserText } from 'exowebtui-clipboard';
 import { createButterchurnPresenter } from './butterchurn-presenter.js';
+import { createGuideMedia } from './guide-media.js';
+import { syncGuideTheme } from '../../docs/assets/gallery-guide-theme.js';
+import { openDiagram } from '../../docs/assets/gallery-diagram.js';
 import { createCatalogWindow } from './catalog-window.js';
 import { createFrameWindows, returnFromFramedAtlas } from './frame-windows.js';
 
@@ -50,9 +53,7 @@ async function mountDesktop(viewport, atlas) {
     href: anchor.href,
     image: anchor.querySelector('img,canvas'),
   }));
-  const guides = entries.filter(entry => entry.guide).map(entry => ({
-    id: 'guide-' + entry.id, title: entry.title + ' guide', href: new URL(entry.guide, document.baseURI).href,
-  }));
+
   const source = atlas.querySelector('.source');
   const dialog = document.querySelector('#desktop-search');
   const input = dialog.querySelector('input');
@@ -66,11 +67,66 @@ async function mountDesktop(viewport, atlas) {
   let butterchurnPresenter;
   let activeWallpaper;
   const focusDesktop = () => presenter.focus();
-  const frames = createFrameWindows({ entries: [...entries, ...guides], root, presenter, focusDesktop,
+  function openAtlas() { desktop.openWindow(catalog.id); focusDesktop(); }
+  const guides = new Map();
+  const guideRoutes = new Map();
+  let retired = false;
+  function follow(href) {
+    const url = new URL(href);
+    const target = guideRoutes.get(url.origin + url.pathname);
+    if (target) { target.pendingAnchor = url.hash; openDemo(target.id); return; }
+    if (['http:', 'https:', 'mailto:'].includes(url.protocol)) window.open(url, '_blank', 'noopener');
+  }
+  // Register lightweight shell windows up front. The document library and
+  // each README load only when the user opens a guide.
+  const reader = new URL('./gallery-guide-reader.js', import.meta.url);
+  for (const entry of entries.filter(entry => entry.guide)) {
+    const url = new URL(entry.guide, document.baseURI);
+    const guide = { id: 'guide-' + entry.id, title: entry.title + ' guide', menu: false, summary: entry.title,
+      window: { width: 116, height: 46, minWidth: 25, minHeight: 10, widthRatio: .74, heightRatio: .86, fullscreenBelow: 960 },
+      render(width, _height, _now, theme) {
+        if (!guide.loading) {
+          guide.loading = import(reader.href).then(({ createGuideWindow }) => {
+            if (retired) return;
+            Object.assign(guide, createGuideWindow({ id: guide.id, title: guide.title, href: url.href,
+              async load() {
+                const response = await fetch(new URL(url.pathname.replace(/\.html$/, '.json'), url));
+                if (!response.ok) throw new Error('Guide download failed (' + response.status + ')');
+                return response.json();
+              },
+              follow, openAtlas, openDemo: () => openDemo(entry.id),
+              openDiagram: options => openDiagram({ ...options, returnFocus: focusDesktop }),
+            }));
+            if (guide.pendingAnchor) guide.goToAnchor(guide.pendingAnchor);
+            delete guide.pendingAnchor;
+          }).catch(() => {
+            guide.failed = true;
+            guide.onPointerUp = () => window.open(url, '_blank', 'noopener');
+            guide.onKey = event => {
+              if (event.key !== 'return') return false;
+              guide.onPointerUp();
+              return true;
+            };
+          });
+        }
+        const line = guide.failed ? '[Open HTML guide]' : 'Loading guide…';
+        return [Array.from(line.slice(0, width), char => ({ char, foreground: theme.accent }))];
+      },
+    };
+    guides.set(guide.id, guide);
+    guideRoutes.set(url.origin + url.pathname, guide);
+  }
+  const media = createGuideMedia(root, presenter, guides);
+  const frames = createFrameWindows({ entries, root, presenter, focusDesktop, guideLayers: media.layers,
     focusWindow: focusDesktopWindow, closeWindow: closeDesktopWindow,
-    openAtlas: () => { desktop.openWindow(catalog.id); focusDesktop(); } });
+    openAtlas });
   function openDemo(id) {
-    frames.open(id);
+    const guide = guides.get(id);
+    if (guide?.goToAnchor && guide.pendingAnchor) {
+      guide.goToAnchor(guide.pendingAnchor);
+      delete guide.pendingAnchor;
+    }
+    if (!guide) frames.open(id);
     desktop.openWindow(id);
   }
   function openSearch() {
@@ -89,10 +145,11 @@ async function mountDesktop(viewport, atlas) {
   menuLinks.push({ id: 'source', title: 'Project source', summary: 'PeerCompute on GitHub', href: source.href },
     { id: 'plain', title: 'HTML directory', summary: 'Browse accessible direct links', href: plainUrl });
 
+  let currentTheme;
   desktop = createDesktopApp({
     startLabel: 'PeerCompute', initialWindow: catalog.id,
-    applications: [catalog, ...frames.applications],
-    hiddenMenuIds: ['about', 'exomonitor', 'neon', 'viz', 'three', 'clock', 'workbench', 'jsr', 'github', ...guides.map(guide => guide.id)],
+    applications: [catalog, ...frames.applications, ...guides.values()],
+    hiddenMenuIds: ['about', 'exomonitor', 'neon', 'viz', 'three', 'clock', 'workbench', 'jsr', 'github'],
     menuLinks, audio,
     shader: presenter.shader,
     reducedMotion: () => reducedMotion.matches,
@@ -118,8 +175,11 @@ async function mountDesktop(viewport, atlas) {
       else if (href === source.href) source.click();
       else if (href === plainUrl) location.assign(plainUrl);
     },
-    onWindows: (windows, blocked, theme, _animating, overlays) =>
-      frames.project(windows, blocked, theme, desktopWindowStates(), overlays),
+    onWindows(windows, blocked, theme, animating, overlays) {
+      if (currentTheme !== theme) { syncGuideTheme(theme); currentTheme = theme; }
+      media.project(windows, theme, overlays, animating);
+      frames.project(windows, blocked, theme, desktopWindowStates(), overlays);
+    },
   });
 
   const remove = [];
@@ -141,6 +201,9 @@ async function mountDesktop(viewport, atlas) {
     if (dialog.open) dialog.close();
     for (const off of remove) off();
     activeWallpaper?.dispose();
+    retired = true;
+    for (const guide of guides.values()) guide.dispose?.();
+    media.dispose();
     frames.dispose();
     audio.close();
     presenter.dispose();

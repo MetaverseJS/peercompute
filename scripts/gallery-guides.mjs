@@ -2,6 +2,7 @@ import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Marked } from 'marked';
+import { imageSize } from 'image-size';
 import { renderMermaidSVG } from 'beautiful-mermaid';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -60,7 +61,9 @@ async function rebaseLink(token, entry) {
 
 async function renderGuide(entry) {
   const markdown = new Marked();
-  let diagrams = 0;
+  const diagrams = [];
+  const images = [];
+  const links = {};
   const ids = new Map();
   markdown.use({ renderer: {
     html: token => escape(token.text),
@@ -73,28 +76,42 @@ async function renderGuide(entry) {
     },
     code(token) {
       if (token.lang !== 'mermaid') return false;
-      diagrams++;
       const svg = renderMermaidSVG(token.text, {
         bg: '#101918', fg: '#e0eee4', line: '#82b59b', accent: '#c3ed8e', font: 'Inter', padding: 20,
       }).replace(/^\s*@import [^;]+;[^\n]*$/gm, '').replace(/[ \t]+$/gm, '');
+      const viewBox = /viewBox="([^"]+)"/.exec(svg)?.[1].split(/\s+/).map(Number);
+      if (!viewBox || !(viewBox[2] > 0 && viewBox[3] > 0)) throw new Error('Missing diagram dimensions');
+      diagrams.push({ source: token.text, svg, width: viewBox[2], height: viewBox[3] });
       return '<figure><div class="diagram" tabindex="0" role="img" aria-label="' + escape(entry.title) +
         ' architecture diagram">' + svg + '</div><details><summary>Mermaid source</summary><pre>' +
         escape(token.text) + '</pre></details></figure>\n';
     },
   } });
-  const tokens = markdown.lexer(await readFile(path.join(root, entry.readme), 'utf8'));
+  const source = await readFile(path.join(root, entry.readme), 'utf8');
+  const tokens = markdown.lexer(source);
   const summary = overview(tokens);
-  await Promise.all(markdown.walkTokens(tokens, token => {
-    if (token.type === 'link' || token.type === 'image') return rebaseLink(token, entry);
-  }));
+  const references = markdown.walkTokens(tokens, token =>
+    token.type === 'link' || token.type === 'image' ? [{ token, original: token.href }] : []);
+  for (const { token, original } of references) {
+    await rebaseLink(token, entry);
+    links[original] = token.href;
+    if (token.type === 'image' && token.href.startsWith('./media/')) {
+      const file = path.resolve(pages, 'guides', decodeURIComponent(token.href));
+      const { width, height } = imageSize(outputs.get(file));
+      images.push({ href: token.href, width, height, alt: token.text });
+    }
+  }
   const content = markdown.parser(tokens);
-  if (!diagrams) throw new Error('Expected a Mermaid architecture diagram');
+  if (!diagrams.length) throw new Error('Expected a Mermaid architecture diagram');
   const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${escape(entry.title)} guide · PeerCompute</title><link rel="stylesheet" href="../assets/gallery-guide.css"></head>
-<body><nav aria-label="Demo navigation"><a href="../">← PeerCompute</a><a href=".${escape(entry.href)}" target="_blank" rel="noopener">Open demo in tab ↗</a></nav>
+<title>${escape(entry.title)} guide · PeerCompute</title><link rel="stylesheet" href="../assets/gallery-guide.css">
+<script type="module" src="../assets/gallery-guide-theme.js"></script>
+<script type="module" src="../assets/gallery-diagram.js"></script></head>
+<body class="pc-guide"><nav aria-label="Demo navigation"><a href="../">← PeerCompute</a><a href=".${escape(entry.href)}" target="_blank" rel="noopener">Open demo in tab ↗</a></nav>
 <main>${content}</main></body></html>\n`;
   outputs.set(path.join(pages, 'guides', entry.slug + '.html'), html);
+  outputs.set(path.join(pages, 'guides', entry.slug + '.json'), JSON.stringify({ markdown: source, links, diagrams, images }) + '\n');
   return summary;
 }
 

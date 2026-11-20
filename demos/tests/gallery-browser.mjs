@@ -17,7 +17,7 @@ async function galleryBaseUrl(t) {
 async function assertFanoGuide(guide, summary) {
   await guide.getByRole('heading', { name: 'Fano Reactor', exact: true }).waitFor();
   assert.equal(await guide.locator('#overview + p').textContent(), summary);
-  const diagram = guide.getByRole('img', { name: 'Fano Reactor architecture diagram' });
+  const diagram = guide.locator('figure .diagram');
   assert.ok(await diagram.locator('svg').isVisible());
   assert.match(await diagram.locator('svg').textContent(), /norm defect/i);
   const demo = guide.getByRole('link', { name: 'Open demo' });
@@ -55,6 +55,66 @@ async function clickCells(page, text, touch = false) {
   }
 }
 
+async function usePaperTheme(page) {
+  const size = page.viewportSize();
+  await page.mouse.click(size.width / 2, size.height / 2, { button: 'right' });
+  const menuPoint = await page.waitForFunction(() => {
+    const menu = __desktop.context();
+    if (!menu) return;
+    const i = menu.items.findIndex(item => item.label === 'themes');
+    const { columns, rows } = __desktop.stats();
+    return [(menu.rect.column + menu.rect.width / 2) * innerWidth / columns, (menu.rect.row + i + 1.5) * innerHeight / rows];
+  });
+  await page.mouse.click(...await menuPoint.jsonValue());
+  await clickCells(page, 'Paper Terminal');
+  await waitForCells(page, '● Paper Terminal');
+  const closePoint = await page.evaluate(() => {
+    const { columns, rows } = __desktop.stats();
+    const w = __desktop.windows().find(w => w.id === 'themes');
+    const r = w.controls.find(c => c.kind === 'close').hitRect;
+    return [(r.column + r.width / 2) * innerWidth / columns, (r.row + .5) * innerHeight / rows];
+  });
+  await page.mouse.click(...closePoint);
+  await page.mouse.move(0, 0);
+}
+
+async function openNativeChart(page, touch) {
+  // Reveal the figure caption one line at a time, so a short viewport doesn't
+  // page past it. Hit the diagram itself, just above the caption.
+  const caption = '[Enlarge diagram]';
+  const visible = () => page.evaluate(caption => {
+    const { rows } = __desktop.stats();
+    return Array.from({ length: rows }, (_, y) => __desktop.row(y)).some(line => line.includes(caption));
+  }, caption);
+  for (let i = 0; i < 90 && !await visible(); i++) {
+    await page.keyboard.press('ArrowDown');
+    await page.waitForTimeout(40);
+  }
+  const point = await cellPoint(page, caption);
+  // Measure the actual SVG draw into the compositor, including the native
+  // window's insets. Its entire footprint must fit at either viewport size.
+  await page.waitForFunction(() => {
+    const draw = window.fanoDraw;
+    if (!draw) return false;
+    const { columns, rows } = __desktop.stats();
+    const r = __desktop.windows().find(w => w.title === 'Fano Reactor guide').clientRect;
+    return draw.left >= r.column / columns - .001 && draw.width > 0 && draw.height > 0 &&
+      draw.left + draw.width <= (r.column + r.width) / columns + .001 &&
+      draw.height <= r.height / rows && (draw.width * columns >= r.width * .78 || draw.height * rows >= r.height * .78);
+  });
+  const graphPoint = await page.evaluate(y => {
+    const { columns, rows } = __desktop.stats();
+    const rect = __desktop.windows().find(w => w.title === 'Fano Reactor guide').clientRect;
+    return [(rect.column + rect.width / 2) * innerWidth / columns, y - 2 * innerHeight / rows];
+  }, point[1]);
+  if (touch) await page.touchscreen.tap(...graphPoint);
+  else await page.mouse.click(...graphPoint);
+  const viewer = page.getByRole('dialog', { name: /diagram/i });
+  await viewer.waitFor();
+  assert.match(await viewer.locator('svg').textContent(), /norm defect/i);
+  return viewer;
+}
+
 test('PeerCompute previews a selection, opens its guide or live demo, and preserves direct HTML links', async t => {
   const baseUrl = await galleryBaseUrl(t);
   const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN || undefined });
@@ -64,6 +124,19 @@ test('PeerCompute previews a selection, opens its guide or live demo, and preser
     const context = await browser.newContext({ viewport, ignoreHTTPSErrors: true,
       reducedMotion: 'reduce', hasTouch: viewport.width < 600 });
     const page = await context.newPage();
+    await page.addInitScript(() => {
+      const draw = CanvasRenderingContext2D.prototype.drawImage;
+      CanvasRenderingContext2D.prototype.drawImage = function (source, ...args) {
+        const result = draw.call(this, source, ...args);
+        if (source instanceof HTMLImageElement && args.length === 4 &&
+            source.src.startsWith('data:image/svg+xml') && source.src.includes('Cayley-Dickson')) {
+          const [x, , width, height] = args;
+          window.fanoDraw = { left: x / this.canvas.width, width: width / this.canvas.width,
+            height: height / this.canvas.height };
+        }
+        return result;
+      };
+    });
     const errors = [];
     page.on('pageerror', error => errors.push(String(error)));
     const url = baseUrl + '?prod=1';
@@ -99,25 +172,55 @@ test('PeerCompute previews a selection, opens its guide or live demo, and preser
     await waitForCells(page, '1 DEMO');
     await clickCells(page, '› Fano Reactor', touch);
     assert.equal(await page.locator('iframe').count(), 0);
-    const fanoSummary = await page.locator('[data-demo-dir="fano-reactor"] .demo-summary').textContent();
     const guideLabel = await page.evaluate(() =>
       Array.from({ length: __desktop.stats().rows }, (_, row) => __desktop.row(row))
         .some(row => row.includes('[ Read guide ]')) ? '[ Read guide ]' : '[Guide]');
     await clickCells(page, guideLabel, touch);
-    const guide = page.frameLocator('iframe[title="Fano Reactor guide"]');
-    await assertFanoGuide(guide, fanoSummary);
-    assert.equal(await page.locator('iframe[title="Fano Reactor"]').count(), 0);
-    const guideStage = page.locator('.pc-demo-stage').filter({ has: page.locator('iframe[title="Fano Reactor guide"]') });
-    const guideBack = guideStage.getByRole('button', { name: 'Back to PeerCompute' });
-    await guideBack.click();
+    const activeGuide = () => page.waitForFunction(() =>
+      __desktop.windows().some(w => w.title === 'Fano Reactor guide' && w.active));
+    await activeGuide();
+    await waitForCells(page, 'Choose two algebraic atoms');
+    assert.equal(await page.locator('iframe').count(), 0);
+    if (!touch) {
+      const standalone = await context.newPage();
+      await standalone.goto(new URL('guides/fano-reactor.html', baseUrl).href);
+      await page.bringToFront();
+      await usePaperTheme(page);
+      const followsTheme = () => standalone.waitForFunction(() =>
+        getComputedStyle(document.body).color === 'rgb(35, 38, 42)' &&
+        getComputedStyle(document.querySelector('.diagram g.node text')).fill === 'rgb(35, 38, 42)');
+      await followsTheme();
+      await standalone.reload();
+      await followsTheme();
+      await standalone.close();
+      // Check a cell from the actual rendered README rather than the theme menu.
+      await page.waitForFunction(() => {
+        const rect = __desktop.windows().find(w => w.active && w.title === 'Fano Reactor guide')?.clientRect;
+        if (!rect) return false;
+        for (let y = rect.row; y < rect.row + rect.height; y++) {
+          const x = __desktop.row(y).indexOf('Choose two algebraic atoms', rect.column);
+          if (x >= 0 && x < rect.column + rect.width) return __desktop.cell(x, y).foreground.join() === '35,38,42';
+        }
+        return false;
+      });
+    }
+    const viewer = await openNativeChart(page, touch);
+    if (!touch) {
+      const ink = await viewer.locator('svg g.node text').first().evaluate(node => getComputedStyle(node).fill);
+      assert.equal(ink, 'rgb(35, 38, 42)', 'SVG labels use the active Paper Terminal text color');
+    }
+    await viewer.getByRole('button', { name: 'Close' }).click();
+    await page.keyboard.press('End');
+    await waitForCells(page, 'Delta');
+    await clickCells(page, '[← Back]', touch);
     await waitForCells(page, '› Fano Reactor');
     if (!touch) {
-      const originalGuide = await guide.locator('html').elementHandle();
       await page.keyboard.press('Shift+Enter');
-      await page.waitForFunction(() => __desktop.windows().some(win => win.active && win.title === 'Fano Reactor guide'));
-      assert.equal(await originalGuide.evaluate(el => el === document.documentElement), true);
-      assert.equal(await page.locator('iframe').count(), 1);
-      await guideBack.click();
+      await activeGuide();
+      await waitForCells(page, 'Delta');
+      assert.equal(await page.evaluate(() =>
+        __desktop.windows().filter(w => w.title === 'Fano Reactor guide').length), 1);
+      await clickCells(page, '[← Back]');
       await waitForCells(page, '› Fano Reactor');
     }
     await clickCells(page, '[ Open demo ↗ ]', touch);

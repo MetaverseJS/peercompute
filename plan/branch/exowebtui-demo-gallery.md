@@ -22,3 +22,5 @@ November 19 preference update: default wheel scrolling to fast and all seven tra
 November 19 resize update: keep snapped edges, corners and tiled splits anchored through browser resizes. Defer layout until the viewport settles so live demos resize once per drag.
 
 November 19 guides and wallpaper update. Keep Open demo above the README overview and expose the full illustrated guide from each of the 17 previews. Build diagram SVGs locally so the HTML directory and guides also work without scripts. Measure changing wallpaper frames entering the CRT at the native desktop resolution before and after optimizing Butterchurn.
+
+November 19 native guides. Follow the tech-stack site’s ExoWebTUI document rendering approach. Give each guide the active palette, fit diagrams to the resized window, and support opening a chart for zoom and pan on desktop and touch. Keep the static guide and ordinary demo iframe routes working.

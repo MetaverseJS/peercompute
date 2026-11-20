@@ -169,9 +169,12 @@ import { intersects } from "../../src/app/hit_targets.ts";`],
   ], 'shader');
   await writeFile(shaderPath, shader);
   const three = fileURLToPath(import.meta.resolve('three'));
+  const markdownIt = fileURLToPath(import.meta.resolve('markdown-it/browser'));
   const license = [
     `ExoWebTUI · https://github.com/ubernaut/exotui/tree/${revision}`,
     await readFile(path.join(source, 'LICENSE.md'), 'utf8'),
+    'Markdown-it · https://github.com/markdown-it/markdown-it',
+    await readFile(path.resolve(path.dirname(markdownIt), '../../LICENSE'), 'utf8'),
     'Three.js · https://github.com/mrdoob/three.js',
     await readFile(path.resolve(path.dirname(three), '../LICENSE'), 'utf8'),
   ];
@@ -191,6 +194,32 @@ import { intersects } from "../../src/app/hit_targets.ts";`],
       three,
     },
     banner: { js: `/*! Built from Exotui ${revision}. See exowebtui-LICENSE.txt. */` },
+  });
+  // Direct guide links can be a returning user's first visit to this build.
+  // Resolve their saved theme from exactly the same palette catalog as the shell.
+  const themeModule = path.join(source, 'guide-theme-catalog.mjs');
+  await build({ entryPoints: [path.join(source, 'src/app/shell_theme.ts')], outfile: themeModule,
+    bundle: true, platform: 'node', format: 'esm' });
+  const { SHELL_THEMES } = await import(pathToFileURL(themeModule).href);
+  const colors = ['background', 'surface', 'text', 'accent', 'muted', 'border'];
+  const palettes = Object.fromEntries(SHELL_THEMES.map(theme => [theme.id, Object.fromEntries(
+    colors.map(role => [role, '#' + theme[role].map(n => n.toString(16).padStart(2, '0')).join('')]))]));
+  await writeFile(path.join(root, 'docs/assets/gallery-guide-themes.json'), JSON.stringify(palettes) + '\n');
+  // Bundle the same native flex document and ANSI cell primitives that the
+  // tech-stack site uses, without adding Markdown parsing to desktop startup.
+  await build({
+    absWorkingDir: root, entryPoints: ['demos/gallery/guide-window.js'],
+    outfile: 'docs/assets/gallery-guide-reader.js',
+    // Escape FIGlet font data so significant spaces stay inside string literals.
+    supported: { 'template-literal': false },
+    format: 'esm', platform: 'browser', target: 'es2022', bundle: true, minify: true,
+    alias: {
+      'exowebtui-flex-document': path.join(source, 'src/content/flex_markdown_surface.ts'),
+      'exowebtui-document-fonts': path.join(source, 'src/content/heading_fonts.ts'),
+      'exowebtui-ansi': path.join(source, 'examples/web/ansi_cells.ts'),
+      'markdown-it': markdownIt,
+    },
+    banner: { js: `/*! ExoWebTUI document surface at ${revision}. See exowebtui-LICENSE.txt. */` },
   });
   // Render upstream's progress panel into the initial document. Keep it inert
   // for the plain HTML directory and size its fallback meter from this build.

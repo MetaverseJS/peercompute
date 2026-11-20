@@ -1,21 +1,70 @@
-:root { color-scheme: dark; background: #101817; color: #d7e6dc; font: 1rem/1.6 system-ui, sans-serif; }
-* { box-sizing: border-box; }
-body { max-width: 64rem; margin: 0 auto; padding: 1.2rem clamp(1rem, 4vw, 3.5rem) 5rem; }
-nav { display: flex; justify-content: space-between; gap: 1rem; border-bottom: 1px solid #40584c; padding-bottom: .9rem; font: .9rem/1.5 ui-monospace, monospace; }
-a, summary { color: #c1eb93; }
-a:focus-visible, summary:focus-visible, .diagram:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
-main { overflow-wrap: anywhere; }
-h1, h2, h3 { font-family: ui-monospace, monospace; line-height: 1.2; }
-h1 { font-size: clamp(1.65rem, 5vw, 2.65rem); }
-h2 { margin: 2rem 0 .6rem; }
-p, ul, ol { max-width: 85ch; }
-img { max-width: 100%; height: auto; }
-figure { margin: 1.25rem 0; border: 1px solid #40584c; border-radius: 4px; }
-.diagram, pre, table { overflow-x: auto; }
-.diagram svg { display: block; margin: auto; height: auto; max-width: none; }
-details { padding: .5rem 1rem; font: .85rem/1.5 ui-monospace, monospace; }
-summary { cursor: pointer; }
-pre { padding: 1rem; background: #0b1211; }
-code { font-size: .92em; }
-table { display: block; border-collapse: collapse; }
-td, th { padding: .35rem .65rem; border: 1px solid #40584c; text-align: left; }
+body.pc-guide, .pc-diagram-viewer {
+  --paper: var(--guide-surface, #101918);
+  --ink: var(--guide-text, #e0eee4);
+  --accent-ink: var(--guide-accent, #c3ed8e);
+  --rule: var(--guide-border, #40584c);
+  --ground: var(--guide-background, #0b1211);
+  color-scheme: var(--guide-scheme, dark);
+  color: var(--ink);
+  background: var(--paper);
+}
+html:has(> body.pc-guide) { background: var(--guide-surface, #101918); color-scheme: var(--guide-scheme, dark); }
+body.pc-guide { box-sizing: border-box; max-width: 64rem; margin: 0 auto; padding: 1.2rem clamp(1rem, 4vw, 3.5rem) 5rem; font: 1rem/1.6 system-ui, sans-serif; }
+.pc-guide *, .pc-diagram-viewer * { box-sizing: border-box; }
+.pc-guide nav { display: flex; justify-content: space-between; gap: 1rem; border-bottom: 1px solid var(--rule); padding-bottom: .9rem; font: .9rem/1.5 ui-monospace, monospace; }
+.pc-guide :is(a, summary) { color: var(--accent-ink); }
+.pc-guide :focus-visible, .pc-diagram-viewer :focus-visible { outline: 2px solid var(--accent-ink); outline-offset: 2px; }
+.pc-guide main { overflow-wrap: anywhere; }
+.pc-guide :is(h1, h2, h3) { font-family: ui-monospace, monospace; line-height: 1.2; }
+.pc-guide h1 { font-size: clamp(1.65rem, 5vw, 2.65rem); }
+.pc-guide h2 { margin: 2rem 0 .6rem; }
+.pc-guide :is(p, ul, ol) { max-width: 85ch; }
+.pc-guide img { max-width: 100%; height: auto; }
+.pc-guide figure { margin: 1.25rem 0; border: 1px solid var(--rule); border-radius: 4px; }
+.pc-guide .diagram { display: grid; place-items: center; }
+.pc-guide .diagram[role=button] { cursor: zoom-in; touch-action: manipulation; }
+.pc-guide .diagram svg {
+  display: block; width: 100%; height: auto; max-height: 70vh; max-height: 70dvh;
+  --bg: var(--paper) !important;
+  --fg: var(--ink) !important;
+  --accent: var(--accent-ink) !important;
+  --line: var(--guide-muted, #82b59b) !important;
+  --border: var(--rule) !important;
+}
+.pc-guide details { padding: .5rem 1rem; font: .85rem/1.5 ui-monospace, monospace; }
+.pc-guide summary { cursor: pointer; }
+.pc-guide pre { overflow-x: auto; padding: 1rem; background: var(--ground); }
+.pc-guide code { font-size: .92em; }
+.pc-guide table { display: block; overflow-x: auto; border-collapse: collapse; }
+.pc-guide :is(td, th) { padding: .35rem .65rem; border: 1px solid var(--rule); text-align: left; }
+
+dialog.pc-diagram-viewer {
+  box-sizing: border-box; position: fixed; inset: 0; margin: auto; padding: 0; overflow: hidden;
+  width: calc(100% - 2rem); max-width: none; height: calc(100% - 2rem); max-height: none;
+  border: 1px solid var(--accent-ink); border-radius: 4px;
+  font: 1rem/1.35 ui-monospace, monospace;
+}
+.pc-diagram-viewer[open] { display: grid; grid-template-rows: auto minmax(0, 1fr); }
+.pc-diagram-viewer::backdrop { background: rgb(0 0 0 / .75); }
+.pc-diagram-toolbar {
+  display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; min-width: 0;
+  padding: .4rem; border-bottom: 1px solid var(--rule);
+}
+.pc-diagram-toolbar strong { flex: 1 1 4rem; min-width: 0; overflow-wrap: anywhere; font-size: .94em; }
+.pc-diagram-toolbar button {
+  min-height: 2.75rem; min-width: 2.75rem; padding: 0 .65rem; cursor: pointer; touch-action: manipulation;
+  color: var(--ink); background: var(--paper); border: 1px solid var(--rule); border-radius: 3px; font: inherit;
+}
+.pc-diagram-toolbar button:disabled { opacity: .45; cursor: default; }
+.pc-diagram-toolbar button:enabled:hover { border-color: var(--accent-ink); color: var(--accent-ink); }
+.pc-diagram-viewport {
+  overflow: hidden; min-width: 0; min-height: 0; position: relative; touch-action: none;
+  background: var(--ground); user-select: none; overscroll-behavior: contain; cursor: default;
+}
+.pc-diagram-viewport:focus-visible { outline-offset: -2px; }
+.pc-diagram-viewport.can-pan { cursor: grab; }
+.pc-diagram-viewport.can-pan:active { cursor: grabbing; }
+.pc-diagram-art { position: absolute; left: 0; top: 0; transform-origin: top left; pointer-events: none; }
+@media (max-width: 38rem), (max-height: 30rem) {
+  dialog.pc-diagram-viewer { width: 100%; height: 100%; border-radius: 0; }
+}

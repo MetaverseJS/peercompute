@@ -63,7 +63,7 @@ function pixelBounds(rect, columns, rows, bounds, curve, outer = false) {
 
 // Return disjoint screen rectangles. Occlude by the enclosing bounds of the
 // higher window's curved *chrome*, even when its content is another canvas.
-function subtract(box, cover) {
+export function subtract(box, cover) {
   const right = box.left + box.width, bottom = box.top + box.height;
   const x0 = Math.max(box.left, cover.left), y0 = Math.max(box.top, cover.top);
   const x1 = Math.min(right, cover.left + cover.width), y1 = Math.min(bottom, cover.top + cover.height);
@@ -76,10 +76,10 @@ function subtract(box, cover) {
   ].filter(part => part.width > 0 && part.height > 0);
 }
 
-export function createFrameWindows({ entries, root, presenter, openAtlas, focusDesktop, focusWindow, closeWindow }) {
+export function createFrameWindows({ entries, root, presenter, openAtlas, focusDesktop, focusWindow, closeWindow, guideLayers }) {
   const catalog = new Map(entries.map(entry => [entry.id, entry]));
   const sessions = new Map();
-  const compositor = createFrameCompositor(presenter.shader);
+  const compositor = createFrameCompositor(presenter.shader, guideLayers);
   const style = document.createElement('style');
   style.textContent = frameCss;
   document.head.append(style);
