@@ -5860,3 +5860,9 @@ Core unit baseline: `node --test --test-concurrency=2 tests/unit/*.test.js` insi
 ### Conjecture rule rewiring (November 19)
 
 `throughputTopologyPolicy.test.js` now has 7 cases (12 with the simulation file). New cases: a newcomer is kept only when the node's total moved work grows by the threshold, however busy the new link is; a node's own failed trials double its wait, a kept trial halves it, and links opened by peers leave it alone; repairs prefer peers short of links and wait longer after each attempt. The sweeps were rerun with the revised rule; `results/` holds the current data.
+
+### Throughput topology in the runtime (November 19)
+
+`node --test peercompute/tests/unit/networkManager.throughputTopology.test.js` (8 cases): work counting and rate smoothing; keeping the links that carry work regardless of distance; repair toward a peer short of links; a trial toward a peer already exchanging work, held open while the link is negotiated and failed if the request expires; a full node refusing without evicting by distance; `emergent` and `distributed` behaving as before with no work counted; and `NodeKernel` counting completed remote tasks only.
+
+Regression checks for existing demos: the core unit suite; `node --test --test-concurrency=1` over the demo test files (run them one at a time: in parallel the browser tests time out under load); and `RUNTIME_P2P_DOCS_ROOT=<temp> RUNTIME_P2P_DEMOS=netviz,cubechat node demos/tests/runtime-p2p.mjs` against `npx vite build --outDir <temp>/<demo>` builds, which leaves `docs/` untouched. The CubeChat part of that script currently fails on unmodified source too: it clicks `#screen-share-toggle`, which is not visible.

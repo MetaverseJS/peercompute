@@ -415,7 +415,7 @@ function normalizeGpuResidentStagePlacementExecutorContract(candidate, {
 export class NodeKernel {
   /**
    * @param {Object} config - Configuration options for the node
-   * @param {string} config.topology - Network topology: 'hierarchy' | 'distributed' | 'emergent'
+   * @param {string} config.topology - Network topology: 'hierarchy' | 'distributed' | 'emergent' | 'throughput' (experimental: links ranked by measured work)
    * @param {string} config.topologyId - Topology identifier shared across rooms
    * @param {string} config.topicPrefix - Base prefix for scoped topics
    * @param {boolean} config.useScopedTopics - Enable topology + room topic scoping
@@ -4070,6 +4070,7 @@ export class NodeKernel {
           completedAt: Date.now()
         }
       });
+      if (response?.ok !== false) this.networkManager.recordPeerWork?.(peerId, 1);
     };
 
     try {
@@ -4133,6 +4134,8 @@ export class NodeKernel {
       pending.reject(err);
       return;
     }
+    // A completed remote task is work delivered over this peer's link.
+    this.networkManager?.recordPeerWork?.(peerId, 1);
     if (pending.returnResponseEnvelope) {
       const receivedAt = Date.now();
       pending.resolve({
@@ -4170,6 +4173,7 @@ export class NodeKernel {
           completedAt: Date.now()
         }
       });
+      if (response?.ok !== false) this.networkManager.recordPeerWork?.(peerId, 1);
     };
 
     try {
@@ -4230,6 +4234,8 @@ export class NodeKernel {
       pending.reject(err);
       return;
     }
+    // A completed remote task is work delivered over this peer's link.
+    this.networkManager?.recordPeerWork?.(peerId, 1);
     if (pending.returnResponseEnvelope) {
       const receivedAt = Date.now();
       pending.resolve({

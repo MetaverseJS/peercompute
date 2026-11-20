@@ -24,9 +24,14 @@ User instruction, 2026-11-19: after the larger-picture review recommended
 3. [x] Build a deterministic headless simulator and compare the rule with the
    current spatial selection, a random graph and a centralized greedy planner:
    `peercompute/experiments/conjecture/`.
-4. [ ] Wire the rule into the live runtime behind a new topology type: per-peer
-   measurement of delivered work, the rule driving `NetworkManager`'s topology
-   tick, and a divisible workload that spreads across peers.
+4. [~] Wire the rule into the live runtime behind a new topology type.
+   - [x] `topology: 'throughput'` in `NetworkManager`: the rule drives the
+     topology tick; `recordPeerWork` counts work per peer; `NodeKernel` counts
+     completed remote compute tasks and graphs. Opt-in; other topologies,
+     including NetViz's `emergent`, are unchanged.
+   - [ ] A divisible workload that spreads across peers.
+   - [ ] A real multi-browser run of the `throughput` topology. Only unit tests
+     cover it so far.
 5. [ ] Repeat the comparison with real browsers over shaped links (chaos lab),
    after checking the harness defects listed in the November 8 audit.
 6. [ ] Keystone demo as the visualization of steps 4–5.
@@ -44,3 +49,8 @@ User instruction, 2026-11-19: after the larger-picture review recommended
 
 Results and limits are in
 [the experiment README](../../peercompute/experiments/conjecture/README.md).
+
+User instruction, 2026-11-19: “be careful that this doesn't break any existing
+demo functionality”. The new mode has its own name and does nothing unless
+selected; the default path is checked by the core suite, the demo suites and a
+two-browser smoke test on builds of the changed source.

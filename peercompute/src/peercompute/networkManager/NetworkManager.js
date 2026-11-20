@@ -22,6 +22,7 @@ import { generateKeyPair, privateKeyFromProtobuf, privateKeyToProtobuf, publicKe
 import { multiaddr } from '@multiformats/multiaddr';
 import { NetworkScheduler, DEFAULT_SCHEDULER_PROFILE } from './NetworkScheduler.js';
 import { TopologyController } from './TopologyController.js';
+import { createThroughputTopologyState, decideThroughputTopology } from './ThroughputTopologyPolicy.js';
 import { PeerConnectionRecovery } from './inference/PeerConnectionRecovery.js';
 import { NetworkTelemetryService, NETWORK_TELEMETRY_TOPIC } from './NetworkTelemetryService.js';
 import { isDebugOutputEnabled } from '../utils/debugOutput.js';
@@ -624,6 +625,11 @@ export class NetworkManager {
       enableTopologyController: config.enableTopologyController !== false,
       enableRelayDirectPeers: config.enableRelayDirectPeers !== false,
       topologyTickMs: Number.isFinite(config.topologyTickMs) ? Math.max(250, config.topologyTickMs) : 1500,
+      // Used when topology is 'throughput': overrides for ThroughputTopologyPolicy
+      // and the per-peer measurement it ranks links by ('work' or 'bytes').
+      throughputTopology: config.throughputTopology && typeof config.throughputTopology === 'object'
+        ? { ...config.throughputTopology } : {},
+      throughputSignal: config.throughputSignal === 'bytes' ? 'bytes' : 'work',
       targetConnections: Number.isFinite(config.targetConnections)
         ? Math.max(1, config.targetConnections)
         : (isRoomDirectoryNode ? 1 : Math.min(maxConnections, 3)),
@@ -813,6 +819,10 @@ export class NetworkManager {
     this.pendingTopologyAccepts = new Map();
     this.pendingPeerDials = new Map();
     this.publishBlockedUntil = new Map();
+    // Work exchanged with each peer, and this node's memory for the
+    // throughput-driven ('throughput') topology rule.
+    this.peerWork = new Map();
+    this.throughputTopologyState = createThroughputTopologyState();
     this.topologyController = this.config.enableTopologyController
       ? new TopologyController({
         topologyId: this.config.topologyId,
@@ -1571,6 +1581,7 @@ export class NetworkManager {
       lastTxAt: peer.lastTxAt || null,
       lastRttAt: peer.lastRttAt || null,
       rttMs: Number.isFinite(peer.rttMs) ? peer.rttMs : null,
+      ...(this.config.topology === 'throughput' ? { workRate: this.peerWork.get(peer.peerId)?.rate || 0 } : {}),
       via: peer.via || null,
       signalingPath: normalizeSignalingPath(peer.signalingPath) || null,
       mediaPath: normalizeMediaPath(peer.mediaPath) || null,
@@ -3312,6 +3323,12 @@ export class NetworkManager {
     }
     const peers = this._getScopedPeers();
     const connections = this._getConnectionPeers();
+    // 'emergent' keeps its earlier behaviour (spatial selection without
+    // pruning); NetViz offers it. The measured rule has its own name.
+    if (this.config.topology === 'throughput') {
+      this._tickThroughputTopology(now, peers, connections);
+      return;
+    }
     const desiredPeers = this.topologyController.computeDesiredPeers({
       peers,
       connections,
@@ -3320,6 +3337,99 @@ export class NetworkManager {
     this._pruneExcessTopologyConnections(desiredPeers, peers, connections);
     this._maybeSwapTopologyConnections(desiredPeers, peers, connections);
     this._ensureTopologyConnections(desiredPeers);
+  }
+
+  /**
+   * Count work exchanged with a peer (a task it completed for this node, or
+   * one this node completed for it). The 'throughput' topology keeps the links
+   * that carry the most.
+   */
+  recordPeerWork(peerId, units = 1) {
+    // Other topologies never read these counters, so they do not keep them.
+    if (this.config.topology !== 'throughput') return;
+    if (!peerId || !Number.isFinite(units) || units <= 0) return;
+    const entry = this.peerWork.get(peerId) || { total: 0, sampledTotal: 0, sampledAt: null, rate: 0 };
+    entry.total += units;
+    this.peerWork.set(peerId, entry);
+  }
+
+  /** Units per second over each peer, smoothed over `flowTauMs`. */
+  _samplePeerWorkRates(now, peers) {
+    const tau = Number.isFinite(this.config.throughputTopology?.flowTauMs)
+      ? Math.max(1, this.config.throughputTopology.flowTauMs) : 4000;
+    if (this.config.throughputSignal === 'bytes') {
+      for (const peer of peers) {
+        const entry = this.peerWork.get(peer.peerId) || { total: 0, sampledTotal: 0, sampledAt: null, rate: 0 };
+        entry.total = (peer.rxBytes || 0) + (peer.txBytes || 0);
+        if (entry.sampledAt === null) entry.sampledTotal = entry.total;
+        this.peerWork.set(peer.peerId, entry);
+      }
+    }
+    for (const [peerId, entry] of this.peerWork) {
+      if (entry.sampledAt === null) { entry.sampledAt = now; entry.sampledTotal = Math.min(entry.sampledTotal, entry.total); continue; }
+      const elapsed = now - entry.sampledAt;
+      if (elapsed <= 0) continue;
+      const instant = Math.max(0, entry.total - entry.sampledTotal) * 1000 / elapsed;
+      entry.rate += (instant - entry.rate) * (1 - Math.exp(-elapsed / tau));
+      entry.sampledTotal = entry.total;
+      entry.sampledAt = now;
+      // Forget peers that left once their rate has faded.
+      if (entry.rate < 1e-6 && !this.peers.has(peerId)) this.peerWork.delete(peerId);
+    }
+  }
+
+  /**
+   * One step of the throughput-driven rule (ThroughputTopologyPolicy.js): rank
+   * this node's links by measured work, drop the losers and ask one candidate
+   * to connect. Bootstrap peers are infrastructure and are left alone.
+   */
+  _tickThroughputTopology(now, peers, connections) {
+    const connected = (Array.isArray(connections) ? connections : [])
+      .filter((peer) => peer?.peerId && !this.bootstrapPeerIds.has(peer.peerId));
+    this._samplePeerWorkRates(now, connected);
+    const rate = (peerId) => this.peerWork.get(peerId)?.rate || 0;
+    const linked = new Set(connected.map((peer) => peer.peerId));
+    const links = connected.map((peer) => {
+      const meta = this.peers.get(peer.peerId);
+      // Remember when each link was first seen; presence updates may not say.
+      if (meta && !meta.linkSince) meta.linkSince = Number(meta.connectedAt) || now;
+      return { peerId: peer.peerId, flow: rate(peer.peerId), since: meta?.linkSince ?? now };
+    });
+    for (const [peerId, meta] of this.peers) if (!linked.has(peerId) && meta?.linkSince) delete meta.linkSince;
+    // A requested link that is still being negotiated counts as a link under
+    // trial, so the rule waits for it instead of judging it refused.
+    this._prunePendingLogicalReservations(now);
+    for (const peerId of this.pendingTopologyRequests.keys()) {
+      if (linked.has(peerId) || this.bootstrapPeerIds.has(peerId)) continue;
+      links.push({ peerId, flow: 0, since: now });
+      linked.add(peerId);
+    }
+    const others = (Array.isArray(peers) ? peers : [])
+      .filter((peer) => peer?.peerId && peer.peerId !== this.peerId && !linked.has(peer.peerId)
+        && !this.bootstrapPeerIds.has(peer.peerId));
+    const candidates = others.map((peer) => peer.peerId);
+    const available = others.filter((peer) => Number.isFinite(peer.activeConnections)
+      && Number.isFinite(peer.targetConnections) && peer.activeConnections < peer.targetConnections)
+      .map((peer) => peer.peerId);
+    // Peers this node already exchanges work with, and peers a full neighbour
+    // suggested, are the most promising to try.
+    const referrals = [...new Set([
+      ...candidates.filter((peerId) => rate(peerId) > 0).sort((a, b) => rate(b) - rate(a)),
+      ...candidates.filter((peerId) => this.topologyController?.referralPeers?.has(peerId))
+    ])];
+    const decision = decideThroughputTopology({
+      now, links, candidates, referrals, available, state: this.throughputTopologyState,
+      config: { targetConnections: this.config.targetConnections, maxConnections: this.config.maxConnections,
+        ...this.config.throughputTopology }
+    });
+    for (const peerId of decision.drop) {
+      linked.delete(peerId);
+      this._closeConnectionsToPeer(peerId);
+    }
+    if (decision.connect) linked.add(decision.connect);
+    // Dials outside this set are refused once the node is at its target.
+    if (this.topologyController) this.topologyController.desiredPeers = linked;
+    if (decision.connect) this._ensureTopologyConnections(new Set([decision.connect]));
   }
 
   _pruneExcessTopologyConnections(desiredPeers, peers, connections) {
@@ -3587,7 +3697,8 @@ export class NetworkManager {
       });
     };
     if (!this._hasAvailableLogicalPeerSlot(peerId, now)) {
-      if (this.topologyController) {
+      // The throughput rule never evicts by distance: a full node refuses and refers.
+      if (this.topologyController && this.config.topology !== 'throughput') {
         const incomingMetric = payload?.metric || this.peers.get(peerId)?.metric || null;
         const incomingInitialized = payload?.metric
           ? true

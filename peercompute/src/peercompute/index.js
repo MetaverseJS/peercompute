@@ -220,7 +220,7 @@ export * as Utils from './utils/Utils.js';
  * Convenience function to initialize a complete node with all managers
  * 
  * @param {Object} config - Node configuration
- * @param {string} config.topology - Network topology: 'hierarchy' | 'distributed' | 'emergent'
+ * @param {string} config.topology - Network topology: 'hierarchy' | 'distributed' | 'emergent' | 'throughput' (experimental: links ranked by measured work)
  * @param {string} config.topologyId - Topology identifier shared across rooms
  * @param {string} config.topicPrefix - Base prefix for scoped topics
  * @param {boolean} config.useScopedTopics - Enable topology + room topic scoping

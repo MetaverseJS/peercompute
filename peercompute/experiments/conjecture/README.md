@@ -14,7 +14,9 @@ does no better than a random graph. The rule changes about 2 links per node per
 minute once settled.
 
 This is evidence about the rule in a model. It is not evidence about real
-browsers, WebRTC or the live library, which do not use the rule yet.
+browsers or WebRTC. The library can now run the rule (`topology: 'throughput'`
+in `NetworkManager`, off by default), but that mode has unit tests only and has
+not been measured on a real network.
 
 ## Run it
 
