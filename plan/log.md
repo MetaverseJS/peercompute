@@ -64679,3 +64679,15 @@ Problems found along the way, all fixed before the reported numbers:
 Results (32 nodes, 20 seeds, 900 s, loss of 25% at 600 s; 64 nodes, 10 seeds): where topology matters the rule gives 1.07–3.13 times spatial and 1.00–1.52 times central greedy at 32 nodes, 1.00–3.74 and 1.00–1.80 at 64, at 78–100% and 71–100% of the ceiling. Blind rewiring stays within 11% of the random graph. Open issues: about 8 link changes per node per minute in steady state, backoff that does not reduce it, and settling times up to 174 s (32 nodes) and 250 s (64). Full tables are in the experiment README.
 
 Not done: the live runtime does not use the rule; no browser, WebRTC or chaos-lab run; the stale plan files are unchanged. Nothing was pushed.
+
+### 2026-11-19 19:10 AKST — reduce the rule's rewiring rate
+
+Prompt (first observed around 19:10 AKST; exact delivery time unavailable): “go ahead and fix the rewiring rate”.
+
+Instrumented the simulator (`trace` option) to classify steady-state actions. In the last 120 s of a 600 s run, 32 nodes made about 400 trial attempts and 240 repairs, and the mean wait between trials was only 7–11 s. Causes found: links opened by other peers counted as this node's trials and reset its wait; idle links were swapped for each other; a node one link short kept connecting to full peers that dropped it again; and, in supply-limited cases, nodes gain by taking a neighbour's supply, which changes nothing in total.
+
+Changes in `ThroughputTopologyPolicy.js`: only a node's own trial changes its wait; a newcomer is kept only if the node's total moved work grew by `minGainShare` (5%) since the link appeared; repairs prefer peers advertising fewer links than their target and back off; a successful trial halves the wait instead of resetting it; the cap is 5 minutes. Tried and removed: speeding up when a neighbour closes a link (kept rewiring at about 5), and resetting the wait only when a trial set a new personal throughput record (no better than halving, more code). A change that counted the wait from the end of a trial slowed convergence and was reverted.
+
+Measured on 12-seed and then full sweeps. Steady rewiring fell from about 8 to 1.8–2.7 link changes per node per minute (1.6–1.9 after 40 simulated minutes). Throughput at 10 minutes is unchanged except with data-bound tasks from a well-connected source, where it fell 5–9% (115→105, 124→117, 86→82); over 40 minutes the default reaches 121/122/92 against 127/123/92 for the faster-rewiring variant. One control case (identical nodes, data-bound, well-connected source) is now 5% below spatial. Removing the wait entirely gives up to 17% more throughput in those hard cases at 8 changes per node per minute, so this is a trade-off, not a free fix.
+
+Reran `run.mjs` (32 nodes × 20 seeds, 64 nodes × 10 seeds) and `controls.mjs`, regenerated the README tables from the JSON, and rewrote the policy tests (12/12 with the simulation tests). No run exceeds the ceiling. Nothing was pushed.

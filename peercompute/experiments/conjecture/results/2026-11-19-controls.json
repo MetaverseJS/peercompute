@@ -12,36 +12,36 @@
           "linkChangesPerNodeMinute": 0
         },
         "adaptive": {
-          "throughput": 109.1753898663321,
-          "linkChangesPerNodeMinute": 7.99765625
+          "throughput": 109.1930635305647,
+          "linkChangesPerNodeMinute": 2.275
         },
         "blind-rewire": {
-          "throughput": 87.63322655916136,
-          "linkChangesPerNodeMinute": 8.55390625
+          "throughput": 80.16360725716162,
+          "linkChangesPerNodeMinute": 2.753125
         },
         "no-referrals": {
-          "throughput": 109.18485898028287,
-          "linkChangesPerNodeMinute": 8.034375
+          "throughput": 109.1287552251667,
+          "linkChangesPerNodeMinute": 2.3265625
         },
         "referrals-only": {
-          "throughput": 109.19007458205704,
-          "linkChangesPerNodeMinute": 7.87578125
+          "throughput": 109.16629820114936,
+          "linkChangesPerNodeMinute": 2.609375
         },
         "trial-3s": {
-          "throughput": 109.19580675120672,
-          "linkChangesPerNodeMinute": 8.41875
+          "throughput": 109.18497370498282,
+          "linkChangesPerNodeMinute": 1.06171875
         },
         "trial-12s": {
-          "throughput": 109.19083754369949,
-          "linkChangesPerNodeMinute": 4.56484375
+          "throughput": 109.1757521624165,
+          "linkChangesPerNodeMinute": 1.79375
+        },
+        "eager": {
+          "throughput": 109.16626123227073,
+          "linkChangesPerNodeMinute": 3.796875
         },
         "no-backoff": {
-          "throughput": 109.16852417326963,
-          "linkChangesPerNodeMinute": 8.68203125
-        },
-        "slow-backoff": {
-          "throughput": 109.15092844689741,
-          "linkChangesPerNodeMinute": 7.9375
+          "throughput": 109.15695767539012,
+          "linkChangesPerNodeMinute": 8.215625
         }
       }
     },
@@ -56,36 +56,36 @@
           "linkChangesPerNodeMinute": 0
         },
         "adaptive": {
-          "throughput": 113.86461908678682,
-          "linkChangesPerNodeMinute": 7.9359375
+          "throughput": 113.84177938852206,
+          "linkChangesPerNodeMinute": 2.39375
         },
         "blind-rewire": {
-          "throughput": 96.9955626501613,
-          "linkChangesPerNodeMinute": 8.55390625
+          "throughput": 89.89556118668864,
+          "linkChangesPerNodeMinute": 2.753125
         },
         "no-referrals": {
-          "throughput": 113.8807690730886,
-          "linkChangesPerNodeMinute": 7.965625
+          "throughput": 113.87837807948645,
+          "linkChangesPerNodeMinute": 2.290625
         },
         "referrals-only": {
-          "throughput": 113.86491291362623,
-          "linkChangesPerNodeMinute": 7.59453125
+          "throughput": 113.87369453535527,
+          "linkChangesPerNodeMinute": 2.39296875
         },
         "trial-3s": {
-          "throughput": 113.87349963119973,
-          "linkChangesPerNodeMinute": 7.77734375
+          "throughput": 113.86725630388887,
+          "linkChangesPerNodeMinute": 1.1453125
         },
         "trial-12s": {
-          "throughput": 113.86338607489506,
-          "linkChangesPerNodeMinute": 4.5953125
+          "throughput": 113.82022360896292,
+          "linkChangesPerNodeMinute": 1.81015625
+        },
+        "eager": {
+          "throughput": 113.81299324597319,
+          "linkChangesPerNodeMinute": 3.8796875
         },
         "no-backoff": {
-          "throughput": 113.86984298857496,
-          "linkChangesPerNodeMinute": 8.60390625
-        },
-        "slow-backoff": {
-          "throughput": 113.88057785975096,
-          "linkChangesPerNodeMinute": 7.87578125
+          "throughput": 113.87258106201041,
+          "linkChangesPerNodeMinute": 8.17109375
         }
       }
     },
@@ -100,36 +100,36 @@
           "linkChangesPerNodeMinute": 0
         },
         "adaptive": {
-          "throughput": 103.68586331151157,
-          "linkChangesPerNodeMinute": 7.8484375
+          "throughput": 103.72100408939033,
+          "linkChangesPerNodeMinute": 2.4203125
         },
         "blind-rewire": {
-          "throughput": 77.1100135179256,
-          "linkChangesPerNodeMinute": 8.55390625
+          "throughput": 63.47271116626113,
+          "linkChangesPerNodeMinute": 2.753125
         },
         "no-referrals": {
-          "throughput": 103.71841675779226,
-          "linkChangesPerNodeMinute": 7.93046875
+          "throughput": 103.58497602858327,
+          "linkChangesPerNodeMinute": 2.38203125
         },
         "referrals-only": {
-          "throughput": 103.6067420352285,
-          "linkChangesPerNodeMinute": 7.78515625
+          "throughput": 98.32283251432895,
+          "linkChangesPerNodeMinute": 2.5609375
         },
         "trial-3s": {
-          "throughput": 103.59643705523744,
-          "linkChangesPerNodeMinute": 7.5
+          "throughput": 103.66289320269031,
+          "linkChangesPerNodeMinute": 0.99140625
         },
         "trial-12s": {
-          "throughput": 103.68012834873613,
-          "linkChangesPerNodeMinute": 4.5671875
+          "throughput": 103.64989233401552,
+          "linkChangesPerNodeMinute": 1.82109375
+        },
+        "eager": {
+          "throughput": 103.24519413340427,
+          "linkChangesPerNodeMinute": 3.665625
         },
         "no-backoff": {
-          "throughput": 103.71621099201359,
-          "linkChangesPerNodeMinute": 8.61796875
-        },
-        "slow-backoff": {
-          "throughput": 103.69631174763022,
-          "linkChangesPerNodeMinute": 7.765625
+          "throughput": 103.68850353461077,
+          "linkChangesPerNodeMinute": 8.19140625
         }
       }
     },
@@ -144,36 +144,36 @@
           "linkChangesPerNodeMinute": 0
         },
         "adaptive": {
-          "throughput": 29.362363262346,
-          "linkChangesPerNodeMinute": 8.17421875
+          "throughput": 29.362807614284907,
+          "linkChangesPerNodeMinute": 2.5953125
         },
         "blind-rewire": {
-          "throughput": 23.252218893726834,
-          "linkChangesPerNodeMinute": 8.55390625
+          "throughput": 20.9162444411097,
+          "linkChangesPerNodeMinute": 2.753125
         },
         "no-referrals": {
-          "throughput": 29.376505724417722,
-          "linkChangesPerNodeMinute": 8.05625
+          "throughput": 29.27603252622647,
+          "linkChangesPerNodeMinute": 2.28203125
         },
         "referrals-only": {
-          "throughput": 29.376757342298475,
-          "linkChangesPerNodeMinute": 7.796875
+          "throughput": 29.357235589265713,
+          "linkChangesPerNodeMinute": 2.6703125
         },
         "trial-3s": {
-          "throughput": 29.376179214160715,
-          "linkChangesPerNodeMinute": 10.33984375
+          "throughput": 28.771988799169623,
+          "linkChangesPerNodeMinute": 1.7765625
         },
         "trial-12s": {
-          "throughput": 29.37629914549232,
-          "linkChangesPerNodeMinute": 4.6296875
+          "throughput": 29.34019966426622,
+          "linkChangesPerNodeMinute": 1.8828125
+        },
+        "eager": {
+          "throughput": 29.2557790734164,
+          "linkChangesPerNodeMinute": 3.8859375
         },
         "no-backoff": {
-          "throughput": 29.377581147816404,
-          "linkChangesPerNodeMinute": 8.7125
-        },
-        "slow-backoff": {
-          "throughput": 29.37571569305843,
-          "linkChangesPerNodeMinute": 8.0796875
+          "throughput": 29.375857451029624,
+          "linkChangesPerNodeMinute": 8.2265625
         }
       }
     },
@@ -188,36 +188,36 @@
           "linkChangesPerNodeMinute": 0
         },
         "adaptive": {
-          "throughput": 31.487907120735382,
-          "linkChangesPerNodeMinute": 8.16171875
+          "throughput": 31.438403490386225,
+          "linkChangesPerNodeMinute": 2.47578125
         },
         "blind-rewire": {
-          "throughput": 24.465958619700434,
-          "linkChangesPerNodeMinute": 8.55390625
+          "throughput": 23.190308474372987,
+          "linkChangesPerNodeMinute": 2.753125
         },
         "no-referrals": {
-          "throughput": 31.487381245532028,
-          "linkChangesPerNodeMinute": 8.1859375
+          "throughput": 31.420790668833384,
+          "linkChangesPerNodeMinute": 2.2671875
         },
         "referrals-only": {
-          "throughput": 31.48649984380102,
-          "linkChangesPerNodeMinute": 7.72421875
+          "throughput": 31.441057168981057,
+          "linkChangesPerNodeMinute": 2.73515625
         },
         "trial-3s": {
-          "throughput": 31.487927850216305,
-          "linkChangesPerNodeMinute": 9.86796875
+          "throughput": 31.224436453037278,
+          "linkChangesPerNodeMinute": 1.71484375
         },
         "trial-12s": {
-          "throughput": 31.488009346589553,
-          "linkChangesPerNodeMinute": 4.66953125
+          "throughput": 31.48043776348241,
+          "linkChangesPerNodeMinute": 1.84453125
+        },
+        "eager": {
+          "throughput": 31.47836888327805,
+          "linkChangesPerNodeMinute": 3.953125
         },
         "no-backoff": {
-          "throughput": 31.486616838191814,
-          "linkChangesPerNodeMinute": 8.7109375
-        },
-        "slow-backoff": {
-          "throughput": 31.48514698465583,
-          "linkChangesPerNodeMinute": 7.996875
+          "throughput": 31.48642744043791,
+          "linkChangesPerNodeMinute": 8.23046875
         }
       }
     },
@@ -232,36 +232,36 @@
           "linkChangesPerNodeMinute": 0
         },
         "adaptive": {
-          "throughput": 27.72555598543759,
-          "linkChangesPerNodeMinute": 8.00859375
+          "throughput": 26.747450721382727,
+          "linkChangesPerNodeMinute": 2.353125
         },
         "blind-rewire": {
-          "throughput": 17.63346812376065,
-          "linkChangesPerNodeMinute": 8.55390625
+          "throughput": 14.42148663826238,
+          "linkChangesPerNodeMinute": 2.753125
         },
         "no-referrals": {
-          "throughput": 27.387690546252042,
-          "linkChangesPerNodeMinute": 7.95546875
+          "throughput": 26.22811047212918,
+          "linkChangesPerNodeMinute": 2.1078125
         },
         "referrals-only": {
-          "throughput": 26.870919778426888,
-          "linkChangesPerNodeMinute": 7.67734375
+          "throughput": 27.33508176993015,
+          "linkChangesPerNodeMinute": 2.6390625
         },
         "trial-3s": {
-          "throughput": 27.51497204691851,
-          "linkChangesPerNodeMinute": 8.7703125
+          "throughput": 25.044000987967966,
+          "linkChangesPerNodeMinute": 1.27109375
         },
         "trial-12s": {
-          "throughput": 27.555153731253462,
-          "linkChangesPerNodeMinute": 4.59453125
+          "throughput": 25.182717124559957,
+          "linkChangesPerNodeMinute": 1.87734375
+        },
+        "eager": {
+          "throughput": 27.784256724398272,
+          "linkChangesPerNodeMinute": 3.82421875
         },
         "no-backoff": {
-          "throughput": 27.713582758681945,
-          "linkChangesPerNodeMinute": 8.6046875
-        },
-        "slow-backoff": {
-          "throughput": 27.732558655734238,
-          "linkChangesPerNodeMinute": 7.93828125
+          "throughput": 27.780167032863847,
+          "linkChangesPerNodeMinute": 8.1171875
         }
       }
     },
@@ -276,36 +276,36 @@
           "linkChangesPerNodeMinute": 0
         },
         "adaptive": {
-          "throughput": 164.94255715366165,
-          "linkChangesPerNodeMinute": 7.8546875
+          "throughput": 164.94489895671023,
+          "linkChangesPerNodeMinute": 2.66328125
         },
         "blind-rewire": {
-          "throughput": 125.8622346874162,
-          "linkChangesPerNodeMinute": 8.55390625
+          "throughput": 111.93523895508683,
+          "linkChangesPerNodeMinute": 2.753125
         },
         "no-referrals": {
-          "throughput": 164.93746306253644,
-          "linkChangesPerNodeMinute": 7.71796875
+          "throughput": 164.97368719482614,
+          "linkChangesPerNodeMinute": 2.178125
         },
         "referrals-only": {
-          "throughput": 164.93902730122994,
-          "linkChangesPerNodeMinute": 7.55390625
+          "throughput": 164.94642610397608,
+          "linkChangesPerNodeMinute": 2.47578125
         },
         "trial-3s": {
-          "throughput": 164.97982207552894,
-          "linkChangesPerNodeMinute": 7.4203125
+          "throughput": 161.2261525011153,
+          "linkChangesPerNodeMinute": 0.6015625
         },
         "trial-12s": {
-          "throughput": 164.93480846451777,
-          "linkChangesPerNodeMinute": 4.67109375
+          "throughput": 164.90281107108686,
+          "linkChangesPerNodeMinute": 1.8046875
+        },
+        "eager": {
+          "throughput": 164.94218150593514,
+          "linkChangesPerNodeMinute": 3.703125
         },
         "no-backoff": {
-          "throughput": 164.92265025096583,
-          "linkChangesPerNodeMinute": 8.6265625
-        },
-        "slow-backoff": {
-          "throughput": 164.96031325277164,
-          "linkChangesPerNodeMinute": 7.84296875
+          "throughput": 164.9687595189717,
+          "linkChangesPerNodeMinute": 8.16328125
         }
       }
     },
@@ -320,36 +320,36 @@
           "linkChangesPerNodeMinute": 0
         },
         "adaptive": {
-          "throughput": 169.91216409521388,
-          "linkChangesPerNodeMinute": 7.9484375
+          "throughput": 169.8295666940772,
+          "linkChangesPerNodeMinute": 2.4171875
         },
         "blind-rewire": {
-          "throughput": 139.89939284060102,
-          "linkChangesPerNodeMinute": 8.55390625
+          "throughput": 128.1962270092568,
+          "linkChangesPerNodeMinute": 2.753125
         },
         "no-referrals": {
-          "throughput": 169.9091442342406,
-          "linkChangesPerNodeMinute": 7.8578125
+          "throughput": 169.91636265422179,
+          "linkChangesPerNodeMinute": 2.3765625
         },
         "referrals-only": {
-          "throughput": 169.89451012176704,
-          "linkChangesPerNodeMinute": 7.63359375
+          "throughput": 169.8964400231002,
+          "linkChangesPerNodeMinute": 2.5609375
         },
         "trial-3s": {
-          "throughput": 169.9220110380556,
-          "linkChangesPerNodeMinute": 7.58515625
+          "throughput": 169.92305074181002,
+          "linkChangesPerNodeMinute": 0.81484375
         },
         "trial-12s": {
-          "throughput": 169.87962673258966,
-          "linkChangesPerNodeMinute": 4.5609375
+          "throughput": 169.86954803796996,
+          "linkChangesPerNodeMinute": 1.74921875
+        },
+        "eager": {
+          "throughput": 169.84395180224777,
+          "linkChangesPerNodeMinute": 3.63125
         },
         "no-backoff": {
-          "throughput": 169.8694959168609,
-          "linkChangesPerNodeMinute": 8.57421875
-        },
-        "slow-backoff": {
-          "throughput": 169.91778155865072,
-          "linkChangesPerNodeMinute": 7.69453125
+          "throughput": 169.96068540086034,
+          "linkChangesPerNodeMinute": 8.14609375
         }
       }
     },
@@ -364,36 +364,36 @@
           "linkChangesPerNodeMinute": 0
         },
         "adaptive": {
-          "throughput": 144.52597190230586,
-          "linkChangesPerNodeMinute": 7.8046875
+          "throughput": 144.23197825568167,
+          "linkChangesPerNodeMinute": 2.46640625
         },
         "blind-rewire": {
-          "throughput": 108.02560880961337,
-          "linkChangesPerNodeMinute": 8.55390625
+          "throughput": 93.17252815509673,
+          "linkChangesPerNodeMinute": 2.753125
         },
         "no-referrals": {
-          "throughput": 144.58480937635017,
-          "linkChangesPerNodeMinute": 7.65078125
+          "throughput": 144.61585096015943,
+          "linkChangesPerNodeMinute": 2.23671875
         },
         "referrals-only": {
-          "throughput": 144.5618354335709,
-          "linkChangesPerNodeMinute": 7.65
+          "throughput": 144.31650927296909,
+          "linkChangesPerNodeMinute": 2.68515625
         },
         "trial-3s": {
-          "throughput": 144.61239885329914,
-          "linkChangesPerNodeMinute": 8.18515625
+          "throughput": 144.58731945868152,
+          "linkChangesPerNodeMinute": 1.0734375
         },
         "trial-12s": {
-          "throughput": 144.4671454031565,
-          "linkChangesPerNodeMinute": 4.56875
+          "throughput": 144.15098154673197,
+          "linkChangesPerNodeMinute": 1.78984375
+        },
+        "eager": {
+          "throughput": 144.57601456122478,
+          "linkChangesPerNodeMinute": 3.68125
         },
         "no-backoff": {
-          "throughput": 144.5284759333784,
-          "linkChangesPerNodeMinute": 8.60625
-        },
-        "slow-backoff": {
-          "throughput": 144.57426443800898,
-          "linkChangesPerNodeMinute": 7.7703125
+          "throughput": 144.53893228955334,
+          "linkChangesPerNodeMinute": 8.19140625
         }
       }
     },
@@ -408,36 +408,36 @@
           "linkChangesPerNodeMinute": 0
         },
         "adaptive": {
-          "throughput": 115.37435465194346,
-          "linkChangesPerNodeMinute": 7.61484375
+          "throughput": 104.62118052559129,
+          "linkChangesPerNodeMinute": 2.39140625
         },
         "blind-rewire": {
-          "throughput": 37.542003499024716,
-          "linkChangesPerNodeMinute": 8.55390625
+          "throughput": 32.28798718549043,
+          "linkChangesPerNodeMinute": 2.753125
         },
         "no-referrals": {
-          "throughput": 112.66120559095911,
-          "linkChangesPerNodeMinute": 7.5734375
+          "throughput": 98.52786075582904,
+          "linkChangesPerNodeMinute": 2.21796875
         },
         "referrals-only": {
-          "throughput": 108.38808216985163,
-          "linkChangesPerNodeMinute": 7.684375
+          "throughput": 98.25258731597961,
+          "linkChangesPerNodeMinute": 2.5734375
         },
         "trial-3s": {
-          "throughput": 106.63188473577671,
-          "linkChangesPerNodeMinute": 8.51015625
+          "throughput": 98.40645119537054,
+          "linkChangesPerNodeMinute": 1.0609375
         },
         "trial-12s": {
-          "throughput": 104.52260875493948,
-          "linkChangesPerNodeMinute": 4.55234375
+          "throughput": 91.57742356199623,
+          "linkChangesPerNodeMinute": 1.859375
+        },
+        "eager": {
+          "throughput": 108.65884441572459,
+          "linkChangesPerNodeMinute": 3.61484375
         },
         "no-backoff": {
-          "throughput": 117.41711376290273,
-          "linkChangesPerNodeMinute": 8.54765625
-        },
-        "slow-backoff": {
-          "throughput": 114.91107586757217,
-          "linkChangesPerNodeMinute": 7.6484375
+          "throughput": 122.50533100018097,
+          "linkChangesPerNodeMinute": 8.00859375
         }
       }
     },
@@ -452,36 +452,36 @@
           "linkChangesPerNodeMinute": 0
         },
         "adaptive": {
-          "throughput": 124.15488742835957,
-          "linkChangesPerNodeMinute": 7.6296875
+          "throughput": 117.36904982368074,
+          "linkChangesPerNodeMinute": 2.2796875
         },
         "blind-rewire": {
-          "throughput": 44.23149204888368,
-          "linkChangesPerNodeMinute": 8.55390625
+          "throughput": 37.99089524723375,
+          "linkChangesPerNodeMinute": 2.753125
         },
         "no-referrals": {
-          "throughput": 121.9087846622923,
-          "linkChangesPerNodeMinute": 7.60546875
+          "throughput": 108.8236653374158,
+          "linkChangesPerNodeMinute": 2.115625
         },
         "referrals-only": {
-          "throughput": 117.25459506856608,
-          "linkChangesPerNodeMinute": 7.48203125
+          "throughput": 116.75089520762117,
+          "linkChangesPerNodeMinute": 2.36015625
         },
         "trial-3s": {
-          "throughput": 123.58940523785205,
-          "linkChangesPerNodeMinute": 7.29375
+          "throughput": 109.49867716055539,
+          "linkChangesPerNodeMinute": 1.059375
         },
         "trial-12s": {
-          "throughput": 122.95588528705102,
-          "linkChangesPerNodeMinute": 4.49453125
+          "throughput": 117.11511986702783,
+          "linkChangesPerNodeMinute": 1.746875
+        },
+        "eager": {
+          "throughput": 122.13155345471107,
+          "linkChangesPerNodeMinute": 3.55390625
         },
         "no-backoff": {
-          "throughput": 128.28893387558747,
-          "linkChangesPerNodeMinute": 8.47578125
-        },
-        "slow-backoff": {
-          "throughput": 128.5693886647138,
-          "linkChangesPerNodeMinute": 7.48203125
+          "throughput": 127.66369013871717,
+          "linkChangesPerNodeMinute": 8.065625
         }
       }
     },
@@ -496,36 +496,36 @@
           "linkChangesPerNodeMinute": 0
         },
         "adaptive": {
-          "throughput": 85.65439804946739,
-          "linkChangesPerNodeMinute": 7.353125
+          "throughput": 81.67678120473809,
+          "linkChangesPerNodeMinute": 1.75859375
         },
         "blind-rewire": {
-          "throughput": 29.06177789040732,
-          "linkChangesPerNodeMinute": 8.55390625
+          "throughput": 24.551980311867336,
+          "linkChangesPerNodeMinute": 2.753125
         },
         "no-referrals": {
-          "throughput": 85.36459302045867,
-          "linkChangesPerNodeMinute": 7.375
+          "throughput": 76.67480091037513,
+          "linkChangesPerNodeMinute": 1.765625
         },
         "referrals-only": {
-          "throughput": 82.51439868659745,
-          "linkChangesPerNodeMinute": 7.38828125
+          "throughput": 78.71078460302857,
+          "linkChangesPerNodeMinute": 2.31328125
         },
         "trial-3s": {
-          "throughput": 79.89078828720913,
-          "linkChangesPerNodeMinute": 7.77421875
+          "throughput": 72.10592174135621,
+          "linkChangesPerNodeMinute": 0.8625
         },
         "trial-12s": {
-          "throughput": 85.41743458678363,
-          "linkChangesPerNodeMinute": 4.421875
+          "throughput": 76.51277076868266,
+          "linkChangesPerNodeMinute": 1.565625
+        },
+        "eager": {
+          "throughput": 82.54535878573822,
+          "linkChangesPerNodeMinute": 3.32109375
         },
         "no-backoff": {
-          "throughput": 85.85826768627051,
-          "linkChangesPerNodeMinute": 8.4359375
-        },
-        "slow-backoff": {
-          "throughput": 84.74034067348038,
-          "linkChangesPerNodeMinute": 7.2640625
+          "throughput": 88.37798411677225,
+          "linkChangesPerNodeMinute": 7.9453125
         }
       }
     }

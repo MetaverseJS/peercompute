@@ -34,14 +34,14 @@ const initialPairs = (policy, scenario, alive, random) => (
  * @param {number} [options.dt] seconds per step
  * @param {{atS: number, fraction: number}} [options.loss] nodes that fail at once
  */
-export function simulate({ scenario, policy, durationS = 300, dt = 0.05, seed = 1, loss = null, policyConfig = {} } = {}) {
+export function simulate({ scenario, policy, durationS = 300, dt = 0.05, seed = 1, loss = null, policyConfig = {}, trace = false } = {}) {
   if (!POLICIES.includes(policy) && !CONTROL_POLICIES.includes(policy)) throw new RangeError(`Unknown policy ${policy}`);
   const { nodes, source, capacity, task } = scenario;
   const count = nodes.length;
   const random = createRng(seed * 2654435761 + POLICIES.indexOf(policy) * 97 + 5);
   const blind = policy === 'blind-rewire';
   const adaptive = policy.startsWith('adaptive') || blind;
-  const config = { targetConnections: scenario.targetConnections, maxConnections: scenario.maxConnections, ...policyConfig };
+  const config = { trialMs: 6000, targetConnections: scenario.targetConnections, maxConnections: scenario.maxConnections, ...policyConfig };
 
   const alive = nodes.map(() => true);
   const work = new Float64Array(count);
@@ -52,6 +52,7 @@ export function simulate({ scenario, policy, durationS = 300, dt = 0.05, seed = 
   const peers = Array.from({ length: count }, () => new Map()); // neighbour index -> link
   let links = [];
   let linkChanges = 0, repairs = 0, probes = 0;
+  const tally = {};
   const state = nodes.map(() => createThroughputTopologyState());
   const nextDecision = nodes.map(() => random());
 
@@ -166,8 +167,22 @@ export function simulate({ scenario, policy, durationS = 300, dt = 0.05, seed = 
         const strongest = mine.slice().sort((x, y) => y.flow - x.flow)[0];
         const referrals = strongest ? [...peers[strongest.index].keys()].filter((j) => j !== i && !peers[i].has(j)).map((j) => nodes[j].id) : [];
         // Without the rule a node only replaces links it has lost.
-        const decision = decideThroughputTopology({ now: t * 1000, links: mine, candidates, referrals, state: state[i], random,
+        const available = nodes.filter((node) => alive[node.index] && node.index !== i && !peers[i].has(node.index)
+          && peers[node.index].size < config.targetConnections).map((node) => node.id);
+        const decision = decideThroughputTopology({ now: t * 1000, links: mine, candidates, referrals, available, state: state[i], random,
           config: repairing ? { ...config, maxConnections: config.targetConnections } : config });
+        if (trace && t >= durationS - 120) {
+          for (const peerId of decision.drop) {
+            const dropped = mine.find((entry) => entry.peerId === peerId);
+            const kind = t * 1000 - dropped.since < 2 * config.trialMs ? 'dropNew' : 'dropOld';
+            tally[kind] = (tally[kind] ?? 0) + 1;
+            if (dropped.flow < 0.01 * mine.reduce((sum, entry) => sum + entry.flow, 0)) tally.dropIdle = (tally.dropIdle ?? 0) + 1;
+          }
+          if (decision.connect) {
+            const kind = mine.length - decision.drop.length < config.targetConnections ? 'repair' : 'probe';
+            tally[kind] = (tally[kind] ?? 0) + 1;
+          }
+        }
         for (const peerId of decision.drop) { removeLink(i, Number(peerId.slice(1))); linkChanges += 1; }
         if (decision.connect) {
           const repair = mine.length - decision.drop.length < config.targetConnections;
@@ -212,7 +227,8 @@ export function simulate({ scenario, policy, durationS = 300, dt = 0.05, seed = 
     // by peers and work lost on failed peers.
     conservationError: issued - returned - discarded
       - nodes.reduce((sum, node) => sum + (node.index === source ? 0 : work[node.index] + results[node.index]), 0),
-    wholeRun: completed / durationS
+    wholeRun: completed / durationS,
+    ...(trace ? { trace: { ...tally, meanExploreDelayS: state.reduce((sum, entry) => sum + (entry.exploreDelayMs ?? 3000), 0) / count / 1000 } } : {})
   };
   if (loss) {
     const afterWindowS = Math.min(120, Math.floor((durationS - loss.atS) / 3));

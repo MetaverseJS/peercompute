@@ -23,29 +23,73 @@ test('a full node opens one trial link, then waits for it to mature', () => {
   assert.deepEqual(during, { connect: null, drop: [] });
 });
 
-test('after the trial the lowest-flow links beyond the target are dropped', () => {
+test('a newcomer that raises this node\'s total displaces the weakest established link', () => {
   const state = createThroughputTopologyState();
   const established = [link('a', 5), link('b', 4), link('c', 3)];
   decideThroughputTopology({ now: 0, links: established, candidates: [], state, config });
-  const now = THROUGHPUT_TOPOLOGY_DEFAULTS.trialMs;
-  const better = decideThroughputTopology({ now, links: [...established, link('d', 9, 0)], candidates: [], state, config });
+  // The newcomer is first seen carrying nothing, when the node moves 12 in total.
+  decideThroughputTopology({ now: 1000, links: [...established, link('d', 0, 1000)], candidates: [], state, config });
+  const now = 1000 + THROUGHPUT_TOPOLOGY_DEFAULTS.trialMs;
+  const better = decideThroughputTopology({ now, links: [...established, link('d', 9, 1000)], candidates: [], state, config });
   assert.deepEqual(better.drop, ['c']);
   assert.ok(state.cooldown.has('c') && state.established.has('d'));
 });
 
-test('a newcomer must beat an established link by the margin, and failures back off', () => {
+test('a newcomer that only takes work from another link is dropped, however busy it is', () => {
+  const state = createThroughputTopologyState();
+  decideThroughputTopology({ now: 0, links: [link('a', 5), link('b', 4), link('c', 3)], candidates: [], state, config });
+  decideThroughputTopology({ now: 1000, links: [link('a', 5), link('b', 4), link('c', 3), link('d', 0, 1000)], candidates: [], state, config });
+  const now = 1000 + THROUGHPUT_TOPOLOGY_DEFAULTS.trialMs;
+  // d carries 5, but a fell by 5: the node still moves 12.
+  const moved = decideThroughputTopology({ now, links: [link('a', 0), link('b', 4), link('c', 3), link('d', 5, 1000)], candidates: [], state, config });
+  assert.deepEqual(moved.drop, ['d']);
+  // A gain under the 5% threshold does not count either.
+  const other = createThroughputTopologyState();
+  decideThroughputTopology({ now: 0, links: [link('a', 5), link('b', 4), link('c', 3)], candidates: [], state: other, config });
+  decideThroughputTopology({ now: 1000, links: [link('a', 5), link('b', 4), link('c', 3), link('d', 0, 1000)], candidates: [], state: other, config });
+  const slight = decideThroughputTopology({ now, links: [link('a', 5), link('b', 4), link('c', 3), link('d', 0.5, 1000)], candidates: [], state: other, config });
+  assert.deepEqual(slight.drop, ['d']);
+});
+
+test('failed trials double the wait, a kept trial halves it, and links opened by peers do not count', () => {
   const state = createThroughputTopologyState();
   const established = [link('a', 5), link('b', 4), link('c', 3)];
-  decideThroughputTopology({ now: 0, links: established, candidates: [], state, config });
-  const now = THROUGHPUT_TOPOLOGY_DEFAULTS.trialMs;
-  const marginal = decideThroughputTopology({ now, links: [...established, link('d', 3.2, 0)], candidates: [], state, config });
-  assert.deepEqual(marginal.drop, ['d']);
-  assert.equal(state.exploreDelayMs, 2 * THROUGHPUT_TOPOLOGY_DEFAULTS.exploreIntervalMs);
-  state.lastExploreAt = now;
-  const soon = decideThroughputTopology({ now: now + THROUGHPUT_TOPOLOGY_DEFAULTS.exploreIntervalMs, links: established, candidates: ['e'], state, random: () => 0, config });
-  assert.equal(soon.connect, null);
-  const later = decideThroughputTopology({ now: now + 2 * THROUGHPUT_TOPOLOGY_DEFAULTS.exploreIntervalMs, links: established, candidates: ['d', 'e'], state, random: () => 0, config });
-  assert.equal(later.connect, 'e'); // d is still in cooldown
+  const base = THROUGHPUT_TOPOLOGY_DEFAULTS.exploreIntervalMs, trial = THROUGHPUT_TOPOLOGY_DEFAULTS.trialMs;
+  const step = (now, links, candidates = []) => decideThroughputTopology({ now, links, candidates, state, random: () => 0, config });
+  // The wait is measured from the start of the previous trial.
+  assert.equal(step(0, established, ['d']).connect, 'd');
+  assert.deepEqual(step(trial, [...established, link('d', 0, 0)]).drop, ['d']); // carried nothing
+  assert.equal(state.exploreDelayMs, 2 * base);
+  assert.equal(step(2 * base - 1, established, ['e']).connect, null);
+  let start = 2 * base;
+  assert.equal(step(start, established, ['d', 'e']).connect, 'e'); // d is in cooldown
+  assert.deepEqual(step(start + 1000, established).drop, []); // e refused the link: a failed trial
+  assert.equal(state.exploreDelayMs, 4 * base);
+  // A link another peer opened and this node drops leaves the wait alone.
+  step(start + 2000, [...established, link('p', 0, start + 2000)]);
+  assert.deepEqual(step(start + 2000 + trial, [...established, link('p', 0, start + 2000)]).drop, ['p']);
+  assert.equal(state.exploreDelayMs, 4 * base);
+  assert.equal(step(start + 4 * base - 1, established, ['f']).connect, null);
+  // A trial that earns its place halves the wait.
+  start += 4 * base;
+  assert.equal(step(start, established, ['f']).connect, 'f');
+  assert.deepEqual(step(start + trial, [...established, link('f', 9, start)]).drop, ['c']);
+  assert.equal(state.exploreDelayMs, 2 * base);
+});
+
+test('repairs prefer peers that are short of links and wait longer after each attempt', () => {
+  const state = createThroughputTopologyState();
+  const base = THROUGHPUT_TOPOLOGY_DEFAULTS.exploreIntervalMs;
+  const short = [link('a', 5), link('b', 4)];
+  const args = { links: short, candidates: ['full', 'needy'], available: ['needy'], state, random: () => 0, config };
+  assert.equal(decideThroughputTopology({ now: 0, ...args }).connect, 'needy');
+  assert.equal(decideThroughputTopology({ now: 1000, ...args }).connect, null);
+  assert.equal(decideThroughputTopology({ now: base, ...args }).connect, 'needy');
+  assert.equal(decideThroughputTopology({ now: 2 * base, ...args }).connect, null);
+  assert.equal(decideThroughputTopology({ now: 3 * base, ...args }).connect, 'needy');
+  // Back at the target, the next loss is repaired at once.
+  decideThroughputTopology({ now: 3 * base + 1, ...args, links: [...short, link('needy', 1)] });
+  assert.equal(decideThroughputTopology({ now: 3 * base + 2, ...args, available: [] }).connect, 'full');
 });
 
 test('referrals are preferred at the configured share and the rule never exceeds its limit', () => {

@@ -5,14 +5,22 @@
  * moved over each of its links, and the peers it has heard of. It never reads
  * another peer's bandwidth or compute capacity.
  *
- *   1. Below `targetConnections`, connect to a candidate (repair).
+ *   1. Below `targetConnections`, connect to a candidate (repair), preferring
+ *      peers that are themselves short of links. A peer that is already full
+ *      tends to drop the newcomer again, so repeated repairs wait longer.
  *   2. Otherwise keep one spare slot (up to `maxConnections`) for a trial link
- *      to a candidate, started at most every `exploreIntervalMs`.
- *   3. When every link is at least `trialMs` old, keep the `targetConnections`
- *      links that carried the most work and drop the rest. A newcomer must beat
- *      an established link by `replaceMargin` to displace it.
- *   4. Each trial that fails doubles the wait before the next one, up to
- *      `maxExploreIntervalMs`; a trial that earns its place resets the wait.
+ *      to a candidate.
+ *   3. When every link is at least `trialMs` old and there are more than
+ *      `targetConnections`, compare the work this node moves now with what it
+ *      moved before the new link appeared. If the total grew by at least
+ *      `minGainShare`, keep the links that carried the most work (a newcomer
+ *      must beat an established link by `replaceMargin`). Otherwise drop the
+ *      newcomer: a link that only takes work from another link is not a gain.
+ *   4. A trial this node started that does not earn its place doubles the wait
+ *      before the next one, up to `maxExploreIntervalMs`; one that does halves
+ *      it. Gains made by taking a neighbour's supply are soon taken back, so a
+ *      full reset on every success would keep a supply-limited network
+ *      rewiring for nothing.
  *
  * The module is pure: no timers, sockets or globals. A caller (the simulator in
  * peercompute/experiments/conjecture, or a network runtime) supplies
@@ -24,15 +32,21 @@ export const THROUGHPUT_TOPOLOGY_DEFAULTS = Object.freeze({
   maxConnections: 5,
   trialMs: 6000,
   exploreIntervalMs: 3000,
-  maxExploreIntervalMs: 48000,
+  maxExploreIntervalMs: 300000,
   retryCooldownMs: 20000,
   referralShare: 0.5,
-  replaceMargin: 0.1
+  replaceMargin: 0.1,
+  minGainShare: 0.05,
+  // Multipliers applied to the wait between trials.
+  failFactor: 2,
+  successFactor: 0.5
 });
 
 /** Per-node memory carried between decisions. */
 export function createThroughputTopologyState() {
-  return { lastExploreAt: Number.NEGATIVE_INFINITY, exploreDelayMs: null, established: new Set(), cooldown: new Map() };
+  return { lastExploreAt: Number.NEGATIVE_INFINITY, exploreDelayMs: null, trialPeerId: null,
+    lastRepairAt: Number.NEGATIVE_INFINITY, repairDelayMs: 0, established: new Set(), cooldown: new Map(),
+    baselines: new Map() };
 }
 
 function pick(list, random) {
@@ -46,57 +60,81 @@ function pick(list, random) {
  *   links with the measured work rate over each and the time it was opened
  * @param {string[]} input.candidates known peers this node could connect to
  * @param {string[]} [input.referrals] candidates suggested by a neighbour
+ * @param {string[]} [input.available] candidates advertising fewer links than
+ *   their own target
  * @param {object} input.state from createThroughputTopologyState()
  * @param {() => number} [input.random] uniform [0, 1)
  * @param {object} [input.config] overrides for THROUGHPUT_TOPOLOGY_DEFAULTS
  * @returns {{connect: string|null, drop: string[]}}
  */
-export function decideThroughputTopology({ now, links = [], candidates = [], referrals = [], state,
+export function decideThroughputTopology({ now, links = [], candidates = [], referrals = [], available = [], state,
   random = Math.random, config = {} } = {}) {
   if (!state) throw new TypeError('decideThroughputTopology requires a state object');
   const options = { ...THROUGHPUT_TOPOLOGY_DEFAULTS, ...config };
   const target = Math.max(1, options.targetConnections);
   const max = Math.max(target, options.maxConnections);
+  const base = options.exploreIntervalMs;
+  const scaled = (factor) => Math.min(options.maxExploreIntervalMs, Math.max(base, factor * (state.exploreDelayMs ?? base)));
   const linked = new Set(links.map((link) => link.peerId));
   for (const peerId of state.established) if (!linked.has(peerId)) state.established.delete(peerId);
   for (const [peerId, until] of state.cooldown) if (until <= now) state.cooldown.delete(peerId);
+
+  // Remember what this node moved just before each new link appeared.
+  const total = links.reduce((sum, link) => sum + link.flow, 0);
+  for (const peerId of state.baselines.keys()) if (!linked.has(peerId)) state.baselines.delete(peerId);
+  for (const link of links) {
+    if (!state.established.has(link.peerId) && !state.baselines.has(link.peerId)) state.baselines.set(link.peerId, total - link.flow);
+  }
 
   const drop = [];
   const trialing = links.some((link) => now - link.since < options.trialMs);
   if (!trialing) {
     if (links.length > target) {
-      // A newcomer's flow is discounted so that noise alone cannot displace a
-      // link that is already carrying work.
+      const before = Math.min(total, ...links.filter((link) => !state.established.has(link.peerId))
+        .map((link) => state.baselines.get(link.peerId)));
+      const improved = total - before > Math.max(options.minGainShare * before, 1e-9);
+      // Without a gain every established link outranks every newcomer. With
+      // one, a newcomer still has to beat an established link by the margin.
       const ranked = links.map((link) => ({ ...link,
-        score: state.established.has(link.peerId) ? link.flow : link.flow / (1 + options.replaceMargin) }))
+        score: state.established.has(link.peerId) ? link.flow
+          : improved ? link.flow / (1 + options.replaceMargin) : Number.NEGATIVE_INFINITY }))
         .sort((a, b) => (b.score - a.score) || (a.since - b.since) || String(a.peerId).localeCompare(String(b.peerId)));
       for (const loser of ranked.slice(target)) {
         drop.push(loser.peerId);
         state.cooldown.set(loser.peerId, now + options.retryCooldownMs);
       }
-      const newcomers = ranked.filter((link) => !state.established.has(link.peerId));
-      if (newcomers.length) {
-        const kept = newcomers.some((link) => !drop.includes(link.peerId));
-        state.exploreDelayMs = kept ? options.exploreIntervalMs
-          : Math.min(options.maxExploreIntervalMs, 2 * (state.exploreDelayMs ?? options.exploreIntervalMs));
-      }
+    }
+    if (state.trialPeerId !== null) {
+      // The trial failed if its link was refused, closed by the peer or dropped here.
+      const kept = linked.has(state.trialPeerId) && !drop.includes(state.trialPeerId);
+      state.exploreDelayMs = scaled(kept ? options.successFactor : options.failFactor);
+      if (!kept) state.cooldown.set(state.trialPeerId, now + options.retryCooldownMs);
+      state.trialPeerId = null;
     }
     const dropped = new Set(drop);
     for (const link of links) if (!dropped.has(link.peerId)) state.established.add(link.peerId);
+    state.baselines.clear();
   }
 
   const remaining = links.length - drop.length;
-  const repairing = remaining < target;
-  const exploring = !repairing && !trialing && remaining < max
-    && now - state.lastExploreAt >= (state.exploreDelayMs ?? options.exploreIntervalMs);
+  if (remaining >= target) state.repairDelayMs = 0;
+  const short = remaining < target;
+  const repairing = short && now - state.lastRepairAt >= state.repairDelayMs;
+  const exploring = !short && !trialing && state.trialPeerId === null && remaining < max
+    && now - state.lastExploreAt >= (state.exploreDelayMs ?? base);
   let connect = null;
   if (repairing || exploring) {
     const open = (peerId) => !linked.has(peerId) && (repairing || !state.cooldown.has(peerId));
     const referred = referrals.filter(open);
     const known = candidates.filter(open);
-    connect = (referred.length && random() < options.referralShare ? pick(referred, random) : null)
+    connect = (repairing ? pick(available.filter(open), random) : null)
+      ?? (referred.length && random() < options.referralShare ? pick(referred, random) : null)
       ?? pick(known, random) ?? pick(referred, random);
-    if (connect && exploring) state.lastExploreAt = now;
+    if (connect && exploring) { state.lastExploreAt = now; state.trialPeerId = connect; }
+    if (connect && repairing) {
+      state.lastRepairAt = now;
+      state.repairDelayMs = Math.min(options.maxExploreIntervalMs, Math.max(base, 2 * state.repairDelayMs));
+    }
   }
   return { connect, drop };
 }

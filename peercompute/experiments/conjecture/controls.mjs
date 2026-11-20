@@ -16,8 +16,10 @@ const variants = {
   'referrals-only': { policy: 'adaptive', policyConfig: { referralShare: 1 } },
   'trial-3s': { policy: 'adaptive', policyConfig: { trialMs: 3000 } },
   'trial-12s': { policy: 'adaptive', policyConfig: { trialMs: 12000 } },
-  'no-backoff': { policy: 'adaptive', policyConfig: { maxExploreIntervalMs: 3000 } },
-  'slow-backoff': { policy: 'adaptive', policyConfig: { maxExploreIntervalMs: 192000 } }
+  // A successful trial resets the wait instead of halving it.
+  eager: { policy: 'adaptive', policyConfig: { successFactor: 0 } },
+  // No waiting at all between trials.
+  'no-backoff': { policy: 'adaptive', policyConfig: { maxExploreIntervalMs: 3000 } }
 };
 const mean = (values) => values.reduce((sum, value) => sum + value, 0) / values.length;
 const rows = [];

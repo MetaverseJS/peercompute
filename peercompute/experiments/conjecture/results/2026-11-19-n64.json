@@ -45,14 +45,14 @@
           "settleS": 0,
           "linkChangesPerNodeMinute": 0,
           "afterLoss": {
-            "mean": 110.71032833529344,
-            "half": 50.54027081328473
+            "mean": 74.83164903022649,
+            "half": 36.3894892604743
           },
           "afterLossVersusSpatial": {
-            "mean": 0.9914857380650389,
-            "half": 0.10147574577684622
+            "mean": 0.7624552967684874,
+            "half": 0.17085518831766508
           },
-          "afterLossSettleS": 16.1
+          "afterLossSettleS": 0.1
         },
         "greedy": {
           "throughput": {
@@ -77,45 +77,45 @@
         },
         "adaptive": {
           "throughput": {
-            "mean": 152.37507505055856,
-            "half": 80.00800867147719
+            "mean": 152.45444840343524,
+            "half": 80.10729149938767
           },
           "versusSpatial": {
-            "mean": 1.2929816142691648,
-            "half": 0.2566372861682585
+            "mean": 1.293327754035559,
+            "half": 0.25709690023299214
           },
-          "settleS": 40.6,
-          "linkChangesPerNodeMinute": 8.10390625,
+          "settleS": 51.5,
+          "linkChangesPerNodeMinute": 2.18671875,
           "afterLoss": {
-            "mean": 129.1132276524754,
-            "half": 58.007477187322756
+            "mean": 129.078266966976,
+            "half": 57.97058238365257
           },
           "afterLossVersusSpatial": {
-            "mean": 1.1450096303951165,
-            "half": 0.14701021402020495
+            "mean": 1.144850840270798,
+            "half": 0.14685959917419414
           },
-          "afterLossSettleS": 0
+          "afterLossSettleS": 5.8
         },
         "adaptive-spatial": {
           "throughput": {
-            "mean": 152.52059516548485,
-            "half": 80.1553585125686
+            "mean": 150.70123735341687,
+            "half": 78.06920751985513
           },
           "versusSpatial": {
-            "mean": 1.293758751994697,
-            "half": 0.25734771651501176
+            "mean": 1.2846879423653028,
+            "half": 0.24938124560858996
           },
-          "settleS": 11.4,
-          "linkChangesPerNodeMinute": 7.96328125,
+          "settleS": 14.4,
+          "linkChangesPerNodeMinute": 1.9875,
           "afterLoss": {
-            "mean": 129.06714847992714,
-            "half": 57.98492310062612
+            "mean": 129.07020849076102,
+            "half": 57.98164622139458
           },
           "afterLossVersusSpatial": {
-            "mean": 1.1446861867833762,
-            "half": 0.14673723538454075
+            "mean": 1.144783406326134,
+            "half": 0.14691496862976988
           },
-          "afterLossSettleS": 0.2
+          "afterLossSettleS": 0
         }
       }
     },
@@ -160,14 +160,14 @@
           "settleS": 0,
           "linkChangesPerNodeMinute": 0,
           "afterLoss": {
-            "mean": 140.75577558419212,
-            "half": 35.96429137329484
+            "mean": 122.58815092667776,
+            "half": 29.542482658959095
           },
           "afterLossVersusSpatial": {
-            "mean": 1.3520715603073665,
-            "half": 0.2602501919057477
+            "mean": 1.244973975989493,
+            "half": 0.3178465787168385
           },
-          "afterLossSettleS": 1.7
+          "afterLossSettleS": 0
         },
         "greedy": {
           "throughput": {
@@ -192,45 +192,45 @@
         },
         "adaptive": {
           "throughput": {
-            "mean": 162.9469964142302,
-            "half": 52.869470607508
+            "mean": 162.95056530998718,
+            "half": 52.87669568332913
           },
           "versusSpatial": {
-            "mean": 1.3169532463894373,
-            "half": 0.2115674839227509
+            "mean": 1.3169428543854589,
+            "half": 0.21157202285913934
           },
-          "settleS": 16.4,
-          "linkChangesPerNodeMinute": 8.00546875,
+          "settleS": 8,
+          "linkChangesPerNodeMinute": 2.29140625,
           "afterLoss": {
-            "mean": 145.73242947464723,
-            "half": 38.135286837089104
+            "mean": 145.6802732269037,
+            "half": 38.1227375089975
           },
           "afterLossVersusSpatial": {
-            "mean": 1.37926480827192,
-            "half": 0.2425724126998734
+            "mean": 1.378868148818016,
+            "half": 0.2427145949012732
           },
-          "afterLossSettleS": 0.7
+          "afterLossSettleS": 3.1
         },
         "adaptive-spatial": {
           "throughput": {
-            "mean": 162.90906955932522,
-            "half": 52.83634873132611
+            "mean": 161.0821692306732,
+            "half": 50.765160115226465
           },
           "versusSpatial": {
-            "mean": 1.3167495990697105,
-            "half": 0.211511971233279
+            "mean": 1.309171776755501,
+            "half": 0.21359096067870778
           },
-          "settleS": 12.9,
-          "linkChangesPerNodeMinute": 7.96796875,
+          "settleS": 14.6,
+          "linkChangesPerNodeMinute": 2.2671875,
           "afterLoss": {
-            "mean": 145.7107721291214,
-            "half": 38.122465807617246
+            "mean": 145.68571481398786,
+            "half": 38.10626360973979
           },
           "afterLossVersusSpatial": {
-            "mean": 1.3791183242162395,
-            "half": 0.24255506002066063
+            "mean": 1.3788898245873937,
+            "half": 0.24238584339267957
           },
-          "afterLossSettleS": 0
+          "afterLossSettleS": 0.3
         }
       }
     },
@@ -275,14 +275,14 @@
           "settleS": 0,
           "linkChangesPerNodeMinute": 0,
           "afterLoss": {
-            "mean": 71.1290460170625,
-            "half": 24.597704731218116
+            "mean": 57.49116478584823,
+            "half": 21.37685763862848
           },
           "afterLossVersusSpatial": {
-            "mean": 1.2941495524733908,
-            "half": 0.3522643242864574
+            "mean": 1.1263490925845536,
+            "half": 0.4069090567576143
           },
-          "afterLossSettleS": 15
+          "afterLossSettleS": 1.8
         },
         "greedy": {
           "throughput": {
@@ -307,45 +307,45 @@
         },
         "adaptive": {
           "throughput": {
-            "mean": 81.83796723862454,
-            "half": 33.61675521359675
+            "mean": 81.82708178322318,
+            "half": 33.592690034414304
           },
           "versusSpatial": {
-            "mean": 1.185856541018869,
-            "half": 0.1768621127904164
+            "mean": 1.1857769809662926,
+            "half": 0.17678496692758575
           },
-          "settleS": 13.1,
-          "linkChangesPerNodeMinute": 8.078125,
+          "settleS": 26.5,
+          "linkChangesPerNodeMinute": 2.290625,
           "afterLoss": {
-            "mean": 75.68817161559289,
-            "half": 26.43123567869486
+            "mean": 75.88102191960915,
+            "half": 26.901038761039576
           },
           "afterLossVersusSpatial": {
-            "mean": 1.3957256017701143,
-            "half": 0.44149096212032685
+            "mean": 1.3995230284976468,
+            "half": 0.4543042397827447
           },
-          "afterLossSettleS": 0.6
+          "afterLossSettleS": 0
         },
         "adaptive-spatial": {
           "throughput": {
-            "mean": 81.84026155998345,
-            "half": 33.61466936589002
+            "mean": 81.85177600559277,
+            "half": 33.62568240694551
           },
           "versusSpatial": {
-            "mean": 1.1858856622921075,
-            "half": 0.176866654868866
+            "mean": 1.1860101522147082,
+            "half": 0.17693282053212372
           },
-          "settleS": 1.2,
-          "linkChangesPerNodeMinute": 8.16015625,
+          "settleS": 2.1,
+          "linkChangesPerNodeMinute": 2.134375,
           "afterLoss": {
-            "mean": 75.83440624525495,
-            "half": 26.56773772019527
+            "mean": 76.40323679735742,
+            "half": 27.145165960544745
           },
           "afterLossVersusSpatial": {
-            "mean": 1.3988788185237442,
-            "half": 0.44603066803458963
+            "mean": 1.4112573530881543,
+            "half": 0.46494752568646897
           },
-          "afterLossSettleS": 0
+          "afterLossSettleS": 0.2
         }
       }
     },
@@ -390,12 +390,12 @@
           "settleS": 0,
           "linkChangesPerNodeMinute": 0,
           "afterLoss": {
-            "mean": 103.99126580340376,
-            "half": 0.006996863989831771
+            "mean": 103.99344243651149,
+            "half": 0.006691673517153576
           },
           "afterLossVersusSpatial": {
-            "mean": 1.0000851573877045,
-            "half": 0.00014517622837916235
+            "mean": 1.0001060939482116,
+            "half": 0.00015486039671064493
           },
           "afterLossSettleS": 0
         },
@@ -422,43 +422,43 @@
         },
         "adaptive": {
           "throughput": {
-            "mean": 103.99592311661529,
-            "half": 0.005718551237340238
+            "mean": 103.99418936277773,
+            "half": 0.0043069023370978935
           },
           "versusSpatial": {
-            "mean": 1.000018167122049,
-            "half": 0.00005730135430217976
+            "mean": 1.0000014957422017,
+            "half": 0.000047108693051866754
           },
           "settleS": 0,
-          "linkChangesPerNodeMinute": 8.178125,
+          "linkChangesPerNodeMinute": 2.03359375,
           "afterLoss": {
-            "mean": 103.98791060051983,
-            "half": 0.011358013992715245
+            "mean": 103.99224648476054,
+            "half": 0.008408896192806659
           },
           "afterLossVersusSpatial": {
-            "mean": 1.000052906665807,
-            "half": 0.00020589484973872844
+            "mean": 1.0000946006293439,
+            "half": 0.0001826137849933083
           },
           "afterLossSettleS": 0
         },
         "adaptive-spatial": {
           "throughput": {
-            "mean": 103.995149491181,
-            "half": 0.005106201692526801
+            "mean": 103.99737328321446,
+            "half": 0.002419835214095888
           },
           "versusSpatial": {
-            "mean": 1.0000107295262022,
-            "half": 0.0000631062403019038
+            "mean": 1.000032113616964,
+            "half": 0.000048218529940872426
           },
           "settleS": 0,
-          "linkChangesPerNodeMinute": 8.1140625,
+          "linkChangesPerNodeMinute": 1.9734375,
           "afterLoss": {
-            "mean": 103.99625265895277,
-            "half": 0.0038289676362345754
+            "mean": 103.99854791942008,
+            "half": 0.002846077822577229
           },
           "afterLossVersusSpatial": {
-            "mean": 1.0001331150895876,
-            "half": 0.00013076317463592773
+            "mean": 1.000155191356026,
+            "half": 0.00013717557816921388
           },
           "afterLossSettleS": 0
         }
@@ -505,14 +505,14 @@
           "settleS": 0,
           "linkChangesPerNodeMinute": 0,
           "afterLoss": {
-            "mean": 27.172178136911647,
-            "half": 14.851354941866386
+            "mean": 20.159427110887606,
+            "half": 9.741622027094733
           },
           "afterLossVersusSpatial": {
-            "mean": 0.8156346803510577,
-            "half": 0.1425134517438737
+            "mean": 0.7455460011787274,
+            "half": 0.2029784350278027
           },
-          "afterLossSettleS": 18.8
+          "afterLossSettleS": 0
         },
         "greedy": {
           "throughput": {
@@ -537,45 +537,45 @@
         },
         "adaptive": {
           "throughput": {
-            "mean": 42.76401853235191,
-            "half": 25.76276173627558
+            "mean": 39.44739897268895,
+            "half": 21.8546857036595
           },
           "versusSpatial": {
-            "mean": 1.2033592030455382,
-            "half": 0.24059835811906188
+            "mean": 1.148578679227701,
+            "half": 0.17006371832997044
           },
-          "settleS": 76.7,
-          "linkChangesPerNodeMinute": 8.196875,
+          "settleS": 56.1,
+          "linkChangesPerNodeMinute": 2.27578125,
           "afterLoss": {
-            "mean": 45.6495829545256,
-            "half": 29.87116559969481
+            "mean": 43.36746135531005,
+            "half": 26.31200835718774
           },
           "afterLossVersusSpatial": {
-            "mean": 1.1050752584789378,
-            "half": 0.16877728907352949
+            "mean": 1.0777592311203166,
+            "half": 0.11239549165620033
           },
-          "afterLossSettleS": 6.4
+          "afterLossSettleS": 13.5
         },
         "adaptive-spatial": {
           "throughput": {
-            "mean": 45.637367181947326,
-            "half": 29.60124010782846
+            "mean": 44.84219323129507,
+            "half": 28.709448357978037
           },
           "versusSpatial": {
-            "mean": 1.2514353787808132,
-            "half": 0.314099963665828
+            "mean": 1.237969642937053,
+            "half": 0.29854790661056
           },
-          "settleS": 23.9,
-          "linkChangesPerNodeMinute": 8.2453125,
+          "settleS": 45.8,
+          "linkChangesPerNodeMinute": 2.23671875,
           "afterLoss": {
-            "mean": 44.20708275639689,
-            "half": 27.486248360474473
+            "mean": 44.762578591243084,
+            "half": 28.33849987297087
           },
           "afterLossVersusSpatial": {
-            "mean": 1.0879321091100627,
-            "half": 0.1306529001900672
+            "mean": 1.0945604693907813,
+            "half": 0.1441282037499899
           },
-          "afterLossSettleS": 1.4
+          "afterLossSettleS": 0
         }
       }
     },
@@ -620,14 +620,14 @@
           "settleS": 0.6,
           "linkChangesPerNodeMinute": 0,
           "afterLoss": {
-            "mean": 35.12578680171558,
-            "half": 9.667121154789214
+            "mean": 30.915675667549532,
+            "half": 7.036970187676284
           },
           "afterLossVersusSpatial": {
-            "mean": 1.1553288429286952,
-            "half": 0.2000346353020499
+            "mean": 1.0715377277853118,
+            "half": 0.23451202487365364
           },
-          "afterLossSettleS": 2.6
+          "afterLossSettleS": 0
         },
         "greedy": {
           "throughput": {
@@ -652,45 +652,45 @@
         },
         "adaptive": {
           "throughput": {
-            "mean": 41.56904796941284,
-            "half": 17.060820454549173
+            "mean": 41.194531319969364,
+            "half": 16.442281552552682
           },
           "versusSpatial": {
-            "mean": 1.322610190294808,
-            "half": 0.21284111040588116
+            "mean": 1.3162720238414418,
+            "half": 0.20741408313876125
           },
-          "settleS": 16,
-          "linkChangesPerNodeMinute": 8.1421875,
+          "settleS": 18.9,
+          "linkChangesPerNodeMinute": 2.1734375,
           "afterLoss": {
-            "mean": 41.34043919439395,
-            "half": 16.670264182201652
+            "mean": 40.57237305586872,
+            "half": 15.37870861420088
           },
           "afterLossVersusSpatial": {
-            "mean": 1.2582241182579326,
-            "half": 0.16781685907752658
+            "mean": 1.2474891710827638,
+            "half": 0.16230998489908127
           },
-          "afterLossSettleS": 1.2
+          "afterLossSettleS": 0.1
         },
         "adaptive-spatial": {
           "throughput": {
-            "mean": 41.34990253100132,
-            "half": 16.68917141862555
+            "mean": 38.560319476107686,
+            "half": 12.242247291675517
           },
           "versusSpatial": {
-            "mean": 1.3189944755107696,
-            "half": 0.2094703808264596
+            "mean": 1.272292615964718,
+            "half": 0.1833766470539497
           },
-          "settleS": 21.5,
-          "linkChangesPerNodeMinute": 8.0578125,
+          "settleS": 7.7,
+          "linkChangesPerNodeMinute": 2.01484375,
           "afterLoss": {
-            "mean": 41.56080640701177,
-            "half": 17.05316886378824
+            "mean": 38.826342266041834,
+            "half": 12.614826937209697
           },
           "afterLossVersusSpatial": {
-            "mean": 1.261236579165424,
-            "half": 0.16986929866201145
+            "mean": 1.2231584194275076,
+            "half": 0.15962021689016143
           },
-          "afterLossSettleS": 0.1
+          "afterLossSettleS": 7.8
         }
       }
     },
@@ -735,14 +735,14 @@
           "settleS": 0,
           "linkChangesPerNodeMinute": 0,
           "afterLoss": {
-            "mean": 15.794973134990595,
-            "half": 6.083749787295857
+            "mean": 12.398918387744397,
+            "half": 4.599623148602939
           },
           "afterLossVersusSpatial": {
-            "mean": 0.9861956863776878,
-            "half": 0.11830858872830262
+            "mean": 0.8632732610985876,
+            "half": 0.20617139154942107
           },
-          "afterLossSettleS": 21.5
+          "afterLossSettleS": 0.3
         },
         "greedy": {
           "throughput": {
@@ -767,45 +767,45 @@
         },
         "adaptive": {
           "throughput": {
-            "mean": 17.3573570105653,
-            "half": 6.7423446146434305
+            "mean": 17.35804098238371,
+            "half": 6.743342567181276
           },
           "versusSpatial": {
-            "mean": 0.9999304162742668,
-            "half": 0.00014656519144846386
+            "mean": 0.9999378389723412,
+            "half": 0.00008940666562974585
           },
-          "settleS": 31,
-          "linkChangesPerNodeMinute": 8.21640625,
+          "settleS": 20.5,
+          "linkChangesPerNodeMinute": 2.22265625,
           "afterLoss": {
-            "mean": 17.35522628655079,
-            "half": 6.741661868031024
+            "mean": 17.32408901748414,
+            "half": 6.757835781954
           },
           "afterLossVersusSpatial": {
-            "mean": 1.0595970716178236,
-            "half": 0.08225852660613571
+            "mean": 1.0506689780871634,
+            "half": 0.08582575316080418
           },
-          "afterLossSettleS": 0
+          "afterLossSettleS": 10.8
         },
         "adaptive-spatial": {
           "throughput": {
-            "mean": 17.359271950559094,
-            "half": 6.743814844316633
+            "mean": 17.358304969063546,
+            "half": 6.7429251398608745
           },
           "versusSpatial": {
-            "mean": 0.9999921755542214,
-            "half": 0.000048921880614020406
+            "mean": 0.9999771385640273,
+            "half": 0.00008020343691384751
           },
           "settleS": 0,
-          "linkChangesPerNodeMinute": 8.246875,
+          "linkChangesPerNodeMinute": 2.14609375,
           "afterLoss": {
-            "mean": 17.359255363066843,
-            "half": 6.744082016401942
+            "mean": 17.35880997392875,
+            "half": 6.743661534493963
           },
           "afterLossVersusSpatial": {
-            "mean": 1.0597576442990986,
-            "half": 0.08250265143333502
+            "mean": 1.059754372470955,
+            "half": 0.08245682926967611
           },
-          "afterLossSettleS": 0
+          "afterLossSettleS": 0.3
         }
       }
     },
@@ -850,12 +850,12 @@
           "settleS": 0,
           "linkChangesPerNodeMinute": 0,
           "afterLoss": {
-            "mean": 23.999695219530178,
-            "half": 0.0003426680583757754
+            "mean": 23.999298042963268,
+            "half": 0.0008177700815688923
           },
           "afterLossVersusSpatial": {
-            "mean": 1.0000817425914803,
-            "half": 0.00007771952635375773
+            "mean": 1.000065192964723,
+            "half": 0.00008841522728702186
           },
           "afterLossSettleS": 0
         },
@@ -882,43 +882,43 @@
         },
         "adaptive": {
           "throughput": {
-            "mean": 23.999902704846733,
-            "half": 0.0001906985289175714
+            "mean": 23.99894744909887,
+            "half": 0.0011652855120527098
           },
           "versusSpatial": {
-            "mean": 1.0000018087892424,
-            "half": 0.000006122030798693333
+            "mean": 0.9999620059691562,
+            "half": 0.000045897161881499157
           },
           "settleS": 0,
-          "linkChangesPerNodeMinute": 8.33046875,
+          "linkChangesPerNodeMinute": 1.925,
           "afterLoss": {
-            "mean": 23.998731608494005,
-            "half": 0.000658567712208368
+            "mean": 23.999220603035607,
+            "half": 0.0006876668912216439
           },
           "afterLossVersusSpatial": {
-            "mean": 1.0000415852973537,
-            "half": 0.00006317712536234527
+            "mean": 1.0000619664742023,
+            "half": 0.00008879786425780673
           },
           "afterLossSettleS": 0
         },
         "adaptive-spatial": {
           "throughput": {
-            "mean": 23.99946855754967,
-            "half": 0.0006201817837504686
+            "mean": 23.999312398244076,
+            "half": 0.0006090879426300775
           },
           "versusSpatial": {
-            "mean": 0.9999837192916152,
-            "half": 0.000026639367987943306
+            "mean": 0.999977212576973,
+            "half": 0.000025551802117574665
           },
           "settleS": 0,
-          "linkChangesPerNodeMinute": 8.22890625,
+          "linkChangesPerNodeMinute": 1.92265625,
           "afterLoss": {
-            "mean": 23.99865505163236,
-            "half": 0.000914267825708872
+            "mean": 23.998241074201534,
+            "half": 0.002836897050915136
           },
           "afterLossVersusSpatial": {
-            "mean": 1.0000384024396414,
-            "half": 0.00010456260542105006
+            "mean": 1.0000211548689377,
+            "half": 0.0001616057285775772
           },
           "afterLossSettleS": 0
         }
@@ -965,14 +965,14 @@
           "settleS": 0,
           "linkChangesPerNodeMinute": 0,
           "afterLoss": {
-            "mean": 141.20071964531581,
-            "half": 40.52257506035275
+            "mean": 106.54653733849281,
+            "half": 34.170818589736484
           },
           "afterLossVersusSpatial": {
-            "mean": 0.8081488525736482,
-            "half": 0.20035931753595515
+            "mean": 0.5930760848793447,
+            "half": 0.14613573839924163
           },
-          "afterLossSettleS": 29.1
+          "afterLossSettleS": 0.2
         },
         "greedy": {
           "throughput": {
@@ -997,45 +997,45 @@
         },
         "adaptive": {
           "throughput": {
-            "mean": 308.3502534528544,
-            "half": 31.282869033662067
+            "mean": 296.42652876584265,
+            "half": 27.766667175367783
           },
           "versusSpatial": {
-            "mean": 1.6871368964684461,
-            "half": 0.19407577016151054
+            "mean": 1.6281152568583337,
+            "half": 0.20161174625376688
           },
-          "settleS": 116.3,
-          "linkChangesPerNodeMinute": 7.9890625,
+          "settleS": 112.9,
+          "linkChangesPerNodeMinute": 2.24375,
           "afterLoss": {
-            "mean": 231.99924749546398,
-            "half": 20.930336806298673
+            "mean": 231.72855022286421,
+            "half": 20.7950044298594
           },
           "afterLossVersusSpatial": {
-            "mean": 1.3795261841678343,
-            "half": 0.2679539081872965
+            "mean": 1.3781954191614865,
+            "half": 0.2680866961206974
           },
-          "afterLossSettleS": 1.4
+          "afterLossSettleS": 0.2
         },
         "adaptive-spatial": {
           "throughput": {
-            "mean": 308.07727293446396,
-            "half": 31.053139505334464
+            "mean": 307.55958774323096,
+            "half": 31.13632923739955
           },
           "versusSpatial": {
-            "mean": 1.6857531003442765,
-            "half": 0.19345377185789286
+            "mean": 1.682821746430512,
+            "half": 0.19341920626281306
           },
-          "settleS": 17.3,
-          "linkChangesPerNodeMinute": 7.859375,
+          "settleS": 60.7,
+          "linkChangesPerNodeMinute": 2.04453125,
           "afterLoss": {
-            "mean": 232.0770140879706,
-            "half": 20.878237138174818
+            "mean": 232.0205991774181,
+            "half": 20.844883001528284
           },
           "afterLossVersusSpatial": {
-            "mean": 1.379932323593988,
-            "half": 0.2677483475777914
+            "mean": 1.3795861732447832,
+            "half": 0.2676029562164078
           },
-          "afterLossSettleS": 0.4
+          "afterLossSettleS": 8
         }
       }
     },
@@ -1080,14 +1080,14 @@
           "settleS": 0,
           "linkChangesPerNodeMinute": 0,
           "afterLoss": {
-            "mean": 212.159677315713,
-            "half": 17.77964723353227
+            "mean": 169.62386178183613,
+            "half": 20.100145412978335
           },
           "afterLossVersusSpatial": {
-            "mean": 1.8925406001262175,
-            "half": 0.7362420614440671
+            "mean": 1.5777621358504903,
+            "half": 0.6601339114478468
           },
-          "afterLossSettleS": 35.1
+          "afterLossSettleS": 0
         },
         "greedy": {
           "throughput": {
@@ -1112,45 +1112,45 @@
         },
         "adaptive": {
           "throughput": {
-            "mean": 324.9741825423249,
-            "half": 37.91903874440237
+            "mean": 323.96655464200035,
+            "half": 36.11069201342054
           },
           "versusSpatial": {
-            "mean": 2.1085082811983566,
-            "half": 0.5424711542348751
+            "mean": 2.100305357377329,
+            "half": 0.5309352915573975
           },
-          "settleS": 51.3,
-          "linkChangesPerNodeMinute": 7.878125,
+          "settleS": 27.1,
+          "linkChangesPerNodeMinute": 2.10703125,
           "afterLoss": {
-            "mean": 240.26077037650697,
-            "half": 25.248216967293622
+            "mean": 238.89720252833098,
+            "half": 23.835906927971077
           },
           "afterLossVersusSpatial": {
-            "mean": 2.1371306287067933,
-            "half": 0.8540040464004385
+            "mean": 2.131206720872506,
+            "half": 0.856014454090301
           },
           "afterLossSettleS": 0
         },
         "adaptive-spatial": {
           "throughput": {
-            "mean": 325.0482894585078,
-            "half": 37.92998094537736
+            "mean": 312.76698126756486,
+            "half": 34.97298042573926
           },
           "versusSpatial": {
-            "mean": 2.109192041576855,
-            "half": 0.5430098416950845
+            "mean": 2.018989389763672,
+            "half": 0.5005476500230184
           },
-          "settleS": 51,
-          "linkChangesPerNodeMinute": 7.93203125,
+          "settleS": 95.3,
+          "linkChangesPerNodeMinute": 2.22890625,
           "afterLoss": {
-            "mean": 240.21102113147086,
-            "half": 25.210152027850754
+            "mean": 237.05504424400806,
+            "half": 24.66744017151673
           },
           "afterLossVersusSpatial": {
-            "mean": 2.136721183190734,
-            "half": 0.8539355719947523
+            "mean": 2.119190649397576,
+            "half": 0.860756315713936
           },
-          "afterLossSettleS": 0
+          "afterLossSettleS": 12.4
         }
       }
     },
@@ -1195,14 +1195,14 @@
           "settleS": 0,
           "linkChangesPerNodeMinute": 0,
           "afterLoss": {
-            "mean": 128.91793899809105,
-            "half": 18.364036107577377
+            "mean": 94.08317372500065,
+            "half": 21.568907143410033
           },
           "afterLossVersusSpatial": {
-            "mean": 1.558588811465206,
-            "half": 0.4298526723793912
+            "mean": 1.182037676651221,
+            "half": 0.47241673940760376
           },
-          "afterLossSettleS": 3.9
+          "afterLossSettleS": 1.8
         },
         "greedy": {
           "throughput": {
@@ -1227,45 +1227,45 @@
         },
         "adaptive": {
           "throughput": {
-            "mean": 186.9906931565203,
-            "half": 6.129271344080609
+            "mean": 186.83948332056934,
+            "half": 6.345372426126686
           },
           "versusSpatial": {
-            "mean": 1.5716177850819917,
-            "half": 0.2863569787402343
+            "mean": 1.5698556451625163,
+            "half": 0.2853998967671808
           },
-          "settleS": 32.6,
-          "linkChangesPerNodeMinute": 7.91015625,
+          "settleS": 29,
+          "linkChangesPerNodeMinute": 2.2640625,
           "afterLoss": {
-            "mean": 139.85861936619193,
-            "half": 11.438037942519387
+            "mean": 139.92105099717799,
+            "half": 11.492822236034403
           },
           "afterLossVersusSpatial": {
-            "mean": 1.7036295476417014,
-            "half": 0.46636333058452206
+            "mean": 1.7047000277157256,
+            "half": 0.4675674460628003
           },
-          "afterLossSettleS": 0
+          "afterLossSettleS": 0.2
         },
         "adaptive-spatial": {
           "throughput": {
-            "mean": 186.97083596272105,
-            "half": 6.149130926877074
+            "mean": 186.94494564503327,
+            "half": 6.1222713309417705
           },
           "versusSpatial": {
-            "mean": 1.5715053108799437,
-            "half": 0.28644395032435765
+            "mean": 1.5713420762659323,
+            "half": 0.2865531386217438
           },
           "settleS": 6.4,
-          "linkChangesPerNodeMinute": 7.9609375,
+          "linkChangesPerNodeMinute": 2.3859375,
           "afterLoss": {
-            "mean": 139.61531900355686,
-            "half": 11.465462838091431
+            "mean": 139.3773945423701,
+            "half": 11.51129322964085
           },
           "afterLossVersusSpatial": {
-            "mean": 1.6985663596404976,
-            "half": 0.46041166238416975
+            "mean": 1.6930757860132268,
+            "half": 0.45359328244947117
           },
-          "afterLossSettleS": 0.1
+          "afterLossSettleS": 0
         }
       }
     },
@@ -1310,12 +1310,12 @@
           "settleS": 0,
           "linkChangesPerNodeMinute": 0,
           "afterLoss": {
-            "mean": 191.90183871234498,
-            "half": 0.05339097123519391
+            "mean": 191.95804955080146,
+            "half": 0.036358705918608604
           },
           "afterLossVersusSpatial": {
-            "mean": 1.0077079739423762,
-            "half": 0.015859576056799735
+            "mean": 1.008001459798312,
+            "half": 0.015814161595680977
           },
           "afterLossSettleS": 0
         },
@@ -1342,43 +1342,43 @@
         },
         "adaptive": {
           "throughput": {
-            "mean": 255.87859565329683,
-            "half": 0.1387980127476456
+            "mean": 255.90595708588722,
+            "half": 0.07693422476811634
           },
           "versusSpatial": {
-            "mean": 1.0006898439708989,
-            "half": 0.0023160980902849205
+            "mean": 1.0007961854889542,
+            "half": 0.0021423904264232544
           },
           "settleS": 0,
-          "linkChangesPerNodeMinute": 7.684375,
+          "linkChangesPerNodeMinute": 1.88125,
           "afterLoss": {
-            "mean": 191.9384282698931,
-            "half": 0.07567828222474071
+            "mean": 191.9221797545332,
+            "half": 0.10508848104756752
           },
           "afterLossVersusSpatial": {
-            "mean": 1.0078927532295006,
-            "half": 0.015651422785404996
+            "mean": 1.0078151384468825,
+            "half": 0.015878218756862954
           },
           "afterLossSettleS": 0
         },
         "adaptive-spatial": {
           "throughput": {
-            "mean": 255.79465649352605,
-            "half": 0.16021962205791654
+            "mean": 255.87389917052877,
+            "half": 0.13460434971887802
           },
           "versusSpatial": {
-            "mean": 1.0003591062360457,
-            "half": 0.0018261654234585506
+            "mean": 1.0006694466062787,
+            "half": 0.0018969930130329552
           },
           "settleS": 0,
-          "linkChangesPerNodeMinute": 7.54609375,
+          "linkChangesPerNodeMinute": 1.9171875,
           "afterLoss": {
-            "mean": 191.9346486103987,
-            "half": 0.09435654590429876
+            "mean": 191.9530084358552,
+            "half": 0.07242959014792558
           },
           "afterLossVersusSpatial": {
-            "mean": 1.007866548556318,
-            "half": 0.015467269769195711
+            "mean": 1.0079759003540645,
+            "half": 0.01584352473161366
           },
           "afterLossSettleS": 0
         }
@@ -1425,14 +1425,14 @@
           "settleS": 0,
           "linkChangesPerNodeMinute": 0,
           "afterLoss": {
-            "mean": 41.67287560136088,
-            "half": 11.738920244350323
+            "mean": 27.414411848568186,
+            "half": 9.800318659509761
           },
           "afterLossVersusSpatial": {
-            "mean": 0.6019232016487355,
-            "half": 0.15292162945684815
+            "mean": 0.40025545462633333,
+            "half": 0.12449150534351476
           },
-          "afterLossSettleS": 13
+          "afterLossSettleS": 0.1
         },
         "greedy": {
           "throughput": {
@@ -1457,45 +1457,45 @@
         },
         "adaptive": {
           "throughput": {
-            "mean": 130.50102299070733,
-            "half": 10.327199824122417
+            "mean": 100.7093635093809,
+            "half": 19.39684030222045
           },
           "versusSpatial": {
-            "mean": 2.0218726584839355,
-            "half": 0.3188321625473515
+            "mean": 1.5390805920613664,
+            "half": 0.28758218264231805
           },
-          "settleS": 249.7,
-          "linkChangesPerNodeMinute": 8.0546875,
+          "settleS": 237.6,
+          "linkChangesPerNodeMinute": 2.58359375,
           "afterLoss": {
-            "mean": 123.58916249543304,
-            "half": 13.289234482795845
+            "mean": 92.86468537947067,
+            "half": 17.342131409966985
           },
           "afterLossVersusSpatial": {
-            "mean": 1.7981214011063802,
-            "half": 0.19271758615523543
+            "mean": 1.3247868826162654,
+            "half": 0.17928720063346365
           },
-          "afterLossSettleS": 33.1
+          "afterLossSettleS": 52.1
         },
         "adaptive-spatial": {
           "throughput": {
-            "mean": 133.55578832932795,
-            "half": 10.115430247790155
+            "mean": 120.08604417904186,
+            "half": 17.032724104838692
           },
           "versusSpatial": {
-            "mean": 2.0444526023896437,
-            "half": 0.2423629682815727
+            "mean": 1.8478540864449227,
+            "half": 0.3658522006998622
           },
-          "settleS": 160.2,
-          "linkChangesPerNodeMinute": 8.034375,
+          "settleS": 136.2,
+          "linkChangesPerNodeMinute": 2.56171875,
           "afterLoss": {
-            "mean": 118.32283213391472,
-            "half": 12.334600303640604
+            "mean": 102.40035527991863,
+            "half": 18.796538077084122
           },
           "afterLossVersusSpatial": {
-            "mean": 1.7286363783728962,
-            "half": 0.19554055549230798
+            "mean": 1.4440633007173356,
+            "half": 0.1743645292496043
           },
-          "afterLossSettleS": 21.4
+          "afterLossSettleS": 41.5
         }
       }
     },
@@ -1540,14 +1540,14 @@
           "settleS": 0,
           "linkChangesPerNodeMinute": 0,
           "afterLoss": {
-            "mean": 58.31737678375593,
-            "half": 12.28592158006208
+            "mean": 41.2366006570998,
+            "half": 5.51503182402532
           },
           "afterLossVersusSpatial": {
-            "mean": 1.7783681538315335,
-            "half": 0.866377596218882
+            "mean": 1.2196027752044363,
+            "half": 0.46214354520885204
           },
-          "afterLossSettleS": 16.4
+          "afterLossSettleS": 0
         },
         "greedy": {
           "throughput": {
@@ -1572,45 +1572,45 @@
         },
         "adaptive": {
           "throughput": {
-            "mean": 158.2243182561723,
-            "half": 12.43745583734786
+            "mean": 128.6234718579019,
+            "half": 19.717403823675138
           },
           "versusSpatial": {
-            "mean": 4.328753353558631,
-            "half": 1.0564233641809282
+            "mean": 3.352183038043821,
+            "half": 0.673680398741338
           },
-          "settleS": 177.8,
-          "linkChangesPerNodeMinute": 7.83359375,
+          "settleS": 196.6,
+          "linkChangesPerNodeMinute": 2.35234375,
           "afterLoss": {
-            "mean": 151.24355529459774,
-            "half": 13.564567659982195
+            "mean": 125.23643108035567,
+            "half": 16.540464889196254
           },
           "afterLossVersusSpatial": {
-            "mean": 4.535427500630943,
-            "half": 1.6990818314315705
+            "mean": 3.617707520718098,
+            "half": 1.2738263386422455
           },
-          "afterLossSettleS": 14.5
+          "afterLossSettleS": 38.2
         },
         "adaptive-spatial": {
           "throughput": {
-            "mean": 153.2859175288412,
-            "half": 12.900412633207349
+            "mean": 138.0344556986545,
+            "half": 22.01713480881197
           },
           "versusSpatial": {
-            "mean": 4.140203437182917,
-            "half": 0.9132506628143282
+            "mean": 3.691274741235837,
+            "half": 0.9369782753398072
           },
-          "settleS": 209.7,
-          "linkChangesPerNodeMinute": 8.00703125,
+          "settleS": 174.4,
+          "linkChangesPerNodeMinute": 2.47265625,
           "afterLoss": {
-            "mean": 156.66893279594817,
-            "half": 12.10308636643426
+            "mean": 126.80256296633436,
+            "half": 20.374218180031246
           },
           "afterLossVersusSpatial": {
-            "mean": 4.764343163980664,
-            "half": 1.8491716257221582
+            "mean": 3.9383649935487135,
+            "half": 1.6536543699966022
           },
-          "afterLossSettleS": 37.9
+          "afterLossSettleS": 44.6
         }
       }
     },
@@ -1655,14 +1655,14 @@
           "settleS": 0,
           "linkChangesPerNodeMinute": 0,
           "afterLoss": {
-            "mean": 33.11011514365691,
-            "half": 6.864289219701422
+            "mean": 23.71272906271779,
+            "half": 6.261134581541281
           },
           "afterLossVersusSpatial": {
-            "mean": 0.993553722880326,
-            "half": 0.24023786547177134
+            "mean": 0.7383776942623412,
+            "half": 0.27684187869499305
           },
-          "afterLossSettleS": 22.3
+          "afterLossSettleS": 6
         },
         "greedy": {
           "throughput": {
@@ -1687,45 +1687,45 @@
         },
         "adaptive": {
           "throughput": {
-            "mean": 119.8834735295399,
-            "half": 12.35705424513733
+            "mean": 89.55130884702253,
+            "half": 9.265770141407256
           },
           "versusSpatial": {
-            "mean": 2.8149161307751043,
-            "half": 0.49633024138795107
+            "mean": 2.100003279787747,
+            "half": 0.35601569617214324
           },
-          "settleS": 163.6,
-          "linkChangesPerNodeMinute": 7.58125,
+          "settleS": 174,
+          "linkChangesPerNodeMinute": 2.1453125,
           "afterLoss": {
-            "mean": 95.74466493139417,
-            "half": 8.426453370875237
+            "mean": 71.85675508732297,
+            "half": 9.038146529792682
           },
           "afterLossVersusSpatial": {
-            "mean": 2.9742494078403348,
-            "half": 0.7769022119341019
+            "mean": 2.1290113262045613,
+            "half": 0.38133441236657517
           },
-          "afterLossSettleS": 17.9
+          "afterLossSettleS": 52.3
         },
         "adaptive-spatial": {
           "throughput": {
-            "mean": 124.79555020717484,
-            "half": 10.180075671203806
+            "mean": 100.40274891036654,
+            "half": 11.869147627987337
           },
           "versusSpatial": {
-            "mean": 2.9585364667199543,
-            "half": 0.5615980827383847
+            "mean": 2.340943324747859,
+            "half": 0.3820642469570146
           },
-          "settleS": 222.6,
-          "linkChangesPerNodeMinute": 7.5890625,
+          "settleS": 116.3,
+          "linkChangesPerNodeMinute": 2.01875,
           "afterLoss": {
-            "mean": 94.56709059011682,
-            "half": 7.899060997999024
+            "mean": 81.18891793058009,
+            "half": 8.355375036694415
           },
           "afterLossVersusSpatial": {
-            "mean": 2.893665012681123,
-            "half": 0.6645465288107358
+            "mean": 2.4368751486093467,
+            "half": 0.44208098810510005
           },
-          "afterLossSettleS": 29.9
+          "afterLossSettleS": 17.8
         }
       }
     },
@@ -1770,14 +1770,14 @@
           "settleS": 0,
           "linkChangesPerNodeMinute": 0,
           "afterLoss": {
-            "mean": 77.21307857553438,
-            "half": 0.45119058615614627
+            "mean": 75.4394904490754,
+            "half": 1.0254828284032032
           },
           "afterLossVersusSpatial": {
-            "mean": 0.9312818397510124,
-            "half": 0.05491248459220763
+            "mean": 0.9086886060716741,
+            "half": 0.044151836518687294
           },
-          "afterLossSettleS": 3.1
+          "afterLossSettleS": 0
         },
         "greedy": {
           "throughput": {
@@ -1802,45 +1802,45 @@
         },
         "adaptive": {
           "throughput": {
-            "mean": 85.52660659746704,
-            "half": 0.5234824037492035
+            "mean": 79.22494086949247,
+            "half": 0.6235161501906326
           },
           "versusSpatial": {
-            "mean": 1.0430067682090922,
-            "half": 0.05016702799602521
+            "mean": 0.9663461048718963,
+            "half": 0.048241109005529054
           },
           "settleS": 0,
-          "linkChangesPerNodeMinute": 7.825,
+          "linkChangesPerNodeMinute": 1.92109375,
           "afterLoss": {
-            "mean": 85.01319175061153,
-            "half": 0.6896212359612985
+            "mean": 79.36425612281462,
+            "half": 0.6723078906378231
           },
           "afterLossVersusSpatial": {
-            "mean": 1.0249691183818024,
-            "half": 0.05750410200996941
+            "mean": 0.9569579820695994,
+            "half": 0.054361488361796356
           },
-          "afterLossSettleS": 1
+          "afterLossSettleS": 0.4
         },
         "adaptive-spatial": {
           "throughput": {
-            "mean": 85.32228438325559,
-            "half": 0.5289322162182669
+            "mean": 79.59422338140648,
+            "half": 0.5513899157404611
           },
           "versusSpatial": {
-            "mean": 1.0406405896371433,
-            "half": 0.051019603287590226
+            "mean": 0.9702608668739078,
+            "half": 0.04290237685098156
           },
-          "settleS": 0.4,
-          "linkChangesPerNodeMinute": 7.7453125,
+          "settleS": 0,
+          "linkChangesPerNodeMinute": 1.978125,
           "afterLoss": {
-            "mean": 85.67895297126356,
-            "half": 0.4540551242891768
+            "mean": 79.41648221233562,
+            "half": 0.8264613240037181
           },
           "afterLossVersusSpatial": {
-            "mean": 1.033629226781089,
-            "half": 0.062322343117481124
+            "mean": 0.9582558927313045,
+            "half": 0.05987743947897018
           },
-          "afterLossSettleS": 0.7
+          "afterLossSettleS": 0.5
         }
       }
     }

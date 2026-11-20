@@ -5856,3 +5856,7 @@ The gallery browser test observes the original CubeChat PNG reaching the 2D comp
 `node peercompute/experiments/conjecture/run.mjs` and `controls.mjs` produce the comparison data in `peercompute/experiments/conjecture/results/`. These are measurements of a model, not pass/fail gates.
 
 Core unit baseline: `node --test --test-concurrency=2 tests/unit/*.test.js` inside `peercompute/` gives 1316 of 1317 when run without other load. The remaining failure is the staged ULG Eshkol artifact test, which reads a file in the sibling ULG repository. `agentRecordStoreBrowser.test.js` can fail under heavy CPU load and passes alone. The chaos-lab Python tests need pytest, which is not installed on this host.
+
+### Conjecture rule rewiring (November 19)
+
+`throughputTopologyPolicy.test.js` now has 7 cases (12 with the simulation file). New cases: a newcomer is kept only when the node's total moved work grows by the threshold, however busy the new link is; a node's own failed trials double its wait, a kept trial halves it, and links opened by peers leave it alone; repairs prefer peers short of links and wait longer after each attempt. The sweeps were rerun with the revised rule; `results/` holds the current data.

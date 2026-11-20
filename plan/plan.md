@@ -1,7 +1,7 @@
 Instructions: This file contains high level goals for the project and a roadmap.
 
 
-November 19 conjecture experiment: the core conjecture now has a first test. A pure local rule (`ThroughputTopologyPolicy.js`) keeps the links that carried the most measured work and probes one new peer at a time. In a deterministic simulation it delivers 1.07–3.13 times the throughput of the current spatial neighbour selection where topology matters and matches or beats a centralized greedy planner. This is model evidence only; the live runtime does not use the rule yet, and the rule rewires too often. See [the branch plan](branch/conjecture-experiment.md) and [the experiment README](../peercompute/experiments/conjecture/README.md).
+November 19 conjecture experiment: the core conjecture now has a first test. A pure local rule (`ThroughputTopologyPolicy.js`) keeps the links that carried the most measured work and probes one new peer at a time. In a deterministic simulation it delivers 1.07–2.99 times the throughput of the current spatial neighbour selection where topology matters and matches or beats a centralized greedy planner, changing about 2 links per node per minute once settled. This is model evidence only; the live runtime does not use the rule yet. See [the branch plan](branch/conjecture-experiment.md) and [the experiment README](../peercompute/experiments/conjecture/README.md).
 
 The launcher reads each guide in an ExoWebTUI Markdown window. The selected theme applies to the document, its fitted diagrams, and an enlarged diagram viewer with mouse, keyboard and touch controls. The HTML guides remain available from the directory.
 
