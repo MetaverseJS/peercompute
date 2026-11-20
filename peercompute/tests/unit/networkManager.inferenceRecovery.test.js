@@ -260,6 +260,14 @@ test('routine close paths preserve active application streams but not idle, comp
       .map(protocol => ({ protocol, status: 'open' })));
     f.manager._closeConnectionsToPeer(PEER); assert.equal(active.closes, 1);
   }
+  // The real floodsub service exposes a single `protocol`; its always-open
+  // stream must not pin a connection either.
+  f.manager.libp2p.services = { pubsub: { protocol: '/floodsub/1.0.0' } };
+  f.connections.length = 0;
+  const flood = connection('application', `/webrtc/p2p/${PEER}`, { openedAt: f.now() - 30000 });
+  flood.streams.push({ protocol: '/floodsub/1.0.0', status: 'open' }, { protocol: '/floodsub/1.0.0', status: 'open' });
+  f.connections.push(flood);
+  f.manager._closeConnectionsToPeer(PEER); assert.equal(flood.closes, 1);
 });
 
 test('bootstrap retirement preserves an active circuit stream and closes its gossip-only transport afterward', async (t) => {

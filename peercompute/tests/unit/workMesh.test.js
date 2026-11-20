@@ -99,6 +99,17 @@ test('work held by a peer that disappears is offered again and the job still com
   assert.ok(net.nodes.get('a').counters.reissued > 0);
 });
 
+test('the origin never re-offers a task that is still waiting in its own queue', async () => {
+  // Alone, at two tasks per second, later tasks wait far longer than the timeout.
+  const net = network({ speeds: { a: 2 }, links: [], config: { taskTimeoutMs: 500 } });
+  let values = null;
+  net.nodes.get('a').submitJob({ jobId: 'j', tasks: payloads(30) }).then((out) => { values = out; });
+  net.run(20000);
+  await Promise.resolve();
+  assert.equal(values.length, 30);
+  assert.deepEqual([net.nodes.get('a').counters.reissued, net.nodes.get('a').counters.duplicates, net.nodes.get('a').counters.executed], [0, 0, 30]);
+});
+
 test('two jobs from different origins share the mesh and results reach the right origin', async () => {
   const net = network({ speeds: { a: 4, b: 4, c: 4 }, links: [['a', 'b'], ['b', 'c']] });
   let fromA = null, fromC = null;

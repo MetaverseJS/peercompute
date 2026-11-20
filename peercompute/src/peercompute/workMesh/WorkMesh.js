@@ -60,6 +60,7 @@ export class WorkMesh {
     this.counters = { executed: 0, forwarded: 0, forwardedOutward: 0, returned: 0, reissued: 0, duplicates: 0 };
     this.rate = 0; // tasks per second this node runs or passes on, smoothed
     this.rateSample = null; // { at, drained }
+    this.now = 0;
     this.destroyed = false;
   }
 
@@ -91,7 +92,10 @@ export class WorkMesh {
   linkDown(peerId) {
     const link = this.links.get(peerId);
     if (!link) return;
-    if (link.work) this.queue.push(...link.work);
+    if (link.work) {
+      for (const task of link.work) this.jobs.get(task.jobId)?.issued.delete(task.taskId);
+      this.queue.push(...link.work);
+    }
     if (link.results) this.results.push(...link.results);
     this.links.delete(peerId);
   }
@@ -144,6 +148,7 @@ export class WorkMesh {
   /** Advance the node: call a few times per second with a millisecond clock. */
   tick(now) {
     if (this.destroyed) return;
+    this.now = now;
     this._measure(now);
     this._refill(now);
     this._updateHops(now);
@@ -193,6 +198,9 @@ export class WorkMesh {
         if (batch.length) {
           this.queue = rest;
           batch.outward = outward;
+          // The origin's clock for a task starts when the task leaves it; a
+          // task still queued here is not missing.
+          for (const task of batch) this.jobs.get(task.jobId)?.issued.set(task.taskId, this.now);
           link.work = batch;
           link.queued += batch.length;
           this.send(peerId, { schema: WORK_MESH_SCHEMA, type: 'work', tasks: [...batch] });
@@ -255,7 +263,6 @@ export class WorkMesh {
       while (this.queue.length < head && (job.retry.length || job.next < job.payloads.length)) {
         const taskId = job.retry.length ? job.retry.shift() : job.next++;
         if (job.finished[taskId]) continue;
-        job.issued.set(taskId, now);
         this.queue.push({ jobId, taskId, origin: this.nodeId, payload: job.payloads[taskId] });
       }
     }

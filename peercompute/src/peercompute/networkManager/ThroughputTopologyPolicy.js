@@ -7,7 +7,8 @@
  *
  *   1. Below `targetConnections`, connect to a candidate (repair), preferring
  *      peers that are themselves short of links. A peer that is already full
- *      tends to drop the newcomer again, so repeated repairs wait longer.
+ *      tends to drop the newcomer again, so repeated repairs wait longer, up to
+ *      `maxRepairIntervalMs`.
  *   2. Otherwise keep one spare slot (up to `maxConnections`) for a trial link
  *      to a candidate.
  *   3. When every link is at least `trialMs` old and there are more than
@@ -33,6 +34,7 @@ export const THROUGHPUT_TOPOLOGY_DEFAULTS = Object.freeze({
   trialMs: 6000,
   exploreIntervalMs: 3000,
   maxExploreIntervalMs: 300000,
+  maxRepairIntervalMs: 15000, // a node short of links must keep trying: real connection attempts often fail
   retryCooldownMs: 20000,
   referralShare: 0.5,
   replaceMargin: 0.1,
@@ -133,7 +135,7 @@ export function decideThroughputTopology({ now, links = [], candidates = [], ref
     if (connect && exploring) { state.lastExploreAt = now; state.trialPeerId = connect; }
     if (connect && repairing) {
       state.lastRepairAt = now;
-      state.repairDelayMs = Math.min(options.maxExploreIntervalMs, Math.max(base, 2 * state.repairDelayMs));
+      state.repairDelayMs = Math.min(options.maxRepairIntervalMs, Math.max(base, 2 * state.repairDelayMs));
     }
   }
   return { connect, drop };

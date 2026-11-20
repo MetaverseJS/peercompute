@@ -822,6 +822,7 @@ export class NetworkManager {
     // Work exchanged with each peer, and this node's memory for the
     // throughput-driven ('throughput') topology rule.
     this.peerWork = new Map();
+    this.topologyLinkReleasers = new Set();
     this.throughputTopologyState = createThroughputTopologyState();
     this.topologyController = this.config.enableTopologyController
       ? new TopologyController({
@@ -3638,6 +3639,11 @@ export class NetworkManager {
 
   _closeConnectionsToPeer(peerId) {
     if (!this.libp2p?.getConnections || !peerId) return;
+    // A service that keeps a stream open on every link (WorkMeshService) lets
+    // go of this one first; a connection with open streams is never retired.
+    for (const release of this.topologyLinkReleasers) {
+      try { release(peerId); } catch { /* a service's cleanup must not block the topology */ }
+    }
     const connections = this._getConnectionsForPeer(peerId);
     connections.forEach((conn) => this._retireIdleConnection(conn, 'topology'));
   }
@@ -3648,7 +3654,8 @@ export class NetworkManager {
     // an otherwise idle topology neighbor; arbitrary application streams must.
     const services = this.libp2p?.services ?? {};
     const maintenance = new Set([services.identify?.protocol, services.identifyPush?.protocol, services.ping?.protocol,
-      ...(services.pubsub?.protocols ?? []), ...(services.pubsub?.multicodecs ?? [])].filter(Boolean));
+      // floodsub (the default) names its one protocol `protocol`; gossipsub lists several.
+      services.pubsub?.protocol, ...(services.pubsub?.protocols ?? []), ...(services.pubsub?.multicodecs ?? [])].filter(Boolean));
     return (connection.streams ?? []).some(stream => typeof stream.protocol === 'string' && stream.protocol.length > 0
       && !['closed', 'aborted', 'reset'].includes(stream.status) && !maintenance.has(stream.protocol));
   }
