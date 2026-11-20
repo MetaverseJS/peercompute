@@ -55,7 +55,7 @@ process.on('SIGTERM', () => cleanup().finally(() => process.exit(143)));
 try {
   publicDir = await mkdtemp(path.join(os.tmpdir(), 'conjecture-relay-'));
   start('relay', 'node', ['peercompute/src/relay/server.js'], { RELAY_LISTEN_HOST: '127.0.0.1', RELAY_PUBLIC_HOST: '127.0.0.1',
-    RELAY_PUBLIC_PROTOCOL: 'ws', RELAY_LISTEN_PORT: '0', RELAY_CONFIG_DIRS: publicDir, RELAY_PUBSUB_TYPE: 'gossipsub' });
+    RELAY_PUBLIC_PROTOCOL: 'ws', RELAY_LISTEN_PORT: '0', RELAY_CONFIG_DIRS: publicDir, RELAY_PUBSUB_TYPE: args['relay-pubsub'] ?? 'floodsub' });
   const relayConfig = path.join(publicDir, 'relay-config.json');
   await until(() => existsSync(relayConfig) && JSON.parse(readFileSync(relayConfig, 'utf8')).bootstrapPeers?.length > 0, 'the relay');
   start('vite', 'npx', ['vite', '--config', path.join(here, 'browser/vite.config.js')],
