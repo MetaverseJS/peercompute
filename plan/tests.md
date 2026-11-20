@@ -5826,3 +5826,7 @@ desktop layout and zero browser/cleanup errors. No local inference loaded.
   public asset hashes/MIME/lengths and 23 browser routes, including actual
   SecretWorkshop connections. A separate mobile CubeChat check passed on
   traced retry and recorded a peer inference discovery timeout in the panel.
+
+### Launcher preview fidelity and ordering (November 19)
+
+The gallery browser test observes the original CubeChat PNG reaching the 2D compositor at thumbnail resolution, checks launch/menu order against the directory, and checks fast and slow scrolling by catalog index. The release test checks the exact order of all 17 tiles.

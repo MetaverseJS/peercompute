@@ -116,7 +116,10 @@ async function mountDesktop(viewport, atlas) {
     guides.set(guide.id, guide);
     guideRoutes.set(url.origin + url.pathname, guide);
   }
-  const media = createGuideMedia(root, presenter, guides);
+  const catalog = createCatalogWindow({ entries, openDemo, openSearch,
+    openSettings: () => desktop.openWindow('settings'),
+    openHtml: () => location.assign(plainUrl) });
+  const media = createGuideMedia(root, presenter, new Map([...guides, [catalog.id, catalog]]));
   const frames = createFrameWindows({ entries, root, presenter, focusDesktop, guideLayers: media.layers,
     focusWindow: focusDesktopWindow, closeWindow: closeDesktopWindow,
     openAtlas });
@@ -136,9 +139,6 @@ async function mountDesktop(viewport, atlas) {
     input.focus();
     input.select();
   }
-  const catalog = createCatalogWindow({ entries, openDemo, openSearch,
-    openSettings: () => desktop.openWindow('settings'),
-    openHtml: () => location.assign(plainUrl) });
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const menuLinks = entries.map(entry => ({ id: entry.id, title: entry.title,
     summary: entry.description, href: entry.href }));

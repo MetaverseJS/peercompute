@@ -32,37 +32,13 @@ function wrap(text, width) {
   return lines;
 }
 
-// Downsample the real gallery preview to half-block glyphs. The palette and
-// every character around it still pass through the native theme and shaders.
-function previewCells(image, width, height, background) {
-  const sourceWidth = image.naturalWidth || image.width;
-  const sourceHeight = image.naturalHeight || image.height;
-  if (!sourceWidth || !sourceHeight) return [];
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height * 2;
-  const context = canvas.getContext('2d', { willReadFrequently: true });
-  if (!context) return [];
-  context.fillStyle = 'rgb(' + background.join(',') + ')';
-  context.fillRect(0, 0, width, canvas.height);
-  const scale = Math.min(width / sourceWidth, canvas.height / sourceHeight);
-  const w = sourceWidth * scale, h = sourceHeight * scale;
-  context.drawImage(image, (width - w) / 2, (canvas.height - h) / 2, w, h);
-  const pixels = context.getImageData(0, 0, width, canvas.height).data;
-  const colorAt = i => [pixels[i], pixels[i + 1], pixels[i + 2]];
-  return Array.from({ length: height }, (_, row) => Array.from({ length: width }, (_, col) => {
-    const i = (row * 2 * width + col) * 4;
-    return { char: '▀', foreground: colorAt(i), background: colorAt(i + width * 4) };
-  }));
-}
-
 export function createCatalogWindow({ entries, openDemo, openSearch, openSettings, openHtml }) {
   const categories = ['All', ...new Set(entries.map(entry => entry.category))];
   const images = new Map();
   let category = categories[0], search = '', filtered = entries;
   let selected = 0, offset = 0, visibleRows = 1, rowHeight = 1;
   let revision = 0, rendered = {}, hits = [];
-  let preview = {};
+  let media = [];
   let previewOffset = 0, previewLimit = 0, previewBounds;
   let scrollingPreview = false;
 
@@ -121,6 +97,7 @@ export function createCatalogWindow({ entries, openDemo, openSearch, openSetting
     const blank = { char: ' ', background: theme.surface };
     const frame = Array.from({ length: height }, () => Array(width).fill(blank));
     hits = [];
+    media = [];
     function write(x, y, text, color = theme.text, bg = theme.surface) {
       if (y < 0 || y >= height) return;
       for (const char of text) {
@@ -255,13 +232,9 @@ export function createCatalogWindow({ entries, openDemo, openSearch, openSetting
       const start = previewTop - previewOffset;
       const inView = row => row >= previewTop && row <= lastBodyRow;
       if (image) {
-        if (preview.image !== image || preview.width !== available || preview.height !== artHeight || preview.theme !== theme) {
-          preview = { image, width: available, height: artHeight, theme,
-            cells: previewCells(image, available, artHeight, theme.surface) };
-        }
-        preview.cells.forEach((line, r) => {
-          const row = start + r;
-          if (inView(row)) line.forEach((cell, c) => { frame[row][x + c] = cell; });
+        media.push({ key: entry.id, image,
+          rect: { column: x, row: start, width: available, height: artHeight },
+          clip: { column: x, row: previewTop, width: available, height: viewport },
         });
       }
       summary.forEach((line, i) => {
@@ -294,6 +267,7 @@ export function createCatalogWindow({ entries, openDemo, openSearch, openSetting
     id: 'demo-atlas', title: 'PeerCompute', summary: 'Browse and launch PeerCompute demos.',
     window: { width: 148, height: 51, minWidth: 25, minHeight: 12,
       widthRatio: .84, heightRatio: .88, fullscreenBelow: 1280 },
+    mediaTargets: () => media,
     getSearch: () => search,
     setSearch(value) { search = value; changeFilter(); },
     render(width, height, _now, theme) {

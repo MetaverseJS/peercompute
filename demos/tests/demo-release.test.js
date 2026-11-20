@@ -132,20 +132,20 @@ test('docs overview keeps expected tile order', () => {
     'Local Model Console',
     'CubeChat',
     'Universes',
-    'Multiscale Ladder',
     'PlanetGen',
-    'WXGlobe',
-    'EarthGrid',
-    'RoadVector',
     'NetViz',
-    'Fano Reactor',
-    'Schrodinger',
     'SneakyWoods',
     'Daddy Go!',
     'Dynamics (WebGpuPhys)',
     'MPM Visual (WebGpuPhys)',
     'PPF Contact Solver (WebGpuPhys)',
-    'Hyperborea'
+    'Hyperborea',
+    'Multiscale Ladder',
+    'WXGlobe',
+    'EarthGrid',
+    'RoadVector',
+    'Fano Reactor',
+    'Schrodinger'
   ];
   assert.deepEqual(names, expected, 'docs overview tile order mismatch');
 });

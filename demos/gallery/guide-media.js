@@ -22,7 +22,7 @@ function themedImage(svg, theme) {
   return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg.replace(/(<svg\b[^>]*\bstyle=")([^"]*)"/, '$1$2;' + style + '"'));
 }
 
-export function createGuideMedia(root, presenter, guides) {
+export function createGuideMedia(root, presenter, mediaWindows) {
   const flat = document.createElement('canvas');
   flat.className = 'pc-guide-media';
   flat.setAttribute('aria-hidden', 'true');
@@ -35,7 +35,7 @@ export function createGuideMedia(root, presenter, guides) {
   function project(windows, theme, covers, animating) {
     layers = [];
     if (theme !== palette) { images.clear(); palette = theme; previousFlat = ''; }
-    if (animating || !windows.some(win => guides.has(win.id))) {
+    if (animating || !windows.some(win => mediaWindows.has(win.id))) {
       flat.hidden = true;
       previousFlat = '';
       return;
@@ -45,22 +45,33 @@ export function createGuideMedia(root, presenter, guides) {
     const occluders = [...windows.map(win => win.rect), ...covers].map(rect => normalize(rect, origin, size));
     const screen = { left: 0, top: 0, width: 1, height: 1 };
     for (const [index, win] of windows.entries()) {
-      const targets = guides.get(win.id)?.mediaTargets?.() || [];
+      const targets = mediaWindows.get(win.id)?.mediaTargets?.() || [];
       for (const target of targets) {
         const box = normalize(target.rect, win.clientRect, size);
+        if (target.image) {
+          const { width, height } = presenter.host.element;
+          const w = target.image.naturalWidth || target.image.width;
+          const h = target.image.naturalHeight || target.image.height;
+          const scale = Math.min(box.width * width / w, box.height * height / h);
+          const fittedWidth = w * scale / width, fittedHeight = h * scale / height;
+          box.left += (box.width - fittedWidth) / 2;
+          box.top += (box.height - fittedHeight) / 2;
+          box.width = fittedWidth;
+          box.height = fittedHeight;
+        }
         const clip = intersect(intersect(box, normalize(target.clip, win.clientRect, size)), screen);
         if (clip.width <= 0 || clip.height <= 0) continue;
         let parts = [clip];
         for (const cover of occluders.slice(index + 1)) parts = parts.flatMap(p => subtract(p, cover));
         if (!parts.length) continue;
         const key = win.id + '/' + target.key;
-        let image = images.get(key);
+        let image = target.image || images.get(key);
         if (!image) {
           image = new Image();
           image.src = target.svg ? themedImage(target.svg, theme) : target.href;
           images.set(key, image);
         }
-        if (image.complete && image.naturalWidth) layers.push({ key, canvas: image, parts, box });
+        if (target.image || (image.complete && image.naturalWidth)) layers.push({ key, canvas: image, parts, box });
       }
     }
     const showFlat = layers.length > 0 && !presenter.shader.isPresenting();

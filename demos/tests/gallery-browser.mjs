@@ -134,6 +134,8 @@ test('PeerCompute previews a selection, opens its guide or live demo, and preser
           window.fanoDraw = { left: x / this.canvas.width, width: width / this.canvas.width,
             height: height / this.canvas.height };
         }
+        if (source instanceof HTMLImageElement && source.src.endsWith('/assets/cubechat.png') &&
+            args.length === 4 && args[2] > 60 && args[3] > 40) window.drewCubeThumbnail = true;
         return result;
       };
     });
@@ -161,6 +163,7 @@ test('PeerCompute previews a selection, opens its guide or live demo, and preser
     assert.ok(summaries.every(text => text.split(/\s+/).length >= 30));
     await clickCells(page, 'CubeChat', touch);
     await waitForCells(page, '› CubeChat');
+    if (!touch) await page.waitForFunction(() => window.drewCubeThumbnail);
     const actionPoint = await cellPoint(page, '[ Open demo ↗ ]');
     const summaryPoint = await cellPoint(page, 'Walk up to');
     assert.ok(actionPoint[1] < summaryPoint[1], 'Open demo should be above the README overview');
@@ -340,7 +343,8 @@ test('the gallery starts with fast scrolling and random window effects and resto
   const page = await browser.newPage({ ignoreHTTPSErrors: true, reducedMotion: 'reduce',
     viewport: { width: 390, height: 700 } });
 
-  async function wheelOnce(expectedFirst) {
+  async function wheelOnce(expectedIndex) {
+    const expectedFirst = await page.locator('[data-demo-dir] h2').nth(expectedIndex).textContent();
     const point = await cellPoint(page, '› Local Model Console');
     await page.mouse.move(...point);
     await page.mouse.wheel(0, 120);
@@ -353,7 +357,7 @@ test('the gallery starts with fast scrolling and random window effects and resto
     }, expectedFirst);
   }
   await page.goto(baseUrl);
-  await wheelOnce('PlanetGen');
+  await wheelOnce(4);
   const transitions = ['open', 'close', 'minimize', 'maximize', 'restore', 'raise', 'lower'];
   const kinds = Object.fromEntries(transitions.map(kind => [kind, 'random']));
   assert.deepEqual(await page.evaluate(() => __desktop.animationSettings()), { speed: 'normal', kinds });
@@ -376,6 +380,6 @@ test('the gallery starts with fast scrolling and random window effects and resto
   const savedOpen = await page.evaluate(() => __desktop.animationSettings().kinds.open);
   assert.notEqual(savedOpen, 'random');
   await page.reload();
-  await wheelOnce('CubeChat');
+  await wheelOnce(1);
   assert.deepEqual(await page.evaluate(() => __desktop.animationSettings().kinds), { ...kinds, open: savedOpen });
 });

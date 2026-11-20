@@ -24,3 +24,5 @@ November 19 resize update: keep snapped edges, corners and tiled splits anchored
 November 19 guides and wallpaper update. Keep Open demo above the README overview and expose the full illustrated guide from each of the 17 previews. Build diagram SVGs locally so the HTML directory and guides also work without scripts. Measure changing wallpaper frames entering the CRT at the native desktop resolution before and after optimizing Butterchurn.
 
 November 19 native guides. Follow the tech-stack site’s ExoWebTUI document rendering approach. Give each guide the active palette, fit diagrams to the resized window, and support opening a chart for zoom and pan on desktop and touch. Keep the static guide and ordinary demo iframe routes working.
+
+November 19 release. Display original preview media through the desktop compositor. Keep the first eleven demos in their relative order, followed by Multiscale Ladder, WXGlobe, EarthGrid, RoadVector, Fano Reactor and Schrodinger. Integrate the gallery into its parent inference branch and publish the complete demo site from main:/docs.

@@ -2692,3 +2692,7 @@ updates without changing stored XYZ/yaw.232regressions, actual peer resize/shrin
 control3/3, six retained mesh renders and three internal preview startup/network
 checks pass. Existing irregular bases are not flattened. Internal previews updated;
 Pages unchanged. Carry/acquire/place remains the next manipulation milestone.
+
+### November 19 gallery release
+
+Use original images for the directory preview in both shader and flat presentation. Build the desktop and HTML directory in catalog order, with the requested six demos at the end. Verify the complete Pages build from an isolated checkout before publishing.

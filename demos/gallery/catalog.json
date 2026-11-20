@@ -23,14 +23,6 @@
     "image": "universes.png"
   },
   {
-    "dir": "multiscale",
-    "title": "Multiscale Ladder",
-    "port": 5185,
-    "category": "Earth & space",
-    "description": "Travel from supergalactic structures to orbital clouds in a WebGPU simulation.",
-    "image": "multiscale.svg"
-  },
-  {
     "dir": "planetgen",
     "title": "PlanetGen",
     "port": 5177,
@@ -39,52 +31,12 @@
     "image": "planetgen.png"
   },
   {
-    "dir": "wxglobe",
-    "title": "WXGlobe",
-    "port": 5186,
-    "category": "Earth & space",
-    "description": "Explore Earth’s elevation and ocean depths through global topographic contours.",
-    "image": "wxglobe.png"
-  },
-  {
-    "dir": "earth",
-    "title": "EarthGrid",
-    "port": 5187,
-    "category": "Earth & space",
-    "description": "Explore NOAA terrain, weather, roads, and buildings in a shared world.",
-    "image": "earth.png"
-  },
-  {
-    "dir": "motorcycle",
-    "title": "RoadVector",
-    "port": 5188,
-    "category": "Worlds & games",
-    "description": "Ride a particle-based motorcycle along real roads with simulated traffic.",
-    "image": "motorcycle.png"
-  },
-  {
     "dir": "netviz",
     "title": "NetViz",
     "port": 5182,
     "category": "AI & network",
     "description": "Inspect live peer connections and watch the network topology change.",
     "image": "netviz-screenshot.gif"
-  },
-  {
-    "dir": "fano-reactor",
-    "title": "Fano Reactor",
-    "port": 5183,
-    "category": "Simulation",
-    "description": "Explore sedenion bonds, target a Fano map, and probe cascades.",
-    "image": "fano-reactor.svg"
-  },
-  {
-    "dir": "schrodinger",
-    "title": "Schrodinger",
-    "port": 5184,
-    "category": "Simulation",
-    "description": "Explore atoms, orbitals, and the properties of water and other materials.",
-    "image": "schrodinger.svg"
   },
   {
     "dir": "sneakywoods",
@@ -139,5 +91,53 @@
     "category": "Worlds & games",
     "description": "Enter a WebXR-ready multiplayer scene backed by a shared GPU hub.",
     "image": "hyperborea.png"
+  },
+  {
+    "dir": "multiscale",
+    "title": "Multiscale Ladder",
+    "port": 5185,
+    "category": "Earth & space",
+    "description": "Travel from supergalactic structures to orbital clouds in a WebGPU simulation.",
+    "image": "multiscale.svg"
+  },
+  {
+    "dir": "wxglobe",
+    "title": "WXGlobe",
+    "port": 5186,
+    "category": "Earth & space",
+    "description": "Explore Earth’s elevation and ocean depths through global topographic contours.",
+    "image": "wxglobe.png"
+  },
+  {
+    "dir": "earth",
+    "title": "EarthGrid",
+    "port": 5187,
+    "category": "Earth & space",
+    "description": "Explore NOAA terrain, weather, roads, and buildings in a shared world.",
+    "image": "earth.png"
+  },
+  {
+    "dir": "motorcycle",
+    "title": "RoadVector",
+    "port": 5188,
+    "category": "Worlds & games",
+    "description": "Ride a particle-based motorcycle along real roads with simulated traffic.",
+    "image": "motorcycle.png"
+  },
+  {
+    "dir": "fano-reactor",
+    "title": "Fano Reactor",
+    "port": 5183,
+    "category": "Simulation",
+    "description": "Explore sedenion bonds, target a Fano map, and probe cascades.",
+    "image": "fano-reactor.svg"
+  },
+  {
+    "dir": "schrodinger",
+    "title": "Schrodinger",
+    "port": 5184,
+    "category": "Simulation",
+    "description": "Explore atoms, orbitals, and the properties of water and other materials.",
+    "image": "schrodinger.svg"
   }
 ]
