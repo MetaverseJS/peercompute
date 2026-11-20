@@ -38,7 +38,7 @@ await manager.initialize();
 await manager.connect();
 
 // Diagnostics for the runner's --debug output.
-const trace = { retireOk: 0, retireProtected: 0, retireStreams: 0, retireClosed: 0, opened: 0, closed: 0, requests: 0, accepts: 0, blocking: {}, retired: {}, closedKinds: {}, meshDrops: {} };
+const trace = { retireOk: 0, retireProtected: 0, retireStreams: 0, retireClosed: 0, opened: 0, closed: 0, requests: 0, accepts: 0, blocking: {}, retired: {}, closedKinds: {}, meshDrops: {}, openedKinds: {}, dials: {} };
 const retire = manager._retireIdleConnection.bind(manager);
 manager._retireIdleConnection = (connection, reason) => {
   const ok = retire(connection, reason);
@@ -61,7 +61,16 @@ manager._retireIdleConnection = (connection, reason) => {
   }
   return ok;
 };
-manager.libp2p.addEventListener('connection:open', () => { trace.opened += 1; });
+manager.libp2p.addEventListener('connection:open', (event) => {
+  trace.opened += 1;
+  const conn = event.detail;
+  const address = String(conn?.remoteAddr ?? '');
+  const kind = address.includes('/webrtc') ? 'webrtc' : address.includes('/p2p-circuit') ? 'circuit' : 'other';
+  const peerId = conn?.remotePeer?.toString?.();
+  const wanted = manager.bootstrapPeerIds.has(peerId) ? 'relay' : manager.topologyController?.desiredPeers?.has(peerId) ? 'wanted' : 'unwanted';
+  const key = `${kind} ${conn?.direction} ${wanted}`;
+  trace.openedKinds[key] = (trace.openedKinds[key] || 0) + 1;
+});
 manager.libp2p.addEventListener('connection:close', (event) => {
   trace.closed += 1;
   const address = String(event.detail?.remoteAddr ?? '');
@@ -71,6 +80,7 @@ manager.libp2p.addEventListener('connection:close', (event) => {
 const dialAfterAccept = {};
 const maybeDial = manager._maybeDialPeer.bind(manager);
 manager._maybeDialPeer = (peerId, source, ...rest) => {
+  trace.dials[source] = (trace.dials[source] || 0) + 1;
   if (source === 'topology-accept') {
     const now = Date.now();
     const active = manager._getConnectionsForPeer(peerId);
@@ -184,6 +194,7 @@ window.__conjecture = {
     const snapshot = mesh.snapshot();
     return { index, peerId: manager.peerId, returned: snapshot.counters.returned, executed: snapshot.counters.executed,
       duplicates: snapshot.counters.duplicates, reissued: snapshot.counters.reissued, queued: snapshot.queued,
+      streamResets: snapshot.streamResets,
       links: snapshot.peers.map((peerId) => indexOf.get(peerId) ?? -1).sort((a, b) => a - b),
       connections: manager._getConnectionPeers().filter((peer) => !manager.bootstrapPeerIds.has(peer.peerId)).length };
   }

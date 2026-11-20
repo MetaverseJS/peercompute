@@ -122,6 +122,7 @@ try {
     linkSetChangesPerNodeMinute: (last.linkChanges - first.linkChanges) / options.nodes / ((last.t - first.t) / 60),
     linkedPeers: last.linked, meanLinks: final.reduce((sum, entry) => sum + entry.links.length, 0) / options.nodes,
     duplicates: final[scenario.source].duplicates, reissued: final[scenario.source].reissued,
+    streamResetsPerNodeMinute: final.reduce((sum, entry) => sum + (entry.streamResets || 0), 0) / options.nodes / (options.durationS / 60),
     executedBy: final.map((entry) => entry.executed), pageErrors: errors.slice(0, 5), samples
   };
   if (args.out) await writeFile(args.out, JSON.stringify(result, null, 2) + '\n');

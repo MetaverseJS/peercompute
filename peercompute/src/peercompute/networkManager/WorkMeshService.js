@@ -56,6 +56,7 @@ export class WorkMeshService {
     this.timer = null;
     this.closed = false;
     this.bytesSent = 0;
+    this.streamResets = 0;
     this.mesh = new WorkMesh({
       nodeId: manager.peerId, config, execute,
       send: (peerId, message) => this._send(peerId, message),
@@ -92,7 +93,7 @@ export class WorkMeshService {
     this.mesh.tick(now);
   }
 
-  snapshot() { return { ...this.mesh.snapshot(), bytesSent: this.bytesSent, peers: [...this.peers.keys()] }; }
+  snapshot() { return { ...this.mesh.snapshot(), bytesSent: this.bytesSent, streamResets: this.streamResets, peers: [...this.peers.keys()] }; }
 
   async stop() {
     if (this.closed) return;
@@ -142,6 +143,15 @@ export class WorkMeshService {
     for (const [channel, owner] of this.inbound) if (owner === peerId) channel.abort(new Error('Work mesh link released'));
   }
 
+  _reset(peerId, peer) {
+    peer.out?.abort(new Error('Work mesh stream failed'));
+    peer.out = null;
+    peer.outbox = [];
+    this.streamResets += 1;
+    this.mesh.linkDown(peerId);
+    this.mesh.linkUp(peerId);
+  }
+
   _drop(peerId) {
     const peer = this.peers.get(peerId);
     if (!peer) return;
@@ -173,10 +183,12 @@ export class WorkMeshService {
         this.bytesSent += await peer.out.write(message);
       }
     } catch {
-      // A frame may be lost. Drop the link so the mesh takes back whatever was
-      // unacknowledged; the next tick links the peer again.
+      // A frame may be lost, so the mesh takes back whatever was unacknowledged.
+      // The peer is usually still connected (the library closes duplicate
+      // connections, and streams with them), so keep the link and open a fresh
+      // stream on the next tick instead of tearing the link down.
       peer.writing = false;
-      if (this.peers.get(peerId) === peer) this._drop(peerId);
+      if (this.peers.get(peerId) === peer) this._reset(peerId, peer);
     } finally {
       peer.writing = false;
     }

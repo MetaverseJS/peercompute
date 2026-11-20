@@ -110,7 +110,7 @@ test('relayed connections are not links, and work lost with a connection is offe
   assert.ok(net.services.get('a').mesh.counters.reissued > 0);
 });
 
-test('queue reports are coalesced behind a payload and a failed write drops the link', async (t) => {
+test('queue reports are coalesced behind a payload and a failed write resets the stream, not the link', async (t) => {
   const net = cluster(['a', 'b'], [['a', 'b']]);
   t.after(() => Promise.all([...net.services.values()].map((service) => service.stop())));
   const a = net.services.get('a');
@@ -124,11 +124,17 @@ test('queue reports are coalesced behind a payload and a failed write drops the 
   assert.equal(peer.outbox[1].queued, 4);
   peer.writing = false;
   peer.out = { write: async () => { throw new Error('reset'); }, abort() {} };
+  a.mesh.links.get('b').work = [{ jobId: 'j', taskId: 7, origin: 'a', payload: 1 }]; // a batch in flight
   await a._flush('b', peer);
-  assert.equal(a.peers.has('b'), false);
-  assert.equal(a.mesh.links.has('b'), false);
+  // The peer is still connected: the link stays, the unacknowledged batch comes
+  // back to the queue, and a fresh stream opens on the next tick.
+  assert.equal(a.peers.has('b'), true);
+  assert.equal(a.mesh.links.get('b').work, null);
+  assert.deepEqual(a.mesh.queue.map((task) => task.taskId), [7]);
+  assert.equal(a.snapshot().streamResets, 1);
+  assert.equal(peer.out, null);
   a.tick(); await settle();
-  assert.equal(a.mesh.links.has('b'), true); // linked again on the next tick
+  assert.ok(peer.out);
   await a.stop(); await net.services.get('b').stop();
   assert.throws(() => new WorkMeshService(null, {}), TypeError);
 });
