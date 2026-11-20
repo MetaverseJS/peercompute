@@ -5830,3 +5830,7 @@ desktop layout and zero browser/cleanup errors. No local inference loaded.
 ### Launcher preview fidelity and ordering (November 19)
 
 The gallery browser test observes the original CubeChat PNG reaching the 2D compositor at thumbnail resolution, checks launch/menu order against the directory, and checks fast and slow scrolling by catalog index. The release test checks the exact order of all 17 tiles.
+
+### Launcher window fit (November 19)
+
+`demos/tests/gallery-browser.mjs` loads the directory at 1920×1080, narrows to 872×700, opens a demo and returns with Back. The directory rectangle must be identical before, during and after, and every window must lie inside the desktop body. A second pass opens a demo on the large screen and narrows to 1000×640: both windows must fit and the demo must stay in front. The frame-effects resize test also guards the stacking order after a refit.

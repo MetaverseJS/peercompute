@@ -383,3 +383,52 @@ test('the gallery starts with fast scrolling and random window effects and resto
   await wheelOnce(1);
   assert.deepEqual(await page.evaluate(() => __desktop.animationSettings().kinds), { ...kinds, open: savedOpen });
 });
+
+test('the directory keeps its shape when a demo opens and no window outgrows a smaller viewport', async t => {
+  const baseUrl = await galleryBaseUrl(t);
+  const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN || undefined });
+  t.after(() => browser.close());
+  const context = await browser.newContext({ viewport: { width: 1920, height: 1080 }, ignoreHTTPSErrors: true });
+  const page = await context.newPage();
+  const windows = () => page.evaluate(() => ({ size: __desktop.stats().size,
+    windows: __desktop.windows().map(({ id, rect, state, active }) => ({ id, rect, state, active })) }));
+  const settled = predicate => page.waitForFunction(predicate, null, { polling: 100 });
+  const assertInside = ({ size, windows }) => {
+    for (const { id, rect } of windows) {
+      assert.ok(rect.width <= size.columns && rect.height <= size.rows - 1, id + ' fits the desktop body');
+      assert.ok(rect.column >= 0 && rect.column + rect.width <= size.columns, id + ' stays inside horizontally');
+      assert.ok(rect.row >= 1 && rect.row + rect.height <= size.rows, id + ' stays inside vertically');
+    }
+  };
+  await page.goto(baseUrl);
+  await waitForCells(page, 'DEMO DIRECTORY');
+  // Size the directory for a large screen, then narrow below its fullscreen width.
+  const wide = (await windows()).windows[0];
+  assert.equal(wide.state, 'normal');
+  await page.setViewportSize({ width: 872, height: 700 });
+  await settled(() => __desktop.windows()[0].state === 'maximized' && __desktop.stats().size.columns < 110);
+  const before = (await windows()).windows[0];
+  assert.ok(wide.rect.width > before.rect.width);
+  await page.keyboard.press('Enter');
+  await settled(() => __desktop.windows().length === 2 && __desktop.windows()[1].active);
+  const open = await windows();
+  assert.deepEqual(open.windows[0].rect, before.rect);
+  assertInside(open);
+  await page.getByRole('button', { name: '← Back to PeerCompute' }).click();
+  await settled(() => __desktop.windows().find(w => w.id === 'demo-atlas')?.active);
+  assert.deepEqual((await windows()).windows.find(w => w.id === 'demo-atlas').rect, before.rect);
+
+  // Two floating windows sized for a large screen shrink with the viewport.
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.reload();
+  await waitForCells(page, 'DEMO DIRECTORY');
+  await page.keyboard.press('Enter');
+  await settled(() => __desktop.windows().length === 2 && __desktop.windows()[1].active);
+  await page.setViewportSize({ width: 1000, height: 640 });
+  await settled(() => __desktop.stats().size.columns < 125 &&
+    __desktop.windows().every(w => w.rect.width <= __desktop.stats().size.columns));
+  const narrowed = await windows();
+  assertInside(narrowed);
+  // Refitting leaves the demo in front of the directory.
+  assert.deepEqual(narrowed.windows.map(w => [w.id === 'demo-atlas', w.active]), [[true, false], [false, true]]);
+});

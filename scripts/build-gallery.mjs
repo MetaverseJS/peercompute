@@ -82,9 +82,49 @@ try {
     ['  if (chip && services.shader) {', '  if (chip && services.shader) {\n    covers.push(chip);'],
     ['  const frame = paintDesktop(now);', '  const covers: Rectangle[] = [];\n  const frame = paintDesktop(now, covers);'],
     ['    windowAnimations.status().length > 0,', '    windowAnimations.status().length > 0,\n    covers,'],
+    // A window the viewport made fullscreen keeps that shape when another
+    // window opens above it. Its hidden floating rectangle may have been sized
+    // for a larger screen.
+    [`    windowHost.execute({ kind: "restore", id: maximizedId }, bodyBounds(), projectionOptions());
+  }
+  const wasClosed`, `    windowHost.execute({ kind: "restore", id: maximizedId }, bodyBounds(), projectionOptions());
+    if (responsiveDefaults.get(maximizedId)) {
+      windowHost.execute({ kind: "set-placement", id: maximizedId, placement: "floating", rect: bodyBounds() },
+        bodyBounds(), projectionOptions());
+    }
+  }
+  const wasClosed`],
+    ['      return composeDesktopFrame(now);', '      fitFloatingWindows();\n      return composeDesktopFrame(now);'],
   ], 'desktop');
   await writeFile(desktop, projected + `
 export const desktopWindowStates = () => windowHost.controller.inspect().windows;
+// No floating window may be larger than the desktop body, whichever command
+// or viewport change revealed it. Position is left to the host's own recovery.
+function fitFloatingWindows(): void {
+  if (windowHost.inspect().interaction.active) return;
+  const body = bodyBounds();
+  const stack = windowHost.controller.inspect().windows;
+  let placed = false;
+  for (const window of stack) {
+    const rect = window.floatingRect;
+    if (!rect || window.placement !== "floating" || window.state !== "normal" || window.snapTarget) continue;
+    if (rect.width <= body.width && rect.height <= body.height) continue;
+    placed = true;
+    const width = Math.min(rect.width, body.width), height = Math.min(rect.height, body.height);
+    windowHost.execute({ kind: "set-placement", id: window.id, placement: "floating", rect: {
+      column: Math.max(body.column, Math.min(rect.column, body.column + body.width - width)),
+      row: Math.max(body.row, Math.min(rect.row, body.row + body.height - height)),
+      width, height,
+    } }, body, projectionOptions());
+  }
+  if (!placed) return;
+  // Placing a window raises it. Put the stack back in its original order.
+  for (const window of [...stack].sort((a, b) => a.focusOrder - b.focusOrder)) {
+    if (window.visible && window.state !== "minimized" && window.state !== "closed") {
+      windowHost.execute({ kind: "focus", id: window.id }, body, projectionOptions());
+    }
+  }
+}
 export const focusDesktopWindow = id => windowHost.execute({ kind: "focus", id }, bodyBounds(), projectionOptions());
 export const closeDesktopWindow = id => windowHost.execute({ kind: "close", id }, bodyBounds(), projectionOptions());
 `);

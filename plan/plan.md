@@ -2696,3 +2696,7 @@ Pages unchanged. Carry/acquire/place remains the next manipulation milestone.
 ### November 19 gallery release
 
 Use original images for the directory preview in both shader and flat presentation. Build the desktop and HTML directory in catalog order, with the requested six demos at the end. Verify the complete Pages build from an isolated checkout before publishing.
+
+### Launcher window fit (November 19)
+
+A window the viewport made fullscreen keeps the full desktop body when another window opens above it, instead of returning to a floating size chosen for a larger screen. No floating window may be larger than the desktop body after a viewport change; refitting keeps the stacking order. Both rules are pinned-source patches in scripts/build-gallery.mjs. Not yet released to Pages.
