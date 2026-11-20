@@ -186,6 +186,38 @@ test('a strong peer is fed through a fast two-link path rather than its slow dir
   assert.ok(nodes.get('relay').counters.forwarded > 1000);
 });
 
+test('results keep flowing on a stable network whose link timings drift', () => {
+  // Delivery time wanders by run, as real links do; nothing ever disconnects.
+  let now = 0, order = 0, wobble = 0;
+  const events = [];
+  const at = (time, fn) => events.push([time, order++, fn]);
+  const ids = ['a', 'b', 'c', 'd', 'e', 'f'];
+  const nodes = new Map(ids.map((id) => [id, new WorkMesh({
+    nodeId: id, clock: () => now,
+    send: (peerId, message) => {
+      wobble = (wobble * 1103515245 + 12345) % 2147483648;
+      const size = message.type === 'work' ? message.tasks.length : message.type === 'results' ? message.results.length : 0;
+      at(now + 2 + size * (1 + 6 * (wobble / 2147483648)), () => nodes.get(peerId).receive(id, structuredClone(message)));
+    },
+    execute: (task, done) => at(now + 250, () => done(task.payload))
+  })]));
+  for (const [x, y] of [['a', 'b'], ['a', 'c'], ['b', 'c'], ['b', 'd'], ['c', 'e'], ['d', 'e'], ['d', 'f'], ['e', 'f']]) { nodes.get(x).linkUp(y); nodes.get(y).linkUp(x); }
+  nodes.get('a').submitJob({ jobId: 'j', tasks: payloads(1000000) });
+  const returned = [];
+  for (let t = 0; t <= 600000; t += 100) at(t, () => { for (const node of nodes.values()) node.tick(now); if (now % 60000 === 0) returned.push(nodes.get('a').counters.returned); });
+  for (;;) {
+    events.sort((x, y) => (x[0] - y[0]) || (x[1] - y[1]));
+    if (!events.length || events[0][0] > 600000) break;
+    const [time, , fn] = events.shift(); now = time; fn();
+  }
+  // Six nodes at four tasks per second: 1,440 a minute. Every one of the last
+  // eight minutes must stay near that, with no node clogged with results.
+  for (let minute = 3; minute < returned.length; minute += 1) {
+    assert.ok(returned[minute] - returned[minute - 1] > 0.9 * 1440, `minute ${minute}: ${returned[minute] - returned[minute - 1]} results`);
+  }
+  for (const node of nodes.values()) assert.ok(node.results.length < node.config.resultBuffer, `${node.nodeId} holds ${node.results.length} results`);
+});
+
 test('bad input is rejected and foreign messages are ignored', () => {
   assert.throws(() => new WorkMesh({ nodeId: 'a' }), TypeError);
   const mesh = new WorkMesh({ nodeId: 'a', send() {}, execute() {} });

@@ -49,7 +49,7 @@ export function normalizeNetworkTelemetry(value) {
   return { peerId, ts: count(input.ts), application: text(input.application || input.gameId, 80),
     role: choice(input.role, ROLES, models.length ? 'models' : 'compute'),
     gameId: text(input.gameId), roomId: text(input.roomId), topologyId: text(input.topologyId),
-    topology: choice(input.topology, ['distributed', 'hierarchical', 'emergent', 'throughput'], 'distributed'),
+    topology: choice(input.topology, ['distributed', 'hierarchical', 'emergent', 'throughput', 'static'], 'distributed'),
     isConnected: input.isConnected === true, peerCount: count(input.peerCount),
     counts: countFields(input.counts, ['rx', 'tx', 'rxBytes', 'txBytes']),
     rates: countFields(input.rates, ['rxBps', 'txBps']), peers, models,

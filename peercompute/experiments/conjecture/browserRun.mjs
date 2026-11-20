@@ -4,6 +4,7 @@
 // WorkMeshService and topology code. Compute speed and link capacity are
 // emulated inside each page; everything else is real.
 //   node peercompute/experiments/conjecture/browserRun.mjs --topology throughput --scenario sites [--nodes 16] [--seed 1]
+//   --topology static --graph spatial|random|greedy pins every peer to a precomputed neighbour set
 //     [--regime balanced] [--source typical] [--duration 240] [--out file.json]
 import { spawn } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -13,7 +14,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { chromium } from 'playwright';
-import { makeScenario, throughputCeiling } from './model.js';
+import { createRng, makeScenario, throughputCeiling } from './model.js';
+import { spatialTopology, randomTopology, greedyTopology } from './topologies.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '../../..');
@@ -22,11 +24,11 @@ const args = Object.fromEntries(process.argv.slice(2).reduce((pairs, value, i, a
 const options = {
   topology: args.topology ?? 'throughput', scenario: args.scenario ?? 'sites', nodes: Number(args.nodes ?? 16),
   seed: Number(args.seed ?? 1), regime: args.regime ?? 'balanced', source: args.source ?? 'typical',
-  durationS: Number(args.duration ?? 240), port: Number(args.port ?? 5391), metric: args.metric ?? 'scenario'
+  durationS: Number(args.duration ?? 240), port: Number(args.port ?? 5391), metric: args.metric ?? 'scenario', graph: args.graph ?? null
 };
 const scenario = makeScenario({ name: options.scenario, seed: options.seed, nodes: options.nodes, regime: options.regime,
   provisionedSource: options.source === 'provisioned' });
-const run = `${options.topology}-${options.scenario}-${options.seed}-${Date.now().toString(36)}`;
+const run = `${options.topology}-${options.scenario}-${options.seed}-${options.port}-${Date.now().toString(36)}`;
 const log = (...parts) => { if (!args.quiet) console.error(...parts); };
 
 const children = [];
@@ -80,6 +82,15 @@ try {
     .catch((error) => { throw new Error(`peer ${index} did not start: ${error.message}\n${errors.join('\n')}`); })));
   const ids = await Promise.all(pages.map((page) => page.evaluate(() => [window.__conjecture.peerId, window.__conjecture.index])));
   await Promise.all(pages.map((page) => page.evaluate((entries) => window.__conjecture.setPeers(entries), ids)));
+  if (options.topology === 'static') {
+    // The same graphs the simulations use, held fixed for the whole run.
+    const alive = scenario.nodes.map(() => true);
+    const pairs = options.graph === 'random' ? randomTopology(scenario, alive, createRng(options.seed * 9973 + 1))
+      : options.graph === 'greedy' ? greedyTopology(scenario, alive) : spatialTopology(scenario, alive);
+    const neighbours = scenario.nodes.map(() => []);
+    for (const [i, j] of pairs) { neighbours[i].push(ids[j][0]); neighbours[j].push(ids[i][0]); }
+    await Promise.all(pages.map((page, index) => page.evaluate((list) => window.__conjecture.setStatic(list), neighbours[index])));
+  }
   log(`${options.nodes} peers started; waiting for links`);
   // Let the first direct links form before offering work.
   await until(async () => (await pages[scenario.source].evaluate(() => window.__conjecture.stats().links.length)) > 0,

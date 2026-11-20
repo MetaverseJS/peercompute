@@ -823,6 +823,7 @@ export class NetworkManager {
     // throughput-driven ('throughput') topology rule.
     this.peerWork = new Map();
     this.topologyLinkReleasers = new Set();
+    this.staticTopologyPeers = null;
     this.throughputTopologyState = createThroughputTopologyState();
     this.topologyController = this.config.enableTopologyController
       ? new TopologyController({
@@ -2842,6 +2843,13 @@ export class NetworkManager {
       }
       return true;
     }
+    // In these topologies the links are chosen explicitly (by the throughput
+    // rule or by assignment). Dialling anyone else only to prune them again
+    // keeps every link flapping.
+    if ((this.config.topology === 'throughput' || this.config.topology === 'static') && this.topologyController
+        && !this.topologyController.desiredPeers.has(peerId)) {
+      return false;
+    }
     if (hasRelayOnly && this.config.webrtc?.preferDirect !== false) {
       return true;
     }
@@ -3330,6 +3338,10 @@ export class NetworkManager {
       this._tickThroughputTopology(now, peers, connections);
       return;
     }
+    if (this.config.topology === 'static') {
+      this._tickStaticTopology(connections);
+      return;
+    }
     const desiredPeers = this.topologyController.computeDesiredPeers({
       peers,
       connections,
@@ -3338,6 +3350,24 @@ export class NetworkManager {
     this._pruneExcessTopologyConnections(desiredPeers, peers, connections);
     this._maybeSwapTopologyConnections(desiredPeers, peers, connections);
     this._ensureTopologyConnections(desiredPeers);
+  }
+
+  /**
+   * Fix this node's links to exactly these peers (topology 'static'). Meant for
+   * experiments and tests that need a topology that does not move.
+   */
+  setStaticTopologyPeers(peerIds = []) {
+    this.staticTopologyPeers = new Set((Array.isArray(peerIds) ? peerIds : []).filter(Boolean));
+    if (this.topologyController) this.topologyController.desiredPeers = new Set(this.staticTopologyPeers);
+  }
+
+  _tickStaticTopology(connections) {
+    const wanted = this.staticTopologyPeers;
+    if (!wanted) return; // not assigned yet: leave everything alone
+    for (const peer of Array.isArray(connections) ? connections : []) {
+      if (peer?.peerId && !wanted.has(peer.peerId) && !this.bootstrapPeerIds.has(peer.peerId)) this._closeConnectionsToPeer(peer.peerId);
+    }
+    this._ensureTopologyConnections(wanted);
   }
 
   /**
@@ -3639,12 +3669,17 @@ export class NetworkManager {
 
   _closeConnectionsToPeer(peerId) {
     if (!this.libp2p?.getConnections || !peerId) return;
-    // A service that keeps a stream open on every link (WorkMeshService) lets
-    // go of this one first; a connection with open streams is never retired.
-    for (const release of this.topologyLinkReleasers) {
-      try { release(peerId); } catch { /* a service's cleanup must not block the topology */ }
-    }
     const connections = this._getConnectionsForPeer(peerId);
+    // A service that keeps a stream open on every link (WorkMeshService) lets
+    // go of this one first, since a connection with open streams is never
+    // retired. Ask only when a connection can actually close: a protected one
+    // stays open, and releasing its link would cut the service off for nothing.
+    if (this.topologyLinkReleasers.size > 0 && connections.some((conn) => isConnectionOpen(conn)
+        && this._getPeerConnectionRecovery().protectionMs(conn) <= 0)) {
+      for (const release of this.topologyLinkReleasers) {
+        try { release(peerId); } catch { /* a service's cleanup must not block the topology */ }
+      }
+    }
     connections.forEach((conn) => this._retireIdleConnection(conn, 'topology'));
   }
 
@@ -3703,6 +3738,11 @@ export class NetworkManager {
         this.pendingTopologyAccepts.delete(peerId);
       });
     };
+    if (this.config.topology === 'static') {
+      // Links are assigned: accept exactly the peers on the list.
+      if (this.staticTopologyPeers?.has(peerId)) acceptConnection();
+      return;
+    }
     if (!this._hasAvailableLogicalPeerSlot(peerId, now)) {
       // The throughput rule never evicts by distance: a full node refuses and refers.
       if (this.topologyController && this.config.topology !== 'throughput') {

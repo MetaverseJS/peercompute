@@ -67,7 +67,8 @@ export class WorkMesh {
     this.links = new Map(); // peerId -> { queued, rate, cost, distances: Map, work: batch|null, results: batch|null }
     this.jobs = new Map(); // jobs this node originated
     this.origins = new Map(); // jobId -> origin nodeId, for every job seen
-    this.distances = new Map(); // jobId -> seconds per task from this node to the origin
+    this.distances = new Map(); // jobId -> seconds per task from this node to the origin, as advertised (held steady)
+    this.liveDistances = new Map(); // jobId -> the same, recomputed every tick
     this.unreachableSince = new Map(); // jobId -> when its origin was last reachable
     this.counters = { executed: 0, forwarded: 0, returned: 0, reissued: 0, duplicates: 0 };
     this.rate = 0; // tasks per second this node runs or passes on, smoothed
@@ -92,6 +93,7 @@ export class WorkMesh {
     });
     this.origins.set(jobId, this.nodeId);
     this.distances.set(jobId, 0);
+    this.liveDistances.set(jobId, 0);
     if (tasks.length === 0) this._finish(jobId);
     return done;
   }
@@ -181,9 +183,12 @@ export class WorkMesh {
       const batch = [];
       const rest = [];
       for (const result of this.results) {
-        const mine = this.distances.get(result.jobId) ?? Number.POSITIVE_INFINITY;
+        // Compare against this tick's own best path, not the steadier value
+        // this node advertises: otherwise, as measurements drift, no neighbour
+        // may qualify and results would never leave.
+        const mine = this.liveDistances.get(result.jobId) ?? Number.POSITIVE_INFINITY;
         const theirs = link.distances.get(result.jobId) ?? Number.POSITIVE_INFINITY;
-        const homeward = theirs < mine && theirs + link.cost <= 1.25 * mine + 1e-9;
+        const homeward = theirs < mine && theirs + Math.max(link.cost, 1e-4) <= 1.25 * mine + 1e-9;
         (homeward && batch.length < this.config.resultBatch ? batch : rest).push(result);
       }
       if (batch.length) {
@@ -298,12 +303,13 @@ export class WorkMesh {
 
   _updateDistances(now) {
     for (const jobId of [...this.origins.keys()]) {
-      if (this.jobs.has(jobId)) { this.distances.set(jobId, 0); continue; }
+      if (this.jobs.has(jobId)) { this.distances.set(jobId, 0); this.liveDistances.set(jobId, 0); continue; }
       let best = Number.POSITIVE_INFINITY;
       for (const link of this.links.values()) {
         best = Math.min(best, (link.distances.get(jobId) ?? Number.POSITIVE_INFINITY) + Math.max(link.cost, 1e-4));
       }
       if (best <= this.config.maxDistance) {
+        this.liveDistances.set(jobId, best);
         // Hold the current value against small changes so that two nodes about
         // equally far do not keep swapping places.
         const held = this.distances.get(jobId);
@@ -312,6 +318,7 @@ export class WorkMesh {
         continue;
       }
       this.distances.delete(jobId);
+      this.liveDistances.delete(jobId);
       if (!this.unreachableSince.has(jobId)) this.unreachableSince.set(jobId, now);
       if (now - this.unreachableSince.get(jobId) < this.config.forgetMs) continue;
       // The job finished or its origin is gone: its leftovers would only clog this node.
@@ -343,6 +350,7 @@ export class WorkMesh {
     const job = this.jobs.get(jobId);
     this.jobs.delete(jobId);
     this.distances.delete(jobId);
+    this.liveDistances.delete(jobId);
     this.origins.delete(jobId);
     // Tasks of a finished job still queued anywhere are harmless duplicates.
     this.queue = this.queue.filter((task) => task.jobId !== jobId);

@@ -38,10 +38,14 @@ await manager.initialize();
 await manager.connect();
 
 // Diagnostics for the runner's --debug output.
-const trace = { retireOk: 0, retireProtected: 0, retireStreams: 0, retireClosed: 0, opened: 0, closed: 0, requests: 0, accepts: 0, blocking: {} };
+const trace = { retireOk: 0, retireProtected: 0, retireStreams: 0, retireClosed: 0, opened: 0, closed: 0, requests: 0, accepts: 0, blocking: {}, retired: {}, closedKinds: {}, meshDrops: {} };
 const retire = manager._retireIdleConnection.bind(manager);
 manager._retireIdleConnection = (connection, reason) => {
   const ok = retire(connection, reason);
+  if (ok) {
+    const kind = `${reason} ${String(connection.remoteAddr).includes('/webrtc') ? 'webrtc' : String(connection.remoteAddr).includes('/p2p-circuit') ? 'circuit' : 'other'}`;
+    trace.retired[kind] = (trace.retired[kind] || 0) + 1;
+  }
   if (reason === 'topology') {
     if (ok) trace.retireOk += 1;
     else if (connection.status !== 'open') trace.retireClosed += 1;
@@ -58,7 +62,12 @@ manager._retireIdleConnection = (connection, reason) => {
   return ok;
 };
 manager.libp2p.addEventListener('connection:open', () => { trace.opened += 1; });
-manager.libp2p.addEventListener('connection:close', () => { trace.closed += 1; });
+manager.libp2p.addEventListener('connection:close', (event) => {
+  trace.closed += 1;
+  const address = String(event.detail?.remoteAddr ?? '');
+  const kind = address.includes('/webrtc') ? 'webrtc' : address.includes('/p2p-circuit') ? 'circuit' : 'other';
+  trace.closedKinds[kind] = (trace.closedKinds[kind] || 0) + 1;
+});
 const sendToPeer = manager.sendToPeer.bind(manager);
 manager.sendToPeer = (peerId, message) => {
   if (message?.type === 'topology-connect-request') trace.requests += 1;
@@ -85,10 +94,23 @@ const mesh = new WorkMeshService(manager, {
   }
 });
 await mesh.start();
+// Why the scheduler lets go of a link.
+const drop = mesh._drop.bind(mesh), release = mesh._release.bind(mesh);
+let releasing = false;
+mesh._release = (peerId) => { releasing = true; try { release(peerId); } finally { releasing = false; } };
+mesh._drop = (peerId) => {
+  if (mesh.peers.has(peerId)) {
+    const why = releasing ? 'released by topology' : mesh._directConnection(peerId) ? 'stream failed' : 'connection gone';
+    trace.meshDrops[why] = (trace.meshDrops[why] || 0) + 1;
+  }
+  drop(peerId);
+};
 
 window.__conjecture = {
   peerId: manager.peerId, index, isSource: index === scenario.source,
   setPeers(entries) { for (const [peerId, peerIndex] of entries) indexOf.set(peerId, peerIndex); },
+  // For the fixed-link baselines: the peer ids this peer must hold links to.
+  setStatic(peerIds) { manager.setStaticTopologyPeers(peerIds); },
   submit(count) { mesh.submitJob({ jobId: 'job', tasks: Array.from({ length: count }, (_, n) => n) }); },
   debug() {
     const state = manager.throughputTopologyState;
@@ -106,6 +128,11 @@ window.__conjecture = {
       rule: { exploreS: state.exploreDelayMs && state.exploreDelayMs / 1000, repairS: state.repairDelayMs / 1000, trial: state.trialPeerId && name(state.trialPeerId),
         established: [...state.established].map(name), cooldown: [...state.cooldown.keys()].map(name) },
       trace,
+      scheduler: { queue: mesh.mesh.queue.length, running: mesh.mesh.running, results: mesh.mesh.results.length, rate: Number(mesh.mesh.rate.toFixed(2)),
+        distances: [...mesh.mesh.distances].map(([job, value]) => [job, Number(value.toFixed(4))]), counters: mesh.mesh.counters,
+        links: [...mesh.mesh.links].map(([peerId, link]) => ({ peer: name(peerId), queued: link.queued, rate: Number(link.rate.toFixed(2)), cost: Number(link.cost.toFixed(4)),
+          distance: [...link.distances.values()].map((value) => Number(value.toFixed(4))), work: link.work?.length ?? 0, results: link.results?.length ?? 0 })),
+        outbox: [...mesh.peers].map(([peerId, peer]) => [name(peerId), peer.outbox.length, Boolean(peer.out), peer.opening, peer.writing]) },
       work: [...manager.peerWork].map(([peerId, entry]) => [name(peerId), Number(entry.rate.toFixed(1))]) };
   },
   stats() {

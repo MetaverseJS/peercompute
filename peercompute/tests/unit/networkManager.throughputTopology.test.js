@@ -105,6 +105,34 @@ test('a full throughput node refuses a connect request without evicting by dista
   assert.ok(!sent.some((message) => message.type === 'topology-connect-accept'));
 });
 
+test('a link is released to its service only when its connection can really close', () => {
+  const { manager, open } = throughputManager({ connected: ['peer-a', 'peer-b'] });
+  const released = [];
+  manager.topologyLinkReleasers.add((peerId) => released.push(peerId));
+  let protectedMs = 5000;
+  manager._getPeerConnectionRecovery = () => ({ protectionMs: () => protectedMs });
+  manager._closeConnectionsToPeer('peer-a');
+  assert.deepEqual([released, open()], [[], ['peer-a', 'peer-b']]); // protected: nothing is cut
+  protectedMs = 0;
+  manager._closeConnectionsToPeer('peer-a');
+  assert.deepEqual([released, open()], [['peer-a'], ['peer-b']]);
+});
+
+test('the static topology holds exactly its assigned links', () => {
+  const { manager, sent, open, start } = throughputManager({ connected: ['peer-a', 'peer-b', 'peer-c'], known: ['peer-x'],
+    config: { topology: 'static', maxConnections: 5 } });
+  tickWithWork(manager, start + 60000);
+  assert.deepEqual([open(), sent], [['peer-a', 'peer-b', 'peer-c'], []]); // nothing assigned yet
+  manager.setStaticTopologyPeers(['peer-a', 'peer-x']);
+  tickWithWork(manager, start + 62000);
+  assert.deepEqual(open(), ['peer-a']);
+  assert.deepEqual(sent, [{ peerId: 'peer-x', type: 'topology-connect-request' }]);
+  // Requests are accepted from assigned peers only, even at the connection limit.
+  manager._handleTopologyConnectRequest('peer-x', {});
+  manager._handleTopologyConnectRequest('peer-b', {});
+  assert.deepEqual(sent.filter((message) => message.type === 'topology-connect-accept').map((message) => message.peerId), ['peer-x']);
+});
+
 test('the emergent topology name keeps its earlier behaviour', () => {
   // NetViz offers 'emergent'. It still selects by position and never prunes.
   const { manager, open, sent, start } = throughputManager({ connected: ['peer-a', 'peer-b', 'peer-c'], known: ['peer-x'],
