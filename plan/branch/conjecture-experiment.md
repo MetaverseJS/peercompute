@@ -67,8 +67,13 @@ User instruction, 2026-11-19: “keep going until you have a robust result”.
 
 ## Open after the browser runs
 
-- The rule is not reliably better than a random graph at 20 peers. Test at
-  larger sizes, where random graphs should do worse.
+- The rule is not reliably better than a random graph at 20 peers: 1.11 times
+  on average over 16 networks (95% interval 0.98–1.30), and far more variable
+  from run to run. The simulation predicts 1.5–1.9 times at 64 nodes; a 40-peer
+  browser sweep was stopped for memory and has not been rerun. Run it one lane
+  at a time when memory allows.
+- The simulation overstates the rule in browsers. The likely gap is how slowly
+  and unreliably real trial links form.
 - The rule still rewires 4–6 times per peer per minute in browsers.
 - The live `distributed` (spatial) topology flaps now that connections can
   close. It needs its own fix before it is a usable baseline or default.

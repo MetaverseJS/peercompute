@@ -12,12 +12,15 @@ emulated) the local rule:
   16 runs on 8 networks, by at least 1.6 times;
 - matched a centrally planned graph that knows every capacity (92 against 90
   tasks per second on average), reaching 68–104% of the ceiling per run;
-- was **not** reliably better than a fixed random graph at this size: clearly
-  ahead on 2 networks, level on 4, behind on 2;
+- was **not** reliably better than a fixed random graph at this size: over 16
+  networks its throughput averaged 1.11 times random (95% interval 0.98–1.30),
+  ahead on 8, level on 4, behind on 4, and it varied far more from run to run;
 - made no difference on identical peers, as it should.
 
-Simulations at 32 and 64 nodes agree in direction and show a clearer margin over
-random graphs. A control that rewires just as often but ignores the measurement
+Simulations with the same scheduler code predict a larger margin over random
+graphs than the browsers showed at 20 peers, and a clear one at 64 nodes
+(1.5–1.9 times). That prediction has not been tested in browsers: a 40-peer
+browser sweep was stopped when the machine ran short of memory. A control that rewires just as often but ignores the measurement
 does no better than a random graph. The cost is rewiring that does not stop:
 about 2 link changes per node per minute in simulation and 4–6 in browsers.
 
@@ -232,6 +235,30 @@ A better scheduler narrowed these gaps. An earlier `WorkMesh` routed results
 down a single cheapest path; once results could use every route home, the
 spatial and random graphs improved more than the rule did.
 
+### Larger networks
+
+Balanced tasks, 600 s (`results/2026-11-20-mesh-n64-*.json`, `-n128-*.json`):
+
+| Nodes | Seeds | Source | Scenario | Ceiling | Spatial | Random | Central greedy | Local rule | Rule ÷ random |
+|---:|---:|---|---|---:|---:|---:|---:|---:|---:|
+| 64 | 8 | typical | sites | 159 | 95 ± 36 | 62 ± 15 | 118 ± 59 | 117 ± 64 | 1.90 |
+| 64 | 8 | typical | decorrelated | 165 | 123 ± 43 | 97 ± 26 | 159 ± 53 | 154 ± 47 | 1.59 |
+| 64 | 8 | typical | far-compute | 70 | 49 ± 16 | 43 ± 17 | 66 ± 25 | 66 ± 29 | 1.53 |
+| 64 | 8 | typical | uniform | 104 | 104 ± 0 | 104 ± 0 | 104 ± 0 | 104 ± 0 | 1.00 |
+| 64 | 8 | provisioned | sites | 321 | 167 ± 12 | 136 ± 49 | 236 ± 32 | 235 ± 15 | 1.72 |
+| 64 | 8 | provisioned | decorrelated | 334 | 156 ± 40 | 145 ± 45 | 283 ± 38 | 267 ± 41 | 1.83 |
+| 64 | 8 | provisioned | far-compute | 186 | 91 ± 18 | 96 ± 35 | 127 ± 11 | 143 ± 23 | 1.49 |
+| 64 | 8 | provisioned | uniform | 256 | 229 ± 15 | 248 ± 10 | 256 ± 0 | 255 ± 0 | 1.03 |
+| 128 | 4 | provisioned | sites | 660 | 192 ± 14 | 183 ± 114 | 288 ± 22 | 241 ± 82 | 1.31 |
+| 128 | 4 | provisioned | decorrelated | 701 | 219 ± 122 | 162 ± 103 | 322 ± 106 | 196 ± 154 | 1.21 |
+| 128 | 4 | provisioned | far-compute | 255 | 105 ± 21 | 100 ± 27 | 165 ± 13 | 159 ± 87 | 1.59 |
+| 128 | 4 | provisioned | uniform | 512 | 314 ± 28 | 321 ± 30 | 398 ± 0 | 307 ± 1 | 0.96 |
+
+At 64 nodes the rule gives 1.49–1.90 times a random graph in all six
+non-uniform cases and stays level with central greedy. At 128 nodes (4 seeds)
+it is ahead of random on the means but the intervals overlap, and every policy
+is far below the ceiling.
+
 ## Real browsers
 
 `browserRun.mjs` starts a local relay and a page server, opens one headless
@@ -283,6 +310,44 @@ and the rule twice (`results/browser/`).
 - **Rewiring:** 4.1–6.4 link-set changes per peer per minute, counting a
   change whenever a peer's set of links differs between two one-second samples.
 - One run measured 4% over the ceiling while queued work drained.
+
+### The rule against a random graph
+
+The first eight networks were ones where a random graph is nearly as good at 20
+peers, so a second set was chosen where the simulation predicted a gap, and its
+predictions were recorded first (`results/2026-11-20-predictions-n20.json`):
+compute far away with a well-connected source, and data-bound tasks across
+sites, 360 s per run. All sixteen networks:
+
+| Network | Ceiling | Fixed random (2 runs) | Throughput rule (2 runs) | Rule ÷ random | Simulation predicted |
+|---|---:|---:|---:|---:|---:|
+| sites balanced provisioned 1 | 153 | 85, 77 | 153, 152 | 1.89 | — |
+| sites balanced provisioned 2 | 78 | 79, 78 | 68, 78 | 0.93 | — |
+| sites balanced provisioned 3 | 83 | 80, 79 | 82, 83 | 1.04 | — |
+| sites balanced provisioned 4 | 100 | 100, 100 | 100, 100 | 1.00 | — |
+| far-compute balanced typical 1 | 138 | 119, 100 | 135, 127 | 1.20 | — |
+| far-compute balanced typical 2 | 123 | 115, 114 | 104, 128 | 1.01 | — |
+| far-compute balanced typical 3 | 38 | 9, 33 | 38, 29 | 1.59 | — |
+| far-compute balanced typical 4 | 51 | 51, 50 | 35, 51 | 0.84 | — |
+| far-compute balanced provisioned 1 | 138 | 112, 116 | 131, 136 | 1.17 | 1.22 |
+| far-compute balanced provisioned 2 | 123 | 114, 114 | 124, 134 | 1.13 | 1.35 |
+| far-compute balanced provisioned 3 | 138 | 100, 96 | 68, 113 | 0.92 | 1.17 |
+| far-compute balanced provisioned 4 | 143 | 119, 87 | 134, 115 | 1.21 | 1.58 |
+| sites data-bound provisioned 1 | 134 | 23, 25 | 29, 62 | 1.92 | 4.79 |
+| sites data-bound provisioned 2 | 77 | 44, 44 | 30, 22 | 0.59 | 0.90 |
+| sites data-bound provisioned 3 | 79 | 36, 35 | 36, 34 | 0.96 | 1.64 |
+| sites data-bound provisioned 4 | 98 | 61, 62 | 51, 94 | 1.18 | 4.75 |
+
+- **No reliable advantage.** The geometric mean of rule ÷ random is 1.11, with
+  a 95% bootstrap interval of 0.98–1.30. The rule is more than 5% ahead on 8
+  networks, within 5% on 4 and more than 5% behind on 4.
+- **The simulation overstated the rule.** In the second set it predicted the
+  right direction on 6 of 8 networks but a much larger gap than the browsers
+  showed (for example 4.8 times predicted, 1.2 and 1.9 measured).
+- **The rule is erratic.** Its two runs on the same network differ by a median
+  of 16% and by up to 72%; the fixed random graph's differ by a median of 3%.
+  The rule is still rewiring (3.8–6.4 link-set changes per peer per minute)
+  when the run ends, and where it has got to by then is partly chance.
 
 What it took to get a trustworthy comparison, each fixed and tested where a
 unit test could reproduce it:
