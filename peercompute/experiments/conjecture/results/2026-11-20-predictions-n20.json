@@ -1,0 +1,268 @@
+{
+  "rows": [
+    {
+      "scenario": "decorrelated",
+      "regime": "balanced",
+      "source": "provisioned",
+      "seed": 1,
+      "nodes": 20,
+      "ceiling": 81.62929562707012,
+      "random": 81.5375,
+      "greedy": 81.6125,
+      "adaptive": 81.5875
+    },
+    {
+      "scenario": "decorrelated",
+      "regime": "balanced",
+      "source": "provisioned",
+      "seed": 2,
+      "nodes": 20,
+      "ceiling": 85.53765481282457,
+      "random": 85.5125,
+      "greedy": 85.4875,
+      "adaptive": 85.5125
+    },
+    {
+      "scenario": "decorrelated",
+      "regime": "balanced",
+      "source": "provisioned",
+      "seed": 3,
+      "nodes": 20,
+      "ceiling": 96.90907087133273,
+      "random": 67.6125,
+      "greedy": 96.875,
+      "adaptive": 96.8
+    },
+    {
+      "scenario": "decorrelated",
+      "regime": "balanced",
+      "source": "provisioned",
+      "seed": 4,
+      "nodes": 20,
+      "ceiling": 250.60903946213722,
+      "random": 206.775,
+      "greedy": 239.325,
+      "adaptive": 246.9125
+    },
+    {
+      "scenario": "far-compute",
+      "regime": "balanced",
+      "source": "provisioned",
+      "seed": 1,
+      "nodes": 20,
+      "ceiling": 137.67756317158984,
+      "random": 112.5875,
+      "greedy": 66.125,
+      "adaptive": 137.4
+    },
+    {
+      "scenario": "far-compute",
+      "regime": "balanced",
+      "source": "provisioned",
+      "seed": 2,
+      "nodes": 20,
+      "ceiling": 123.05261355443645,
+      "random": 90.575,
+      "greedy": 122.6125,
+      "adaptive": 122.55
+    },
+    {
+      "scenario": "far-compute",
+      "regime": "balanced",
+      "source": "provisioned",
+      "seed": 3,
+      "nodes": 20,
+      "ceiling": 138.15952727047494,
+      "random": 117.9375,
+      "greedy": 118.925,
+      "adaptive": 137.5375
+    },
+    {
+      "scenario": "far-compute",
+      "regime": "balanced",
+      "source": "provisioned",
+      "seed": 4,
+      "nodes": 20,
+      "ceiling": 142.97297805346716,
+      "random": 79.1625,
+      "greedy": 120.95,
+      "adaptive": 125.45
+    },
+    {
+      "scenario": "sites",
+      "regime": "balanced",
+      "source": "typical",
+      "seed": 1,
+      "nodes": 20,
+      "ceiling": 153.26676383823118,
+      "random": 53.5125,
+      "greedy": 153.1625,
+      "adaptive": 153.2
+    },
+    {
+      "scenario": "sites",
+      "regime": "balanced",
+      "source": "typical",
+      "seed": 2,
+      "nodes": 20,
+      "ceiling": 59.507117411638,
+      "random": 59.125,
+      "greedy": 59.5875,
+      "adaptive": 58.8
+    },
+    {
+      "scenario": "sites",
+      "regime": "balanced",
+      "source": "typical",
+      "seed": 3,
+      "nodes": 20,
+      "ceiling": 82.7695166704793,
+      "random": 82.65,
+      "greedy": 79.325,
+      "adaptive": 82.6375
+    },
+    {
+      "scenario": "sites",
+      "regime": "balanced",
+      "source": "typical",
+      "seed": 4,
+      "nodes": 20,
+      "ceiling": 100.3057359664068,
+      "random": 59.2,
+      "greedy": 100.25,
+      "adaptive": 100.4125
+    },
+    {
+      "scenario": "decorrelated",
+      "regime": "data-bound",
+      "source": "provisioned",
+      "seed": 1,
+      "nodes": 20,
+      "ceiling": 75.39999781288012,
+      "random": 43.1125,
+      "greedy": 70.8,
+      "adaptive": 65.65
+    },
+    {
+      "scenario": "decorrelated",
+      "regime": "data-bound",
+      "source": "provisioned",
+      "seed": 2,
+      "nodes": 20,
+      "ceiling": 85.53765481282457,
+      "random": 71.125,
+      "greedy": 85.5625,
+      "adaptive": 85.425
+    },
+    {
+      "scenario": "decorrelated",
+      "regime": "data-bound",
+      "source": "provisioned",
+      "seed": 3,
+      "nodes": 20,
+      "ceiling": 96.90907087133273,
+      "random": 15.6625,
+      "greedy": 96.3625,
+      "adaptive": 69.9
+    },
+    {
+      "scenario": "decorrelated",
+      "regime": "data-bound",
+      "source": "provisioned",
+      "seed": 4,
+      "nodes": 20,
+      "ceiling": 177.6354517239184,
+      "random": 82.05,
+      "greedy": 145.1875,
+      "adaptive": 110.4375
+    },
+    {
+      "scenario": "sites",
+      "regime": "data-bound",
+      "source": "provisioned",
+      "seed": 1,
+      "nodes": 20,
+      "ceiling": 134.34849145238368,
+      "random": 14.275,
+      "greedy": 79.325,
+      "adaptive": 68.325
+    },
+    {
+      "scenario": "sites",
+      "regime": "data-bound",
+      "source": "provisioned",
+      "seed": 2,
+      "nodes": 20,
+      "ceiling": 77.3904368541325,
+      "random": 54.3125,
+      "greedy": 67.4625,
+      "adaptive": 49.125
+    },
+    {
+      "scenario": "sites",
+      "regime": "data-bound",
+      "source": "provisioned",
+      "seed": 3,
+      "nodes": 20,
+      "ceiling": 79.16699269167242,
+      "random": 27.5375,
+      "greedy": 48.7625,
+      "adaptive": 45.0375
+    },
+    {
+      "scenario": "sites",
+      "regime": "data-bound",
+      "source": "provisioned",
+      "seed": 4,
+      "nodes": 20,
+      "ceiling": 98.30713091078924,
+      "random": 14.875,
+      "greedy": 75.8,
+      "adaptive": 70.6375
+    },
+    {
+      "scenario": "far-compute",
+      "regime": "data-bound",
+      "source": "provisioned",
+      "seed": 1,
+      "nodes": 20,
+      "ceiling": 104.2269189748185,
+      "random": 60.55,
+      "greedy": 39.4125,
+      "adaptive": 61.625
+    },
+    {
+      "scenario": "far-compute",
+      "regime": "data-bound",
+      "source": "provisioned",
+      "seed": 2,
+      "nodes": 20,
+      "ceiling": 86.878697675444,
+      "random": 39.9875,
+      "greedy": 47.2125,
+      "adaptive": 71.1875
+    },
+    {
+      "scenario": "far-compute",
+      "regime": "data-bound",
+      "source": "provisioned",
+      "seed": 3,
+      "nodes": 20,
+      "ceiling": 120.86638810072719,
+      "random": 27.575,
+      "greedy": 36.3625,
+      "adaptive": 22.7875
+    },
+    {
+      "scenario": "far-compute",
+      "regime": "data-bound",
+      "source": "provisioned",
+      "seed": 4,
+      "nodes": 20,
+      "ceiling": 76.83431901737102,
+      "random": 20.0625,
+      "greedy": 58.1625,
+      "adaptive": 73.8
+    }
+  ]
+}
