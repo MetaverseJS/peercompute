@@ -33,13 +33,15 @@ User instruction, 2026-11-19: after the larger-picture review recommended
      spreads over directly linked neighbours and results return to the origin.
      Transport-free; tested on an in-memory network and compared across
      topologies with simulated links (`experiments/conjecture/meshRun.js`).
-   - [ ] Connect `WorkMesh` to libp2p streams between linked peers. Remote
-     compute messages are published on the shared pubsub topic today, so every
-     peer in the mesh receives them and link choice cannot affect throughput.
-   - [ ] A real multi-browser run of the `throughput` topology with `WorkMesh`.
-     Only unit tests and simulated links cover them so far.
-5. [ ] Repeat the comparison with real browsers over shaped links (chaos lab),
-   after checking the harness defects listed in the November 8 audit.
+   - [x] `WorkMeshService` carries `WorkMesh` over a dedicated libp2p stream
+     per linked peer.
+   - [x] Real multi-browser runs: 20 headless Chrome peers, the rule against
+     fixed spatial, random and centrally planned graphs, plus a uniform control
+     (`experiments/conjecture/browserRun.mjs`, results in the experiment README).
+5. [ ] Repeat the comparison over shaped or wide-area links (chaos lab, or peers
+   on separate hosts), after checking the harness defects listed in the
+   November 8 audit. The browser runs so far emulate compute and capacity
+   inside each page on one machine.
 6. [ ] Keystone demo as the visualization of steps 4–5.
 7. [ ] Bring the stale plan files in line (implementation-status.md,
    distributed-compute.md, keystone-demo.md, root-node-runtime-model-evidence.md).
@@ -60,3 +62,16 @@ User instruction, 2026-11-19: “be careful that this doesn't break any existing
 demo functionality”. The new mode has its own name and does nothing unless
 selected; the default path is checked by the core suite, the demo suites and a
 two-browser smoke test on builds of the changed source.
+
+User instruction, 2026-11-19: “keep going until you have a robust result”.
+
+## Open after the browser runs
+
+- The rule is not reliably better than a random graph at 20 peers. Test at
+  larger sizes, where random graphs should do worse.
+- The rule still rewires 4–6 times per peer per minute in browsers.
+- The live `distributed` (spatial) topology flaps now that connections can
+  close. It needs its own fix before it is a usable baseline or default.
+- A gossipsub relay strands floodsub browser peers beyond about 12. Check the
+  production relay's setting.
+- One source and independent tasks only.

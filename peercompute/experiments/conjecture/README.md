@@ -4,20 +4,25 @@ A deterministic simulation that tests PeerCompute's core conjecture: nodes that
 each follow a local rule to increase their own measured throughput can form a
 compute topology as good as one planned with global knowledge.
 
-**Result (simulation only):** where topology matters, the local rule delivers
-1.07–2.99 times the throughput of the library's current spatial neighbour
-selection at 32 nodes, and matches or beats a centralized greedy planner
-(1.00–1.45 times). It reaches 71–100% of a ceiling no topology can exceed. Where
-topology does not matter, every policy performs the same, with one exception
-noted below. A control that rewires just as often but ignores the measurement
-does no better than a random graph. The rule changes about 2 links per node per
-minute once settled.
+**Result.** In real browsers (20 headless Chrome peers, WebRTC links, the
+library's own networking and scheduler; compute speed and link capacity
+emulated) the local rule:
 
-This is evidence about the rule in a model. It is not evidence about real
-browsers or WebRTC. The library can now run the rule (`topology: 'throughput'`
-in `NetworkManager`, off by default) and has a scheduler that moves work only
-between linked neighbours (`WorkMesh`), but neither has been measured on a real
-network, and `WorkMesh` is not yet connected to the library's transport.
+- beat the library's current nearest-neighbour ("spatial") topology in 16 of
+  16 runs on 8 networks, by at least 1.6 times;
+- matched a centrally planned graph that knows every capacity (92 against 90
+  tasks per second on average), reaching 68–104% of the ceiling per run;
+- was **not** reliably better than a fixed random graph at this size: clearly
+  ahead on 2 networks, level on 4, behind on 2;
+- made no difference on identical peers, as it should.
+
+Simulations at 32 and 64 nodes agree in direction and show a clearer margin over
+random graphs. A control that rewires just as often but ignores the measurement
+does no better than a random graph. The cost is rewiring that does not stop:
+about 2 link changes per node per minute in simulation and 4–6 in browsers.
+
+Everything here uses one job source and independent tasks. See
+[Limits](#limits).
 
 ## Run it
 
@@ -194,49 +199,116 @@ node peercompute/experiments/conjecture/meshSweep.mjs --source provisioned --reg
 
 | Source | Task size | Scenario | Ceiling | Spatial | Random | Central greedy | Local rule | Rule ÷ spatial | Settle (s) | Link changes per node-minute |
 |---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| typical | balanced | sites | 126 | 69 ± 20 | 85 ± 26 | 106 ± 22 | 107 ± 24 | 1.55 | 23 | 1.7 |
-| typical | balanced | decorrelated | 100 | 91 ± 22 | 78 ± 23 | 99 ± 23 | 99 ± 24 | 1.09 | 16 | 1.2 |
-| typical | balanced | far-compute | 78 | 36 ± 7 | 53 ± 12 | 57 ± 15 | 70 ± 21 | 1.97 | 47 | 1.2 |
-| typical | balanced | uniform | 104 | 102 ± 3 | 104 ± 0 | 104 ± 0 | 104 ± 0 | 1.01 | 2 | 1.9 |
-| typical | data-bound | sites | 34 | 32 ± 9 | 23 ± 8 | 34 ± 10 | 32 ± 10 | 1.01 | 66 | 0.6 |
-| typical | data-bound | decorrelated | 24 | 24 ± 7 | 19 ± 7 | 24 ± 6 | 24 ± 6 | 1.01 | 3 | 1.1 |
-| typical | data-bound | far-compute | 17 | 15 ± 4 | 15 ± 5 | 17 ± 6 | 17 ± 6 | 1.11 | 48 | 1.0 |
-| typical | data-bound | uniform | 24 | 24 ± 0 | 24 ± 0 | 24 ± 0 | 24 ± 0 | 1.00 | 0 | 1.1 |
-| provisioned | balanced | sites | 165 | 92 ± 28 | 102 ± 26 | 129 ± 13 | 150 ± 9 | 1.64 | 39 | 1.5 |
-| provisioned | balanced | decorrelated | 179 | 117 ± 18 | 117 ± 29 | 162 ± 32 | 174 ± 34 | 1.49 | 16 | 1.6 |
-| provisioned | balanced | far-compute | 142 | 43 ± 17 | 78 ± 10 | 76 ± 14 | 114 ± 9 | 2.66 | 105 | 1.3 |
-| provisioned | balanced | uniform | 128 | 128 ± 0 | 128 ± 0 | 128 ± 0 | 128 ± 0 | 1.00 | 2 | 1.5 |
-| provisioned | data-bound | sites | 149 | 45 ± 8 | 37 ± 17 | 71 ± 10 | 70 ± 16 | 1.54 | 157 | 1.5 |
-| provisioned | data-bound | decorrelated | 143 | 42 ± 10 | 39 ± 18 | 96 ± 17 | 85 ± 15 | 2.01 | 102 | 1.5 |
-| provisioned | data-bound | far-compute | 97 | 23 ± 5 | 28 ± 5 | 43 ± 6 | 54 ± 6 | 2.36 | 118 | 1.8 |
-| provisioned | data-bound | uniform | 128 | 63 ± 12 | 51 ± 15 | 91 ± 7 | 62 ± 13 | 0.99 | 2 | 1.3 |
+| typical | balanced | sites | 126 | 73 ± 23 | 87 ± 28 | 122 ± 31 | 126 ± 34 | 1.73 | 30 | 1.8 |
+| typical | balanced | decorrelated | 100 | 98 ± 26 | 79 ± 23 | 100 ± 25 | 100 ± 25 | 1.02 | 8 | 1.5 |
+| typical | balanced | far-compute | 78 | 47 ± 12 | 65 ± 21 | 72 ± 24 | 76 ± 26 | 1.62 | 24 | 1.5 |
+| typical | balanced | uniform | 104 | 104 ± 0 | 104 ± 0 | 104 ± 0 | 104 ± 0 | 1.00 | 3 | 1.4 |
+| typical | data-bound | sites | 34 | 33 ± 10 | 23 ± 8 | 34 ± 11 | 31 ± 8 | 0.94 | 27 | 1.1 |
+| typical | data-bound | decorrelated | 24 | 24 ± 7 | 20 ± 7 | 24 ± 6 | 24 ± 6 | 1.01 | 3 | 0.5 |
+| typical | data-bound | far-compute | 17 | 16 ± 5 | 16 ± 6 | 17 ± 6 | 17 ± 6 | 1.05 | 24 | 0.9 |
+| typical | data-bound | uniform | 24 | 24 ± 0 | 24 ± 0 | 24 ± 0 | 24 ± 0 | 1.00 | 0 | 1.0 |
+| provisioned | balanced | sites | 165 | 90 ± 30 | 110 ± 32 | 154 ± 20 | 160 ± 22 | 1.77 | 20 | 1.5 |
+| provisioned | balanced | decorrelated | 179 | 135 ± 21 | 120 ± 29 | 177 ± 40 | 176 ± 37 | 1.31 | 41 | 1.7 |
+| provisioned | balanced | far-compute | 142 | 61 ± 22 | 109 ± 13 | 109 ± 17 | 141 ± 7 | 2.30 | 56 | 1.7 |
+| provisioned | balanced | uniform | 128 | 128 ± 0 | 128 ± 0 | 128 ± 0 | 128 ± 0 | 1.00 | 2 | 1.2 |
+| provisioned | data-bound | sites | 149 | 49 ± 6 | 38 ± 18 | 80 ± 8 | 76 ± 17 | 1.57 | 177 | 1.8 |
+| provisioned | data-bound | decorrelated | 143 | 48 ± 13 | 41 ± 18 | 109 ± 22 | 91 ± 19 | 1.89 | 121 | 1.5 |
+| provisioned | data-bound | far-compute | 97 | 25 ± 5 | 31 ± 7 | 47 ± 8 | 54 ± 9 | 2.18 | 146 | 1.6 |
+| provisioned | data-bound | uniform | 128 | 88 ± 2 | 86 ± 6 | 97 ± 0 | 77 ± 1 | 0.87 | 3 | 1.4 |
 
-- **The direction holds, the size is smaller.** Outside the uniform control the
-  rule gives 1.01–2.66 times spatial (1.07–2.99 in the fluid model) and
-  1.15–2.19 times a random graph, at 47–100% of the ceiling, with 0.6–1.9 link
-  changes per node per minute.
-- **Against central greedy it is mixed:** 0.88–1.50 times. Greedy is ahead with
-  data-bound tasks on a network where link quality is unrelated to position.
-- **Identical nodes, data-bound tasks, well-connected source:** the rule equals
-  spatial (62 against 63) and is well below central greedy (91). Every policy
-  is far under the ceiling there.
-- **Settling is slower** than in the fluid model: up to 157 s.
-- Building this exposed scheduler faults the fluid model could not show: tasks
-  started only on a timer tick; slow nodes given queues as long as fast ones;
-  work circulating between neighbours; links idling between an acknowledgement
-  and the next tick; the origin re-offering tasks still in its own queue; and
-  routing by hop count, which could not feed a strong peer through a fast
-  two-link path when it also had a slow direct link. Each has a test.
-- **Wasted work is uneven.** Most cases re-run a handful of tasks, but two
-  averaged hundreds to about 1,900 duplicated tasks per run (out of tens of
-  thousands). The cause has not been found.
+- Outside the uniform control the rule gives 0.94–2.30 times spatial and
+  1.10–2.20 times a random graph, at 51–100% of the ceiling, with 0.5–1.8 link
+  changes per node per minute. The one case under spatial is typical source,
+  data-bound, sites (31 against 33), where every policy is near the ceiling.
+- Against central greedy it is 0.83–1.30 times: level or ahead with balanced
+  tasks, behind with data-bound tasks.
+- **The rule can hurt.** With identical nodes, data-bound tasks and a
+  well-connected source it ends 13% below spatial (77 against 88).
+- Settling takes up to 177 s.
 - Results are counted as they return, so a run can exceed the ceiling slightly
-  while queued work drains (at most 1.1% here).
+  while queued work drains (at most 1.2% here).
+
+A better scheduler narrowed these gaps. An earlier `WorkMesh` routed results
+down a single cheapest path; once results could use every route home, the
+spatial and random graphs improved more than the rule did.
+
+## Real browsers
+
+`browserRun.mjs` starts a local relay and a page server, opens one headless
+Chrome page per peer, and measures the results returned to the source. The
+peers use the library's `NetworkManager`, real WebRTC links, `WorkMeshService`
+(which carries `WorkMesh` traffic on a dedicated stream to each linked peer) and
+either `topology: 'throughput'` or `topology: 'static'`. Two things are
+emulated inside each page: a task takes `1 / compute` seconds, and a payload is
+held for its size over the link capacity, with the node's access capacity
+shared by its links. All peers run on one machine.
+
+```sh
+node peercompute/experiments/conjecture/browserRun.mjs --topology throughput --scenario far-compute --nodes 20 --duration 240
+node peercompute/experiments/conjecture/browserRun.mjs --topology static --graph random --scenario far-compute --nodes 20 --duration 240
+```
+
+20 peers, balanced tasks, 240 s, tasks per second over the last 80 s. The
+fixed arms pin every peer to a graph built by the same code the simulations use
+and never rewire. Spatial and central plan were run once per network; random
+and the rule twice (`results/browser/`).
+
+| Network | Seed | Ceiling | Fixed spatial | Fixed random (2 runs) | Fixed central plan | Throughput rule (2 runs) | Rule, share of ceiling |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Sites, well-connected source | 1 | 153 | 97 | 85, 77 | 152 | 153, 152 | 100% |
+| Sites, well-connected source | 2 | 78 | 1 | 79, 78 | 79 | 68, 78 | 94% |
+| Sites, well-connected source | 3 | 83 | 30 | 80, 79 | 71 | 82, 83 | 100% |
+| Sites, well-connected source | 4 | 100 | 57 | 100, 100 | 100 | 100, 100 | 100% |
+| Compute far away, typical source | 1 | 138 | 11 | 119, 100 | 127 | 135, 127 | 95% |
+| Compute far away, typical source | 2 | 123 | 10 | 115, 114 | 103 | 104, 128 | 94% |
+| Compute far away, typical source | 3 | 38 | 4 | 9, 33 | 38 | 38, 29 | 89% |
+| Compute far away, typical source | 4 | 51 | 14 | 51, 50 | 50 | 35, 51 | 84% |
+| **Mean** | | | **28** | **79** | **90** | **92** | |
+
+- **Against spatial:** the rule is ahead in 16 of 16 runs; its two-run mean is
+  at least 1.58 times spatial on every network. The fixed spatial graph links
+  each peer to its nearest peers, which leaves half the peers with no path to
+  the source in these networks.
+- **Against the central plan:** 0.86–1.16 times per network, 92 against 90 on
+  average.
+- **Against a random graph:** 1.89 and 1.20 times on two networks, within 4% on
+  four, and 0.93 and 0.84 times on two. Random graphs of about five links among
+  20 peers are already well connected.
+- **Run-to-run variation:** the rule's two runs differ by under 1% on four
+  networks and by 6–38% on the other four; it is still rewiring at 240 s. One
+  of the fixed random runs (far away, seed 3) lost links during the run and
+  gave 9; its repeat gave 33.
+- **Control:** on identical peers a fixed spatial graph and the rule both give
+  79.9 of 80 (two seeds each).
+- **Rewiring:** 4.1–6.4 link-set changes per peer per minute, counting a
+  change whenever a peer's set of links differs between two one-second samples.
+- One run measured 4% over the ceiling while queued work drained.
+
+What it took to get a trustworthy comparison, each fixed and tested where a
+unit test could reproduce it:
+
+- The library's idle check did not recognize floodsub's always-open streams,
+  so no topology could close a connection.
+- The spatial mode, once it could close connections, kept dialling and pruning
+  peers (about 6 link changes per peer per minute). The fixed-link arms exist
+  because of this; the live spatial mode was not used as a baseline.
+- A relay speaking gossipsub delivered presence to only about 12 browser peers
+  speaking floodsub. The runner uses a floodsub relay.
+- `WorkMesh` dropped finished results when a node briefly lost its route,
+  routed by hop count, stalled on a stable network, funnelled every result
+  through one relay, and stranded queues at relays after a route change.
+- The throughput mode judged a trial link refused before WebRTC could connect
+  (5–10 s after the peer agrees).
 
 ## Limits
 
-- **A model.** Transfers are fluid, links are lossless and latency is ignored.
-  Opening a link costs 2 seconds and nothing else.
+- **Emulated resources.** Even in the browser runs, compute speed and link
+  capacity are emulated inside each page, and all peers share one machine. No
+  run used shaped or wide-area links.
+- **Small and short.** 20 peers for four minutes; one or two runs per cell;
+  two scenarios, chosen because the simulation predicted a difference there.
+- **The simulations are models.** In the fluid model transfers are fluid,
+  links are lossless and latency is ignored; opening a link costs 2 seconds.
 - **One source and independent tasks.** Several sources, or tasks that depend on
   each other, are not modelled.
 - **Rewiring does not stop.** The first version of the rule changed about 8
