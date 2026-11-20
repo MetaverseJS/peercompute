@@ -1,0 +1,1850 @@
+{
+  "topology": "throughput",
+  "scenario": "sites",
+  "nodes": 20,
+  "seed": 2,
+  "regime": "balanced",
+  "source": "provisioned",
+  "durationS": 300,
+  "port": 5391,
+  "run": "throughput-sites-2-mwomxjyb",
+  "ceiling": 77.87933837761777,
+  "throughput": 65.856287292081,
+  "wholeRun": 61.75917654431274,
+  "linkSetChangesPerNodeMinute": 5.600062222913587,
+  "linkedPeers": 20,
+  "meanLinks": 4.1,
+  "duplicates": 186,
+  "reissued": 358,
+  "executedBy": [
+    1036,
+    1289,
+    171,
+    515,
+    376,
+    739,
+    586,
+    1322,
+    87,
+    895,
+    8258,
+    50,
+    502,
+    348,
+    356,
+    1388,
+    375,
+    217,
+    452,
+    136
+  ],
+  "pageErrors": [],
+  "samples": [
+    {
+      "t": 0.017,
+      "returned": 0,
+      "linkChanges": 0,
+      "linked": 15
+    },
+    {
+      "t": 1.007,
+      "returned": 11,
+      "linkChanges": 6,
+      "linked": 18
+    },
+    {
+      "t": 2.022,
+      "returned": 43,
+      "linkChanges": 8,
+      "linked": 18
+    },
+    {
+      "t": 3.127,
+      "returned": 78,
+      "linkChanges": 13,
+      "linked": 20
+    },
+    {
+      "t": 4.038,
+      "returned": 115,
+      "linkChanges": 13,
+      "linked": 20
+    },
+    {
+      "t": 5.133,
+      "returned": 155,
+      "linkChanges": 18,
+      "linked": 20
+    },
+    {
+      "t": 6.005,
+      "returned": 193,
+      "linkChanges": 30,
+      "linked": 20
+    },
+    {
+      "t": 7.009,
+      "returned": 233,
+      "linkChanges": 34,
+      "linked": 20
+    },
+    {
+      "t": 8.009,
+      "returned": 271,
+      "linkChanges": 40,
+      "linked": 19
+    },
+    {
+      "t": 9.016,
+      "returned": 309,
+      "linkChanges": 48,
+      "linked": 19
+    },
+    {
+      "t": 10.009,
+      "returned": 356,
+      "linkChanges": 50,
+      "linked": 19
+    },
+    {
+      "t": 11.006,
+      "returned": 390,
+      "linkChanges": 56,
+      "linked": 19
+    },
+    {
+      "t": 12.011,
+      "returned": 429,
+      "linkChanges": 60,
+      "linked": 19
+    },
+    {
+      "t": 13.009,
+      "returned": 472,
+      "linkChanges": 69,
+      "linked": 19
+    },
+    {
+      "t": 14.004,
+      "returned": 524,
+      "linkChanges": 79,
+      "linked": 19
+    },
+    {
+      "t": 15.004,
+      "returned": 563,
+      "linkChanges": 86,
+      "linked": 20
+    },
+    {
+      "t": 16.01,
+      "returned": 607,
+      "linkChanges": 93,
+      "linked": 20
+    },
+    {
+      "t": 17.01,
+      "returned": 652,
+      "linkChanges": 109,
+      "linked": 20
+    },
+    {
+      "t": 18.005,
+      "returned": 710,
+      "linkChanges": 117,
+      "linked": 20
+    },
+    {
+      "t": 19.008,
+      "returned": 746,
+      "linkChanges": 121,
+      "linked": 20
+    },
+    {
+      "t": 20.004,
+      "returned": 795,
+      "linkChanges": 122,
+      "linked": 20
+    },
+    {
+      "t": 21.004,
+      "returned": 833,
+      "linkChanges": 128,
+      "linked": 20
+    },
+    {
+      "t": 22.008,
+      "returned": 881,
+      "linkChanges": 128,
+      "linked": 20
+    },
+    {
+      "t": 23.004,
+      "returned": 927,
+      "linkChanges": 133,
+      "linked": 20
+    },
+    {
+      "t": 24.004,
+      "returned": 964,
+      "linkChanges": 139,
+      "linked": 20
+    },
+    {
+      "t": 25.004,
+      "returned": 1013,
+      "linkChanges": 144,
+      "linked": 20
+    },
+    {
+      "t": 26.004,
+      "returned": 1050,
+      "linkChanges": 146,
+      "linked": 20
+    },
+    {
+      "t": 27.007,
+      "returned": 1098,
+      "linkChanges": 148,
+      "linked": 20
+    },
+    {
+      "t": 28.007,
+      "returned": 1135,
+      "linkChanges": 152,
+      "linked": 20
+    },
+    {
+      "t": 29.007,
+      "returned": 1184,
+      "linkChanges": 160,
+      "linked": 20
+    },
+    {
+      "t": 30.005,
+      "returned": 1220,
+      "linkChanges": 164,
+      "linked": 20
+    },
+    {
+      "t": 31.004,
+      "returned": 1266,
+      "linkChanges": 169,
+      "linked": 20
+    },
+    {
+      "t": 32.008,
+      "returned": 1306,
+      "linkChanges": 173,
+      "linked": 20
+    },
+    {
+      "t": 33.008,
+      "returned": 1353,
+      "linkChanges": 178,
+      "linked": 20
+    },
+    {
+      "t": 34.009,
+      "returned": 1401,
+      "linkChanges": 186,
+      "linked": 20
+    },
+    {
+      "t": 35.009,
+      "returned": 1438,
+      "linkChanges": 190,
+      "linked": 20
+    },
+    {
+      "t": 36.004,
+      "returned": 1487,
+      "linkChanges": 195,
+      "linked": 20
+    },
+    {
+      "t": 37.004,
+      "returned": 1528,
+      "linkChanges": 197,
+      "linked": 20
+    },
+    {
+      "t": 38.008,
+      "returned": 1578,
+      "linkChanges": 205,
+      "linked": 20
+    },
+    {
+      "t": 39.004,
+      "returned": 1619,
+      "linkChanges": 217,
+      "linked": 20
+    },
+    {
+      "t": 40.003,
+      "returned": 1666,
+      "linkChanges": 222,
+      "linked": 20
+    },
+    {
+      "t": 41.008,
+      "returned": 1707,
+      "linkChanges": 227,
+      "linked": 20
+    },
+    {
+      "t": 42.006,
+      "returned": 1757,
+      "linkChanges": 232,
+      "linked": 20
+    },
+    {
+      "t": 43.004,
+      "returned": 1798,
+      "linkChanges": 236,
+      "linked": 20
+    },
+    {
+      "t": 44.004,
+      "returned": 1846,
+      "linkChanges": 242,
+      "linked": 20
+    },
+    {
+      "t": 45.007,
+      "returned": 1894,
+      "linkChanges": 248,
+      "linked": 20
+    },
+    {
+      "t": 46.004,
+      "returned": 1936,
+      "linkChanges": 250,
+      "linked": 20
+    },
+    {
+      "t": 47.008,
+      "returned": 1987,
+      "linkChanges": 252,
+      "linked": 20
+    },
+    {
+      "t": 48.007,
+      "returned": 2024,
+      "linkChanges": 254,
+      "linked": 20
+    },
+    {
+      "t": 49.004,
+      "returned": 2079,
+      "linkChanges": 259,
+      "linked": 20
+    },
+    {
+      "t": 50.004,
+      "returned": 2123,
+      "linkChanges": 265,
+      "linked": 20
+    },
+    {
+      "t": 51.007,
+      "returned": 2183,
+      "linkChanges": 271,
+      "linked": 20
+    },
+    {
+      "t": 52.004,
+      "returned": 2231,
+      "linkChanges": 275,
+      "linked": 20
+    },
+    {
+      "t": 53.008,
+      "returned": 2293,
+      "linkChanges": 275,
+      "linked": 20
+    },
+    {
+      "t": 54.006,
+      "returned": 2338,
+      "linkChanges": 278,
+      "linked": 20
+    },
+    {
+      "t": 55.004,
+      "returned": 2402,
+      "linkChanges": 280,
+      "linked": 20
+    },
+    {
+      "t": 56.007,
+      "returned": 2451,
+      "linkChanges": 281,
+      "linked": 20
+    },
+    {
+      "t": 57.007,
+      "returned": 2515,
+      "linkChanges": 286,
+      "linked": 20
+    },
+    {
+      "t": 58.004,
+      "returned": 2567,
+      "linkChanges": 289,
+      "linked": 20
+    },
+    {
+      "t": 59.007,
+      "returned": 2626,
+      "linkChanges": 294,
+      "linked": 20
+    },
+    {
+      "t": 60.007,
+      "returned": 2677,
+      "linkChanges": 296,
+      "linked": 20
+    },
+    {
+      "t": 61.008,
+      "returned": 2741,
+      "linkChanges": 297,
+      "linked": 20
+    },
+    {
+      "t": 62.004,
+      "returned": 2800,
+      "linkChanges": 301,
+      "linked": 20
+    },
+    {
+      "t": 63.007,
+      "returned": 2851,
+      "linkChanges": 303,
+      "linked": 20
+    },
+    {
+      "t": 64.007,
+      "returned": 2913,
+      "linkChanges": 307,
+      "linked": 20
+    },
+    {
+      "t": 65.007,
+      "returned": 2963,
+      "linkChanges": 308,
+      "linked": 20
+    },
+    {
+      "t": 66.004,
+      "returned": 3022,
+      "linkChanges": 311,
+      "linked": 20
+    },
+    {
+      "t": 67.008,
+      "returned": 3073,
+      "linkChanges": 315,
+      "linked": 20
+    },
+    {
+      "t": 68.007,
+      "returned": 3131,
+      "linkChanges": 316,
+      "linked": 20
+    },
+    {
+      "t": 69.004,
+      "returned": 3190,
+      "linkChanges": 316,
+      "linked": 20
+    },
+    {
+      "t": 70.004,
+      "returned": 3239,
+      "linkChanges": 318,
+      "linked": 20
+    },
+    {
+      "t": 71.008,
+      "returned": 3300,
+      "linkChanges": 319,
+      "linked": 20
+    },
+    {
+      "t": 72.005,
+      "returned": 3349,
+      "linkChanges": 324,
+      "linked": 20
+    },
+    {
+      "t": 73.007,
+      "returned": 3408,
+      "linkChanges": 328,
+      "linked": 20
+    },
+    {
+      "t": 74.007,
+      "returned": 3455,
+      "linkChanges": 331,
+      "linked": 20
+    },
+    {
+      "t": 75.007,
+      "returned": 3519,
+      "linkChanges": 335,
+      "linked": 20
+    },
+    {
+      "t": 76.004,
+      "returned": 3565,
+      "linkChanges": 335,
+      "linked": 20
+    },
+    {
+      "t": 77.007,
+      "returned": 3624,
+      "linkChanges": 339,
+      "linked": 20
+    },
+    {
+      "t": 78.008,
+      "returned": 3674,
+      "linkChanges": 341,
+      "linked": 20
+    },
+    {
+      "t": 79.008,
+      "returned": 3734,
+      "linkChanges": 346,
+      "linked": 20
+    },
+    {
+      "t": 80.004,
+      "returned": 3781,
+      "linkChanges": 348,
+      "linked": 20
+    },
+    {
+      "t": 81.007,
+      "returned": 3842,
+      "linkChanges": 348,
+      "linked": 20
+    },
+    {
+      "t": 82.007,
+      "returned": 3900,
+      "linkChanges": 355,
+      "linked": 20
+    },
+    {
+      "t": 83.009,
+      "returned": 3951,
+      "linkChanges": 356,
+      "linked": 20
+    },
+    {
+      "t": 84.006,
+      "returned": 4000,
+      "linkChanges": 361,
+      "linked": 20
+    },
+    {
+      "t": 85.004,
+      "returned": 4063,
+      "linkChanges": 365,
+      "linked": 20
+    },
+    {
+      "t": 86.007,
+      "returned": 4124,
+      "linkChanges": 367,
+      "linked": 20
+    },
+    {
+      "t": 87.009,
+      "returned": 4178,
+      "linkChanges": 368,
+      "linked": 20
+    },
+    {
+      "t": 88.007,
+      "returned": 4241,
+      "linkChanges": 371,
+      "linked": 20
+    },
+    {
+      "t": 89.007,
+      "returned": 4292,
+      "linkChanges": 379,
+      "linked": 20
+    },
+    {
+      "t": 90.007,
+      "returned": 4358,
+      "linkChanges": 381,
+      "linked": 20
+    },
+    {
+      "t": 91.008,
+      "returned": 4408,
+      "linkChanges": 382,
+      "linked": 20
+    },
+    {
+      "t": 92.007,
+      "returned": 4472,
+      "linkChanges": 385,
+      "linked": 20
+    },
+    {
+      "t": 93.004,
+      "returned": 4526,
+      "linkChanges": 388,
+      "linked": 20
+    },
+    {
+      "t": 94.008,
+      "returned": 4592,
+      "linkChanges": 391,
+      "linked": 20
+    },
+    {
+      "t": 95.011,
+      "returned": 4654,
+      "linkChanges": 391,
+      "linked": 20
+    },
+    {
+      "t": 96.011,
+      "returned": 4703,
+      "linkChanges": 395,
+      "linked": 20
+    },
+    {
+      "t": 97.009,
+      "returned": 4769,
+      "linkChanges": 397,
+      "linked": 20
+    },
+    {
+      "t": 98.009,
+      "returned": 4818,
+      "linkChanges": 397,
+      "linked": 20
+    },
+    {
+      "t": 99.005,
+      "returned": 4878,
+      "linkChanges": 401,
+      "linked": 20
+    },
+    {
+      "t": 100.008,
+      "returned": 4925,
+      "linkChanges": 404,
+      "linked": 20
+    },
+    {
+      "t": 101.007,
+      "returned": 4987,
+      "linkChanges": 405,
+      "linked": 20
+    },
+    {
+      "t": 102.004,
+      "returned": 5032,
+      "linkChanges": 406,
+      "linked": 20
+    },
+    {
+      "t": 103.008,
+      "returned": 5095,
+      "linkChanges": 408,
+      "linked": 20
+    },
+    {
+      "t": 104.007,
+      "returned": 5153,
+      "linkChanges": 409,
+      "linked": 20
+    },
+    {
+      "t": 105.009,
+      "returned": 5203,
+      "linkChanges": 412,
+      "linked": 20
+    },
+    {
+      "t": 106.011,
+      "returned": 5261,
+      "linkChanges": 413,
+      "linked": 20
+    },
+    {
+      "t": 107.008,
+      "returned": 5310,
+      "linkChanges": 417,
+      "linked": 20
+    },
+    {
+      "t": 108.005,
+      "returned": 5369,
+      "linkChanges": 421,
+      "linked": 20
+    },
+    {
+      "t": 109.007,
+      "returned": 5417,
+      "linkChanges": 425,
+      "linked": 20
+    },
+    {
+      "t": 110.004,
+      "returned": 5445,
+      "linkChanges": 427,
+      "linked": 20
+    },
+    {
+      "t": 111.008,
+      "returned": 5463,
+      "linkChanges": 430,
+      "linked": 20
+    },
+    {
+      "t": 112.01,
+      "returned": 5535,
+      "linkChanges": 432,
+      "linked": 20
+    },
+    {
+      "t": 113.004,
+      "returned": 5609,
+      "linkChanges": 433,
+      "linked": 20
+    },
+    {
+      "t": 114.004,
+      "returned": 5704,
+      "linkChanges": 437,
+      "linked": 20
+    },
+    {
+      "t": 115.004,
+      "returned": 5798,
+      "linkChanges": 442,
+      "linked": 20
+    },
+    {
+      "t": 116.008,
+      "returned": 5907,
+      "linkChanges": 444,
+      "linked": 20
+    },
+    {
+      "t": 117.004,
+      "returned": 6017,
+      "linkChanges": 446,
+      "linked": 20
+    },
+    {
+      "t": 118.008,
+      "returned": 6081,
+      "linkChanges": 449,
+      "linked": 20
+    },
+    {
+      "t": 119.008,
+      "returned": 6162,
+      "linkChanges": 455,
+      "linked": 20
+    },
+    {
+      "t": 120.004,
+      "returned": 6216,
+      "linkChanges": 456,
+      "linked": 20
+    },
+    {
+      "t": 121.004,
+      "returned": 6288,
+      "linkChanges": 456,
+      "linked": 20
+    },
+    {
+      "t": 122.007,
+      "returned": 6361,
+      "linkChanges": 459,
+      "linked": 20
+    },
+    {
+      "t": 123.011,
+      "returned": 6424,
+      "linkChanges": 460,
+      "linked": 20
+    },
+    {
+      "t": 124.008,
+      "returned": 6493,
+      "linkChanges": 464,
+      "linked": 20
+    },
+    {
+      "t": 125.004,
+      "returned": 6559,
+      "linkChanges": 465,
+      "linked": 20
+    },
+    {
+      "t": 126.005,
+      "returned": 6637,
+      "linkChanges": 470,
+      "linked": 20
+    },
+    {
+      "t": 127.004,
+      "returned": 6714,
+      "linkChanges": 471,
+      "linked": 20
+    },
+    {
+      "t": 128.008,
+      "returned": 6775,
+      "linkChanges": 471,
+      "linked": 20
+    },
+    {
+      "t": 129.007,
+      "returned": 6866,
+      "linkChanges": 472,
+      "linked": 20
+    },
+    {
+      "t": 130.004,
+      "returned": 6937,
+      "linkChanges": 475,
+      "linked": 20
+    },
+    {
+      "t": 131.008,
+      "returned": 6998,
+      "linkChanges": 476,
+      "linked": 20
+    },
+    {
+      "t": 132.008,
+      "returned": 7073,
+      "linkChanges": 476,
+      "linked": 20
+    },
+    {
+      "t": 133.007,
+      "returned": 7134,
+      "linkChanges": 477,
+      "linked": 20
+    },
+    {
+      "t": 134.008,
+      "returned": 7213,
+      "linkChanges": 480,
+      "linked": 20
+    },
+    {
+      "t": 135.007,
+      "returned": 7280,
+      "linkChanges": 480,
+      "linked": 20
+    },
+    {
+      "t": 136.007,
+      "returned": 7361,
+      "linkChanges": 482,
+      "linked": 20
+    },
+    {
+      "t": 137.008,
+      "returned": 7417,
+      "linkChanges": 483,
+      "linked": 20
+    },
+    {
+      "t": 138.004,
+      "returned": 7496,
+      "linkChanges": 483,
+      "linked": 20
+    },
+    {
+      "t": 139.007,
+      "returned": 7560,
+      "linkChanges": 489,
+      "linked": 20
+    },
+    {
+      "t": 140.004,
+      "returned": 7638,
+      "linkChanges": 490,
+      "linked": 20
+    },
+    {
+      "t": 141.008,
+      "returned": 7715,
+      "linkChanges": 492,
+      "linked": 20
+    },
+    {
+      "t": 142.008,
+      "returned": 7776,
+      "linkChanges": 492,
+      "linked": 20
+    },
+    {
+      "t": 143.008,
+      "returned": 7856,
+      "linkChanges": 494,
+      "linked": 20
+    },
+    {
+      "t": 144.012,
+      "returned": 7917,
+      "linkChanges": 496,
+      "linked": 20
+    },
+    {
+      "t": 145.008,
+      "returned": 7995,
+      "linkChanges": 500,
+      "linked": 20
+    },
+    {
+      "t": 146.008,
+      "returned": 8058,
+      "linkChanges": 502,
+      "linked": 20
+    },
+    {
+      "t": 147.01,
+      "returned": 8137,
+      "linkChanges": 506,
+      "linked": 20
+    },
+    {
+      "t": 148.007,
+      "returned": 8197,
+      "linkChanges": 508,
+      "linked": 20
+    },
+    {
+      "t": 149.004,
+      "returned": 8275,
+      "linkChanges": 508,
+      "linked": 20
+    },
+    {
+      "t": 150.004,
+      "returned": 8337,
+      "linkChanges": 510,
+      "linked": 20
+    },
+    {
+      "t": 151.004,
+      "returned": 8417,
+      "linkChanges": 511,
+      "linked": 20
+    },
+    {
+      "t": 152.007,
+      "returned": 8493,
+      "linkChanges": 513,
+      "linked": 20
+    },
+    {
+      "t": 153.004,
+      "returned": 8555,
+      "linkChanges": 513,
+      "linked": 20
+    },
+    {
+      "t": 154.008,
+      "returned": 8634,
+      "linkChanges": 515,
+      "linked": 20
+    },
+    {
+      "t": 155.008,
+      "returned": 8699,
+      "linkChanges": 522,
+      "linked": 20
+    },
+    {
+      "t": 156.003,
+      "returned": 8779,
+      "linkChanges": 523,
+      "linked": 20
+    },
+    {
+      "t": 157.007,
+      "returned": 8840,
+      "linkChanges": 525,
+      "linked": 20
+    },
+    {
+      "t": 158.004,
+      "returned": 8917,
+      "linkChanges": 526,
+      "linked": 20
+    },
+    {
+      "t": 159.004,
+      "returned": 8980,
+      "linkChanges": 526,
+      "linked": 20
+    },
+    {
+      "t": 160.008,
+      "returned": 9060,
+      "linkChanges": 530,
+      "linked": 20
+    },
+    {
+      "t": 161.01,
+      "returned": 9120,
+      "linkChanges": 532,
+      "linked": 20
+    },
+    {
+      "t": 162.007,
+      "returned": 9201,
+      "linkChanges": 538,
+      "linked": 20
+    },
+    {
+      "t": 163.008,
+      "returned": 9264,
+      "linkChanges": 542,
+      "linked": 20
+    },
+    {
+      "t": 164.004,
+      "returned": 9347,
+      "linkChanges": 543,
+      "linked": 20
+    },
+    {
+      "t": 165.008,
+      "returned": 9410,
+      "linkChanges": 543,
+      "linked": 20
+    },
+    {
+      "t": 166.006,
+      "returned": 9500,
+      "linkChanges": 545,
+      "linked": 20
+    },
+    {
+      "t": 167.004,
+      "returned": 9553,
+      "linkChanges": 546,
+      "linked": 20
+    },
+    {
+      "t": 168.004,
+      "returned": 9628,
+      "linkChanges": 547,
+      "linked": 20
+    },
+    {
+      "t": 169.005,
+      "returned": 9695,
+      "linkChanges": 549,
+      "linked": 20
+    },
+    {
+      "t": 170.003,
+      "returned": 9774,
+      "linkChanges": 552,
+      "linked": 20
+    },
+    {
+      "t": 171.007,
+      "returned": 9843,
+      "linkChanges": 553,
+      "linked": 20
+    },
+    {
+      "t": 172.008,
+      "returned": 9905,
+      "linkChanges": 555,
+      "linked": 20
+    },
+    {
+      "t": 173.004,
+      "returned": 9976,
+      "linkChanges": 558,
+      "linked": 20
+    },
+    {
+      "t": 174.004,
+      "returned": 10039,
+      "linkChanges": 561,
+      "linked": 20
+    },
+    {
+      "t": 175.004,
+      "returned": 10119,
+      "linkChanges": 561,
+      "linked": 20
+    },
+    {
+      "t": 176.004,
+      "returned": 10177,
+      "linkChanges": 561,
+      "linked": 20
+    },
+    {
+      "t": 177.004,
+      "returned": 10258,
+      "linkChanges": 563,
+      "linked": 20
+    },
+    {
+      "t": 178.008,
+      "returned": 10321,
+      "linkChanges": 565,
+      "linked": 20
+    },
+    {
+      "t": 179.006,
+      "returned": 10397,
+      "linkChanges": 568,
+      "linked": 20
+    },
+    {
+      "t": 180.007,
+      "returned": 10472,
+      "linkChanges": 573,
+      "linked": 20
+    },
+    {
+      "t": 181.008,
+      "returned": 10528,
+      "linkChanges": 573,
+      "linked": 20
+    },
+    {
+      "t": 182.008,
+      "returned": 10604,
+      "linkChanges": 575,
+      "linked": 20
+    },
+    {
+      "t": 183.006,
+      "returned": 10666,
+      "linkChanges": 575,
+      "linked": 20
+    },
+    {
+      "t": 184.008,
+      "returned": 10742,
+      "linkChanges": 575,
+      "linked": 20
+    },
+    {
+      "t": 185.004,
+      "returned": 10817,
+      "linkChanges": 579,
+      "linked": 20
+    },
+    {
+      "t": 186.007,
+      "returned": 10881,
+      "linkChanges": 583,
+      "linked": 20
+    },
+    {
+      "t": 187.002,
+      "returned": 10967,
+      "linkChanges": 583,
+      "linked": 20
+    },
+    {
+      "t": 188.008,
+      "returned": 11032,
+      "linkChanges": 584,
+      "linked": 20
+    },
+    {
+      "t": 189.003,
+      "returned": 11112,
+      "linkChanges": 585,
+      "linked": 20
+    },
+    {
+      "t": 190.011,
+      "returned": 11175,
+      "linkChanges": 586,
+      "linked": 20
+    },
+    {
+      "t": 191.008,
+      "returned": 11254,
+      "linkChanges": 587,
+      "linked": 20
+    },
+    {
+      "t": 192.009,
+      "returned": 11316,
+      "linkChanges": 587,
+      "linked": 20
+    },
+    {
+      "t": 193.003,
+      "returned": 11396,
+      "linkChanges": 590,
+      "linked": 20
+    },
+    {
+      "t": 194.004,
+      "returned": 11459,
+      "linkChanges": 593,
+      "linked": 20
+    },
+    {
+      "t": 195.004,
+      "returned": 11539,
+      "linkChanges": 595,
+      "linked": 20
+    },
+    {
+      "t": 196.007,
+      "returned": 11619,
+      "linkChanges": 596,
+      "linked": 20
+    },
+    {
+      "t": 197.008,
+      "returned": 11681,
+      "linkChanges": 599,
+      "linked": 20
+    },
+    {
+      "t": 198.008,
+      "returned": 11752,
+      "linkChanges": 601,
+      "linked": 20
+    },
+    {
+      "t": 199.004,
+      "returned": 11832,
+      "linkChanges": 603,
+      "linked": 20
+    },
+    {
+      "t": 200.009,
+      "returned": 11891,
+      "linkChanges": 604,
+      "linked": 20
+    },
+    {
+      "t": 201.008,
+      "returned": 11972,
+      "linkChanges": 607,
+      "linked": 20
+    },
+    {
+      "t": 202.004,
+      "returned": 12043,
+      "linkChanges": 613,
+      "linked": 20
+    },
+    {
+      "t": 203.007,
+      "returned": 12103,
+      "linkChanges": 615,
+      "linked": 20
+    },
+    {
+      "t": 204.005,
+      "returned": 12176,
+      "linkChanges": 620,
+      "linked": 20
+    },
+    {
+      "t": 205.006,
+      "returned": 12252,
+      "linkChanges": 621,
+      "linked": 20
+    },
+    {
+      "t": 206.009,
+      "returned": 12321,
+      "linkChanges": 621,
+      "linked": 20
+    },
+    {
+      "t": 207.008,
+      "returned": 12385,
+      "linkChanges": 627,
+      "linked": 20
+    },
+    {
+      "t": 208.004,
+      "returned": 12454,
+      "linkChanges": 627,
+      "linked": 20
+    },
+    {
+      "t": 209.008,
+      "returned": 12534,
+      "linkChanges": 629,
+      "linked": 20
+    },
+    {
+      "t": 210.005,
+      "returned": 12601,
+      "linkChanges": 630,
+      "linked": 20
+    },
+    {
+      "t": 211.008,
+      "returned": 12679,
+      "linkChanges": 632,
+      "linked": 20
+    },
+    {
+      "t": 212.007,
+      "returned": 12744,
+      "linkChanges": 634,
+      "linked": 20
+    },
+    {
+      "t": 213.009,
+      "returned": 12808,
+      "linkChanges": 639,
+      "linked": 20
+    },
+    {
+      "t": 214.004,
+      "returned": 12872,
+      "linkChanges": 643,
+      "linked": 20
+    },
+    {
+      "t": 215.008,
+      "returned": 12940,
+      "linkChanges": 643,
+      "linked": 20
+    },
+    {
+      "t": 216.003,
+      "returned": 13004,
+      "linkChanges": 645,
+      "linked": 20
+    },
+    {
+      "t": 217.008,
+      "returned": 13071,
+      "linkChanges": 645,
+      "linked": 20
+    },
+    {
+      "t": 218.007,
+      "returned": 13142,
+      "linkChanges": 648,
+      "linked": 20
+    },
+    {
+      "t": 219.004,
+      "returned": 13209,
+      "linkChanges": 652,
+      "linked": 20
+    },
+    {
+      "t": 220.007,
+      "returned": 13265,
+      "linkChanges": 652,
+      "linked": 20
+    },
+    {
+      "t": 221.008,
+      "returned": 13337,
+      "linkChanges": 654,
+      "linked": 20
+    },
+    {
+      "t": 222.008,
+      "returned": 13394,
+      "linkChanges": 657,
+      "linked": 20
+    },
+    {
+      "t": 223.003,
+      "returned": 13477,
+      "linkChanges": 661,
+      "linked": 20
+    },
+    {
+      "t": 224.004,
+      "returned": 13535,
+      "linkChanges": 662,
+      "linked": 20
+    },
+    {
+      "t": 225.008,
+      "returned": 13600,
+      "linkChanges": 665,
+      "linked": 20
+    },
+    {
+      "t": 226.004,
+      "returned": 13668,
+      "linkChanges": 665,
+      "linked": 20
+    },
+    {
+      "t": 227.007,
+      "returned": 13727,
+      "linkChanges": 666,
+      "linked": 20
+    },
+    {
+      "t": 228.004,
+      "returned": 13793,
+      "linkChanges": 670,
+      "linked": 20
+    },
+    {
+      "t": 229.007,
+      "returned": 13851,
+      "linkChanges": 672,
+      "linked": 20
+    },
+    {
+      "t": 230.008,
+      "returned": 13914,
+      "linkChanges": 673,
+      "linked": 20
+    },
+    {
+      "t": 231.003,
+      "returned": 13989,
+      "linkChanges": 673,
+      "linked": 20
+    },
+    {
+      "t": 232.008,
+      "returned": 14048,
+      "linkChanges": 678,
+      "linked": 20
+    },
+    {
+      "t": 233.003,
+      "returned": 14108,
+      "linkChanges": 679,
+      "linked": 20
+    },
+    {
+      "t": 234.004,
+      "returned": 14174,
+      "linkChanges": 679,
+      "linked": 20
+    },
+    {
+      "t": 235.004,
+      "returned": 14238,
+      "linkChanges": 679,
+      "linked": 20
+    },
+    {
+      "t": 236.007,
+      "returned": 14291,
+      "linkChanges": 680,
+      "linked": 20
+    },
+    {
+      "t": 237.007,
+      "returned": 14372,
+      "linkChanges": 682,
+      "linked": 20
+    },
+    {
+      "t": 238.007,
+      "returned": 14449,
+      "linkChanges": 684,
+      "linked": 20
+    },
+    {
+      "t": 239.004,
+      "returned": 14522,
+      "linkChanges": 684,
+      "linked": 20
+    },
+    {
+      "t": 240.007,
+      "returned": 14586,
+      "linkChanges": 686,
+      "linked": 20
+    },
+    {
+      "t": 241.009,
+      "returned": 14663,
+      "linkChanges": 687,
+      "linked": 20
+    },
+    {
+      "t": 242.004,
+      "returned": 14717,
+      "linkChanges": 688,
+      "linked": 20
+    },
+    {
+      "t": 243.007,
+      "returned": 14786,
+      "linkChanges": 693,
+      "linked": 20
+    },
+    {
+      "t": 244.007,
+      "returned": 14848,
+      "linkChanges": 698,
+      "linked": 20
+    },
+    {
+      "t": 245.004,
+      "returned": 14908,
+      "linkChanges": 700,
+      "linked": 20
+    },
+    {
+      "t": 246.008,
+      "returned": 14981,
+      "linkChanges": 704,
+      "linked": 20
+    },
+    {
+      "t": 247.004,
+      "returned": 15044,
+      "linkChanges": 706,
+      "linked": 20
+    },
+    {
+      "t": 248.008,
+      "returned": 15111,
+      "linkChanges": 706,
+      "linked": 20
+    },
+    {
+      "t": 249.007,
+      "returned": 15171,
+      "linkChanges": 706,
+      "linked": 20
+    },
+    {
+      "t": 250.006,
+      "returned": 15246,
+      "linkChanges": 707,
+      "linked": 20
+    },
+    {
+      "t": 251.005,
+      "returned": 15301,
+      "linkChanges": 708,
+      "linked": 20
+    },
+    {
+      "t": 252.005,
+      "returned": 15377,
+      "linkChanges": 712,
+      "linked": 20
+    },
+    {
+      "t": 253.009,
+      "returned": 15437,
+      "linkChanges": 717,
+      "linked": 20
+    },
+    {
+      "t": 254.008,
+      "returned": 15488,
+      "linkChanges": 722,
+      "linked": 20
+    },
+    {
+      "t": 255.009,
+      "returned": 15554,
+      "linkChanges": 724,
+      "linked": 20
+    },
+    {
+      "t": 256.008,
+      "returned": 15630,
+      "linkChanges": 724,
+      "linked": 20
+    },
+    {
+      "t": 257.004,
+      "returned": 15692,
+      "linkChanges": 726,
+      "linked": 20
+    },
+    {
+      "t": 258.005,
+      "returned": 15768,
+      "linkChanges": 726,
+      "linked": 20
+    },
+    {
+      "t": 259.004,
+      "returned": 15827,
+      "linkChanges": 731,
+      "linked": 20
+    },
+    {
+      "t": 260.004,
+      "returned": 15900,
+      "linkChanges": 732,
+      "linked": 20
+    },
+    {
+      "t": 261.005,
+      "returned": 15969,
+      "linkChanges": 732,
+      "linked": 20
+    },
+    {
+      "t": 262.003,
+      "returned": 16029,
+      "linkChanges": 734,
+      "linked": 20
+    },
+    {
+      "t": 263.008,
+      "returned": 16105,
+      "linkChanges": 734,
+      "linked": 20
+    },
+    {
+      "t": 264.008,
+      "returned": 16164,
+      "linkChanges": 734,
+      "linked": 20
+    },
+    {
+      "t": 265.004,
+      "returned": 16235,
+      "linkChanges": 737,
+      "linked": 20
+    },
+    {
+      "t": 266.01,
+      "returned": 16309,
+      "linkChanges": 738,
+      "linked": 20
+    },
+    {
+      "t": 267.009,
+      "returned": 16368,
+      "linkChanges": 739,
+      "linked": 20
+    },
+    {
+      "t": 268.009,
+      "returned": 16440,
+      "linkChanges": 740,
+      "linked": 20
+    },
+    {
+      "t": 269.004,
+      "returned": 16499,
+      "linkChanges": 745,
+      "linked": 20
+    },
+    {
+      "t": 270.005,
+      "returned": 16559,
+      "linkChanges": 750,
+      "linked": 20
+    },
+    {
+      "t": 271.007,
+      "returned": 16631,
+      "linkChanges": 750,
+      "linked": 20
+    },
+    {
+      "t": 272.007,
+      "returned": 16685,
+      "linkChanges": 750,
+      "linked": 20
+    },
+    {
+      "t": 273.008,
+      "returned": 16754,
+      "linkChanges": 750,
+      "linked": 20
+    },
+    {
+      "t": 274.003,
+      "returned": 16822,
+      "linkChanges": 752,
+      "linked": 20
+    },
+    {
+      "t": 275.008,
+      "returned": 16879,
+      "linkChanges": 757,
+      "linked": 20
+    },
+    {
+      "t": 276.008,
+      "returned": 16946,
+      "linkChanges": 762,
+      "linked": 20
+    },
+    {
+      "t": 277.003,
+      "returned": 17002,
+      "linkChanges": 763,
+      "linked": 20
+    },
+    {
+      "t": 278.008,
+      "returned": 17069,
+      "linkChanges": 763,
+      "linked": 20
+    },
+    {
+      "t": 279.005,
+      "returned": 17123,
+      "linkChanges": 764,
+      "linked": 20
+    },
+    {
+      "t": 280.006,
+      "returned": 17184,
+      "linkChanges": 764,
+      "linked": 20
+    },
+    {
+      "t": 281.008,
+      "returned": 17248,
+      "linkChanges": 769,
+      "linked": 20
+    },
+    {
+      "t": 282.008,
+      "returned": 17301,
+      "linkChanges": 773,
+      "linked": 20
+    },
+    {
+      "t": 283.006,
+      "returned": 17371,
+      "linkChanges": 774,
+      "linked": 20
+    },
+    {
+      "t": 284.004,
+      "returned": 17433,
+      "linkChanges": 776,
+      "linked": 20
+    },
+    {
+      "t": 285.007,
+      "returned": 17496,
+      "linkChanges": 776,
+      "linked": 20
+    },
+    {
+      "t": 286.008,
+      "returned": 17568,
+      "linkChanges": 776,
+      "linked": 20
+    },
+    {
+      "t": 287.004,
+      "returned": 17621,
+      "linkChanges": 776,
+      "linked": 20
+    },
+    {
+      "t": 288.008,
+      "returned": 17690,
+      "linkChanges": 778,
+      "linked": 20
+    },
+    {
+      "t": 289.007,
+      "returned": 17760,
+      "linkChanges": 781,
+      "linked": 20
+    },
+    {
+      "t": 290.007,
+      "returned": 17815,
+      "linkChanges": 782,
+      "linked": 20
+    },
+    {
+      "t": 291.007,
+      "returned": 17872,
+      "linkChanges": 785,
+      "linked": 20
+    },
+    {
+      "t": 292.005,
+      "returned": 17941,
+      "linkChanges": 787,
+      "linked": 20
+    },
+    {
+      "t": 293.008,
+      "returned": 18070,
+      "linkChanges": 788,
+      "linked": 20
+    },
+    {
+      "t": 294.004,
+      "returned": 18131,
+      "linkChanges": 790,
+      "linked": 20
+    },
+    {
+      "t": 295.007,
+      "returned": 18201,
+      "linkChanges": 793,
+      "linked": 20
+    },
+    {
+      "t": 296.007,
+      "returned": 18253,
+      "linkChanges": 795,
+      "linked": 20
+    },
+    {
+      "t": 297.007,
+      "returned": 18318,
+      "linkChanges": 795,
+      "linked": 20
+    },
+    {
+      "t": 298.004,
+      "returned": 18397,
+      "linkChanges": 796,
+      "linked": 20
+    },
+    {
+      "t": 299.007,
+      "returned": 18458,
+      "linkChanges": 798,
+      "linked": 20
+    },
+    {
+      "t": 300.004,
+      "returned": 18528,
+      "linkChanges": 798,
+      "linked": 20
+    }
+  ]
+}

@@ -2,7 +2,7 @@
 // URL parameters describe the scenario and this peer's place in it.
 import { NetworkManager } from '../../../src/peercompute/networkManager/NetworkManager.js';
 import { WorkMeshService } from '../../../src/peercompute/networkManager/WorkMeshService.js';
-import { makeScenario } from '../model.js';
+import { createRng, makeScenario } from '../model.js';
 
 const params = new URLSearchParams(location.search);
 const number = (name, fallback) => (params.has(name) ? Number(params.get(name)) : fallback);
@@ -13,6 +13,11 @@ const scenario = makeScenario({
   regime: params.get('regime') || 'balanced', provisionedSource: params.get('source') === 'provisioned'
 });
 const self = scenario.nodes[index];
+// `metric=random` gives every peer a position unrelated to the scenario, so the
+// spatial mode links arbitrary peers: a random-links baseline.
+const position = params.get('metric') === 'random'
+  ? (() => { const random = createRng(number('seed', 1) * 7907 + index * 104723 + 3); return { x: 200 * random() - 100, y: 200 * random() - 100, z: 0 }; })()
+  : self.position;
 const status = document.getElementById('status');
 const say = (text) => { status.textContent = text; };
 
@@ -22,7 +27,7 @@ const manager = new NetworkManager({
   gameId: 'conjecture', roomId: params.get('run') || 'run',
   topicPrefix: 'pc', useScopedTopics: true, enforceTopologyScope: true,
   bootstrapPeers: relay.bootstrapPeers,
-  topologyMetric: self.position, topologyMetricInitialized: true,
+  topologyMetric: position, topologyMetricInitialized: true,
   // Every peer is within range, so the spatial mode picks its nearest peers.
   connectionRadius: 1e6, longRangeCount: 1,
   targetConnections: scenario.targetConnections, maxConnections: scenario.maxConnections,
