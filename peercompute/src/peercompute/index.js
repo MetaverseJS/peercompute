@@ -62,6 +62,7 @@ export {
   STATE_TASK_GRAPH_CACHE_ARTIFACT_INVALIDATION_SCHEMA,
   StateManager
 } from './stateManager/StateManager.js';
+export { ReservationLedger, RESERVATION_LEDGER_SCHEMA } from './stateManager/ReservationLedger.js';
 export { DataState } from './stateManager/DataState.js';
 export { ArtifactStore, ARTIFACT_IMPORT_PROFILE, ARTIFACT_MANIFEST_SCHEMA } from './artifacts/ArtifactStore.js';
 export { MODEL_ARTIFACT_CATALOG, modelArtifactFileUrl } from './artifacts/modelArtifactCatalog.js';

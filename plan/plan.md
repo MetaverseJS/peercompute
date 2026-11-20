@@ -17,6 +17,16 @@ November 19 demo overview: select a demo to read its full preview before launch.
 
 November 18 demo overview: the PeerCompute desktop and its native launcher share the same 17 destinations. Supported same-origin iframe clients are composited with the cell desktop before its native shader stack, so window chrome and live demo content share the CRT distortion. Foreground menus clip only their own area and demo focus changes preserve the running image. The branch is available for local review. See [the gallery plan](branch/exowebtui-demo-gallery.md).
 
+November18 ULG G5 reservation lifecycle: finish state transitions and detach old
+resource lists before invoking external callbacks. Destroyed ledgers refuse new
+attachments; callback-created reservations and named-ledger replacements retain
+their ownership. Tokens and admission receipts describe the operation that
+issued them even if an audit callback performs another operation. Eighty-one
+focused ledger, ULG control-plane and related state-management tests pass;
+the ULG campaign owns the final G5 acceptance record. The model remains one
+authoritative JavaScript realm, not distributed exactly-once. No commit or
+deployment is included in this ULG work.
+
 November 18 release review: independently verify SecretWorkshop's discovery and
 encrypted receipt lookup, then qualify the demo build from reviewed source.
 

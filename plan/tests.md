@@ -21,6 +21,20 @@ In a fresh profile, check that one wheel tick advances four entries and all seve
 
 Snap the directory to the top half and two running demos to the lower corners. Grow the browser in quick steps, then shrink it past the directory’s floating-window breakpoint. Check that demo sizes hold during the burst, the three rectangles fill the final grid without overlap, and both iframe drafts survive. Also check a **G** tiled workspace and the shared shader against the running preview.
 
+### ULG G5 reservation lifecycle — November 18
+
+- `node --test peercompute/tests/unit/reservationLedger.test.js`: 15 cases,
+  including interleaved contention, replay, epoch fencing, cancellation/retry,
+  post-destruction attachment, callback-created ownership, stable audit/return
+  identities, cleanup exceptions and named-ledger replacement. Six of the seven
+  new regression cases failed on the original implementation; all now pass.
+- Combined with ULG's 33 worker control-plane tests and 33 related DataState,
+  commitDelta and resident-lane tests: 81 pass, no failures or skips. These check
+  host ownership and metadata; schedule/GPU fences are manufactured fixtures,
+  not GPU execution or CPU physics validation.
+- Exact commands, before/after source, immutable source hashes and original logs:
+  `~/.cache/icc/repos/ulg/g5-acceptance-20261118/`.
+
 ### Owner avatar authoring before speech — November 13
 
 - `world-intent-decision`: original user prompt, neutral owner-authoring classifier,

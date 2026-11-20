@@ -64339,6 +64339,41 @@ covers invalid descriptor and GLB metadata fields. The user's failing output
 was not captured, so the exact field is unknown. Answered in explanation scope;
 no code, preview, or remote changes.
 
+### 2026-11-18T22:01:56Z — ULG G5 reservation lifecycle correction
+
+Prompt: automatic continuation, “Continue working toward the active thread goal.”
+Active objective: “continue finishing the goals and architecture tasks” in ULG.
+Timestamp is the captured review clock; the exact client send time is unavailable.
+
+Reviewed the original G5 bounded single-realm CAS criteria, current ledger,
+StateManager integration, ULG consumer and existing tests. Added seven lifecycle
+regressions outside the repository first: six failed against the original
+implementation. Destruction permitted attachments and re-entrant work; retirement
+ran release callbacks before advancing the fence; returned identities and audit
+records could reflect later callback mutations; named-ledger cleanup prevented or
+removed replacements. The pre-fix failure log and source copies are preserved.
+
+Updated ReservationLedger.js to reject destroyed/non-reserved attachments,
+finish transitions and detach old resource lists before callbacks, and preserve
+operation return values before audit hooks. StateManager.js now removes a named
+ledger before invoking its destructor. Added the seven cases to
+peercompute/tests/unit/reservationLedger.test.js. No unrelated dirty files or
+CubeChat preview state changed.
+
+Commands: node --test peercompute/tests/unit/reservationLedger.test.js plus ULG
+ tests/schroederWorkerLaneControlPlane.test.mjs (48 pass); related datastate.test,
+datastate.flow.test, computeManager.commitDelta.test and gpuResidentLaneManager.test
+(33 pass). One final combined command passes 81 with zero skips/failures; 411 ULG
+and 178 PeerCompute source/test/config hashes remain unchanged across that run.
+Independent read-only review also ran the 15 ledger tests and reported no blocking
+source defect. Original G5 receipt/acceptance recording is owned by the ULG task.
+No browser, GPU, CPU physics law, commit, push or deployment was run.
+
+ICC was refreshed and both tasks received leases. The initial peer edit check
+required an exclusive shared-checkout claim; upgraded the uncontested lease and
+passed enforcement before editing. Evidence, actual command arrays and all
+results: /home/cos/.cache/icc/repos/ulg/g5-acceptance-20261118/.
+
 ### 2026-11-19T01:07:48Z — Review Hermes changes and prepare demo release
 
 Prompt: “hey I had hermes make a few changes and deploy the root node to secretworkshop. can you have a look around and make a commit? it might be time for us to push another demo update to github pages as well.” Time is first captured UTC clock.

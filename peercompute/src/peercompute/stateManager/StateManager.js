@@ -20,6 +20,7 @@ import { ResidentDiagnosticsStore } from '../agents/ResidentDiagnosticsStore.js'
 import { WorldMemoryStore } from '../agents/WorldMemoryStore.js';
 import { WorldGoalStore } from '../agents/WorldGoalStore.js';
 import { WorldStandingGoalStore } from '../agents/WorldStandingGoalStore.js';
+import { ReservationLedger } from './ReservationLedger.js';
 
 export const STATE_TASK_GRAPH_CACHE_ARTIFACT_ADMISSION_SCHEMA = 'peercompute.state.task-graph-cache-artifact-admission.v0';
 export const STATE_TASK_GRAPH_CACHE_ARTIFACT_INVALIDATION_SCHEMA = 'peercompute.state.task-graph-cache-artifact-invalidation.v0';
@@ -104,6 +105,7 @@ export class StateManager {
     this.worldKnowledgeStores = new Map();
     this.worldObjectStores = new Map();
     this.residentDiagnosticsStores = new Map();
+    this.reservationLedgers = new Map();
     this.worldGoalStores = new Map();
     this.worldStandingGoalStores = new Map();
   }
@@ -321,6 +323,39 @@ export class StateManager {
   }
 
   getResidentDiagnosticsStore(name = 'default') { return this.residentDiagnosticsStores.get(name) || null; }
+
+  /**
+   * Bounded CAS multi-consumer reservations (ReservationLedger.js). The
+   * ledger in this realm is the authority; with `auditNamespace` each
+   * transition is also written as a scoped audit record (evidence only).
+   */
+  createReservationLedger(options = {}) {
+    if (this.destroyed) throw new Error('StateManager is destroyed');
+    const name = options.name || 'default';
+    if (this.reservationLedgers.has(name)) throw new Error(`Reservation ledger ${name} is already registered`);
+    const auditNamespace = options.auditNamespace ? String(options.auditNamespace) : null;
+    const ledger = new ReservationLedger({
+      ...options,
+      name,
+      audit: (record) => {
+        if (auditNamespace) this.writeScoped(auditNamespace, record.key, record);
+        options.audit?.(record);
+      }
+    });
+    this.reservationLedgers.set(name, ledger);
+    return ledger;
+  }
+
+  getReservationLedger(name = 'default') { return this.reservationLedgers.get(name) || null; }
+
+  destroyReservationLedger(name = 'default') {
+    const ledger = this.reservationLedgers.get(name);
+    if (!ledger) return false;
+    // Detach first: cleanup may create a replacement with the same name.
+    this.reservationLedgers.delete(name);
+    ledger.destroy();
+    return true;
+  }
 
   /** Owner-local objectives are durable checkpoints, never replicated state. */
   createWorldGoalStore(options = {}) {
@@ -1089,6 +1124,9 @@ export class StateManager {
       for (const store of [...this.residentDiagnosticsStores.values()]) await cleanup(() => store.destroy());
       for (const store of [...this.worldGoalStores.values()]) await cleanup(() => store.destroy());
       for (const store of [...this.worldStandingGoalStores.values()]) await cleanup(() => store.destroy());
+      // Reservation resources are released exactly once by their ledger.
+      for (const ledger of [...this.reservationLedgers.values()]) await cleanup(() => ledger.destroy());
+      this.reservationLedgers.clear();
       // Local artifact bytes live outside Yjs but remain owned by this manager.
       // Destroy handles without deleting their optional persistent records.
       await cleanup(() => this.dataState.destroyArtifactStores());
