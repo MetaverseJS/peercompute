@@ -1,0 +1,270 @@
+{
+  "realism": {
+    "setupMs": [
+      5000,
+      10000
+    ],
+    "resetsPerNodeMinute": 0.6,
+    "decideMs": 1500
+  },
+  "summary": {
+    "runs": 6,
+    "logError": {
+      "ideal": {
+        "random": 0.09798427104103652,
+        "rule": 0.11383409079673336
+      },
+      "calibrated": {
+        "random": 0.09798427104103652,
+        "rule": 0.18730278736264433
+      }
+    },
+    "ruleOverRandom": {
+      "measured": 1.1146629418767562,
+      "ideal": 1.2391605988000012,
+      "calibrated": 0.9411912011643151
+    }
+  },
+  "rows": [
+    {
+      "network": "sites balanced provisioned 1",
+      "measured": {
+        "random": 80.60826520663016,
+        "rule": 152.61631050302518
+      },
+      "ideal": {
+        "random": 93.875,
+        "rule": 153.05208333333334
+      },
+      "calibrated": {
+        "random": 93.875,
+        "rule": 129.22083333333333
+      }
+    },
+    {
+      "network": "sites balanced provisioned 2",
+      "measured": {
+        "random": 78.11249454345509,
+        "rule": 73.01341266765834
+      },
+      "ideal": {
+        "random": 77.8625,
+        "rule": 77.82916666666667
+      },
+      "calibrated": {
+        "random": 77.8625,
+        "rule": 72.91458333333333
+      }
+    },
+    {
+      "network": "sites balanced provisioned 3",
+      "measured": {
+        "random": 79.47700822541128,
+        "rule": 82.48022122256971
+      },
+      "ideal": {
+        "random": 82.225,
+        "rule": 82.63541666666667
+      },
+      "calibrated": {
+        "random": 82.225,
+        "rule": 74.38333333333334
+      }
+    },
+    {
+      "network": "sites balanced provisioned 4",
+      "measured": {
+        "random": 100.29374915629589,
+        "rule": 100.25875918795941
+      },
+      "ideal": {
+        "random": 100.2875,
+        "rule": 100.28125
+      },
+      "calibrated": {
+        "random": 100.2875,
+        "rule": 100.03333333333335
+      }
+    },
+    {
+      "network": "far-compute balanced typical 1",
+      "measured": {
+        "random": 109.41348042733048,
+        "rule": 131.24855471874585
+      },
+      "ideal": {
+        "random": 106.25,
+        "rule": 135.26250000000002
+      },
+      "calibrated": {
+        "random": 106.25,
+        "rule": 95.22083333333335
+      }
+    },
+    {
+      "network": "far-compute balanced typical 2",
+      "measured": {
+        "random": 114.70840734009302,
+        "rule": 116.14660060862033
+      },
+      "ideal": {
+        "random": 69.35,
+        "rule": 118.11666666666667
+      },
+      "calibrated": {
+        "random": 69.35,
+        "rule": 92.35833333333333
+      }
+    },
+    {
+      "network": "far-compute balanced typical 3",
+      "measured": {
+        "random": 21.13262665273056,
+        "rule": 33.52631490045964
+      },
+      "ideal": {
+        "random": 33.5,
+        "rule": 36.67916666666667
+      },
+      "calibrated": {
+        "random": 33.5,
+        "rule": 31.54166666666667
+      }
+    },
+    {
+      "network": "far-compute balanced typical 4",
+      "measured": {
+        "random": 50.80719884782955,
+        "rule": 42.83019053524879
+      },
+      "ideal": {
+        "random": 51.5,
+        "rule": 50.91666666666666
+      },
+      "calibrated": {
+        "random": 51.5,
+        "rule": 50.10833333333333
+      }
+    },
+    {
+      "network": "far-compute balanced provisioned 1",
+      "measured": {
+        "random": 113.89010525439706,
+        "rule": 133.43257624298005
+      },
+      "ideal": {
+        "random": 110.86666666666666,
+        "rule": 134.3875
+      },
+      "calibrated": {
+        "random": 110.86666666666666,
+        "rule": 96.67083333333333
+      }
+    },
+    {
+      "network": "far-compute balanced provisioned 2",
+      "measured": {
+        "random": 113.93459927332523,
+        "rule": 128.90957341524864
+      },
+      "ideal": {
+        "random": 107.85,
+        "rule": 122.4013888888889
+      },
+      "calibrated": {
+        "random": 107.85,
+        "rule": 98.92916666666666
+      }
+    },
+    {
+      "network": "far-compute balanced provisioned 3",
+      "measured": {
+        "random": 97.94280243795757,
+        "rule": 90.35316747510043
+      },
+      "ideal": {
+        "random": 94.56666666666666,
+        "rule": 126.7986111111111
+      },
+      "calibrated": {
+        "random": 94.56666666666666,
+        "rule": 88.10416666666667
+      }
+    },
+    {
+      "network": "far-compute balanced provisioned 4",
+      "measured": {
+        "random": 102.94299782599839,
+        "rule": 124.43609857996842
+      },
+      "ideal": {
+        "random": 117.525,
+        "rule": 129.31944444444446
+      },
+      "calibrated": {
+        "random": 117.525,
+        "rule": 96.09166666666668
+      }
+    },
+    {
+      "network": "sites data-bound provisioned 1",
+      "measured": {
+        "random": 23.738604274376108,
+        "rule": 45.55573753648838
+      },
+      "ideal": {
+        "random": 23.8,
+        "rule": 61.19166666666667
+      },
+      "calibrated": {
+        "random": 23.8,
+        "rule": 42.43472222222223
+      }
+    },
+    {
+      "network": "sites data-bound provisioned 2",
+      "measured": {
+        "random": 44.140356675543586,
+        "rule": 26.094372723289347
+      },
+      "ideal": {
+        "random": 41.9,
+        "rule": 49.77222222222223
+      },
+      "calibrated": {
+        "random": 41.9,
+        "rule": 24.96388888888889
+      }
+    },
+    {
+      "network": "sites data-bound provisioned 3",
+      "measured": {
+        "random": 35.94523792318725,
+        "rule": 34.660351934484254
+      },
+      "ideal": {
+        "random": 35.458333333333336,
+        "rule": 35.94444444444445
+      },
+      "calibrated": {
+        "random": 35.458333333333336,
+        "rule": 22.652777777777775
+      }
+    },
+    {
+      "network": "sites data-bound provisioned 4",
+      "measured": {
+        "random": 61.58265026209294,
+        "rule": 72.5248223666747
+      },
+      "ideal": {
+        "random": 58.36666666666667,
+        "rule": 74.67777777777779
+      },
+      "calibrated": {
+        "random": 58.36666666666667,
+        "rule": 42.086111111111116
+      }
+    }
+  ]
+}

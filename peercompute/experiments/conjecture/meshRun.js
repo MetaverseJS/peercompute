@@ -51,7 +51,11 @@ class Agenda {
  * virtual clock. A payload takes its size divided by the link capacity to
  * cross a link, and every node's access capacity is shared by its links.
  */
-export function runMesh({ scenario, policy, durationS = 600, seed = 1, policyConfig = {} } = {}) {
+export function runMesh({ scenario, policy, durationS = 600, seed = 1, policyConfig = {}, realism = null } = {}) {
+  // `realism` replaces the ideal link behaviour with what the browser runs
+  // measured: { setupMs: [min, max], resetsPerNodeMinute, decideMs, windowS }.
+  const setupRange = realism?.setupMs ?? [LINK_SETUP_MS, LINK_SETUP_MS];
+  const decideMs = realism?.decideMs ?? DECIDE_MS;
   if (!MESH_POLICIES.includes(policy)) throw new RangeError(`Unknown policy ${policy}`);
   const { nodes, source, capacity, task } = scenario;
   const count = nodes.length;
@@ -98,7 +102,8 @@ export function runMesh({ scenario, policy, durationS = 600, seed = 1, policyCon
   }));
   const addLink = (i, j) => {
     if (i === j || peers[i].has(j) || peers[i].size >= config.maxConnections || peers[j].size >= config.maxConnections) return false;
-    const link = { generation: generation += 1, capacity: capacity(i, j), readyAt: now + (now > 0 ? LINK_SETUP_MS : 0), free: [0, 0], since: now };
+    const setup = setupRange[0] + random() * (setupRange[1] - setupRange[0]);
+    const link = { generation: generation += 1, capacity: capacity(i, j), readyAt: now + (now > 0 ? setup : 0), free: [0, 0], since: now };
     peers[i].set(j, link); peers[j].set(i, link);
     meshes[i].linkUp(nodes[j].id); meshes[j].linkUp(nodes[i].id);
     return true;
@@ -111,7 +116,9 @@ export function runMesh({ scenario, policy, durationS = 600, seed = 1, policyCon
 
   const alive = nodes.map(() => true);
   const pairs = policy === 'spatial' ? spatialTopology(scenario, alive)
-    : policy === 'greedy' ? greedyTopology(scenario, alive) : randomTopology(scenario, alive, random);
+    : policy === 'greedy' ? greedyTopology(scenario, alive)
+      // A given graph seed reproduces the random graph a browser run was pinned to.
+      : randomTopology(scenario, alive, realism?.randomGraphSeed ? createRng(realism.randomGraphSeed) : random);
   for (const [i, j] of pairs) addLink(i, j);
 
   const rate = (i, peerId) => work[i].get(peerId)?.rate || 0;
@@ -143,9 +150,27 @@ export function runMesh({ scenario, policy, durationS = 600, seed = 1, policyCon
     const tick = () => { meshes[i].tick(now); agenda.push(now + TICK_MS, tick); };
     agenda.push(offset, tick);
     if (policy === 'adaptive') {
-      const reconsider = () => { decide(i); agenda.push(now + DECIDE_MS, reconsider); };
-      agenda.push(Math.floor(random() * DECIDE_MS), reconsider);
+      const reconsider = () => { decide(i); agenda.push(now + decideMs, reconsider); };
+      agenda.push(Math.floor(random() * decideMs), reconsider);
     }
+  }
+  if (realism?.resetsPerNodeMinute > 0) {
+    // A stream reset: the link survives but whatever was in flight on it is
+    // taken back, as when the library closes a duplicate connection.
+    const meanGapMs = 60000 / (realism.resetsPerNodeMinute * count);
+    const reset = () => {
+      const i = Math.floor(random() * count);
+      const neighbours = [...peers[i].keys()];
+      if (neighbours.length) {
+        const j = neighbours[Math.floor(random() * neighbours.length)];
+        const link = peers[i].get(j);
+        link.generation = generation += 1; // messages in flight are lost
+        meshes[i].linkDown(nodes[j].id); meshes[i].linkUp(nodes[j].id);
+        meshes[j].linkDown(nodes[i].id); meshes[j].linkUp(nodes[i].id);
+      }
+      agenda.push(now - meanGapMs * Math.log(Math.max(random(), 1e-12)), reset);
+    };
+    agenda.push(meanGapMs, reset);
   }
   const samples = [];
   const sample = () => { samples.push({ t: now / 1000, returned: meshes[source].counters.returned, linkChanges }); agenda.push(now + 1000, sample); };
@@ -158,7 +183,7 @@ export function runMesh({ scenario, policy, durationS = 600, seed = 1, policyCon
     fn();
   }
 
-  const windowS = Math.min(120, Math.floor(durationS / 3));
+  const windowS = realism?.windowS ?? Math.min(120, Math.floor(durationS / 3));
   const between = (fromS, toS) => {
     const first = samples.find((entry) => entry.t >= fromS), last = samples.filter((entry) => entry.t <= toS).pop();
     return { rate: (last.returned - first.returned) / (last.t - first.t), changes: last.linkChanges - first.linkChanges };
