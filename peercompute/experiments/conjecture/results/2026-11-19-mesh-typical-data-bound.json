@@ -1,0 +1,288 @@
+{
+  "rows": [
+    {
+      "source": "typical",
+      "regime": "data-bound",
+      "scenario": "sites",
+      "nodes": 32,
+      "seeds": 8,
+      "durationS": 600,
+      "ceiling": 34.33294572118601,
+      "policies": {
+        "spatial": {
+          "throughput": {
+            "mean": 32.49791666666666,
+            "half": 9.390024947088502
+          },
+          "versusSpatial": {
+            "mean": 1,
+            "half": 0
+          },
+          "overCeiling": 1.001584378785264,
+          "settleS": 1.875,
+          "linkChangesPerNodeMinute": 0,
+          "duplicates": 0,
+          "reissued": 0
+        },
+        "random": {
+          "throughput": {
+            "mean": 23.38125,
+            "half": 7.54470806491028
+          },
+          "versusSpatial": {
+            "mean": 0.7743783664610974,
+            "half": 0.20062289627001606
+          },
+          "overCeiling": 0.9998451815232405,
+          "settleS": 2.75,
+          "linkChangesPerNodeMinute": 0,
+          "duplicates": 0.375,
+          "reissued": 0.875
+        },
+        "greedy": {
+          "throughput": {
+            "mean": 33.6125,
+            "half": 10.53044630266606
+          },
+          "versusSpatial": {
+            "mean": 1.0227891095938724,
+            "half": 0.029596185850325127
+          },
+          "overCeiling": 1.0013981465299076,
+          "settleS": 0.625,
+          "linkChangesPerNodeMinute": 0,
+          "duplicates": 0,
+          "reissued": 0
+        },
+        "adaptive": {
+          "throughput": {
+            "mean": 32.473958333333336,
+            "half": 10.412686865153303
+          },
+          "versusSpatial": {
+            "mean": 0.9944712234647832,
+            "half": 0.062422960320412904
+          },
+          "overCeiling": 0.9997835480282543,
+          "settleS": 40.75,
+          "linkChangesPerNodeMinute": 1.2265625,
+          "duplicates": 1.125,
+          "reissued": 0
+        }
+      }
+    },
+    {
+      "source": "typical",
+      "regime": "data-bound",
+      "scenario": "decorrelated",
+      "nodes": 32,
+      "seeds": 8,
+      "durationS": 600,
+      "ceiling": 24.06006815115092,
+      "policies": {
+        "spatial": {
+          "throughput": {
+            "mean": 23.549999999999997,
+            "half": 6.538898879441058
+          },
+          "versusSpatial": {
+            "mean": 1,
+            "half": 0
+          },
+          "overCeiling": 0.999801681971418,
+          "settleS": 1.375,
+          "linkChangesPerNodeMinute": 0,
+          "duplicates": 0,
+          "reissued": 0
+        },
+        "random": {
+          "throughput": {
+            "mean": 19.679166666666667,
+            "half": 6.786880454638607
+          },
+          "versusSpatial": {
+            "mean": 0.8950288946192552,
+            "half": 0.22190108505935727
+          },
+          "overCeiling": 1.0019210284090894,
+          "settleS": 1.25,
+          "linkChangesPerNodeMinute": 0,
+          "duplicates": 0,
+          "reissued": 0
+        },
+        "greedy": {
+          "throughput": {
+            "mean": 24.06458333333333,
+            "half": 6.281981451054188
+          },
+          "versusSpatial": {
+            "mean": 1.0415728448810575,
+            "half": 0.07019634552345486
+          },
+          "overCeiling": 1.001694191461174,
+          "settleS": 0.125,
+          "linkChangesPerNodeMinute": 0,
+          "duplicates": 0,
+          "reissued": 0
+        },
+        "adaptive": {
+          "throughput": {
+            "mean": 24.040625,
+            "half": 6.265608512308591
+          },
+          "versusSpatial": {
+            "mean": 1.040719843784961,
+            "half": 0.06992958983542219
+          },
+          "overCeiling": 1.0008613551902537,
+          "settleS": 5.25,
+          "linkChangesPerNodeMinute": 0.845703125,
+          "duplicates": 1.625,
+          "reissued": 0
+        }
+      }
+    },
+    {
+      "source": "typical",
+      "regime": "data-bound",
+      "scenario": "far-compute",
+      "nodes": 32,
+      "seeds": 8,
+      "durationS": 600,
+      "ceiling": 17.112922095625727,
+      "policies": {
+        "spatial": {
+          "throughput": {
+            "mean": 16.161458333333332,
+            "half": 4.818953146928456
+          },
+          "versusSpatial": {
+            "mean": 1,
+            "half": 0
+          },
+          "overCeiling": 1.0021721907766474,
+          "settleS": 11.5,
+          "linkChangesPerNodeMinute": 0,
+          "duplicates": 0,
+          "reissued": 0
+        },
+        "random": {
+          "throughput": {
+            "mean": 14.443750000000001,
+            "half": 4.6593767801248545
+          },
+          "versusSpatial": {
+            "mean": 0.9053469636919618,
+            "half": 0.1256651967265602
+          },
+          "overCeiling": 1.0002812998506536,
+          "settleS": 7.25,
+          "linkChangesPerNodeMinute": 0,
+          "duplicates": 0,
+          "reissued": 0
+        },
+        "greedy": {
+          "throughput": {
+            "mean": 17.10729166666667,
+            "half": 5.617449366983649
+          },
+          "versusSpatial": {
+            "mean": 1.0436172102796362,
+            "half": 0.06251417672846199
+          },
+          "overCeiling": 1.0006844343425845,
+          "settleS": 2.375,
+          "linkChangesPerNodeMinute": 0,
+          "duplicates": 0,
+          "reissued": 0
+        },
+        "adaptive": {
+          "throughput": {
+            "mean": 16.679166666666667,
+            "half": 5.785315316000983
+          },
+          "versusSpatial": {
+            "mean": 1.0012065930048446,
+            "half": 0.10627811567824555
+          },
+          "overCeiling": 1.0076111050879288,
+          "settleS": 24.625,
+          "linkChangesPerNodeMinute": 1.060546875,
+          "duplicates": 2.25,
+          "reissued": 0
+        }
+      }
+    },
+    {
+      "source": "typical",
+      "regime": "data-bound",
+      "scenario": "uniform",
+      "nodes": 32,
+      "seeds": 8,
+      "durationS": 600,
+      "ceiling": 24,
+      "policies": {
+        "spatial": {
+          "throughput": {
+            "mean": 23.997916666666665,
+            "half": 0.008593036586548981
+          },
+          "versusSpatial": {
+            "mean": 1,
+            "half": 0
+          },
+          "overCeiling": 1.0006944444444443,
+          "settleS": 0,
+          "linkChangesPerNodeMinute": 0,
+          "duplicates": 0,
+          "reissued": 0
+        },
+        "random": {
+          "throughput": {
+            "mean": 24.007291666666667,
+            "half": 0.011315012765741409
+          },
+          "versusSpatial": {
+            "mean": 1.0003907758507564,
+            "half": 0.0004715610623285292
+          },
+          "overCeiling": 1.0017361111111112,
+          "settleS": 0,
+          "linkChangesPerNodeMinute": 0,
+          "duplicates": 0,
+          "reissued": 0
+        },
+        "greedy": {
+          "throughput": {
+            "mean": 24.00104166666667,
+            "half": 0.007831670922889793
+          },
+          "versusSpatial": {
+            "mean": 1.0001304796950699,
+            "half": 0.0005134754975699128
+          },
+          "overCeiling": 1.0010416666666666,
+          "settleS": 0,
+          "linkChangesPerNodeMinute": 0,
+          "duplicates": 0,
+          "reissued": 0
+        },
+        "adaptive": {
+          "throughput": {
+            "mean": 23.943749999999998,
+            "half": 0.026146090636183734
+          },
+          "versusSpatial": {
+            "mean": 0.9977428140205644,
+            "half": 0.0010042362178325785
+          },
+          "overCeiling": 1.0006944444444443,
+          "settleS": 0,
+          "linkChangesPerNodeMinute": 0.9140625,
+          "duplicates": 1.625,
+          "reissued": 0
+        }
+      }
+    }
+  ]
+}

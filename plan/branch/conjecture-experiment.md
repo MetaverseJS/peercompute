@@ -29,9 +29,15 @@ User instruction, 2026-11-19: after the larger-picture review recommended
      topology tick; `recordPeerWork` counts work per peer; `NodeKernel` counts
      completed remote compute tasks and graphs. Opt-in; other topologies,
      including NetViz's `emergent`, are unchanged.
-   - [ ] A divisible workload that spreads across peers.
-   - [ ] A real multi-browser run of the `throughput` topology. Only unit tests
-     cover it so far.
+   - [x] `WorkMesh` (`src/peercompute/workMesh/WorkMesh.js`): a divisible job
+     spreads over directly linked neighbours and results return to the origin.
+     Transport-free; tested on an in-memory network and compared across
+     topologies with simulated links (`experiments/conjecture/meshRun.js`).
+   - [ ] Connect `WorkMesh` to libp2p streams between linked peers. Remote
+     compute messages are published on the shared pubsub topic today, so every
+     peer in the mesh receives them and link choice cannot affect throughput.
+   - [ ] A real multi-browser run of the `throughput` topology with `WorkMesh`.
+     Only unit tests and simulated links cover them so far.
 5. [ ] Repeat the comparison with real browsers over shaped links (chaos lab),
    after checking the harness defects listed in the November 8 audit.
 6. [ ] Keystone demo as the visualization of steps 4–5.

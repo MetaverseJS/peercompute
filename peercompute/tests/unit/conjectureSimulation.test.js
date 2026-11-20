@@ -4,6 +4,7 @@ import { makeScenario, throughputCeiling, SCENARIOS } from '../../experiments/co
 import { simulate, POLICIES } from '../../experiments/conjecture/simulate.js';
 import { spatialTopology, randomTopology, greedyTopology } from '../../experiments/conjecture/topologies.js';
 import { createRng } from '../../experiments/conjecture/model.js';
+import { runMesh, MESH_POLICIES } from '../../experiments/conjecture/meshRun.js';
 
 const run = (options, scenarioOptions) => simulate({ durationS: 240, seed: 2, ...options,
   scenario: makeScenario({ seed: 2, ...scenarioOptions }) });
@@ -59,4 +60,16 @@ test('losing a quarter of the peers lowers the ceiling and the network keeps wor
     assert.ok(result.afterLoss.throughput > 0 && result.afterLoss.throughput <= result.afterLoss.ceiling * 1.0001, policy);
     assert.ok(Math.abs(result.conservationError) < 1e-6, `${policy} accounts for work lost with failed peers`);
   }
+});
+
+test('the real scheduler reaches total compute in the uniform control and repeats exactly', () => {
+  const scenario = makeScenario({ name: 'uniform', seed: 2, regime: 'compute-bound' });
+  const total = scenario.nodes.reduce((sum, node) => sum + node.compute, 0);
+  for (const policy of MESH_POLICIES) {
+    const result = runMesh({ scenario, policy, seed: 2, durationS: 90 });
+    assert.ok(Math.abs(result.throughput - total) / total < 0.02, `${policy} reached ${result.throughput} of ${total}`);
+    assert.equal(result.reissued, 0);
+  }
+  const options = { scenario: makeScenario({ name: 'sites', seed: 2, regime: 'balanced' }), policy: 'adaptive', seed: 2, durationS: 60 };
+  assert.deepEqual(runMesh(options), runMesh(options));
 });

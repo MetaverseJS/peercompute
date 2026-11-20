@@ -15,8 +15,9 @@ minute once settled.
 
 This is evidence about the rule in a model. It is not evidence about real
 browsers or WebRTC. The library can now run the rule (`topology: 'throughput'`
-in `NetworkManager`, off by default), but that mode has unit tests only and has
-not been measured on a real network.
+in `NetworkManager`, off by default) and has a scheduler that moves work only
+between linked neighbours (`WorkMesh`), but neither has been measured on a real
+network, and `WorkMesh` is not yet connected to the library's transport.
 
 ## Run it
 
@@ -173,6 +174,60 @@ Balanced and data-bound tasks only. The rule gave 1.00–3.04 times spatial and
 0.96–1.34 times central greedy, at 62–100% of the ceiling, changing 1.9–2.6
 links per node per minute. It took up to 238 s to settle and up to 52 s to
 recover from the loss.
+
+## The same comparison with the real scheduler
+
+The tables above come from a fluid model. `meshRun.js` repeats the comparison
+with the code that would run in a browser: `WorkMesh`
+(`src/peercompute/workMesh/WorkMesh.js`) moving discrete tasks and results
+between linked neighbours, and the topology rule fed by the work `WorkMesh`
+reports, on a virtual clock. Only the links are simulated: a payload takes its
+size over the link capacity to cross, and a node's access capacity is shared by
+its links.
+
+```sh
+node peercompute/experiments/conjecture/meshSweep.mjs --source provisioned --regime data-bound --seeds 8 --out mesh.json
+```
+
+32 nodes, 8 seeds, 600 s, tasks per second over the last two minutes
+(`results/2026-11-19-mesh-*.json`):
+
+| Source | Task size | Scenario | Ceiling | Spatial | Random | Central greedy | Local rule | Rule ÷ spatial | Settle (s) | Link changes per node-minute |
+|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| typical | balanced | sites | 126 | 70 ± 20 | 76 ± 27 | 112 ± 24 | 124 ± 34 | 1.76 | 55 | 1.6 |
+| typical | balanced | decorrelated | 100 | 80 ± 21 | 78 ± 24 | 100 ± 24 | 99 ± 23 | 1.23 | 9 | 1.4 |
+| typical | balanced | far-compute | 78 | 36 ± 4 | 54 ± 16 | 50 ± 8 | 70 ± 19 | 1.96 | 39 | 1.8 |
+| typical | balanced | uniform | 104 | 104 ± 0 | 104 ± 0 | 104 ± 0 | 104 ± 0 | 1.00 | 2 | 1.5 |
+| typical | data-bound | sites | 34 | 32 ± 9 | 23 ± 8 | 34 ± 11 | 32 ± 10 | 1.00 | 41 | 1.2 |
+| typical | data-bound | decorrelated | 24 | 24 ± 7 | 20 ± 7 | 24 ± 6 | 24 ± 6 | 1.02 | 5 | 0.8 |
+| typical | data-bound | far-compute | 17 | 16 ± 5 | 14 ± 5 | 17 ± 6 | 17 ± 6 | 1.03 | 25 | 1.1 |
+| typical | data-bound | uniform | 24 | 24 ± 0 | 24 ± 0 | 24 ± 0 | 24 ± 0 | 1.00 | 0 | 0.9 |
+| provisioned | balanced | sites | 165 | 87 ± 29 | 92 ± 33 | 136 ± 14 | 155 ± 25 | 1.79 | 98 | 1.9 |
+| provisioned | balanced | decorrelated | 179 | 110 ± 28 | 105 ± 29 | 170 ± 40 | 173 ± 39 | 1.57 | 26 | 1.8 |
+| provisioned | balanced | far-compute | 142 | 50 ± 26 | 78 ± 14 | 76 ± 15 | 110 ± 8 | 2.20 | 60 | 2.5 |
+| provisioned | balanced | uniform | 128 | 128 ± 0 | 128 ± 0 | 128 ± 0 | 128 ± 0 | 1.00 | 2 | 1.0 |
+| provisioned | data-bound | sites | 149 | 49 ± 6 | 36 ± 17 | 79 ± 7 | 80 ± 8 | 1.61 | 254 | 1.7 |
+| provisioned | data-bound | decorrelated | 143 | 45 ± 13 | 37 ± 12 | 100 ± 18 | 89 ± 16 | 1.99 | 92 | 1.4 |
+| provisioned | data-bound | far-compute | 97 | 25 ± 5 | 27 ± 6 | 40 ± 4 | 55 ± 10 | 2.20 | 211 | 2.2 |
+| provisioned | data-bound | uniform | 128 | 94 ± 4 | 89 ± 6 | 97 ± 0 | 79 ± 1 | 0.85 | 2 | 1.2 |
+
+- **The direction holds, the size is smaller.** Outside the uniform control the
+  rule gives 1.00–2.20 times spatial (1.07–2.99 in the fluid model) and
+  1.15–2.38 times a random graph, at 53–100% of the ceiling.
+- **Against central greedy it is mixed:** 0.89–1.45 times. Greedy is ahead with
+  data-bound tasks on a network where link quality is unrelated to position.
+- **The rule can hurt.** With identical nodes, data-bound tasks and a
+  well-connected source it ends 15% below spatial (79 against 94): every
+  rewiring costs a link set-up and the batch in flight, and there is nothing
+  to gain.
+- **Settling is slower** than in the fluid model: up to 254 s.
+- Building this exposed four scheduler faults the fluid model could not show:
+  tasks started only on a timer tick; slow nodes given queues as long as fast
+  ones, so tasks timed out and were redone; work circulating between
+  neighbours and inflating their apparent capacity; and links idling between
+  an acknowledgement and the next tick. All four have tests now.
+- Results are counted as they return, so a run can exceed the ceiling slightly
+  while queued work drains (at most 0.8% here).
 
 ## Limits
 
