@@ -239,6 +239,47 @@ test('results survive a break of several seconds in the only path home', async (
   assert.ok(values.filter((entry) => entry.by === 'b').length > 100);
 });
 
+test('results spread over every way home instead of piling up behind one slow link', () => {
+  // Workers w1..w6 can reach the origin through relay r1 or relay r2. Neither
+  // relay's link to the origin can carry everything alone.
+  let now = 0, order = 0;
+  const events = [];
+  const at = (time, fn) => events.push([time, order++, fn]);
+  const ids = ['a', 'r1', 'r2', 'w1', 'w2', 'w3', 'w4', 'w5', 'w6'];
+  const pairs = [['a', 'r1'], ['a', 'r2'], ...['w1', 'w2', 'w3', 'w4', 'w5', 'w6'].flatMap((w) => [['r1', w], ['r2', w]])];
+  const free = new Map();
+  const nodes = new Map(ids.map((id) => [id, new WorkMesh({
+    nodeId: id, clock: () => now,
+    send: (peerId, message) => {
+      const size = message.type === 'results' ? message.results.length : message.type === 'work' ? message.tasks.length : 0;
+      // r1 can pass 50 results per second to the origin and r2 only 25, so r1 is
+      // the cheaper way home; the workers produce 60 per second.
+      const perItem = message.type === 'results' && peerId === 'a' ? (id === 'r1' ? 20 : 40) : 2;
+      const key = `${id}>${peerId}`;
+      const start = size ? Math.max(now, free.get(key) || 0) : now;
+      if (size) free.set(key, start + size * perItem);
+      at(start + size * perItem + 2, () => nodes.get(peerId).receive(id, structuredClone(message)));
+    },
+    execute: (task, done) => at(now + (id.startsWith('w') ? 100 : 1000), () => done(task.payload))
+  })]));
+  for (const [x, y] of pairs) { nodes.get(x).linkUp(y); nodes.get(y).linkUp(x); }
+  nodes.get('a').submitJob({ jobId: 'j', tasks: payloads(1000000) });
+  let worst = 0;
+  for (let t = 0; t <= 120000; t += 100) at(t, () => { for (const node of nodes.values()) node.tick(now); worst = Math.max(worst, nodes.get('r1').results.length); });
+  for (;;) {
+    events.sort((x, y) => (x[0] - y[0]) || (x[1] - y[1]));
+    if (!events.length || events[0][0] > 120000) break;
+    const [time, , fn] = events.shift(); now = time; fn();
+  }
+  const origin = nodes.get('a');
+  // Six workers at ten tasks per second: 60 per second if results get home.
+  assert.ok(origin.counters.returned > 0.8 * 60 * 120, `${origin.counters.returned} results came home`);
+  // Six workers may each have a batch on the way before r1's next report, so
+  // it can overshoot its buffer; without backpressure it holds over a thousand.
+  assert.ok(worst <= 10 * origin.config.resultBuffer, `r1 held up to ${worst} results`);
+  assert.equal(origin.counters.reissued, 0);
+});
+
 test('bad input is rejected and foreign messages are ignored', () => {
   assert.throws(() => new WorkMesh({ nodeId: 'a' }), TypeError);
   const mesh = new WorkMesh({ nodeId: 'a', send() {}, execute() {} });

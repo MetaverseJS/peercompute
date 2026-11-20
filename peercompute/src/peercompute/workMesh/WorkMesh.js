@@ -100,7 +100,7 @@ export class WorkMesh {
 
   linkUp(peerId) {
     if (!this.links.has(peerId)) this.links.set(peerId, { queued: Number.POSITIVE_INFINITY, rate: 0, cost: this.config.defaultLinkCost, measured: false,
-      distances: new Map(), work: null, results: null });
+      held: 0, distances: new Map(), work: null, results: null });
   }
 
   /** Anything in flight on a lost link may not have arrived: keep it here. */
@@ -122,6 +122,7 @@ export class WorkMesh {
       case 'state':
         link.queued = Number.isFinite(message.queued) ? Math.max(0, message.queued) : Number.POSITIVE_INFINITY;
         link.rate = Number.isFinite(message.rate) ? Math.max(0, message.rate) : 0;
+        link.held = Number.isFinite(message.held) ? Math.max(0, message.held) : 0;
         link.distances = new Map();
         for (const [jobId, origin, distance] of Array.isArray(message.jobs) ? message.jobs : []) {
           if (!this.origins.has(jobId)) this.origins.set(jobId, origin);
@@ -172,29 +173,33 @@ export class WorkMesh {
     const jobs = [...this.distances].map(([jobId, distance]) => [jobId, this.origins.get(jobId), distance]);
     for (const [peerId, link] of this.links) {
       this._serve(peerId, link);
-      this.send(peerId, { schema: WORK_MESH_SCHEMA, type: 'state', queued: held, rate: this.rate, jobs });
+      this.send(peerId, { schema: WORK_MESH_SCHEMA, type: 'state', queued: held, rate: this.rate, held: this.results.length, jobs });
     }
   }
 
   /** Put results and work on a link that has nothing in flight in that direction. */
   _serve(peerId, link) {
     if (!link.results && this.results.length) {
-      // Results travel only to a neighbour that is nearer their origin, and
-      // only by a path about as cheap as the best one this node knows.
+      // Results travel to any neighbour that is nearer their origin and is not
+      // already backed up with results. Sending everything down the single
+      // cheapest path would pile results up behind that path's slowest link
+      // while other ways home stood idle.
       const batch = [];
       const rest = [];
+      const backedUp = link.held >= this.config.resultBuffer;
       for (const result of this.results) {
         // Compare against this tick's own best path, not the steadier value
         // this node advertises: otherwise, as measurements drift, no neighbour
         // may qualify and results would never leave.
         const mine = this.liveDistances.get(result.jobId) ?? Number.POSITIVE_INFINITY;
         const theirs = link.distances.get(result.jobId) ?? Number.POSITIVE_INFINITY;
-        const homeward = theirs < mine && theirs + Math.max(link.cost, 1e-4) <= 1.25 * mine + 1e-9;
+        const homeward = theirs < mine && (theirs === 0 || !backedUp);
         (homeward && batch.length < this.config.resultBatch ? batch : rest).push(result);
       }
       if (batch.length) {
         this.results = rest;
         batch.sentAt = this.clock();
+        link.held += batch.length; // until the neighbour's next report
         link.results = batch;
         this.send(peerId, { schema: WORK_MESH_SCHEMA, type: 'results', results: batch });
       }
