@@ -87,6 +87,7 @@ export function runMesh({ scenario, policy, durationS = 600, seed = 1, policyCon
   };
   const meshes = nodes.map((node) => new WorkMesh({
     nodeId: node.id,
+    clock: () => now,
     send: (peerId, message) => send(node.index, peerId, message),
     execute: (item, done) => agenda.push(now + 1000 / node.compute, () => done(item.payload)),
     onWork: (peerId, units) => {

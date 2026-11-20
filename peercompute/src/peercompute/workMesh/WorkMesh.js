@@ -5,13 +5,21 @@
  * (by running them or passing them on). Its waiting time is queue length over
  * that rate. On each tick a node gives work to a neighbour with a shorter
  * waiting time, enough to close half the gap; it runs tasks itself; and it
- * passes finished results to the neighbour closest (in hops) to the job's
- * origin. Work never moves toward its origin, and moves sideways only across a
- * clear gap, so tasks cannot circulate. No node knows the whole network: it sees only its neighbours'
- * queues, rates and hop counts. Balancing time rather than length keeps a slow
- * node from holding work it cannot finish soon. One batch at a time is in
- * flight per link and direction, so a slow link carries less work without
- * anyone measuring its speed.
+ * passes finished results toward the job's origin. Balancing time rather than
+ * length keeps a slow node from holding work it cannot finish soon.
+ *
+ * Each node also measures, per link, the seconds a result takes to cross it, and
+ * keeps a distance to each job's origin: the cheapest sum of those costs over
+ * any path, learned from its neighbours' distances. Results go to a neighbour
+ * that is nearer by that measure, and work moves only to a neighbour that is
+ * farther, so tasks cannot circulate. Work left behind by a route change
+ * waits for its node to run it; the origin offers it again if that takes too
+ * long. Measuring cost rather than counting hops lets a strong peer be fed
+ * through a fast two-link path instead of a slow direct link.
+ *
+ * No node knows the whole network: it sees only its neighbours' queues, rates
+ * and distances. One batch at a time is in flight per link and direction, so a
+ * slow link carries less work.
  *
  * This is the live counterpart of the flow model in
  * peercompute/experiments/conjecture/simulate.js. The module has no timers,
@@ -29,18 +37,21 @@ export const WORK_MESH_DEFAULTS = Object.freeze({
   minHead: 8, // and the fewest tasks it offers, whatever its rate
   minRate: 0.5, // tasks per second assumed of a node that has not been measured
   rateTauMs: 2000,
-  lateralGapSeconds: 1, // waiting-time gap needed to pass work to a neighbour no farther from the origin
   concurrency: 1,
   resultBuffer: 16, // finished results a node may hold before it stops computing
   workBatch: 8,
   resultBatch: 16,
-  maxHops: 32,
+  defaultLinkCost: 0.05, // seconds per task assumed of a link that has not carried a batch
+  costWindow: 8, // recent batches whose fastest crossing defines a link's cost
+  distanceHold: 0.2, // a node keeps its distance until the measured value moves by this share
+  fartherMargin: 0.1, // and a neighbour must be this much farther to be given work
+  maxDistance: 30, // seconds; beyond this an origin counts as unreachable
   taskTimeoutMs: 60000, // the origin offers a task again if no result has come back
   forgetMs: 5000 // drop a job's leftovers once no neighbour has known a way to its origin for this long
 });
 
 export class WorkMesh {
-  constructor({ nodeId, send, execute, onWork = null, config = {} } = {}) {
+  constructor({ nodeId, send, execute, onWork = null, clock = null, config = {} } = {}) {
     if (!nodeId || typeof send !== 'function' || typeof execute !== 'function') {
       throw new TypeError('WorkMesh requires nodeId, send and execute');
     }
@@ -48,16 +59,17 @@ export class WorkMesh {
     this.send = send;
     this.execute = execute;
     this.onWork = typeof onWork === 'function' ? onWork : null;
+    this.clock = typeof clock === 'function' ? clock : () => Date.now();
     this.config = { ...WORK_MESH_DEFAULTS, ...config };
     this.queue = []; // { jobId, taskId, origin, payload }
     this.results = []; // { jobId, taskId, origin, value } waiting to travel home
     this.running = 0;
-    this.links = new Map(); // peerId -> { queued, hops: Map, work: batch|null, results: batch|null }
+    this.links = new Map(); // peerId -> { queued, rate, cost, distances: Map, work: batch|null, results: batch|null }
     this.jobs = new Map(); // jobs this node originated
     this.origins = new Map(); // jobId -> origin nodeId, for every job seen
-    this.hops = new Map(); // jobId -> this node's hop count to the origin
+    this.distances = new Map(); // jobId -> seconds per task from this node to the origin
     this.unreachableSince = new Map(); // jobId -> when its origin was last reachable
-    this.counters = { executed: 0, forwarded: 0, forwardedOutward: 0, returned: 0, reissued: 0, duplicates: 0 };
+    this.counters = { executed: 0, forwarded: 0, returned: 0, reissued: 0, duplicates: 0 };
     this.rate = 0; // tasks per second this node runs or passes on, smoothed
     this.rateSample = null; // { at, drained }
     this.now = 0;
@@ -79,13 +91,14 @@ export class WorkMesh {
       remaining: tasks.length, next: 0, retry: [], issued: new Map(), onResult, resolve
     });
     this.origins.set(jobId, this.nodeId);
-    this.hops.set(jobId, 0);
+    this.distances.set(jobId, 0);
     if (tasks.length === 0) this._finish(jobId);
     return done;
   }
 
   linkUp(peerId) {
-    if (!this.links.has(peerId)) this.links.set(peerId, { queued: Number.POSITIVE_INFINITY, rate: 0, hops: new Map(), work: null, results: null });
+    if (!this.links.has(peerId)) this.links.set(peerId, { queued: Number.POSITIVE_INFINITY, rate: 0, cost: this.config.defaultLinkCost, measured: false,
+      distances: new Map(), work: null, results: null });
   }
 
   /** Anything in flight on a lost link may not have arrived: keep it here. */
@@ -107,10 +120,10 @@ export class WorkMesh {
       case 'state':
         link.queued = Number.isFinite(message.queued) ? Math.max(0, message.queued) : Number.POSITIVE_INFINITY;
         link.rate = Number.isFinite(message.rate) ? Math.max(0, message.rate) : 0;
-        link.hops = new Map();
-        for (const [jobId, origin, hops] of Array.isArray(message.jobs) ? message.jobs : []) {
+        link.distances = new Map();
+        for (const [jobId, origin, distance] of Array.isArray(message.jobs) ? message.jobs : []) {
           if (!this.origins.has(jobId)) this.origins.set(jobId, origin);
-          link.hops.set(jobId, hops);
+          if (Number.isFinite(distance) && distance >= 0) link.distances.set(jobId, distance);
         }
         break;
       case 'work':
@@ -125,7 +138,6 @@ export class WorkMesh {
       case 'work-ack':
         if (link.work) {
           this.counters.forwarded += link.work.length;
-          if (link.work.outward) this.counters.forwardedOutward += link.work.length;
           this._moved(peerId, link.work.length);
         }
         link.work = null;
@@ -137,7 +149,7 @@ export class WorkMesh {
         this.send(peerId, { schema: WORK_MESH_SCHEMA, type: 'results-ack' });
         break;
       case 'results-ack':
-        if (link.results) this._moved(peerId, link.results.length);
+        if (link.results) { this._crossed(link, link.results); this._moved(peerId, link.results.length); }
         link.results = null;
         this._serve(peerId, link);
         break;
@@ -151,10 +163,10 @@ export class WorkMesh {
     this.now = now;
     this._measure(now);
     this._refill(now);
-    this._updateHops(now);
+    this._updateDistances(now);
     this._pump();
     const held = this.queue.length + this.running;
-    const jobs = [...this.hops].map(([jobId, hops]) => [jobId, this.origins.get(jobId), hops]);
+    const jobs = [...this.distances].map(([jobId, distance]) => [jobId, this.origins.get(jobId), distance]);
     for (const [peerId, link] of this.links) {
       this._serve(peerId, link);
       this.send(peerId, { schema: WORK_MESH_SCHEMA, type: 'state', queued: held, rate: this.rate, jobs });
@@ -164,15 +176,19 @@ export class WorkMesh {
   /** Put results and work on a link that has nothing in flight in that direction. */
   _serve(peerId, link) {
     if (!link.results && this.results.length) {
-      // Results travel only to a neighbour that is closer to their origin.
+      // Results travel only to a neighbour that is nearer their origin, and
+      // only by a path about as cheap as the best one this node knows.
       const batch = [];
       const rest = [];
       for (const result of this.results) {
-        const closer = (link.hops.get(result.jobId) ?? Number.POSITIVE_INFINITY) < (this.hops.get(result.jobId) ?? Number.POSITIVE_INFINITY);
-        (closer && batch.length < this.config.resultBatch ? batch : rest).push(result);
+        const mine = this.distances.get(result.jobId) ?? Number.POSITIVE_INFINITY;
+        const theirs = link.distances.get(result.jobId) ?? Number.POSITIVE_INFINITY;
+        const homeward = theirs < mine && theirs + link.cost <= 1.25 * mine + 1e-9;
+        (homeward && batch.length < this.config.resultBatch ? batch : rest).push(result);
       }
       if (batch.length) {
         this.results = rest;
+        batch.sentAt = this.clock();
         link.results = batch;
         this.send(peerId, { schema: WORK_MESH_SCHEMA, type: 'results', results: batch });
       }
@@ -189,15 +205,16 @@ export class WorkMesh {
         // waits behind this node's own executor for longer than the queue.
         const batch = [];
         const rest = [];
-        let outward = true;
         for (const task of this.queue) {
-          const away = (link.hops.get(task.jobId) ?? Number.POSITIVE_INFINITY) - (this.hops.get(task.jobId) ?? 0);
-          const allowed = away > 0 || (away === 0 && gap >= this.config.lateralGapSeconds);
-          if (allowed && batch.length < share) { batch.push(task); if (away <= 0) outward = false; } else rest.push(task);
+          // Distances are measured with results, by the node that sends them,
+          // so the only comparison both ends agree on is which is farther.
+          const farther = (link.distances.get(task.jobId) ?? Number.POSITIVE_INFINITY)
+            > (1 + this.config.fartherMargin) * (this.distances.get(task.jobId) ?? 0);
+          if (farther && batch.length < share) batch.push(task); else rest.push(task);
         }
         if (batch.length) {
           this.queue = rest;
-          batch.outward = outward;
+          batch.sentAt = this.clock();
           // The origin's clock for a task starts when the task leaves it; a
           // task still queued here is not missing.
           for (const task of batch) this.jobs.get(task.jobId)?.issued.set(task.taskId, this.now);
@@ -238,8 +255,7 @@ export class WorkMesh {
   }
 
   _measure(now) {
-    // Work passed sideways is not progress, so it does not count as capacity.
-    const drained = this.counters.executed + this.counters.forwardedOutward;
+    const drained = this.counters.executed + this.counters.forwarded;
     if (this.rateSample && now > this.rateSample.at) {
       const elapsed = now - this.rateSample.at;
       this.rate += ((drained - this.rateSample.drained) * 1000 / elapsed - this.rate) * (1 - Math.exp(-elapsed / this.config.rateTauMs));
@@ -268,17 +284,34 @@ export class WorkMesh {
     }
   }
 
-  _updateHops(now) {
+  /**
+   * Record the seconds per task of a batch that has just been acknowledged. A
+   * link's cost is its fastest recent crossing: that reflects the link itself,
+   * while an average would rise and fall with the load and make routes flap.
+   */
+  _crossed(link, batch) {
+    const perTask = Math.max(0, this.clock() - batch.sentAt) / 1000 / Math.max(1, batch.length);
+    link.recent = [...(link.recent || []), perTask].slice(-this.config.costWindow);
+    link.cost = Math.min(...link.recent);
+    link.measured = true;
+  }
+
+  _updateDistances(now) {
     for (const jobId of [...this.origins.keys()]) {
-      if (this.jobs.has(jobId)) { this.hops.set(jobId, 0); continue; }
+      if (this.jobs.has(jobId)) { this.distances.set(jobId, 0); continue; }
       let best = Number.POSITIVE_INFINITY;
-      for (const link of this.links.values()) best = Math.min(best, (link.hops.get(jobId) ?? Number.POSITIVE_INFINITY) + 1);
-      if (best <= this.config.maxHops) {
-        this.hops.set(jobId, best);
+      for (const link of this.links.values()) {
+        best = Math.min(best, (link.distances.get(jobId) ?? Number.POSITIVE_INFINITY) + Math.max(link.cost, 1e-4));
+      }
+      if (best <= this.config.maxDistance) {
+        // Hold the current value against small changes so that two nodes about
+        // equally far do not keep swapping places.
+        const held = this.distances.get(jobId);
+        if (held === undefined || Math.abs(best - held) > this.config.distanceHold * held) this.distances.set(jobId, best);
         this.unreachableSince.delete(jobId);
         continue;
       }
-      this.hops.delete(jobId);
+      this.distances.delete(jobId);
       if (!this.unreachableSince.has(jobId)) this.unreachableSince.set(jobId, now);
       if (now - this.unreachableSince.get(jobId) < this.config.forgetMs) continue;
       // The job finished or its origin is gone: its leftovers would only clog this node.
@@ -309,7 +342,7 @@ export class WorkMesh {
   _finish(jobId) {
     const job = this.jobs.get(jobId);
     this.jobs.delete(jobId);
-    this.hops.delete(jobId);
+    this.distances.delete(jobId);
     this.origins.delete(jobId);
     // Tasks of a finished job still queued anywhere are harmless duplicates.
     this.queue = this.queue.filter((task) => task.jobId !== jobId);

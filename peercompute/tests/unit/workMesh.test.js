@@ -16,7 +16,7 @@ function network({ speeds, links, delayMs = 10, config = {} }) {
   const nodes = new Map();
   for (const [id, speed] of Object.entries(speeds)) {
     nodes.set(id, new WorkMesh({
-      nodeId: id, config,
+      nodeId: id, config, clock: () => now,
       send: (peerId, message) => at(now + delayMs, () => { if (up.has([id, peerId].sort().join('|'))) nodes.get(peerId)?.receive(id, structuredClone(message)); }),
       execute: (task, done) => at(now + 1000 / speed, () => done({ by: id, value: task.payload * 2 })),
       onWork: (peerId, units) => moved.set(`${id}>${peerId}`, (moved.get(`${id}>${peerId}`) || 0) + units)
@@ -121,7 +121,7 @@ test('two jobs from different origins share the mesh and results reach the right
   assert.deepEqual(fromC.map((entry) => entry.value), payloads(40).map((value) => (value + 1000) * 2));
 });
 
-test('a node starts its next task at once, and equal neighbours do not pass work back and forth', async () => {
+test('a node starts its next task at once, and work does not circulate between equal neighbours', async () => {
   // Four tasks per second is one task every 250 ms, which a 100 ms tick would round up to 300 ms.
   const solo = network({ speeds: { a: 4 }, links: [] });
   solo.nodes.get('a').submitJob({ jobId: 'j', tasks: payloads(1000) });
@@ -136,9 +136,10 @@ test('a node starts its next task at once, and equal neighbours do not pass work
   assert.ok(executed >= 0.95 * 16 * 60, `four nodes ran ${executed} of 960`);
   assert.equal(source.counters.duplicates, 0);
   assert.equal(source.counters.reissued, 0);
-  // b and c are the same distance from the origin and trade little with each other.
-  const sideways = net.nodes.get('b').counters.forwarded - net.nodes.get('b').counters.forwardedOutward;
-  assert.ok(sideways <= 0.05 * net.nodes.get('b').counters.forwarded + 8, `b passed ${sideways} tasks sideways`);
+  // b and c are about the same distance from the origin. Nothing circulates
+  // between them (no task was late or run twice above), and d, which both can
+  // reach, gets its full share.
+  assert.ok(net.nodes.get('d').counters.executed >= 0.9 * 4 * 60);
 });
 
 test('a slow node is not left holding more than a few seconds of work', () => {
@@ -149,6 +150,40 @@ test('a slow node is not left holding more than a few seconds of work', () => {
   // At half a task per second, 64 queued tasks would be two minutes of work.
   assert.ok(worst <= 6, `the slow node held up to ${worst} tasks`);
   assert.ok(net.nodes.get('fast').counters.executed > 30 * net.nodes.get('slow').counters.executed);
+});
+
+test('a strong peer is fed through a fast two-link path rather than its slow direct link', () => {
+  // Every payload between the origin and the strong peer is slow; via the relay it is fast.
+  const slow = new Set(['a|strong']);
+  let now = 0, order = 0;
+  const events = [];
+  const at = (time, fn) => events.push([time, order++, fn]);
+  const speeds = { a: 1, relay: 1, strong: 40 };
+  const nodes = new Map();
+  for (const [id, speed] of Object.entries(speeds)) {
+    nodes.set(id, new WorkMesh({
+      nodeId: id, clock: () => now,
+      send: (peerId, message) => {
+        const payload = message.type === 'work' ? message.tasks.length : message.type === 'results' ? message.results.length : 0;
+        const perTask = slow.has([id, peerId].sort().join('|')) ? 400 : 5;
+        at(now + 5 + payload * perTask, () => nodes.get(peerId).receive(id, structuredClone(message)));
+      },
+      execute: (task, done) => at(now + 1000 / speed, () => done(task.payload))
+    }));
+  }
+  for (const [x, y] of [['a', 'relay'], ['relay', 'strong'], ['a', 'strong']]) { nodes.get(x).linkUp(y); nodes.get(y).linkUp(x); }
+  nodes.get('a').submitJob({ jobId: 'j', tasks: payloads(100000) });
+  for (let t = 0; t <= 60000; t += 100) at(t, () => { for (const node of nodes.values()) node.tick(now); });
+  for (;;) {
+    events.sort((x, y) => (x[0] - y[0]) || (x[1] - y[1]));
+    if (!events.length || events[0][0] > 60000) break;
+    const [time, , fn] = events.shift(); now = time; fn();
+  }
+  // The slow link alone could carry 2.5 tasks per second: 150 in a minute.
+  const strong = nodes.get('strong');
+  assert.ok(strong.counters.executed > 1500, `the strong peer ran ${strong.counters.executed} tasks`);
+  assert.ok(strong.distances.get('j') < 0.05, `its distance follows the fast path: ${strong.distances.get('j')}`);
+  assert.ok(nodes.get('relay').counters.forwarded > 1000);
 });
 
 test('bad input is rejected and foreign messages are ignored', () => {
