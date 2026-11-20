@@ -64755,3 +64755,11 @@ The Stop hook again judged the result not robust. Did not restart the 40-peer br
 Result over all 16 browser networks: rule ÷ random geometric mean 1.11, 95% bootstrap interval 0.98–1.30; ahead by more than 5% on 8, within 5% on 4, behind on 4. The simulation predicted the direction on 6 of the 8 new networks but far larger gaps. The rule's two runs differ by a median of 16% (maximum 72%) against 3% for the fixed random graph. Conclusion recorded in the README: against spatial the rule wins every run and it matches a central plan in the balanced cases, but an advantage over random connectivity is not established in browsers at 20 peers.
 
 Not done: the 40-peer browser comparison (needs the user's go-ahead on memory), shaped or separate-host links, a fix for the flapping. Nothing was pushed.
+
+### 2026-11-20 09:00 AKST — stopped the long browser runs and cleaned up processes
+
+Prompt: “can you clean up your vite processess.”
+
+Stopped the fifteen-minute browser sweep that was in progress (`lane4.sh`, `browserRun.mjs`) together with its Vite page server and local relay. Verified nothing from the experiment is left: no `browserRun`, no experiment Vite, no relay, no headless Chrome. The one remaining Vite process (pid 4838, started 17 November, port 5173) is the ULG project's dev server and was not touched.
+
+Before it was stopped the sweep had finished five runs; its memory guard had skipped eleven because only 6 GB was available. The finished runs are kept in `results/browser/2026-11-20-long-*.json`: on far compute with a well-connected source, seed 1, the rule gave 135.5 and 136.4 tasks per second over the last two minutes of fifteen against 111.1 for the fixed random graph; seed 2 gave 132.4 for the rule with no random run to compare. Too few to change the conclusion. Nothing was restarted.
