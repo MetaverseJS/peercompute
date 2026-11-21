@@ -1,5 +1,6 @@
+import { readCapabilityOverrides, recommendPixelRatio, sizeWorkload } from "@peercompute";
 import { mpm } from "../src/index.js";
-import { getSharedDevice } from "./shared/peercomputeDevice.js";
+import { getHardwareCapabilities, getSharedDevice } from "./shared/peercomputeDevice.js";
 import { OrbitCamera } from "./shared/orbitControls.js";
 import { createSphereGeometry } from "./shared/geometries.js";
 import { FluidRenderer } from "./shared/fluidRenderer.js";
@@ -31,6 +32,10 @@ let initialOrientation = null;
 let useDeviceOrientation = false;  // Flag to track if we're using device orientation
 let gui;
 let temperatureController;
+let hardwareCaps = null;
+let capOverrides = null;
+let effectiveDpr = 1;
+let maxSubStepsCap = 12;
 
 // Element list (materialType encodes element ID, phase will be computed in shaders)
 const ELEMENTS = [
@@ -152,9 +157,9 @@ function applyTooltips(map) {
 // Phase-invariant material selection is driven by element choice; properties derive from temperature/pressure in shaders.
 
 function resize() {
-  const devicePixelRatio = window.devicePixelRatio || 1;
-  const width = Math.max(1, Math.floor(canvas.clientWidth * devicePixelRatio));
-  const height = Math.max(1, Math.floor(canvas.clientHeight * devicePixelRatio));
+  const dpr = effectiveDpr || Math.min(2, window.devicePixelRatio || 1);
+  const width = Math.max(1, Math.floor(canvas.clientWidth * dpr));
+  const height = Math.max(1, Math.floor(canvas.clientHeight * dpr));
   canvas.width = width;
   canvas.height = height;
   context.configure({
@@ -399,13 +404,44 @@ async function initSimulation() {
   statusEl.textContent = "initializing...";
 
   try {
-    const particleCount = params.particleCount;
+    const particleSizing = sizeWorkload({
+      kind: 'count',
+      name: 'mpm-particles',
+      baseCount: 20000,
+      requestedCount: params.particleCount,
+      minCount: 100,
+      maxCount: 200000,
+      multiple: 100,
+      strideBytes: mpm.MPM_PARTICLE_STRIDE || 96,
+      storageBufferBytesPerItem: mpm.MPM_PARTICLE_STRIDE || 96,
+      buffersCount: 2,
+      workgroupSize: 64,
+      dispatchDimensions: 1
+    }, { capabilities: hardwareCaps || {}, overrides: capOverrides });
+    const gridSizing = sizeWorkload({
+      kind: 'grid3d',
+      name: 'mpm-grid',
+      requestedDim: [params.gridSizeX, params.gridSizeY, params.gridSizeZ],
+      minDim: [16, 16, 16],
+      maxDim: [256, 256, 256],
+      step: 16,
+      cellStrideBytes: 32,
+      buffersCount: 1,
+      memoryFraction: 0.4,
+      workgroupSize: 64,
+      dispatchDimensions: 1
+    }, { capabilities: hardwareCaps || {}, overrides: capOverrides });
+
+    const particleCount = particleSizing.count;
+    params.particleCount = particleCount;
+    params.gridSizeX = gridSizing.x;
+    params.gridSizeY = gridSizing.y;
+    params.gridSizeZ = gridSizing.z;
     const gridSize = { x: params.gridSizeX, y: params.gridSizeY, z: params.gridSizeZ };
     
-    // Sub-stepping for stability
-    // Fix physics step to a stable value (e.g. 5ms) and iterate to match requested dt
+    // Sub-stepping for stability, capped to prevent GPU TDR on high dt sliders
     const physics_dt = 0.005;
-    const iterations = Math.ceil(params.dt / physics_dt);
+    const iterations = Math.max(1, Math.min(maxSubStepsCap, Math.ceil(params.dt / physics_dt)));
 
     // Constants including brittle solid parameters
     const constants = {
@@ -508,6 +544,44 @@ async function initSimulation() {
 
 async function setup() {
   try {
+    capOverrides = readCapabilityOverrides();
+    hardwareCaps = await getHardwareCapabilities();
+    effectiveDpr = recommendPixelRatio(hardwareCaps, null, capOverrides);
+
+    const hasExplicitParticles = new URLSearchParams(window.location.search).has('particles');
+    const initialParticles = sizeWorkload({
+      kind: 'count',
+      name: 'mpm-initial-particles',
+      baseCount: 20000,
+      minCount: 2000,
+      maxCount: 100000,
+      multiple: 1000,
+      strideBytes: mpm.MPM_PARTICLE_STRIDE || 96,
+      buffersCount: 2,
+      baseSubSteps: 8,
+      maxSubSteps: 16
+    }, { capabilities: hardwareCaps, overrides: capOverrides });
+    const initialGrid = sizeWorkload({
+      kind: 'grid3d',
+      name: 'mpm-initial-grid',
+      baseDim: [64, 64, 64],
+      minDim: [32, 32, 32],
+      maxDim: [128, 128, 128],
+      step: 16,
+      cellStrideBytes: 32,
+      workgroupSize: 64,
+      dispatchDimensions: 1
+    }, { capabilities: hardwareCaps, overrides: capOverrides });
+    if (!hasExplicitParticles) {
+      params.particleCount = initialParticles.count;
+    }
+    params.gridSizeX = initialGrid.x;
+    params.gridSizeY = initialGrid.y;
+    params.gridSizeZ = initialGrid.z;
+    params.interactionX = Math.floor(params.gridSizeX / 2);
+    params.interactionZ = Math.floor(params.gridSizeZ / 2);
+    maxSubStepsCap = Math.max(4, initialParticles.recommendedSubSteps * 2);
+
     device = await getSharedDevice();
     context = canvas.getContext("webgpu");
     format = navigator.gpu.getPreferredCanvasFormat();

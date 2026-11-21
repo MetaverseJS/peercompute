@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { buildSurfaceFields, clamp01 } from './WaterCycleUtils.js';
+import { getSharedDevice } from './peercomputeDevice.js';
 
 const DEFAULT_GRID_WIDTH = 256;
 const DEFAULT_GRID_HEIGHT = 128;
@@ -94,20 +95,12 @@ export class WaterCycleSystem {
             this.device = injectedDevice;
             this.enabled = true;
         } else {
-            if (typeof navigator === 'undefined' || !navigator.gpu) {
+            this.device = await getSharedDevice();
+            if (!this.device) {
                 console.warn('[WaterCycleSystem] WebGPU not available; weather simulation disabled.');
                 this.enabled = false;
                 return;
             }
-
-            const adapter = await navigator.gpu.requestAdapter();
-            if (!adapter) {
-                console.warn('[WaterCycleSystem] No GPU adapter found; weather simulation disabled.');
-                this.enabled = false;
-                return;
-            }
-
-            this.device = await adapter.requestDevice();
             this.enabled = true;
         }
 

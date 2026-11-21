@@ -25,6 +25,9 @@ async function importTaskModule(modulePath) {
   if (modulePath === 'peercompute:sf3d-inference') {
     return import('../inference/sf3dModelTask.js');
   }
+  if (modulePath === 'peercompute:capability-benchmark') {
+    return import('../capabilities/benchmarkTask.js');
+  }
 
   return import(
     /* webpackChunkName: "compute-task" */

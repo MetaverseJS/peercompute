@@ -1,4 +1,5 @@
 import './styles.css';
+import { readCapabilityOverrides, sizeWorkload } from '@peercompute';
 import { ELEMENTS, getElementBySymbol, maxOrbitalLForN } from './data/elements.js';
 import { MATERIALS } from './data/materials.js';
 import { BOND_CLASS_STYLE, summarizeBondEvents } from './data/molecularStructures.js';
@@ -621,7 +622,37 @@ const attachPeerCompute = async () => {
 };
 
 const probeWebGPU = async () => {
-  const status = await getWebGPUStatus();
+  const capOverrides = readCapabilityOverrides();
+  const status = await getWebGPUStatus({ allowFallback: capOverrides.allowFallbackGpu === true });
+  if (status.capabilities) {
+    const pointSizing = sizeWorkload({
+      kind: 'count',
+      name: 'schrodinger-point-cloud',
+      baseCount: 70000,
+      minCount: 15000,
+      maxCount: 140000,
+      multiple: 5000,
+      strideBytes: 32,
+      buffersCount: 2
+    }, { capabilities: status.capabilities, overrides: capOverrides });
+    const gridSizing = sizeWorkload({
+      kind: 'grid3d',
+      name: 'schrodinger-orbital-grid',
+      baseDim: [28, 28, 28],
+      minDim: [16, 16, 16],
+      maxDim: [48, 48, 48],
+      step: 4,
+      cellStrideBytes: 16,
+      buffersCount: 2
+    }, { capabilities: status.capabilities, overrides: capOverrides });
+    if (pointSizing.count !== state.pointCount || gridSizing.x !== state.gridSize) {
+      state.pointCount = pointSizing.count;
+      state.gridSize = gridSizing.x;
+      controls.pointCount.value = String(state.pointCount);
+      controls.pointOutput.textContent = state.pointCount.toLocaleString();
+      void regenerateOrbital();
+    }
+  }
   if (!status.available) {
     state.webgpuStatus = 'unavailable';
     state.webgpuDetail = `webgpu: ${status.reason}`;
@@ -631,7 +662,8 @@ const probeWebGPU = async () => {
   try {
     const smoke = await runWebGPUProbabilitySmoke();
     state.webgpuStatus = smoke.ok ? 'ok' : 'failed';
-    state.webgpuDetail = `webgpu probability smoke total=${formatNumber(smoke.total, 6)}`;
+    const tierTag = status.capabilities?.tier ? ` [${status.capabilities.tier}]` : '';
+    state.webgpuDetail = `webgpu${tierTag} probability smoke total=${formatNumber(smoke.total, 6)}`;
   } catch (err) {
     state.webgpuStatus = 'failed';
     state.webgpuDetail = `webgpu smoke failed: ${err.message || String(err)}`;

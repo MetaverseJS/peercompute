@@ -8,7 +8,7 @@ import { Line2 } from 'three/addons/lines/Line2.js';
 import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import html2canvas from 'html2canvas';
-import { ComputeManager } from '@peercompute';
+import { ComputeManager, probeCapabilities, readCapabilityOverrides, sizeWorkload } from '@peercompute';
 import { generateUniverseData, generateUniverseDensity, generateGalaxyData } from './compute/universeTasks.js';
 import { TinyPlanetControls } from '../planetgen/src/TinyPlanetControls.js';
 
@@ -51,6 +51,25 @@ const CONFIG = {
     densityRes: QUALITY_PRESETS.HIGH.densityRes,
     showOrbitPaths: true
 };
+
+let universeHardwareCaps = null;
+let universeCapOverrides = null;
+let universeInitialQualityApplied = false;
+
+async function ensureUniverseHardwareCapabilities() {
+    if (universeHardwareCaps) return universeHardwareCaps;
+    universeCapOverrides = readCapabilityOverrides();
+    try {
+        universeHardwareCaps = await probeCapabilities({
+            includeWebGL: true,
+            overrides: universeCapOverrides
+        });
+    } catch (err) {
+        console.warn('[Universes] Capability probe failed; using laptop defaults:', err);
+        universeHardwareCaps = { tier: 'laptop', webgl: null };
+    }
+    return universeHardwareCaps;
+}
 
 const computeModuleUrl = new URL('./compute/universeTasks.js', import.meta.url).href;
 const computeManager = new ComputeManager({ maxWorkers: 1 });
@@ -2855,6 +2874,29 @@ async function generateUniverse(seed) {
     elSeed.textContent = "0x" + CONFIG.seed.toString(16).toUpperCase();
     elObjects.textContent = CONFIG.starCount.toLocaleString();
 
+    const hwCaps = await ensureUniverseHardwareCapabilities();
+    if (!universeInitialQualityApplied && !pendingUiState?.qualityLevel) {
+        universeInitialQualityApplied = true;
+        const choice = sizeWorkload({
+            kind: 'preset',
+            name: 'universes-quality',
+            presets: [
+                { id: 'LOW', minTier: 'mobile', required3DTextureSize: QUALITY_PRESETS.LOW.densityRes },
+                { id: 'MED', minTier: 'laptop', required3DTextureSize: QUALITY_PRESETS.MED.densityRes },
+                { id: 'HIGH', minTier: 'workstation', required3DTextureSize: QUALITY_PRESETS.HIGH.densityRes },
+                { id: 'ULTRA', minTier: 'cluster', required3DTextureSize: QUALITY_PRESETS.ULTRA.densityRes }
+            ]
+        }, { capabilities: hwCaps, overrides: universeCapOverrides });
+        const preset = QUALITY_PRESETS[choice.presetId];
+        if (preset) {
+            simState.qualityLevel = choice.presetId;
+            CONFIG.starCount = preset.starCount;
+            CONFIG.clusterCount = preset.clusterCount;
+            CONFIG.densityRes = preset.densityRes;
+            elObjects.textContent = CONFIG.starCount.toLocaleString();
+        }
+    }
+
     const params = {
         seed,
         starCount: CONFIG.starCount,
@@ -2863,10 +2905,35 @@ async function generateUniverse(seed) {
         filamentScatter: CONFIG.filamentScatter
     };
 
+    const gl = renderer?.getContext?.();
+    const glMax3d = gl && typeof gl.MAX_3D_TEXTURE_SIZE !== 'undefined'
+        ? gl.getParameter(gl.MAX_3D_TEXTURE_SIZE)
+        : hwCaps?.webgl?.max3DTextureSize;
     const requestedDensityRes = Math.max(24, Math.floor(CONFIG.densityRes || 96));
-    const densityRes = Math.min(MAX_DENSITY_RES, requestedDensityRes);
+    const densitySizing = sizeWorkload({
+        kind: 'grid3d',
+        name: 'universes-density-texture',
+        requestedDim: [requestedDensityRes, requestedDensityRes, requestedDensityRes],
+        minDim: [24, 24, 24],
+        maxDim: [MAX_DENSITY_RES, MAX_DENSITY_RES, MAX_DENSITY_RES],
+        step: 1,
+        cellStrideBytes: 4,
+        buffersCount: 2,
+        memoryFraction: 0.35,
+        webgl3dTexture: true
+    }, {
+        capabilities: {
+            ...hwCaps,
+            webgl: {
+                ...(hwCaps?.webgl || {}),
+                max3DTextureSize: Number.isFinite(glMax3d) && glMax3d > 0 ? glMax3d : hwCaps?.webgl?.max3DTextureSize
+            }
+        },
+        overrides: universeCapOverrides
+    });
+    const densityRes = Math.min(MAX_DENSITY_RES, densitySizing.x);
     if (densityRes !== requestedDensityRes) {
-        console.warn(`[Universes] densityRes clamped to ${densityRes} (requested ${requestedDensityRes}).`);
+        console.warn(`[Universes] densityRes clamped to ${densityRes} (requested ${requestedDensityRes}; reason=${densitySizing.limitingFactor}).`);
     }
     let volumeBuilt = false;
     if (supportsVolumeRendering()) {

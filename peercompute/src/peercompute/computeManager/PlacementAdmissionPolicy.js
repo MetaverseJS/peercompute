@@ -26,6 +26,18 @@ function normalizeTrustedPeerIds(value) {
   return value.map((entry) => String(entry || '').trim()).filter(Boolean);
 }
 
+function normalizeFeatureList(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map((entry) => String(entry || '').trim()).filter(Boolean))];
+}
+
+function normalizeOptionalNumber(value, min = 0, max = Number.MAX_SAFE_INTEGER) {
+  if (value === undefined || value === null) return null;
+  const number = Number(value);
+  if (!Number.isFinite(number)) return null;
+  return Math.min(max, Math.max(min, number));
+}
+
 export function normalizePlacementAdmissionPolicyOptions(options = {}) {
   return {
     schema: PLACEMENT_ADMISSION_POLICY_SCHEMA,
@@ -42,8 +54,26 @@ export function normalizePlacementAdmissionPolicyOptions(options = {}) {
     maxClusterRttMs: normalizeNumber(options.maxClusterRttMs, 150, 0, 3600000),
     minClusterNodes: normalizeInteger(options.minClusterNodes, 1, 0, 1000000),
     minClusterGpus: normalizeInteger(options.minClusterGpus, 0, 0, 1000000),
+    requireGpu: options.requireGpu === true,
+    requireHardwareGpu: options.requireHardwareGpu === true,
+    requiredGpuFeatures: normalizeFeatureList(options.requiredGpuFeatures),
+    requiredWasmFeatures: normalizeFeatureList(options.requiredWasmFeatures),
+    minMaxBufferSize: normalizeOptionalNumber(options.minMaxBufferSize, 1),
+    minCpuScore: normalizeOptionalNumber(options.minCpuScore, 0),
+    minGpuComputeScore: normalizeOptionalNumber(options.minGpuComputeScore, 0),
+    minGpuBandwidthGBps: normalizeOptionalNumber(options.minGpuBandwidthGBps, 0),
     networkCapacity: options.networkCapacity || null
   };
+}
+
+function resolvePeerCapabilities(payload = {}, context = {}, network = {}) {
+  return context.peerCapabilities
+    || context.placement?.peerCapabilities
+    || payload.peerCapabilities
+    || payload.data?.peerCapabilities
+    || network.peerCapabilities
+    || network.capabilities
+    || null;
 }
 
 function selectMetric(...values) {
@@ -116,6 +146,8 @@ export function evaluatePlacementAdmission(payload = {}, context = {}, policyOpt
     1000000
   );
   const peerId = resolvePeerId(payload, context, network);
+  const peerCapabilities = resolvePeerCapabilities(payload, context, network);
+  const peerCompute = peerCapabilities?.compute || peerCapabilities || {};
   const blockedReasons = [];
 
   if (!options.allowedPlacements.includes(requestedPlacement)) {
@@ -163,6 +195,86 @@ export function evaluatePlacementAdmission(payload = {}, context = {}, policyOpt
     }
     if (clusterGpus < options.minClusterGpus) {
       addReason(blockedReasons, 'cluster-gpus-below-floor');
+    }
+  }
+
+  const hasHardwareCriteria = options.requireGpu
+    || options.requireHardwareGpu
+    || options.requiredGpuFeatures.length > 0
+    || options.requiredWasmFeatures.length > 0
+    || options.minMaxBufferSize != null
+    || options.minCpuScore != null
+    || options.minGpuComputeScore != null
+    || options.minGpuBandwidthGBps != null;
+
+  if (hasHardwareCriteria) {
+    const gpuAvailable = peerCompute.gpuAvailable === true || peerCompute.webgpuAvailable === true;
+    const isFallbackAdapter = peerCompute.isFallbackAdapter === true;
+    const gpuHardwareVerified = peerCompute.gpuHardwareVerified === true
+      || (gpuAvailable && peerCompute.isFallbackAdapter === false);
+    const peerGpuFeatures = new Set(
+      Array.isArray(peerCompute.gpuFeatures) ? peerCompute.gpuFeatures : []
+    );
+    const peerWasmFeatures = peerCompute.wasmFeatures && typeof peerCompute.wasmFeatures === 'object'
+      ? peerCompute.wasmFeatures
+      : {};
+    const peerMaxBufferSize = selectMetric(
+      peerCompute.gpuLimits?.maxBufferSize,
+      peerCompute.maxBufferSize
+    );
+    const peerCpuScore = selectMetric(peerCompute.cpuScore, peerCompute.benchmark?.cpuScore);
+    const peerGpuComputeScore = selectMetric(
+      peerCompute.gpuComputeScore,
+      peerCompute.benchmark?.gpuComputeScore
+    );
+    const peerGpuBandwidthGBps = selectMetric(
+      peerCompute.gpuBandwidthGBps,
+      peerCompute.benchmark?.gpuBandwidthGBps
+    );
+
+    if (options.requireGpu && !gpuAvailable) {
+      addReason(blockedReasons, 'peer-gpu-unavailable');
+    }
+    if (options.requireHardwareGpu && (!gpuHardwareVerified || isFallbackAdapter)) {
+      addReason(blockedReasons, isFallbackAdapter ? 'peer-gpu-software-fallback' : 'peer-hardware-gpu-unverified');
+    }
+    for (const feature of options.requiredGpuFeatures) {
+      if (!peerGpuFeatures.has(feature)) {
+        addReason(blockedReasons, `peer-gpu-feature-missing:${feature}`);
+      }
+    }
+    for (const feature of options.requiredWasmFeatures) {
+      if (peerWasmFeatures[feature] !== true) {
+        addReason(blockedReasons, `peer-wasm-feature-missing:${feature}`);
+      }
+    }
+    if (options.minMaxBufferSize != null) {
+      if (peerMaxBufferSize == null) {
+        addReason(blockedReasons, 'peer-gpu-max-buffer-unknown');
+      } else if (peerMaxBufferSize < options.minMaxBufferSize) {
+        addReason(blockedReasons, 'peer-gpu-max-buffer-below-floor');
+      }
+    }
+    if (options.minCpuScore != null) {
+      if (peerCpuScore == null) {
+        addReason(blockedReasons, 'peer-cpu-score-unknown');
+      } else if (peerCpuScore < options.minCpuScore) {
+        addReason(blockedReasons, 'peer-cpu-score-below-floor');
+      }
+    }
+    if (options.minGpuComputeScore != null) {
+      if (peerGpuComputeScore == null) {
+        addReason(blockedReasons, 'peer-gpu-compute-score-unknown');
+      } else if (peerGpuComputeScore < options.minGpuComputeScore) {
+        addReason(blockedReasons, 'peer-gpu-compute-score-below-floor');
+      }
+    }
+    if (options.minGpuBandwidthGBps != null) {
+      if (peerGpuBandwidthGBps == null) {
+        addReason(blockedReasons, 'peer-gpu-bandwidth-unknown');
+      } else if (peerGpuBandwidthGBps < options.minGpuBandwidthGBps) {
+        addReason(blockedReasons, 'peer-gpu-bandwidth-below-floor');
+      }
     }
   }
 

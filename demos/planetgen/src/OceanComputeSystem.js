@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { getSharedDevice } from './peercomputeDevice.js';
 
 /**
  * WebGPU compute-based ocean wave simulation.
@@ -139,20 +140,12 @@ export class OceanComputeSystem {
             this.device = injectedDevice;
             this.enabled = true;
         } else {
-            if (typeof navigator === 'undefined' || !navigator.gpu) {
+            this.device = await getSharedDevice();
+            if (!this.device) {
                 console.warn('[OceanComputeSystem] WebGPU not available; compute ocean disabled.');
                 this.enabled = false;
                 return;
             }
-
-            const adapter = await navigator.gpu.requestAdapter();
-            if (!adapter) {
-                console.warn('[OceanComputeSystem] No GPU adapter found; compute ocean disabled.');
-                this.enabled = false;
-                return;
-            }
-
-            this.device = await adapter.requestDevice();
             this.enabled = true;
         }
 

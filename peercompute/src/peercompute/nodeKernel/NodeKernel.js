@@ -3010,6 +3010,8 @@ export class NodeKernel {
     const stats = capabilities?.stats || this.computeManager?.getStats?.() || {};
     const resourceProfile = capabilities?.resourceProfile || this.computeManager?.getResourceProfile?.() || {};
     const workerPolicy = capabilities?.workerPolicy || this.computeManager?.getWorkerPolicy?.() || {};
+    const hwCaps = capabilities?.hardwareCapabilities || this.computeManager?.getHardwareCapabilities?.() || null;
+    const benchSummary = capabilities?.benchmarkSummary || null;
     const workerCount = normalizeInteger(
       stats.workerCount ?? capabilities.workers ?? capabilities.workerCount,
       0,
@@ -3039,6 +3041,18 @@ export class NodeKernel {
         1000000
       )
       : 0;
+    const gpuLimits = hwCaps?.webgpu?.limits && Object.keys(hwCaps.webgpu.limits).length > 0
+      ? cloneSerializableValue(hwCaps.webgpu.limits)
+      : (resourceProfile.gpuLimits ? cloneSerializableValue(resourceProfile.gpuLimits) : null);
+    const gpuFeatures = Array.isArray(hwCaps?.webgpu?.features)
+      ? hwCaps.webgpu.features.slice(0, 64)
+      : (Array.isArray(resourceProfile.gpuFeatures) ? resourceProfile.gpuFeatures.slice(0, 64) : []);
+    const isFallbackAdapter = typeof hwCaps?.webgpu?.isFallbackAdapter === 'boolean'
+      ? hwCaps.webgpu.isFallbackAdapter
+      : (typeof resourceProfile.isFallbackAdapter === 'boolean' ? resourceProfile.isFallbackAdapter : null);
+    const gpuHardwareVerified = hwCaps?.webgpu
+      ? hwCaps.webgpu.available === true && hwCaps.webgpu.isFallbackAdapter === false
+      : (resourceProfile.gpuLimitsSource === 'adapter' && isFallbackAdapter === false);
 
     return {
       schema: NODE_KERNEL_PEER_CAPABILITIES_SCHEMA,
@@ -3063,10 +3077,32 @@ export class NodeKernel {
           1000000
         ),
         currentLoad: normalizeFiniteNumber(stats.currentLoad, 0, 0, 1000000),
+        cpuCores: normalizeInteger(hwCaps?.cpu?.cores ?? resourceProfile.cpuCores, null, 1, 512),
+        deviceMemoryGiB: normalizeFiniteNumber(
+          hwCaps?.memory?.deviceMemoryGiB ?? resourceProfile.deviceMemoryGB,
+          null,
+          0,
+          2048
+        ),
         gpuAvailable,
         gpuCount,
+        gpuHardwareVerified,
+        isFallbackAdapter,
+        gpuVendor: typeof hwCaps?.webgpu?.info?.vendor === 'string' ? hwCaps.webgpu.info.vendor.slice(0, 64) : null,
+        gpuArchitecture: typeof hwCaps?.webgpu?.info?.architecture === 'string'
+          ? hwCaps.webgpu.info.architecture.slice(0, 64)
+          : null,
+        gpuFeatures,
+        gpuLimits,
         webgpuAvailable: capabilities.webgpu === true || this.config.enableWebGPU === true,
         wasmAvailable: capabilities.wasm === true,
+        wasmFeatures: hwCaps?.wasm ? cloneSerializableValue(hwCaps.wasm) : null,
+        hardwareFingerprint: typeof hwCaps?.hardwareFingerprint === 'string' ? hwCaps.hardwareFingerprint : null,
+        performanceClass: benchSummary?.performanceClass || null,
+        cpuScore: normalizeFiniteNumber(benchSummary?.scores?.cpuScore, null, 0, 100000),
+        gpuComputeScore: normalizeFiniteNumber(benchSummary?.scores?.gpuComputeScore, null, 0, 100000),
+        gpuBandwidthGBps: normalizeFiniteNumber(benchSummary?.gpuBandwidthGBps, null, 0, 100000),
+        gpuReadbackMs: normalizeFiniteNumber(benchSummary?.gpuReadbackMs, null, 0, 60000),
         supportsGpuResidentStagePlacement: typeof this.computeManager?.preflightGpuResidentLaneStagePlacement === 'function',
         resourceTier: typeof resourceProfile.tier === 'string' ? resourceProfile.tier : null,
         memoryBudgetMB: normalizeFiniteNumber(resourceProfile.memoryBudgetMB, null, 0, 1048576),
@@ -3129,6 +3165,35 @@ export class NodeKernel {
    */
   getGPUHub() {
     return this.gpuHub;
+  }
+
+  async probeCapabilities(options = {}) {
+    if (!this.computeManager?.probeCapabilities) {
+      throw new Error('ComputeManager is not initialized');
+    }
+    return this.computeManager.probeCapabilities(options);
+  }
+
+  async benchmarkCapabilities(options = {}) {
+    if (!this.computeManager?.benchmarkCapabilities) {
+      throw new Error('ComputeManager is not initialized');
+    }
+    return this.computeManager.benchmarkCapabilities(options);
+  }
+
+  getHardwareCapabilities() {
+    return this.computeManager?.getHardwareCapabilities?.() || null;
+  }
+
+  getBenchmarkResult() {
+    return this.computeManager?.getBenchmarkResult?.() || null;
+  }
+
+  sizeWorkload(spec = {}, options = {}) {
+    if (!this.computeManager?.sizeWorkload) {
+      throw new Error('ComputeManager is not initialized');
+    }
+    return this.computeManager.sizeWorkload(spec, options);
   }
 
   commitRemoteTaskGraphStateSeed(cacheKeyOrOptions, options = {}) {

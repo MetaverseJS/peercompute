@@ -1,3 +1,5 @@
+import { detectBrowserEnvironment } from '../../../../peercompute/src/peercompute/capabilities/probeCapabilities.js';
+
 const BROWSERS = Object.freeze({ chrome: 'Google Chrome', chromium: 'Chromium', edge: 'Microsoft Edge', brave: 'Brave', firefox: 'Firefox', safari: 'Safari', other: 'Other browser' });
 const SYSTEMS = Object.freeze({ linux: 'Linux', windows: 'Windows', macos: 'macOS', android: 'Android', ios: 'iOS / iPadOS', other: 'Other operating system' });
 const COMMANDS = Object.freeze({
@@ -20,31 +22,7 @@ function environmentValue(value, choices) {
 
 /** Best-effort hints only: callers may offer explicit browser/OS correction. */
 export function detectModelHelpEnvironment(navigatorLike = globalThis.navigator) {
-  const nav = navigatorLike ?? {};
-  const ua = boundedText(nav.userAgent, 4096);
-  const platform = boundedText(nav.userAgentData?.platform, 80) || boundedText(nav.platform, 80);
-  const brands = Array.isArray(nav.userAgentData?.brands)
-    ? nav.userAgentData.brands.slice(0, 16).map((item) => boundedText(item?.brand, 80)).join(' ') : '';
-  let os = 'other';
-  if (/iPhone|iPad|iPod|\biOS\b/i.test(`${platform} ${ua}`) || (/Mac/i.test(`${platform} ${ua}`) && nav.maxTouchPoints > 1)) os = 'ios';
-  else if (/Android/i.test(`${platform} ${ua}`)) os = 'android';
-  else if (/Windows|Win32|Win64/i.test(platform)) os = 'windows';
-  else if (/macOS|Mac/i.test(platform)) os = 'macos';
-  else if (/Linux/i.test(platform)) os = 'linux';
-  else if (/Windows/i.test(ua)) os = 'windows';
-  else if (/Macintosh|Mac OS X/i.test(ua)) os = 'macos';
-  else if (/Linux|X11/i.test(ua)) os = 'linux';
-
-  let browser = 'other';
-  if (/Brave/i.test(brands) || /Brave\//i.test(ua) || typeof nav.brave?.isBrave === 'function') browser = 'brave';
-  else if (/Microsoft Edge/i.test(brands) || /(?:Edg|EdgA|EdgiOS|Edge)\//i.test(ua)) browser = 'edge';
-  else if (/Firefox/i.test(brands) || /(?:Firefox|FxiOS)\//i.test(ua)) browser = 'firefox';
-  else if (/OPR\/|Opera|SamsungBrowser\/|Vivaldi\/|Electron\//i.test(ua)) browser = 'other';
-  else if (/Google Chrome/i.test(brands) || /CriOS\//i.test(ua)) browser = 'chrome';
-  else if (/Chromium\//i.test(ua)) browser = 'chromium';
-  else if (/Chrome\//i.test(ua)) browser = 'chrome';
-  else if (/Chromium/i.test(brands)) browser = 'chromium';
-  else if (/Safari\//i.test(ua) && /Version\//i.test(ua)) browser = 'safari';
+  const { browser, os } = detectBrowserEnvironment(navigatorLike);
   return { browser, os };
 }
 

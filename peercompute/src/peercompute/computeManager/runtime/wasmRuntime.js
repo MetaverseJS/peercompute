@@ -1,3 +1,5 @@
+import { requestManagedGpuDevice } from '../../capabilities/managedGpuDevice.js';
+
 const helperModuleCache = new Map();
 const wasmModuleCache = new Map();
 
@@ -207,9 +209,33 @@ function createWebGPUContext(task = {}) {
     },
     async requestDevice(options = {}) {
       if (!gpu) return null;
-      const adapter = options.adapter || await gpu.requestAdapter(options.adapterOptions || task.webgpu?.adapterOptions);
-      if (!adapter) return null;
-      return adapter.requestDevice(options.deviceDescriptor || task.webgpu?.deviceDescriptor);
+      const promoteLimits = options.promoteLimits ?? task.webgpu?.promoteLimits ?? true;
+      const adapterOptions = options.adapterOptions || task.webgpu?.adapterOptions || null;
+      const deviceDescriptor = options.deviceDescriptor || task.webgpu?.deviceDescriptor || null;
+      if (!promoteLimits) {
+        const adapter = options.adapter || await gpu.requestAdapter(adapterOptions || undefined);
+        if (!adapter) return null;
+        return adapter.requestDevice(deviceDescriptor || undefined);
+      }
+      try {
+        const managed = await requestManagedGpuDevice({
+          adapter: options.adapter || null,
+          adapterOptions,
+          allowFallback: options.allowFallback ?? task.webgpu?.allowFallback ?? false,
+          requiredFeatures: options.requiredFeatures ?? task.webgpu?.requiredFeatures ?? [],
+          optionalFeatures: options.optionalFeatures ?? task.webgpu?.optionalFeatures ?? ['timestamp-query', 'shader-f16'],
+          promoteLimits: true,
+          limitCeilings: options.limitCeilings ?? task.webgpu?.limitCeilings ?? null,
+          deviceDescriptor,
+          label: options.label || task.webgpu?.label || 'peercompute-wasm-webgpu'
+        });
+        return managed.device;
+      } catch (error) {
+        if (error?.code === 'ERR_GPU_ADAPTER_UNAVAILABLE' || error?.code === 'ERR_WEBGPU_UNAVAILABLE') {
+          return null;
+        }
+        throw error;
+      }
     }
   };
 }

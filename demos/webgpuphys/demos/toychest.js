@@ -1,3 +1,4 @@
+import { probeCapabilities, readCapabilityOverrides, recommendPixelRatio, sizeWorkload } from "@peercompute";
 import { World, Vec3 } from "../src/index.js";
 import { calculateBoxInertia, calculateCloudInertia, calculateSphereInertia } from "../src/math.js";
 import { ShapeRenderer } from "./shared/shapeRenderer.js";
@@ -17,6 +18,32 @@ async function main() {
   canvas.style.height = "100%";
   canvas.style.display = "block";
 
+  const capOverrides = readCapabilityOverrides();
+  const hardwareCaps = await probeCapabilities({ overrides: capOverrides });
+  const dprCap = recommendPixelRatio(hardwareCaps, null, capOverrides);
+  const bodySizing = sizeWorkload({
+    kind: 'count',
+    name: 'toychest-objects',
+    baseCount: 1024,
+    minCount: 128,
+    maxCount: 50000,
+    multiple: 64,
+    strideBytes: 256,
+    buffersCount: 4,
+    memoryFraction: 0.35
+  }, { capabilities: hardwareCaps, overrides: capOverrides });
+  const maxParticlesSizing = sizeWorkload({
+    kind: 'count',
+    name: 'toychest-max-particles',
+    baseCount: 262144,
+    minCount: 16384,
+    maxCount: 1000000,
+    multiple: 4096,
+    strideBytes: 64,
+    buffersCount: 4,
+    memoryFraction: 0.45
+  }, { capabilities: hardwareCaps, overrides: capOverrides });
+
   const params = {
     radius: 0.1,
     stiffness: 1200,
@@ -32,9 +59,9 @@ async function main() {
     showParticles: false, // Default off
     paused: false,
     
-    // Generator params
-    objectCount: 1024, // Increased default
-    resolution: 2, // Default 2
+    // Generator params (right-sized for detected hardware tier & GPU limits)
+    objectCount: bodySizing.count,
+    resolution: hardwareCaps.tier === 'mobile' ? 1 : 2,
     spawnShape: 'Mix', // Box, Cylinder, Sphere, Tetris, Mix
 
     // Container params
@@ -71,17 +98,36 @@ async function main() {
     const primitiveSize = 0.6; 
     const r = (primitiveSize / params.resolution) * 0.5;
 
-    // Calculate required grid resolution to cover the box
+    // Calculate required grid resolution to cover the box, right-sized to GPU buffer limits
     const cellSize = r * 2;
-    // Add some padding (+8 cells) to ensure coverage even if particles move slightly outside bounds
-    const gridResX = Math.ceil((params.boxX * 2) / cellSize) + 8;
-    const gridResY = Math.ceil((params.boxY * 2) / cellSize) + 8;
-    const gridResZ = Math.ceil((params.boxZ * 2) / cellSize) + 8;
+    const rawGridResX = Math.ceil((params.boxX * 2) / cellSize) + 8;
+    const rawGridResY = Math.ceil((params.boxY * 2) / cellSize) + 8;
+    const rawGridResZ = Math.ceil((params.boxZ * 2) / cellSize) + 8;
+    const gridSizing = sizeWorkload({
+      kind: 'grid3d',
+      name: 'toychest-broadphase-grid',
+      requestedDim: [rawGridResX, rawGridResY, rawGridResZ],
+      minDim: [16, 16, 16],
+      maxDim: [256, 512, 256],
+      step: 4,
+      cellStrideBytes: 16,
+      buffersCount: 2,
+      memoryFraction: 0.35,
+      workgroupSize: 64,
+      dispatchDimensions: 1
+    }, { capabilities: hardwareCaps, overrides: capOverrides });
+    const [gridResX, gridResY, gridResZ] = gridSizing.dim;
+    const maxBodiesCap = Math.min(100000, Math.max(params.objectCount + 256, bodySizing.effectiveMaxCount));
+    const estimatedParticlesPerBody = Math.max(1, params.resolution * params.resolution * params.resolution * 4);
+    const maxParticlesCap = Math.min(
+      maxParticlesSizing.effectiveMaxCount,
+      Math.max(16384, Math.min(maxParticlesSizing.count, params.objectCount * estimatedParticlesPerBody + 4096))
+    );
     
     // Create new world locally
     const newWorld = new World({
-      maxBodies: 100000, // Increased limit
-      maxParticles: 1000000, // Increased limit (128k)
+      maxBodies: maxBodiesCap,
+      maxParticles: maxParticlesCap,
       radius: r,
       stiffness: params.stiffness,
       damping: params.damping,
@@ -90,13 +136,9 @@ async function main() {
       fixedTimeStep: 1 / 120,
       gravity: new Vec3(0, params.gravityY, 0),
       boxSize: new Vec3(params.boxX, params.boxY, params.boxZ),
-      gridPosition: new Vec3(-params.boxX, 0, -params.boxZ), // Adjust grid origin if needed? Grid logic uses gridRes.
-      // Actually gridPosition determines where the spatial hash grid starts.
-      // If box changes size, we might need to move grid or ensure grid covers box.
-      // For now let's assume grid is large enough or user resets if needed.
-      // But let's link it to box size for reset.
+      gridPosition: new Vec3(-params.boxX, 0, -params.boxZ),
       gridResolution: new Vec3(gridResX, gridResY, gridResZ),
-      maxSubSteps: 8,
+      maxSubSteps: bodySizing.recommendedSubSteps || 8,
     });
     await newWorld.ready();
 
@@ -400,10 +442,10 @@ async function main() {
   
   gui.add({ reset: initWorld }, "reset").name("Reset World");
 
-  // Handle window resize
+  // Handle window resize (bounded by hardware-recommended DPR cap)
   function onResize() {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+    canvas.width = Math.max(1, Math.floor(window.innerWidth * dprCap));
+    canvas.height = Math.max(1, Math.floor(window.innerHeight * dprCap));
     
     if (world && world.initialized) {
       if (depthTexture) depthTexture.destroy();

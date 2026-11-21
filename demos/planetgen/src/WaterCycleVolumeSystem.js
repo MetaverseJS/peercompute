@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { buildSurfaceFields, clamp01 } from './WaterCycleUtils.js';
+import { getSharedDevice } from './peercomputeDevice.js';
 
 const DEFAULT_SURFACE_W = 256;
 const DEFAULT_SURFACE_H = 128;
@@ -188,21 +189,42 @@ export class WaterCycleVolumeSystem {
             this.device = injectedDevice;
             this.enabled = true;
         } else {
-            if (typeof navigator === 'undefined' || !navigator.gpu) {
-                console.warn('[WaterCycleVolumeSystem] WebGPU not available; volume weather disabled.');
+            this.device = await getSharedDevice();
+            if (!this.device) {
+                console.warn('[WaterCycleVolumeSystem] WebGPU unavailable; volume weather disabled.');
                 this.enabled = false;
                 return;
             }
-
-            const adapter = await navigator.gpu.requestAdapter();
-            if (!adapter) {
-                console.warn('[WaterCycleVolumeSystem] No GPU adapter found; volume weather disabled.');
-                this.enabled = false;
-                return;
-            }
-
-            this.device = await adapter.requestDevice();
             this.enabled = true;
+        }
+        // Guard volume resolution against promoted device storage-buffer binding limit (32 bytes/voxel).
+        const maxSingleBytes = Math.min(
+            this.device.limits?.maxStorageBufferBindingSize || 128 * 1024 * 1024,
+            this.device.limits?.maxBufferSize || 256 * 1024 * 1024
+        );
+        const maxSafeVoxels = Math.max(64, Math.floor((maxSingleBytes * 0.85) / 32));
+        if (this.voxelCount > maxSafeVoxels) {
+            const safeN = Math.max(4, Math.floor(Math.cbrt(maxSafeVoxels)));
+            console.warn(`[WaterCycleVolumeSystem] Clamping volumeN from ${this.volumeN} to ${safeN} for GPU buffer limit`);
+            this.volumeN = safeN;
+            this.voxelCount = safeN * safeN * safeN;
+            const atlas = computeAtlasLayout(this.volumeN);
+            this.tilesX = atlas.tilesX;
+            this.tilesY = atlas.tilesY;
+            this.atlasW = atlas.atlasW;
+            this.atlasH = atlas.atlasH;
+            this.atlasPixelCount = this.atlasW * this.atlasH;
+            this.weatherOffset = this.atlasPixelCount;
+            this.auxOffset = this.atlasPixelCount + this.weatherCellCount;
+            this.totalOutPixels = this.atlasPixelCount + this.weatherCellCount * 2;
+            this.volumeTextureData = new Uint8Array(this.atlasPixelCount * 4);
+            this.volumeAtlasTexture.dispose?.();
+            this.volumeAtlasTexture = makeDataTexture(this.volumeTextureData, this.atlasW, this.atlasH, {
+                wrapS: THREE.ClampToEdgeWrapping,
+                wrapT: THREE.ClampToEdgeWrapping,
+                minFilter: THREE.NearestFilter,
+                magFilter: THREE.NearestFilter
+            });
         }
 
         const device = this.device;

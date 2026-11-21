@@ -138,6 +138,28 @@ automatically partition a graph across peers. GPU-resident stage plans require
 registered executors. Lease and fence metadata are ownership contracts, not
 independent evidence of GPU completion or numerical correctness.
 
+## Hardware capabilities, benchmarking and right-sizing
+
+The capabilities subsystem ([capabilities/index.js](../src/peercompute/capabilities/index.js))
+provides read-only static hardware probing, managed WebGPU device acquisition with
+adapter-limit promotion, fast cached worker microbenchmarks, declarative workload
+sizing and closed-loop frame/memory budget governing:
+
+| API | Purpose |
+| --- | --- |
+| `probeCapabilities(options)` / `node.probeCapabilities(options)` | Read-only probe of CPU cores, coarse `deviceMemory` hint, WebGPU adapter features/limits/vendor (with cold-Chromium retry and software-adapter detection), WASM (`simd`, `threads`, `jspi`, `memory64`), optional WebGL2 (`MAX_3D_TEXTURE_SIZE`), advisory storage estimate and deterministic `hardwareFingerprint`. Never creates a `GPUDevice` or probes VRAM destructively. |
+| `requestManagedGpuDevice(options)` | Acquires a `GPUDevice` with safe `adapter.limits` promotion into `requiredLimits`, optional feature negotiation (`timestamp-query`, `shader-f16`), fallback-adapter guard and `device.lost` hooks. Also used by `GPUHubManager.initialize()` and `wasmRuntime`. |
+| `benchmarkCapabilities(options)` / `node.benchmarkCapabilities(options)` | Runs bounded (~60–150 ms), cancellable CPU single/multi-worker, self-contained WASM and WebGPU compute FMA / streaming bandwidth / staging readback microbenchmarks inside a `ComputeManager` worker (`peercompute:capability-benchmark`), cached by `hardwareFingerprint` + TTL. |
+| `sizeWorkload(spec, context)` / `node.sizeWorkload(spec, options)` | Right-sizes `count`, `grid3d`, `grid2d` and `preset` workloads against promoted GPU storage-buffer limits, 1D dispatch workgroup limits, 3D/2D texture bounds, `O(N^2)` TDR ceilings and measured speed. |
+| `createRuntimeBudgetGovernor(options)` | Closed-loop EMA + hysteresis + cooldown governor for continuous scale or discrete quality levels under frame-time, queue, GPU-pass or heap pressure. |
+
+Browser memory honesty applies everywhere: `navigator.deviceMemory` is labeled a
+coarse hint capped at 8 GiB, WebGPU `maxBufferSize` is a per-allocation limit rather
+than physical VRAM, and advisory working-set guidance is explicitly tagged as a
+planning/benchmark heuristic rather than measured free VRAM. Probed hardware and
+benchmark summaries are also surfaced in `NodeKernel._buildPresenceCapabilities()`
+and supported as optional filters in `PlacementAdmissionPolicy`.
+
 ## Explicit remote execution
 
 NodeKernel exposes `submitRemoteComputeTask(peerId, payload, options)`,

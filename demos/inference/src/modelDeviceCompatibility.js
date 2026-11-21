@@ -10,6 +10,7 @@ import { SPEECH_LIMITS } from '../../../peercompute/src/peercompute/inference/sp
 import { MESH_MODEL_CATALOG, LEGACY_MESH_PACKAGES } from '../../../peercompute/src/peercompute/artifacts/meshModelCatalog.js';
 import { MESH_RESOURCE_POLICY } from '../../../peercompute/src/peercompute/inference/mesh/runtimeDefinition.js';
 import { SF3D_RESOURCE_POLICY } from '../../../peercompute/src/peercompute/inference/sf3dRuntimeDefinition.js';
+import { probeCapabilities } from '../../../peercompute/src/peercompute/capabilities/probeCapabilities.js';
 
 const GiB = 1024 ** 3;
 const catalogs = [...Object.values(MODEL_CATALOG), ...Object.values(GGUF_MODEL_CATALOG),
@@ -124,59 +125,30 @@ export function normalizeModelMemoryBudgets(input = {}) {
 /** Read-only capability probe: no devices, workers, weight requests or large
  * allocation tests. A timeout is unknown, not proof that WebGPU is absent. */
 export async function collectModelDeviceCapabilities({ scope = globalThis, timeoutMs = 3000 } = {}) {
-  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 60000) throw new RangeError('Invalid device probe timeout');
-  const wasm = scope.WebAssembly;
-  const memoryHint = scope.navigator?.deviceMemory;
-  const result = { webgpu: null, features: [], limits: {}, crossOriginIsolated: scope.crossOriginIsolated === true,
-    sharedArrayBuffer: typeof scope.SharedArrayBuffer === 'function',
-    jspi: typeof wasm?.Suspending === 'function' && typeof wasm?.promising === 'function', memory64: false,
-    deviceMemoryGiB: typeof memoryHint === 'number' && Number.isFinite(memoryHint) && memoryHint > 0 ? memoryHint : null };
-  if (result.sharedArrayBuffer && typeof wasm?.Memory === 'function') {
-    try { new wasm.Memory({ initial: 0n, maximum: 1n, shared: true, address: 'i64' }); result.memory64 = true; }
-    catch { /* This runtime does not support the GGUF memory64 prerequisite. */ }
+  const probed = await probeCapabilities({ scope, timeoutMs, allowFallback: false });
+  const limits = {};
+  for (const key of limitNames) {
+    const value = probed.webgpu.limits?.[key];
+    if (Number.isSafeInteger(value) && value > 0) limits[key] = value;
   }
-  const gpu = scope.navigator?.gpu;
-  if (typeof gpu?.requestAdapter !== 'function') return { ...result, webgpu: false };
-  const deadline = performance.now() + timeoutMs;
-  const timedOut = new Error('GPU capability check timed out');
-  let timer, retryTimer, resumeRetry, finished = false;
-  const withinDeadline = () => {
-    if (finished || performance.now() >= deadline) throw timedOut;
+  const result = {
+    webgpu: probed.webgpu.available,
+    features: probed.webgpu.available === true ? [...probed.webgpu.features] : [],
+    limits,
+    crossOriginIsolated: probed.wasm.crossOriginIsolated,
+    sharedArrayBuffer: probed.wasm.sharedArrayBuffer,
+    jspi: probed.wasm.jspi,
+    memory64: probed.wasm.memory64,
+    deviceMemoryGiB: probed.memory.deviceMemoryGiB
   };
-  const requestAdapter = async () => {
-    withinDeadline();
-    let adapter = await gpu.requestAdapter({ powerPreference: 'high-performance' });
-    withinDeadline();
-    // Cold Chromium can transiently return null while Dawn starts. Retry once
-    // within the original deadline, without requesting a device or more memory.
-    if (adapter == null) {
-      await new Promise((resolve) => { resumeRetry = resolve; retryTimer = setTimeout(resolve, 100); });
-      retryTimer = resumeRetry = undefined;
-      withinDeadline();
-      adapter = await gpu.requestAdapter({ powerPreference: 'high-performance' });
-      withinDeadline();
-    }
-    return adapter;
-  };
-  try {
-    const adapter = await Promise.race([
-      requestAdapter(),
-      new Promise((_, reject) => { timer = setTimeout(() => reject(timedOut), timeoutMs); }),
-    ]);
-    if (!adapter || adapter.isFallbackAdapter || adapter.info?.isFallbackAdapter) return { ...result, webgpu: false };
-    result.features = [...adapter.features].filter((feature) => typeof feature === 'string' && feature.length <= 80).slice(0, 64).sort();
-    for (const key of limitNames) {
-      const value = adapter.limits?.[key];
-      if (Number.isSafeInteger(value) && value > 0) result.limits[key] = value;
-    }
-    result.gpuInfo = { vendor: adapter.info?.vendor || 'unknown', architecture: adapter.info?.architecture || 'unknown' };
-    result.webgpu = true;
-  } catch (error) {
-    result.probeError = String(error?.message ?? error).slice(0, 300);
-  } finally {
-    finished = true;
-    clearTimeout(timer); clearTimeout(retryTimer);
-    resumeRetry?.(); // Release a pending retry wait without allowing another request.
+  if (probed.webgpu.available === true && probed.webgpu.info) {
+    result.gpuInfo = {
+      vendor: probed.webgpu.info.vendor || 'unknown',
+      architecture: probed.webgpu.info.architecture || 'unknown'
+    };
+  }
+  if (probed.webgpu.probeError) {
+    result.probeError = probed.webgpu.probeError;
   }
   return result;
 }

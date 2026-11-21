@@ -4,6 +4,10 @@ import {
   effectiveNuclearCharge
 } from './orbitals.js';
 import { HARTREE_EV, estimateOrbitalExtentBohr, hydrogenicEnergyEv } from './references.js';
+import {
+  probeCapabilities,
+  requestManagedGpuDevice
+} from '../../../../peercompute/src/peercompute/capabilities/index.js';
 
 let cachedDevicePromise = null;
 
@@ -116,18 +120,33 @@ const buildRadialSamples = ({ vector, spacing, pointCount }) => {
   return radialSamples;
 };
 
-export const getWebGPUStatus = async () => {
+export const getWebGPUStatus = async (options = {}) => {
   if (typeof navigator === 'undefined' || !navigator.gpu) {
     return { available: false, backend: 'none', reason: 'navigator.gpu unavailable' };
   }
   try {
-    const adapter = await navigator.gpu.requestAdapter();
-    if (!adapter) return { available: false, backend: 'webgpu', reason: 'requestAdapter returned null' };
+    const probed = await probeCapabilities({
+      allowFallback: options.allowFallback === true,
+      timeoutMs: options.timeoutMs ?? 3000
+    });
+    if (probed.webgpu.available !== true) {
+      const reason = probed.webgpu.status === 'fallback-only'
+        ? 'hardware adapter unavailable (fallback only)'
+        : (probed.webgpu.probeError || `adapter ${probed.webgpu.status}`);
+      return {
+        available: false,
+        backend: 'webgpu',
+        reason,
+        capabilities: probed
+      };
+    }
     return {
       available: true,
       backend: 'webgpu',
       reason: 'ok',
-      adapterInfo: adapter.info || null
+      adapterInfo: probed.webgpu.info || null,
+      limits: probed.webgpu.limits || null,
+      capabilities: probed
     };
   } catch (err) {
     return { available: false, backend: 'webgpu', reason: err.message || String(err) };
@@ -137,13 +156,19 @@ export const getWebGPUStatus = async () => {
 const getDevice = async () => {
   if (!cachedDevicePromise) {
     cachedDevicePromise = (async () => {
-      if (typeof navigator === 'undefined' || !navigator.gpu) {
-        throw new Error('WebGPU unavailable');
-      }
-      const adapter = await navigator.gpu.requestAdapter();
-      if (!adapter) throw new Error('No WebGPU adapter available');
-      return adapter.requestDevice();
-    })();
+      const managed = await requestManagedGpuDevice({
+        allowFallback: false,
+        promoteLimits: true,
+        label: 'schrodinger-wave-solver',
+        onDeviceLost: () => {
+          cachedDevicePromise = null;
+        }
+      });
+      return managed.device;
+    })().catch((err) => {
+      cachedDevicePromise = null;
+      throw err;
+    });
   }
   return cachedDevicePromise;
 };

@@ -1,3 +1,4 @@
+import { probeCapabilities, readCapabilityOverrides, recommendPixelRatio, sizeWorkload } from "@peercompute";
 import { initWebGPU } from "../src/index.js";
 import { ParticleRenderer } from "./shared/particleRenderer.js";
 import { OrbitCamera } from "./shared/orbitControls.js";
@@ -99,10 +100,12 @@ function createInitialParticles(count, radius, boxHalf) {
   return { positions, velocities };
 }
 
+let recommendedDpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+
 function updateCanvasSize() {
-  const dpr = Math.max(1, window.devicePixelRatio || 1);
-  const width = Math.floor(canvas.clientWidth * dpr);
-  const height = Math.floor(canvas.clientHeight * dpr);
+  const dpr = recommendedDpr;
+  const width = Math.max(1, Math.floor(canvas.clientWidth * dpr));
+  const height = Math.max(1, Math.floor(canvas.clientHeight * dpr));
   if (canvas.width !== width || canvas.height !== height) {
     canvas.width = width;
     canvas.height = height;
@@ -168,7 +171,30 @@ function createGridConfig(count, radius, ghat, boxHalf) {
 
 async function main() {
   try {
-    const { device } = await initWebGPU();
+    const capOverrides = readCapabilityOverrides();
+    const hardwareCaps = await probeCapabilities({ overrides: capOverrides });
+    recommendedDpr = recommendPixelRatio(hardwareCaps, null, capOverrides);
+    const hasExplicitParticles = new URLSearchParams(window.location.search || '').has('particles');
+    const particleSizing = sizeWorkload({
+      kind: 'count',
+      name: 'ppf-contact-particles',
+      baseCount: DEFAULT_PARTICLES,
+      requestedCount: hasExplicitParticles ? settings.particleCount : null,
+      minCount: MIN_PARTICLES,
+      maxCount: MAX_PARTICLES,
+      multiple: 64,
+      strideBytes: 32,
+      buffersCount: 5,
+      workgroupSize: WORKGROUP_SIZE,
+      dispatchDimensions: 1
+    }, { capabilities: hardwareCaps, overrides: capOverrides });
+    settings.particleCount = particleSizing.count;
+    if (particleInputEl) {
+      particleInputEl.max = String(particleSizing.effectiveMaxCount);
+      particleInputEl.value = String(settings.particleCount);
+    }
+
+    const { device } = await initWebGPU({ allowFallback: capOverrides.allowFallbackGpu === true });
     const context = canvas.getContext("webgpu");
     const format = navigator.gpu.getPreferredCanvasFormat();
     context.configure({ device, format, alphaMode: "opaque" });
@@ -179,6 +205,15 @@ async function main() {
       settings.ghat,
       settings.boxHalf
     );
+    // Guard gridIndicesBuffer against promoted device storage-buffer binding limit
+    const maxBindingBytes = Math.min(
+      device.limits?.maxStorageBufferBindingSize || 128 * 1024 * 1024,
+      device.limits?.maxBufferSize || 256 * 1024 * 1024
+    );
+    const maxSafeCapacity = Math.max(8, Math.floor((maxBindingBytes * 0.85) / Math.max(1, grid.cellCount * 4)));
+    if (grid.cellCapacity > maxSafeCapacity) {
+      grid.cellCapacity = maxSafeCapacity;
+    }
 
     const { positions, velocities } = createInitialParticles(
       settings.particleCount,

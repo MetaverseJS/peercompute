@@ -1,3 +1,4 @@
+import { probeCapabilities, readCapabilityOverrides, recommendPixelRatio, sizeWorkload } from "@peercompute";
 import { initWebGPU } from "../src/index.js";
 import { ParticleRenderer } from "./shared/particleRenderer.js";
 import { OrbitCamera } from "./shared/orbitControls.js";
@@ -82,10 +83,12 @@ function createInitialParticles(count, radius) {
   return { positions, velocities };
 }
 
+let recommendedDpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+
 function updateCanvasSize() {
-  const dpr = Math.max(1, window.devicePixelRatio || 1);
-  const width = Math.floor(canvas.clientWidth * dpr);
-  const height = Math.floor(canvas.clientHeight * dpr);
+  const dpr = recommendedDpr;
+  const width = Math.max(1, Math.floor(canvas.clientWidth * dpr));
+  const height = Math.max(1, Math.floor(canvas.clientHeight * dpr));
   if (canvas.width !== width || canvas.height !== height) {
     canvas.width = width;
     canvas.height = height;
@@ -117,7 +120,31 @@ if (particleInputEl) {
 
 async function main() {
   try {
-    const { device } = await initWebGPU();
+    const capOverrides = readCapabilityOverrides();
+    const hardwareCaps = await probeCapabilities({ overrides: capOverrides });
+    recommendedDpr = recommendPixelRatio(hardwareCaps, null, capOverrides);
+    const hasExplicitParticles = new URLSearchParams(window.location.search || '').has('particles');
+    // O(N^2) all-pairs cubic barrier kernel: enforce a quadratic TDR cap based on detected hardware tier.
+    const sizing = sizeWorkload({
+      kind: 'count',
+      name: 'ppf-cubic-barrier',
+      baseCount: DEFAULT_PARTICLES,
+      requestedCount: hasExplicitParticles ? settings.particleCount : null,
+      minCount: MIN_PARTICLES,
+      maxCount: MAX_PARTICLES,
+      multiple: 64,
+      strideBytes: 32,
+      buffersCount: 2,
+      complexity: 'O(N^2)',
+      quadraticBaseCap: 2048
+    }, { capabilities: hardwareCaps, overrides: capOverrides });
+    settings.particleCount = sizing.count;
+    if (particleInputEl) {
+      particleInputEl.max = String(sizing.effectiveMaxCount);
+      particleInputEl.value = String(settings.particleCount);
+    }
+
+    const { device } = await initWebGPU({ allowFallback: capOverrides.allowFallbackGpu === true });
     const context = canvas.getContext("webgpu");
     const format = navigator.gpu.getPreferredCanvasFormat();
     context.configure({ device, format, alphaMode: "opaque" });

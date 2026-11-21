@@ -112,6 +112,8 @@
     "build:inference": "npm --prefix demos/inference run build",
     "import:artifact": "node scripts/import-ipfs-artifact.mjs",
     "test:artifacts": "node --test peercompute/tests/unit/artifactStore.test.js peercompute/tests/unit/ipfsArtifactTransport.test.js peercompute/tests/unit/stateManager.artifacts.test.js",
+    "test:capabilities": "node --test peercompute/tests/unit/capabilities.test.js peercompute/tests/unit/modelDeviceCompatibility.test.js peercompute/tests/unit/gpuhubmanager.test.js peercompute/tests/unit/placementAdmissionPolicy.test.js",
+    "test:capabilities:browser": "node peercompute/tests/runtime/capabilities-browser.mjs",
     "test:inference": "node --test peercompute/tests/unit/modelInference.test.js peercompute/tests/unit/modelGpuErrors.test.js peercompute/tests/unit/modelMemoryBudgets.test.js peercompute/tests/unit/computeManager.residency.test.js peercompute/tests/unit/resourceLeaseBroker.test.js demos/tests/agents.test.js",
     "test:artifacts:browser": "node peercompute/tests/runtime/ipfs-artifacts.mjs",
     "test:artifacts:retention": "node peercompute/tests/runtime/artifact-retention.mjs",

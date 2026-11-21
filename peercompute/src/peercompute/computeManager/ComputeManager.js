@@ -4,6 +4,11 @@ import {
   GpuResidentLaneManager,
   GPU_RESIDENT_LANE_LEASE_IDENTITY_SCHEMA
 } from './GpuResidentLaneManager.js';
+import {
+  probeCapabilities as probeHardwareCapabilities,
+  benchmarkCapabilities as runHardwareBenchmark,
+  sizeWorkload as computeWorkloadSizing
+} from '../capabilities/index.js';
 
 function createDefaultComputeWorker() {
   return new Worker(new URL('./computeWorker.js', import.meta.url), { type: 'module' });
@@ -1185,6 +1190,8 @@ export class ComputeManager {
       webgpu: hasWebGPU,
       wasmWebgpu: hasWasm && hasWebGPU
     };
+    this.hardwareCapabilities = null;
+    this.benchmarkResult = null;
     this.initialized = false;
     this.workerBootstrapURL = config.workerBootstrapURL
       || config.computeWorkerBootstrapURL
@@ -1376,31 +1383,104 @@ export class ComputeManager {
     return service;
   }
 
-  async refreshGpuLimits() {
-    if (typeof navigator === 'undefined' || !navigator.gpu?.requestAdapter) {
-      return this.getResourceProfile();
-    }
-    let adapter = null;
-    try {
-      adapter = await navigator.gpu.requestAdapter();
-    } catch {
-      return this.getResourceProfile();
-    }
-    const gpuLimits = normalizeGpuLimits(adapter?.limits);
-    if (!gpuLimits) return this.getResourceProfile();
+  async probeCapabilities(options = {}) {
+    const caps = await probeHardwareCapabilities(options);
+    this.hardwareCapabilities = caps;
+    const gpuAvailable = caps.webgpu?.available === true;
+    const wasmAvailable = caps.wasm?.supported !== false;
+    this.capabilities = {
+      ...this.capabilities,
+      wasm: wasmAvailable,
+      webgpu: gpuAvailable,
+      wasmWebgpu: wasmAvailable && gpuAvailable
+    };
 
-    this.resourceProfile = buildResourceProfile({
+    const normalizedLimits = normalizeGpuLimits(caps.webgpu?.limits);
+    const nextProfileSource = {
       ...this.resourceProfile,
-      gpuAvailable: true,
-      gpuLimits,
-      gpuLimitsSource: 'adapter',
+      cpuCores: this.resourceProfile.source === 'configured' && this.resourceProfile.cpuCores
+        ? this.resourceProfile.cpuCores
+        : caps.cpu.cores,
+      deviceMemoryGB: this.resourceProfile.source === 'configured' && this.resourceProfile.deviceMemoryGB != null
+        ? this.resourceProfile.deviceMemoryGB
+        : caps.memory.deviceMemoryGiB,
+      gpuAvailable,
+      gpuLimits: normalizedLimits || this.resourceProfile.gpuLimits,
+      gpuLimitsSource: normalizedLimits ? 'adapter' : this.resourceProfile.gpuLimitsSource,
       source: this.resourceProfile.source || 'browser'
-    }, this.capabilities);
+    };
+    const rebuilt = buildResourceProfile(nextProfileSource, this.capabilities);
+    this.resourceProfile = {
+      ...rebuilt,
+      gpuInfo: caps.webgpu?.info ? { ...caps.webgpu.info } : null,
+      gpuFeatures: Array.isArray(caps.webgpu?.features) ? [...caps.webgpu.features] : [],
+      isFallbackAdapter: caps.webgpu?.isFallbackAdapter ?? null,
+      wasmFeatures: caps.wasm ? { ...caps.wasm } : null,
+      hardwareFingerprint: caps.hardwareFingerprint || null
+    };
     this.workerPolicy = buildWorkerPolicy(this.workerPolicyOverrides, this.resourceProfile);
     this.config.minWorkers = this.workerPolicy.minWorkers;
     this.config.targetWorkers = this.workerPolicy.targetWorkers;
     this.config.maxWorkers = this.workerPolicy.maxWorkers;
     this.config.autoScaleWorkers = this.workerPolicy.autoScale;
+    return caps;
+  }
+
+  async benchmarkCapabilities(options = {}) {
+    const caps = options.capabilities || this.hardwareCapabilities || await this.probeCapabilities({
+      scope: options.scope,
+      allowFallback: options.allowFallback === true
+    });
+    const result = await runHardwareBenchmark({
+      ...options,
+      capabilities: caps,
+      computeManager: options.computeManager === false ? null : (options.computeManager || this)
+    });
+    this.benchmarkResult = result;
+    return result;
+  }
+
+  getHardwareCapabilities() {
+    return this.hardwareCapabilities ? JSON.parse(JSON.stringify(this.hardwareCapabilities)) : null;
+  }
+
+  getBenchmarkResult() {
+    return this.benchmarkResult ? JSON.parse(JSON.stringify(this.benchmarkResult)) : null;
+  }
+
+  sizeWorkload(spec = {}, options = {}) {
+    return computeWorkloadSizing(spec, {
+      capabilities: options.capabilities || this.hardwareCapabilities || {
+        cpu: { cores: this.resourceProfile.cpuCores },
+        memory: { deviceMemoryGiB: this.resourceProfile.deviceMemoryGB },
+        webgpu: {
+          available: this.resourceProfile.gpuAvailable,
+          isFallbackAdapter: this.resourceProfile.isFallbackAdapter ?? false,
+          limits: this.resourceProfile.gpuLimits || {},
+          features: this.resourceProfile.gpuFeatures || []
+        },
+        tier: this.resourceProfile.tier,
+        planningBudgets: {
+          memoryBudgetMB: this.resourceProfile.memoryBudgetMB,
+          gpuMemoryBudgetMB: this.resourceProfile.gpuMemoryBudgetMB
+        }
+      },
+      benchmark: options.benchmark ?? this.benchmarkResult
+    });
+  }
+
+  async refreshGpuLimits(options = {}) {
+    if (typeof navigator === 'undefined' || !navigator.gpu?.requestAdapter) {
+      return this.getResourceProfile();
+    }
+    try {
+      await this.probeCapabilities({
+        allowFallback: options?.allowFallback === true,
+        timeoutMs: options?.timeoutMs ?? 3000
+      });
+    } catch {
+      return this.getResourceProfile();
+    }
     return this.getResourceProfile();
   }
 
@@ -2827,6 +2907,19 @@ export class ComputeManager {
     return {
       ...this.capabilities,
       resourceProfile: this.getResourceProfile(),
+      hardwareCapabilities: this.getHardwareCapabilities(),
+      benchmarkSummary: this.benchmarkResult
+        ? {
+          schema: this.benchmarkResult.schema,
+          performanceClass: this.benchmarkResult.performanceClass,
+          scores: this.benchmarkResult.scores,
+          recommendedWorkerCount: this.benchmarkResult.recommendedWorkerCount,
+          gpuBandwidthGBps: this.benchmarkResult.metrics?.gpu?.memoryBandwidthGBps ?? null,
+          gpuReadbackMs: this.benchmarkResult.metrics?.gpu?.readbackLatencyMs ?? null,
+          fromCache: this.benchmarkResult.fromCache === true,
+          hardwareFingerprint: this.benchmarkResult.hardwareFingerprint || null
+        }
+        : null,
       workerPolicy: this.getWorkerPolicy(),
       workers: this.workers.length,
       targetWorkers: this.targetWorkerCount,

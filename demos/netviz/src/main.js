@@ -1,4 +1,4 @@
-import { NodeKernel } from '@peercompute';
+import { NodeKernel, probeCapabilities, readCapabilityOverrides } from '@peercompute';
 import { loadRelayConfig, normalizeBootstrapPeers } from './relayConfig.js';
 import { buildPubsubEdges, buildRelayState } from './relayOverlay.js';
 import { TelemetryStore } from './telemetryStore.js';
@@ -689,7 +689,24 @@ const normalizeRetentionMode = (value) => {
   return '';
 };
 
+let localHardwareCaps = null;
+const refreshLocalHardwareCaps = async () => {
+  try {
+    const overrides = readCapabilityOverrides();
+    localHardwareCaps = await probeCapabilities({ overrides });
+  } catch (_) {
+    // Keep synchronous fallback if probe fails.
+  }
+  return localHardwareCaps;
+};
+void refreshLocalHardwareCaps();
+
 const getDeviceScale = () => {
+  if (localHardwareCaps?.tier) {
+    if (localHardwareCaps.tier === 'cluster' || localHardwareCaps.tier === 'workstation') return 3;
+    if (localHardwareCaps.tier === 'mobile') return 1;
+    return 2;
+  }
   const cores = Number.isFinite(navigator.hardwareConcurrency) ? navigator.hardwareConcurrency : 4;
   const memory = Number.isFinite(navigator.deviceMemory) ? navigator.deviceMemory : 4;
   const coreScale = Math.max(1, Math.round(cores / 4));
@@ -2806,6 +2823,27 @@ const buildNodeInfo = (peerId) => {
     lines.push(`Remote addrs: ${formatCompactList(liveAddrs, 2)}`);
   }
 
+  const nodeStatus = node?.getStatus?.() || null;
+  const peerCaps = peerId === localPeerId
+    ? nodeStatus?.localCapabilities?.compute
+    : (nodeStatus?.peerCapabilities?.[peerId]?.compute || data?.capabilities?.compute || null);
+  if (peerCaps) {
+    const gpuSummary = peerCaps.gpuHardwareVerified
+      ? `${peerCaps.gpuVendor || 'hardware'}${peerCaps.gpuArchitecture ? `/${peerCaps.gpuArchitecture}` : ''}`
+      : (peerCaps.isFallbackAdapter ? 'software-fallback' : (peerCaps.gpuAvailable ? 'unverified' : 'none'));
+    const maxBufMB = Number.isFinite(peerCaps.gpuLimits?.maxBufferSize)
+      ? `${Math.round(peerCaps.gpuLimits.maxBufferSize / (1024 * 1024))}MB`
+      : 'n/a';
+    lines.push(
+      `Hardware: tier=${peerCaps.resourceTier || 'unknown'} | cores=${peerCaps.cpuCores ?? '--'} | gpu=${gpuSummary} | maxBuf=${maxBufMB}`
+    );
+    if (peerCaps.performanceClass || Number.isFinite(peerCaps.cpuScore) || Number.isFinite(peerCaps.gpuBandwidthGBps)) {
+      lines.push(
+        `Perf: class=${peerCaps.performanceClass || '--'} | cpu=${peerCaps.cpuScore ?? '--'} | gpuBw=${Number.isFinite(peerCaps.gpuBandwidthGBps) ? `${peerCaps.gpuBandwidthGBps} GB/s` : '--'}`
+      );
+    }
+  }
+
   return {
     title: `Node ${formatPeerId(peerId)}`,
     lines
@@ -3381,6 +3419,10 @@ const connect = async () => {
     });
 
     await node.initialize();
+    const probedCaps = await node.probeCapabilities({ overrides: readCapabilityOverrides() }).catch(() => null);
+    if (probedCaps) {
+      localHardwareCaps = probedCaps;
+    }
     await node.start();
 
     networkManager = node.getNetworkManager();

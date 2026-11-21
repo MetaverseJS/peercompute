@@ -2,6 +2,13 @@
  * @fileoverview GPUHubManager - Main-thread GPU hub for shared render+compute
  */
 
+import {
+  extractAdapterFeatures,
+  extractAdapterLimits,
+  GPU_CAPABILITY_LIMIT_KEYS
+} from '../capabilities/probeCapabilities.js';
+import { requestManagedGpuDevice } from '../capabilities/managedGpuDevice.js';
+
 const GPU_HUB_RESIDENT_STAGE_EXECUTOR_SCHEMA = 'peercompute.gpu.resident-stage-executor.v0';
 export const GPU_HUB_RESIDENT_STAGE_WORKER_POLICY_SCHEMA = 'peercompute.gpu.resident-stage-worker-policy.v0';
 export const GPU_HUB_RESIDENT_STAGE_WORKER_BACKEND_SCHEMA = 'peercompute.gpu.resident-stage-worker-backend.v0';
@@ -193,7 +200,13 @@ export class GPUHubManager {
   constructor(config = {}) {
     this.frameBudgetMs = config.frameBudgetMs ?? 4;
     this.hotStore = config.hotStore || new Map();
+    this.adapter = null;
     this.device = null;
+    this.deviceInfo = null;
+    this.features = [];
+    this.limits = null;
+    this.isFallbackAdapter = null;
+    this.lastDeviceLoss = null;
     this.tasks = new Map();
     this.residentStageExecutors = new Map();
     this.residentStageExecutorAliases = new Map();
@@ -201,22 +214,79 @@ export class GPUHubManager {
 
   async initialize(options = {}) {
     if (options.device) {
-      this.device = options.device;
+      this.setDevice(options.device, {
+        adapter: options.adapter || null,
+        adapterInfo: options.adapterInfo || null,
+        isFallbackAdapter: options.isFallbackAdapter ?? null,
+        onDeviceLost: options.onDeviceLost || null
+      });
       return this.device;
     }
     if (typeof navigator === 'undefined' || !navigator.gpu) {
       throw new Error('[GPUHubManager] WebGPU not available in this environment');
     }
-    const adapter = await navigator.gpu.requestAdapter(options.adapterOptions);
-    if (!adapter) {
-      throw new Error('[GPUHubManager] Failed to acquire GPU adapter');
-    }
-    this.device = await adapter.requestDevice(options.deviceDescriptor);
+    const managed = await requestManagedGpuDevice({
+      adapterOptions: options.adapterOptions || null,
+      powerPreference: options.adapterOptions?.powerPreference ?? options.powerPreference ?? 'high-performance',
+      allowFallback: options.allowFallback === true || options.adapterOptions?.forceFallbackAdapter === true,
+      requiredFeatures: options.requiredFeatures || [],
+      optionalFeatures: options.optionalFeatures ?? ['timestamp-query', 'shader-f16'],
+      promoteLimits: options.promoteLimits !== false,
+      limitCeilings: options.limitCeilings || null,
+      deviceDescriptor: options.deviceDescriptor || null,
+      timeoutMs: options.timeoutMs ?? 5000,
+      label: options.label || 'peercompute-gpu-hub',
+      onDeviceLost: (lossInfo, lostDevice) => {
+        if (this.device === lostDevice) {
+          this.device = null;
+        }
+        this.lastDeviceLoss = lossInfo || { reason: 'unknown', message: '' };
+        options.onDeviceLost?.(lossInfo, lostDevice);
+      },
+      onUncapturedError: options.onUncapturedError || null
+    });
+    this.adapter = managed.adapter;
+    this.device = managed.device;
+    this.deviceInfo = managed.adapterInfo;
+    this.features = managed.features;
+    this.limits = managed.limits;
+    this.isFallbackAdapter = managed.isFallbackAdapter;
+    this.lastDeviceLoss = null;
     return this.device;
   }
 
-  setDevice(device) {
-    this.device = device;
+  setDevice(device, metadata = {}) {
+    this.device = device || null;
+    this.adapter = metadata.adapter ?? this.adapter ?? null;
+    this.deviceInfo = metadata.adapterInfo ?? this.deviceInfo ?? null;
+    this.isFallbackAdapter = metadata.isFallbackAdapter ?? this.isFallbackAdapter ?? null;
+    this.features = device?.features ? extractAdapterFeatures(device.features) : [];
+    const extractedLimits = device?.limits
+      ? extractAdapterLimits(device.limits, GPU_CAPABILITY_LIMIT_KEYS)
+      : {};
+    this.limits = Object.keys(extractedLimits).length > 0 ? extractedLimits : null;
+    this.lastDeviceLoss = null;
+    if (device?.lost && typeof device.lost.then === 'function') {
+      device.lost.then((lossInfo) => {
+        if (this.device === device) {
+          this.device = null;
+        }
+        this.lastDeviceLoss = lossInfo || { reason: 'unknown', message: '' };
+        metadata.onDeviceLost?.(lossInfo, device);
+      }).catch(() => {});
+    }
+  }
+
+  getDeviceInfo() {
+    return this.deviceInfo ? { ...this.deviceInfo } : null;
+  }
+
+  getLimits() {
+    return this.limits ? { ...this.limits } : null;
+  }
+
+  getFeatures() {
+    return [...this.features];
   }
 
   getHotStore() {

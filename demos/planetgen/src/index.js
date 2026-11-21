@@ -13,8 +13,9 @@ import { decodeWindFieldFromAuxTexture } from './oceanWindField.js';
 import { createOceanCurrentState } from './holistic/oceanCurrents.js';
 import { BASE_RADIUS_UNITS, DEFAULT_DIAMETER_KM, DEFAULT_RADIUS_M, PERSON_HEIGHT_M, MAX_DELTA_TIME, PRESETS, DEFAULT_WEATHER_OCEAN_WIND_COUPLING, DEFAULT_WEATHER_OCEAN_WIND_UPDATE_HZ } from './constants.js';
 import { UIManager } from './UIManager.js';
+import { createRuntimeBudgetGovernor, readCapabilityOverrides, sizeWorkload } from '@peercompute';
 import { WindSystem } from './WindSystem.js';
-import { getSharedDevice } from './peercomputeDevice.js';
+import { getHardwareCapabilities, getSharedDevice } from './peercomputeDevice.js';
 
 const canvas = document.getElementById('viewport');
 const hudEl = document.getElementById('hud');
@@ -542,7 +543,31 @@ const weatherAutoState = {
     emaMs: 16.7,
     overBudgetS: 0,
     underBudgetS: 0,
-    cooldownS: 0
+    cooldownS: 0,
+    gov3d: createRuntimeBudgetGovernor({
+        targetFrameMs: 16.7,
+        lowFrameMs: WEATHER_AUTO_LIMITS.lowMs,
+        highFrameMs: WEATHER_AUTO_LIMITS.highMs,
+        sampleAlpha: 0.1,
+        downDelayMs: WEATHER_AUTO_LIMITS.downDelayS * 1000,
+        upDelayMs: WEATHER_AUTO_LIMITS.upDelayS * 1000,
+        cooldownDownMs: WEATHER_AUTO_LIMITS.cooldownDownS * 1000,
+        cooldownUpMs: WEATHER_AUTO_LIMITS.cooldownUpS * 1000,
+        levels: WEATHER_AUTO_TIERS_3D,
+        initialLevelIndex: 0
+    }),
+    gov2d: createRuntimeBudgetGovernor({
+        targetFrameMs: 16.7,
+        lowFrameMs: WEATHER_AUTO_LIMITS.lowMs,
+        highFrameMs: WEATHER_AUTO_LIMITS.highMs,
+        sampleAlpha: 0.1,
+        downDelayMs: WEATHER_AUTO_LIMITS.downDelayS * 1000,
+        upDelayMs: WEATHER_AUTO_LIMITS.upDelayS * 1000,
+        cooldownDownMs: WEATHER_AUTO_LIMITS.cooldownDownS * 1000,
+        cooldownUpMs: WEATHER_AUTO_LIMITS.cooldownUpS * 1000,
+        levels: WEATHER_AUTO_TIERS_2D,
+        initialLevelIndex: 0
+    })
 };
 
 const rainSystem = new RainSystem(scene, { maxDrops: 12000 });
@@ -1945,8 +1970,12 @@ function enableWeatherAutoScale() {
     const mode = getWeatherSimMode();
     if (isWeatherMode3d(mode)) {
         weatherAutoState.tier3d = getWeatherAutoTierIndex(mode);
+        weatherAutoState.gov3d.reset();
+        weatherAutoState.gov3d.setLevelIndex(weatherAutoState.tier3d, { reason: 'enable' });
     } else {
         weatherAutoState.tier2d = getWeatherAutoTierIndex(mode);
+        weatherAutoState.gov2d.reset();
+        weatherAutoState.gov2d.setLevelIndex(weatherAutoState.tier2d, { reason: 'enable' });
     }
     setWeatherAutoUiDisabled(true);
     applyWeatherAutoTier(mode);
@@ -2171,48 +2200,19 @@ function updateWeatherAutoScale(deltaSeconds) {
     const dt = Math.min(Math.max(deltaSeconds ?? 0, 0), 0.25);
     if (dt <= 0) return;
 
-    const ms = dt * 1000;
-    weatherAutoState.emaMs = weatherAutoState.emaMs * 0.9 + ms * 0.1;
-
-    const over = weatherAutoState.emaMs > WEATHER_AUTO_LIMITS.highMs;
-    const under = weatherAutoState.emaMs < WEATHER_AUTO_LIMITS.lowMs;
-    if (over) {
-        weatherAutoState.overBudgetS += dt;
-        weatherAutoState.underBudgetS = 0;
-    } else if (under) {
-        weatherAutoState.underBudgetS += dt;
-        weatherAutoState.overBudgetS = 0;
-    } else {
-        weatherAutoState.overBudgetS = 0;
-        weatherAutoState.underBudgetS = 0;
-    }
-
-    if (weatherAutoState.cooldownS > 0) {
-        weatherAutoState.cooldownS = Math.max(0, weatherAutoState.cooldownS - dt);
-        return;
-    }
-
     const mode = getWeatherSimMode();
-    if (weatherAutoState.overBudgetS >= WEATHER_AUTO_LIMITS.downDelayS) {
-        if (isWeatherMode3d(mode) && weatherAutoState.tier3d > 0) {
-            weatherAutoState.tier3d -= 1;
-            applyWeatherAutoTier(mode);
-        } else if (mode === '2d' && weatherAutoState.tier2d > 0) {
-            weatherAutoState.tier2d -= 1;
-            applyWeatherAutoTier(mode);
-        }
-        weatherAutoState.cooldownS = WEATHER_AUTO_LIMITS.cooldownDownS;
-        weatherAutoState.overBudgetS = 0;
-    } else if (weatherAutoState.underBudgetS >= WEATHER_AUTO_LIMITS.upDelayS) {
-        if (isWeatherMode3d(mode) && weatherAutoState.tier3d < WEATHER_AUTO_TIERS_3D.length - 1) {
-            weatherAutoState.tier3d += 1;
-            applyWeatherAutoTier(mode);
-        } else if (mode === '2d' && weatherAutoState.tier2d < WEATHER_AUTO_TIERS_2D.length - 1) {
-            weatherAutoState.tier2d += 1;
-            applyWeatherAutoTier(mode);
-        }
-        weatherAutoState.cooldownS = WEATHER_AUTO_LIMITS.cooldownUpS;
-        weatherAutoState.underBudgetS = 0;
+    const is3d = isWeatherMode3d(mode);
+    const gov = is3d ? weatherAutoState.gov3d : weatherAutoState.gov2d;
+    const prevIdx = gov.levelIndex;
+    const status = gov.update({ frameMs: dt * 1000, dtMs: dt * 1000 });
+    weatherAutoState.emaMs = status.frameMsAvg;
+    weatherAutoState.overBudgetS = status.overBudgetMs / 1000;
+    weatherAutoState.underBudgetS = status.underBudgetMs / 1000;
+    weatherAutoState.cooldownS = status.cooldownRemainingMs / 1000;
+    if (status.levelIndex !== prevIdx) {
+        if (is3d) weatherAutoState.tier3d = status.levelIndex;
+        else weatherAutoState.tier2d = status.levelIndex;
+        applyWeatherAutoTier(mode);
     }
 }
 function handleWaterCycleUpdate() {
@@ -2336,6 +2336,50 @@ renderCloudLayerControls();
 bindMobileControls();
 renderer.setAnimationLoop(animate);
 checkVRSupport();
+
+// Right-size PlanetGen hardware limits and default preset asynchronously via PeerCompute capabilities.
+(async () => {
+    try {
+        const capOverrides = readCapabilityOverrides();
+        const hwCaps = await getHardwareCapabilities();
+        const volumeSizing = sizeWorkload({
+            kind: 'grid3d',
+            name: 'planetgen-weather-volume',
+            requestedDim: [192, 192, 192],
+            minDim: [8, 8, 8],
+            maxDim: [192, 192, 192],
+            step: 4,
+            cellStrideBytes: 32,
+            buffersCount: 2,
+            memoryFraction: 0.45
+        }, { capabilities: hwCaps, overrides: capOverrides });
+        if (weatherVolumeResEl) {
+            weatherVolumeResEl.max = String(Math.max(16, Math.min(192, volumeSizing.x)));
+        }
+        if (subdivisionsEl && hwCaps.tier === 'mobile') {
+            subdivisionsEl.max = '192';
+        }
+        if (!urlQualityPreset && presetEl) {
+            const presetChoice = sizeWorkload({
+                kind: 'preset',
+                name: 'planetgen-quality',
+                presets: [
+                    { id: 'fast', minTier: 'mobile' },
+                    { id: 'balanced', minTier: 'laptop' },
+                    { id: 'detailed', minTier: 'workstation' }
+                ]
+            }, { capabilities: hwCaps, overrides: capOverrides });
+            const chosen = presetChoice.presetId;
+            if (PRESETS[chosen] && presetEl.value !== chosen) {
+                presetEl.value = chosen;
+                applyPreset(chosen);
+                generateWorld(chosen);
+            }
+        }
+    } catch (err) {
+        console.warn('[PlanetGen] Hardware capability right-sizing skipped:', err);
+    }
+})();
 function updateMoonMaterialForPhase() {
     if (!moon) return;
     const dirToSun = new THREE.Vector3().copy(weatherSunWorld).normalize().multiplyScalar(-1);
