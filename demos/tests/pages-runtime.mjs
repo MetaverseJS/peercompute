@@ -17,12 +17,13 @@ const startupModelId = 'smolvlm-256m-q4';
 const startupModelUrls = new Set(MODEL_CATALOG[startupModelId].files.map((file) => modelFileUrl(startupModelId, file.path)));
 const route = (id, pathname, network = 'local-only', extra = {}) => Object.freeze({ id, pathname, network, ...extra });
 
-// Eighteen overview cards, five additional built HTML entries, and overview.
+// Nineteen overview cards, five additional built HTML entries, and overview.
 // Network-free demos deliberately have no relay-connect acceptance condition.
 export const PAGES_ROUTES = Object.freeze([
   route('overview', '', 'none'),
   route('inference', 'inference/', 'automatic', { isolation: true }),
   route('vibeslopdb', 'vibeslopdb/', 'opt-in', { isolation: true }),
+  route('eshkols-in-space', 'eshkols-in-space/'),
   route('cubechat', 'cubechat/', 'automatic', { isolation: true }),
   route('universes', 'universes/'),
   route('multiscale', 'multiscale/', 'opt-in'),
@@ -178,10 +179,16 @@ export function sceneSnapshot(id) {
       visible: canvas.getBoundingClientRect().width > 4 && canvas.getBoundingClientRect().height > 4 })),
     scrollWidth: document.documentElement.scrollWidth, viewportWidth: innerWidth };
   const canvas = visible('canvas');
-  if (id === 'overview') return { ...base, ready: document.querySelectorAll('[data-demo-dir]').length === 18,
+  if (id === 'overview') return { ...base, ready: document.querySelectorAll('[data-demo-dir]').length === 19,
     cardCount: document.querySelectorAll('[data-demo-dir]').length };
   if (id === 'vibeslopdb') return { ...base, ready: Boolean(window.__vibeslopdb?.schemaWin?.stage?.getEntityNames?.().length >= 6),
     entities: window.__vibeslopdb?.schemaWin?.stage?.getEntityNames?.().length ?? 0 };
+  if (id === 'eshkols-in-space') {
+    const state = window.__eshkolsInSpace?.getState?.();
+    return { ...base, ready: canvas && Boolean(state?.ready) && state.steps > 0,
+      status: state?.status, steps: state?.steps, activeCount: state?.activeCount,
+      gravityMode: state?.gravityMode, error: state?.error };
+  }
   if (id === 'inference') {
     const runtime = window.inferencePanel?.runtime;
     return { ...base, ready: !!runtime && visible('.pc-inference-panel'),
@@ -266,7 +273,7 @@ async function basicInteraction(page, id, { reducedPhysics = false } = {}) {
     const links = await page.locator('[data-demo-dir]').evaluateAll((elements) => elements.map((element) => ({
       demo: element.dataset.demoDir, href: element.href, title: element.textContent.trim().slice(0, 200), origin: location.origin,
     })));
-    assert.equal(links.length, 18, 'Gallery card count changed');
+    assert.equal(links.length, 19, 'Gallery card count changed');
     for (const link of links) {
       const target = new URL(link.href);
       assert.equal(target.origin, link.origin, 'Built gallery points outside the Pages origin');
@@ -393,7 +400,8 @@ export function networkSnapshot({ expectedPeers }) {
   })), { label: 'inference', manager: window.inferencePanel?.runtime?.networkManager },
     { label: 'cubechat-room', manager: window.__cubechat?.network?.node?.getNetworkManager?.() },
     { label: 'cubechat-models', manager: window.__cubechat?.worldAgents?.runtime?.networkManager },
-    { label: 'earth-models', manager: window.__earthDemo?.agentHost?.runtime?.networkManager }].filter(({ manager }) => manager);
+    { label: 'earth-models', manager: window.__earthDemo?.agentHost?.runtime?.networkManager },
+    { label: 'vibeslopdb-models', manager: window.__vibeslopdb?.aiBridge?.getRuntime?.()?.networkManager }].filter(({ manager }) => manager);
   const nodes = managers.map(({ label, manager }) => ({ label, isConnected: manager.isConnected,
     peerId: manager.peerId, bootstrapPeers: [...(manager.bootstrapPeerIds ?? [])],
     connections: (manager.getLibp2pNode?.()?.getConnections?.() ?? []).map(normalize) }));
@@ -638,6 +646,7 @@ async function runRoute(definition, options, baseUrl, expectedPeers) {
     if (definition.network === 'opt-in') await attempt('explicit network opt-in', async () => {
       if (definition.id === 'netviz') await page.evaluate(() => { window.__NETVIZ__.connect(); });
       else if (definition.id === 'multiscale') await page.evaluate(() => { window.__multiscaleDemo.startPeerNetwork().catch(() => {}); });
+      else if (definition.id === 'vibeslopdb') await page.locator('#btn-peers').click();
       else await page.locator('#peercompute-attach').click();
     });
     if (['automatic', 'opt-in'].includes(definition.network)) await attempt('authenticated SecretWorkshop relay', async () => {
@@ -709,6 +718,8 @@ async function runRoute(definition, options, baseUrl, expectedPeers) {
           await residents.getByRole('button', { name: 'Done', exact: true }).click();
           await page.getByRole('button', { name: 'Settings', exact: true }).click();
           await page.locator('#settings-menu').getByRole('button', { name: 'Models', exact: true }).click();
+        } else if (definition.id === 'vibeslopdb') {
+          await page.locator('#btn-models').click();
         } else {
           await page.getByRole('button', { name: 'Agents', exact: true }).click();
           await page.getByRole('dialog', { name: 'Agents · EarthGrid', exact: true }).getByRole('button', { name: 'Models', exact: true }).click();
@@ -718,7 +729,7 @@ async function runRoute(definition, options, baseUrl, expectedPeers) {
         const panel = page.locator('.pc-inference-panel');
         const library = page.locator('dialog.pc-model-browser');
         if (!await library.isVisible()) await panel.locator('.pc-model-toolbar').getByRole('button', { name: 'Models', exact: true }).click();
-        if (definition.id === 'cubechat') assert.equal(await page.locator('dialog[open]').count(), 1, 'Cube model management opened nested dialogs');
+        if (definition.id === 'cubechat' || definition.id === 'vibeslopdb') assert.equal(await page.locator('dialog[open]').count(), 1, 'Model management opened nested dialogs');
         for (const [label, viewport] of [['desktop', options.desktop], ['mobile', options.mobile]]) {
           await page.setViewportSize(viewport);
           await library.getByRole('tab', { name: 'Stored models', exact: true }).click();
@@ -732,7 +743,7 @@ async function runRoute(definition, options, baseUrl, expectedPeers) {
           await library.getByRole('tab', { name: 'Browse models', exact: true }).click();
           await screenshot(`models-browse-${label}`);
         }
-        if (definition.id === 'cubechat') {
+        if (definition.id === 'cubechat' || definition.id === 'vibeslopdb') {
           await library.getByRole('button', { name: 'Config', exact: true }).click();
           assert.equal(await page.locator('dialog[open]').count(), 1, 'Config opened a second model dialog');
           await library.getByRole('spinbutton', { name: 'Model RAM budget (GiB)', exact: true }).waitFor();
@@ -740,7 +751,7 @@ async function runRoute(definition, options, baseUrl, expectedPeers) {
           await library.getByRole('button', { name: 'Done', exact: true }).click();
           await library.getByRole('button', { name: 'Done', exact: true }).click();
           await panel.waitFor({ state: 'detached' });
-          assert.equal(await page.locator('dialog[open]').count(), 0, 'Closing Models did not return directly to the world');
+          assert.equal(await page.locator('dialog[open]').count(), 0, 'Closing Models did not return directly to the app');
         } else {
           await library.getByRole('button', { name: 'Done', exact: true }).click();
           await page.locator('dialog.world-agent-models').getByRole('button', { name: 'Back to world', exact: true }).click();

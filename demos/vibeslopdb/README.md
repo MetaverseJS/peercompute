@@ -23,7 +23,7 @@ flowchart TD
     session --> state["PeerCompute StateManager (y-indexeddb)"]
 ```
 
-VibeSlopDB borrows PeerCompute's persistent inference runtime through the CubeChat-style `mountInferencePanel({ managementOnly: true })` modal so local WebGPU models and connected peer hosts remain resident after closing **Models**. It detects when launched inside the PeerCompute ExoWebTUI desktop (`peercompute-atlas-demo:`) and exposes **← Atlas** (`peercompute.atlas.return.v1`) while leaving CRT post-processing to the host shell. [Local Model Console](../inference/README.md) · [All demos](../README.md) · [PeerCompute library](../../peercompute/README.md)
+VibeSlopDB borrows PeerCompute's persistent inference runtime through the CubeChat-style `mountInferencePanel({ managementOnly: true })` modal so local WebGPU models and connected peer hosts remain resident after closing **Models**. When launched from the PeerCompute ExoWebTUI desktop, **Schema ER**, **YOLO Chat**, **SQL Query #1..N**, and **Carnage Log** open as individual PeerCompute ExoWebTUI windows that share the desktop theme, taskbar, tiling, and CRT shader stack; opening VibeSlopDB directly in a tab (`docs/vibeslopdb/` or port `5190`) retains its full standalone ExoWebTUI workspace. [Local Model Console](../inference/README.md) · [All demos](../README.md) · [PeerCompute library](../../peercompute/README.md)
 
 ## Run locally
 

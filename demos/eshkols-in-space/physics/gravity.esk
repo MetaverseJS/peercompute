@@ -1,0 +1,45 @@
+;; The force calculation reads positions and masses from one immutable time slice.
+(define (pair-kick (a : Body) (b : Body) (model : Law)) : Vec3
+  (if (and (> (body-mass a) 0.0) (> (body-mass b) 0.0))
+      (let* ((gap (v-sub (body-position b) (body-position a)))
+             (soft (law-softening model))
+             (squared (max 0.00000001 (+ (v-dot gap gap) (* soft soft))))
+             (strength (/ (* (law-dt model) (law-gravity model) (body-mass b))
+                          (* squared (sqrt squared)))))
+        (v-scale gap strength))
+      (vec3 0.0 0.0 0.0)))
+
+;; Kick first, then drift with the updated velocity (symplectic Euler).
+(define (advance-body (a : Body) (kick : Vec3) (model : Law)) : Body
+  (if (> (body-mass a) 0.0)
+      (let* ((velocity (v-add (body-velocity a) kick))
+             (position (v-add (body-position a) (v-scale velocity (law-dt model)))))
+        (body position (body-mass a) velocity (body-radius a)))
+      a))
+
+(define (touching (a : Body) (b : Body)) : boolean
+  (let* ((gap (v-sub (body-position b) (body-position a)))
+         (limit (+ (body-radius a) (body-radius b))))
+    (and (> (body-mass a) 0.0) (> (body-mass b) 0.0) (<= (v-dot gap gap) (* limit limit)))))
+
+;; Perfectly inelastic coalescence conserves mass, volume and linear momentum.
+(define (merge-body (a : Body) (b : Body)) : Body
+  (let* ((mass (+ (body-mass a) (body-mass b)))
+         (weight (/ (body-mass b) mass))
+         (center (v-add (body-position a) (v-scale (v-sub (body-position b) (body-position a)) weight)))
+         (velocity (v-add (body-velocity a) (v-scale (v-sub (body-velocity b) (body-velocity a)) weight)))
+         (ra (body-radius a)) (rb (body-radius b))
+         (radius (expt (+ (* ra ra ra) (* rb rb rb)) 0.3333333333333333)))
+    (body center mass velocity radius)))
+
+(define (absorbed-body) : Body
+  (body (vec3 0.0 0.0 0.0) 0.0 (vec3 0.0 0.0 0.0) 0.0))
+
+;; Remove a target's own mass from the monopole of a densely populated leaf.
+(define (excluding-body (cluster : Body) (a : Body)) : Body
+  (let* ((remaining (- (body-mass cluster) (body-mass a))))
+    (if (> remaining 0.0)
+        (let* ((offset (v-sub (body-position cluster) (body-position a)))
+               (center (v-add (body-position a) (v-scale offset (/ (body-mass cluster) remaining)))))
+          (body center remaining (vec3 0.0 0.0 0.0) 0.0))
+        (absorbed-body))))

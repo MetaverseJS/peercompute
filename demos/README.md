@@ -53,6 +53,7 @@ use HTTPS and the listed port; published URLs use the directory shown.
 | [RoadVector](motorcycle/README.md) | Real-road motorcycle physics, traffic and WebXR | `motorcycle/` | 5188 |
 | [Models and agents](inference/README.md) | IPFS model storage and local/peer inference | `inference/` | 5189 |
 | [VibeSlopDB](vibeslopdb/README.md) | YOLO LLM SQL playground over SQLite, Postgres WASM, IndexedDB and draggable Mermaid ER | `vibeslopdb/` | 5190 |
+| [Eshkols in Space](eshkols-in-space/README.md) | WebGPU N-body gravity simulator with Eshkol laws, Barnes–Hut octrees and sticky mergers | `eshkols-in-space/` | 5191 |
 
 EarthGrid and RoadVector can use the optional
 [geodata service](../services/geodata/README.md), normally on loopback port 8788
@@ -67,7 +68,7 @@ npm run build:all
 npm run docs:preview
 ```
 
-The build writes the core library and all 16 Vite demos to `docs/`. Open
+The build writes the core library and all 17 Vite demos to `docs/`. Open
 `https://localhost:4173/?prod=1` to follow the built folder links. Without
 `?prod=1`, the local overview switches to development demo ports. The same folder
 layout works beneath the published `/peercompute/` path. Building does not deploy;

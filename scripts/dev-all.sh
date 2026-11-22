@@ -123,6 +123,7 @@ if [[ -z "${RELAY_CONFIG_DIRS:-}" ]]; then
     "$repo_root/demos/schrodinger/public"
     "$repo_root/demos/netviz/public"
     "$repo_root/demos/vibeslopdb/public"
+    "$repo_root/demos/eshkols-in-space/public"
     "$repo_root/docs/hyperborea"
     "$repo_root/docs/cubechat"
     "$repo_root/docs/planetgen"
@@ -136,6 +137,7 @@ if [[ -z "${RELAY_CONFIG_DIRS:-}" ]]; then
     "$repo_root/docs/schrodinger"
     "$repo_root/docs/netviz"
     "$repo_root/docs/vibeslopdb"
+    "$repo_root/docs/eshkols-in-space"
   )
   RELAY_CONFIG_DIRS="$(IFS=,; echo "${relay_config_dirs[*]}")"
 else
@@ -200,8 +202,9 @@ echo "  schrodinger: https://$(to_url_host "$overview_host"):5184/"
 echo "  netviz:     https://$(to_url_host "$overview_host"):5182/"
 echo "  inference:  https://$(to_url_host "$overview_host"):5189/"
 echo "  vibeslopdb: https://$(to_url_host "$overview_host"):5190/"
+echo "  eshkols-in-space: https://$(to_url_host "$overview_host"):5191/"
 
-"$repo_root/node_modules/.bin/concurrently" -k -n relay,geodata,hyperborea,cubechat,planetgen,wxglobe,earth,motorcycle,multiscale,universes,webgpuphys,sneakywoods,daddygo,fano,schrodinger,netviz,inference,vibeslopdb \
+"$repo_root/node_modules/.bin/concurrently" -k -n relay,geodata,hyperborea,cubechat,planetgen,wxglobe,earth,motorcycle,multiscale,universes,webgpuphys,sneakywoods,daddygo,fano,schrodinger,netviz,inference,vibeslopdb,eshkols-in-space \
   "npm run dev:relay" \
   "GEODATA_ALLOW_PUBLIC_OVERPASS=1 npm --prefix \"$repo_root/services/geodata\" start" \
   "npm --prefix \"$repo_root/demos/hyperborea\" run dev -- $vite_extra_args" \
@@ -219,4 +222,5 @@ echo "  vibeslopdb: https://$(to_url_host "$overview_host"):5190/"
   "npm --prefix \"$repo_root/demos/schrodinger\" run dev -- $vite_extra_args" \
   "npm --prefix \"$repo_root/demos/netviz\" run dev -- $vite_extra_args" \
   "npm --prefix \"$repo_root/demos/inference\" run dev -- $vite_extra_args" \
-  "npm --prefix \"$repo_root/demos/vibeslopdb\" run dev -- $vite_extra_args"
+  "npm --prefix \"$repo_root/demos/vibeslopdb\" run dev -- $vite_extra_args" \
+  "npm --prefix \"$repo_root/demos/eshkols-in-space\" run dev -- $vite_extra_args"

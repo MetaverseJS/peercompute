@@ -67,7 +67,7 @@ export function createButterchurnPresenter(host) {
         updates.push({ row: y, column: x, value });
       }
     }
-    if (!changed && !updates.length) return;
+    if (!changed && !updates.length) return false;
     if (changed) paperContext.putImageData(colors, 0, 0);
     if (updates.length) sink.flush(updates, {});
     context.save();
@@ -76,6 +76,7 @@ export function createButterchurnPresenter(host) {
     context.drawImage(paper, 0, 0, canvas.width, canvas.height);
     context.drawImage(ink, 0, 0, canvas.width, canvas.height);
     context.restore();
+    return true;
   }
   return { present, dispose() { ink.width = paper.width = 0; } };
 }

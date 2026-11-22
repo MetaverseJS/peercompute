@@ -1,0 +1,23 @@
+;; Immutable records shared by the initial conditions and the time step.
+(define-record-type Vec3
+  (vec3 x y z) vec3? (x vec-x) (y vec-y) (z vec-z))
+(define-record-type Body
+  (body position mass velocity radius) body?
+  (position body-position) (mass body-mass)
+  (velocity body-velocity) (radius body-radius))
+(define-record-type Law
+  (make-gravity-law dt gravity softening collisions) law?
+  (dt law-dt) (gravity law-gravity) (softening law-softening)
+  (collisions law-collisions))
+
+(define (v-add (a : Vec3) (b : Vec3)) : Vec3
+  (vec3 (+ (vec-x a) (vec-x b)) (+ (vec-y a) (vec-y b)) (+ (vec-z a) (vec-z b))))
+
+(define (v-sub (a : Vec3) (b : Vec3)) : Vec3
+  (vec3 (- (vec-x a) (vec-x b)) (- (vec-y a) (vec-y b)) (- (vec-z a) (vec-z b))))
+
+(define (v-scale (v : Vec3) (k : real)) : Vec3
+  (vec3 (* (vec-x v) k) (* (vec-y v) k) (* (vec-z v) k)))
+
+(define (v-dot (a : Vec3) (b : Vec3)) : real
+  (+ (* (vec-x a) (vec-x b)) (* (vec-y a) (vec-y b)) (* (vec-z a) (vec-z b))))

@@ -1,0 +1,66 @@
+;; Dimensionless initial conditions. Each body can be sampled independently.
+;; The small modular hash stays within the exact integer range of binary64.
+(define (sample-unit (i : int) (seed : int) (channel : int)) : real
+  (let* ((n (modulo (+ (* 239 (modulo seed 16777213)) (* i 3343) (* channel 1597)) 16777213))
+         (q (modulo (+ (* n n) (* 331 n) 137) 16777213))
+         (r (modulo (+ (* q q) (* 31247 q) channel) 16777213)))
+    (/ (+ 0.5 r) 16777213.0)))
+
+(define (initial-mass (i : int) (count : int) (seed : int) (distribution : int)) : real
+  (let* ((unit (/ 180.0 count))
+         (u (sample-unit i seed 7)))
+    (if (= distribution 1) (* unit (+ 0.10 (* 2.70 u u)))
+        (if (= distribution 2)
+            (+ (* 0.74 unit) (if (= i 0) 46.8 0.0))
+            unit))))
+
+(define (disk-body (i : int) (seed : int) (gravity : real) (mass : real)
+                   (radius : real) (central : real)) : Body
+  (let* ((u (sample-unit i seed 1))
+         (r (+ 0.12 (* 9.88 (expt u 0.88))))
+         (arm (* 2.0943951024 (modulo i 3)))
+         (width (if (< (sample-unit i seed 4) 0.19) 6.2831853072 (+ 0.45 (* 0.75 u))))
+         (scatter (* (- (sample-unit i seed 2) 0.5) width))
+         (angle (+ arm (* 0.42 r) scatter))
+         (c (cos angle)) (s (sin angle))
+         (height (* (- (sample-unit i seed 3) 0.5) (+ 0.25 (* 0.6 u))))
+         (enclosed (+ central (* (- 180.0 central) u)))
+         (speed (sqrt (/ (* gravity enclosed) r))))
+    (body (vec3 (* r c) height (* r s)) mass (vec3 (* -1.0 speed s) 0.0 (* speed c)) radius)))
+
+(define (binary-body (i : int) (seed : int) (gravity : real) (mass : real) (radius : real)) : Body
+  (let* ((side (if (= (modulo i 2) 0) -1.0 1.0))
+         (u (sample-unit i seed 1))
+         (r (+ 0.15 (* 3.7 (sqrt u))))
+         (angle (* 6.2831853072 (sample-unit i seed 2)))
+         (c (cos angle)) (s (sin angle))
+         (speed (sqrt (/ (* gravity 90.0 u) r)))
+         (drift (* side (sqrt (* gravity 4.5))))
+         (height (* 1.35 (- (sample-unit i seed 3) 0.5))))
+    (body (vec3 (+ (* side 5.0) (* r c)) height (* r s)) mass
+          (vec3 (* -1.0 speed s) 0.0 (+ drift (* speed c))) radius)))
+
+(define (sphere-body (i : int) (seed : int) (gravity : real) (mass : real) (radius : real)) : Body
+  (let* ((u (sample-unit i seed 1)) (r (* 10.0 (sqrt u)))
+         (h (- (* 2.0 (sample-unit i seed 2)) 1.0))
+         (ring (sqrt (max 0.0 (- 1.0 (* h h)))))
+         (angle (* 6.2831853072 (sample-unit i seed 3)))
+         (spin (* 6.2831853072 (sample-unit i seed 4)))
+         (c (cos angle)) (s (sin angle))
+         (p (vec3 (* ring c) h (* ring s)))
+         (tangent (vec3 (- (* -1.0 s (cos spin)) (* h c (sin spin)))
+                        (* ring (sin spin))
+                        (- (* c (cos spin)) (* h s (sin spin)))))
+         (speed (sqrt (/ (* gravity 180.0 u) (max r 0.1)))))
+    (body (v-scale p r) mass (v-scale tangent speed) radius)))
+
+(define (initial-body (i : int) (count : int) (seed : int) (preset : int)
+                      (distribution : int) (gravity : real)) : Body
+  (let* ((mass (initial-mass i count seed distribution))
+         (radius (* 0.10 (expt mass 0.3333333333333333)))
+         (central (if (= distribution 2) 46.8 0.0)))
+    (if (and (= distribution 2) (= i 0))
+        (body (vec3 0.0 0.0 0.0) mass (vec3 0.0 0.0 0.0) radius)
+        (if (= preset 1) (binary-body i seed gravity mass radius)
+            (if (= preset 2) (sphere-body i seed gravity mass radius)
+                (disk-body i seed gravity mass radius central))))))

@@ -101,7 +101,8 @@ test('docs index includes all demos and screenshots', () => {
     './multiscale/',
     './universes/',
     './webgpuphys/',
-    './vibeslopdb/'
+    './vibeslopdb/',
+    './eshkols-in-space/'
   ];
   requiredLinks.forEach((href) => {
     assert.ok(html.includes(href), `docs index missing link: ${href}`);
@@ -118,7 +119,8 @@ test('docs index includes all demos and screenshots', () => {
     './assets/earth.png',
     './assets/motorcycle.png',
     './assets/webgpuphys.png',
-    './assets/vibeslopdb.png'
+    './assets/vibeslopdb.png',
+    './assets/eshkols-in-space.png'
   ];
   requiredImages.forEach((src) => {
     assert.ok(html.includes(src), `docs index missing image: ${src}`);
@@ -133,6 +135,8 @@ test('docs overview keeps expected tile order', () => {
   const expected = [
     'Local Model Console',
     'CubeChat',
+    'Eshkols in Space',
+    'VibeSlopDB',
     'Universes',
     'PlanetGen',
     'NetViz',
@@ -147,8 +151,7 @@ test('docs overview keeps expected tile order', () => {
     'EarthGrid',
     'RoadVector',
     'Fano Reactor',
-    'Schrodinger',
-    'VibeSlopDB'
+    'Schrodinger'
   ];
   assert.deepEqual(names, expected, 'docs overview tile order mismatch');
 });

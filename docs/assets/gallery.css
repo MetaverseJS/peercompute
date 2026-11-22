@@ -124,7 +124,8 @@ footer a { color: var(--soft); }
 .desktop-surface { position: relative; width: 100%; height: 100%; }
 .desktop-surface > canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 .exowebtui-ready, .exowebtui-ready body { width: 100%; height: 100%; overflow: hidden; overscroll-behavior: none; }
-.exowebtui-ready #desktop { visibility: visible; cursor: none; }
+.exowebtui-ready #desktop { visibility: visible; }
+.exowebtui-ready .desktop-surface { cursor: none; }
 .desktop-alternate { display: none; }
 .exowebtui-ready .desktop-alternate { display: block; }
 #desktop-search { max-width: min(92vw, 34rem); padding: 16px; border: 1px solid #5de0d5; background: #0c1e23; color: #e2ecef; font: 14px/1.5 var(--mono); }

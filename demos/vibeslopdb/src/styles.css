@@ -1,4 +1,6 @@
-:root {
+.vs-scope,
+.vs-models-host,
+.vs-models-dialog {
   --vs-bg: #010d06;
   --vs-surface: #03190c;
   --vs-surface-strong: #062b14;
@@ -13,11 +15,17 @@
   --vs-font: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
 }
 
-*, *::before, *::after {
+.vs-scope,
+.vs-scope *,
+.vs-scope *::before,
+.vs-scope *::after,
+.vs-models-host *,
+.vs-models-dialog * {
   box-sizing: border-box;
 }
 
-html, body {
+html:has(> body.vs-standalone),
+body.vs-standalone {
   margin: 0;
   padding: 0;
   width: 100%;
@@ -30,7 +38,25 @@ html, body {
   line-height: 1.4;
 }
 
-#app {
+.vs-scope {
+  color: var(--vs-text);
+  font-family: var(--vs-font);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.vs-host-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--vs-surface);
+}
+
+body.vs-standalone #app {
   display: flex;
   flex-direction: column;
   width: 100%;

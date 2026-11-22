@@ -1,0 +1,44 @@
+(require nbody)
+
+(define (print-vec v)
+  (display (vec-x v)) (display " ") (display (vec-y v)) (display " ") (display (vec-z v)))
+(define (print-body a)
+  (display "BODY ") (print-vec (body-position a)) (display " ")
+  (display (body-mass a)) (display " ") (print-vec (body-velocity a))
+  (display " ") (display (body-radius a)) (newline))
+(define (print-world world)
+  (do ((i 0 (+ i 1))) ((= i (vector-length world))) (print-body (vector-ref world i))))
+
+(define (fixture name world model)
+  (display "CASE ") (display name) (newline)
+  (print-world world)
+  (display "NEXT") (newline)
+  (print-world (step-world world model)))
+
+(define (moving x vx mass radius)
+  (body (vec3 x 0.0 0.0) mass (vec3 vx 0.0 0.0) radius))
+(define sticky (law 0.1 0.0 0.1 #t))
+
+(fixture "gravity" (vector (moving -1.0 0.0 2.0 0.1) (moving 1.0 0.0 2.0 0.1))
+         (law 0.1 1.0 0.0 #f))
+(define impact (vector (moving -0.4 2.0 1.0 0.5) (moving 0.4 -1.0 2.0 0.5)))
+(fixture "merge" impact sticky)
+(fixture "legacy" impact (law 0.1 0.0 0.1 #t 1.0))
+(fixture "disabled" impact (law 0.1 0.0 0.1 #f))
+;; They start in contact but separate before the collision stage.
+(fixture "separating" (vector (moving -0.4 -2.0 1.0 0.5) (moving 0.4 1.0 2.0 0.5)) sticky)
+;; Body 0 pairs with 1. Body 2 meets both but must wait until a later step.
+(define triple (vector (moving 0.0 0.0 1.0 0.2) (moving 0.0 0.0 2.0 0.15) (moving 0.0 0.0 3.0 0.1)))
+(fixture "triple" triple sticky)
+(fixture "second" (step-world triple sticky) sticky)
+(fixture "absorbed" (step-world impact sticky) (law 0.1 1.0 0.1 #t))
+;; Off-axis momentum and mass-weighted centre; gravity runs before merging.
+(fixture "oblique" (vector
+  (body (vec3 -0.3 -0.2 0.1) 2.0 (vec3 1.0 2.0 -1.0) 0.6)
+  (body (vec3 0.5 0.1 0.0) 3.0 (vec3 -1.0 0.0 0.5) 0.4))
+  (law 0.1 1.0 0.1 #t))
+
+(define population (make-vector 67))
+(do ((i 0 (+ i 1))) ((= i 67))
+  (vector-set! population i (initial-body i 67 17 (modulo i 3) (modulo (quotient i 3) 3) 1.0)))
+(fixture "tiled" population (law 0.015 1.0 0.18 #f))

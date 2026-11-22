@@ -1,0 +1,34 @@
+// ESHKOL_FUNCTIONS
+struct Params {
+  count: u32, start: u32, length: u32, collisions: u32,
+  dt: f32, gravity: f32, softening: f32, padding: f32
+}
+
+@group(0) @binding(0) var<storage, read> snapshot: array<Body>;
+@group(0) @binding(1) var<storage, read_write> outputBodies: array<Body>;
+@group(0) @binding(2) var<uniform> params: Params;
+var<workgroup> tile: array<Body, 64>;
+
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(local_invocation_index) lane: u32) {
+  let count = min(params.count, arrayLength(&snapshot));
+  let bodyIndex = params.start + gid.x;
+  let inside = gid.x < params.length && bodyIndex < count && gid.x < arrayLength(&outputBodies);
+  var a: Body;
+  if (inside) { a = snapshot[bodyIndex]; }
+  let model = Law(params.dt, params.gravity, params.softening, params.collisions != 0u);
+  var kick = vec3<f32>(0.0);
+  for (var base = 0u; base < count; base += 64u) {
+    let width = min(64u, count - base);
+    if (lane < width) { tile[lane] = snapshot[base + lane]; }
+    workgroupBarrier();
+    if (inside) {
+      for (var j = 0u; j < width; j++) {
+        if (base + j != bodyIndex) { kick += pair_kick(a, tile[j], model); }
+      }
+    }
+    workgroupBarrier();
+  }
+  if (inside) { outputBodies[gid.x] = advance_body(a, kick, model); }
+}

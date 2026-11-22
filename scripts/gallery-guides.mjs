@@ -120,7 +120,9 @@ function card(entry, summary) {
   const picture = entry.image
     ? `<img src="./assets/${escape(entry.image)}" alt="" loading="lazy" decoding="async">`
     : '<canvas id="model-wave" width="600" height="210" aria-hidden="true"></canvas><span class="wave-label">IPFS → WebGPU</span>';
-  return `          <article class="card"><a class="demo-link" href="${escape(entry.href)}" data-demo-dir="${escape(entry.dir)}" data-demo-port="${entry.port}" data-demo-path="${escape(entry.path || '/')}" data-category="${escape(entry.category)}" data-guide="${guide}">
+  const liveGpuAttr = entry.liveGpu ? ' data-live-gpu="1"' : '';
+  const hostModuleAttr = entry.hostModule ? ` data-host-module="${escape(entry.hostModule)}"` : '';
+  return `          <article class="card"><a class="demo-link" href="${escape(entry.href)}" data-demo-dir="${escape(entry.dir)}" data-demo-port="${entry.port}" data-demo-path="${escape(entry.path || '/')}" data-category="${escape(entry.category)}" data-guide="${guide}"${liveGpuAttr}${hostModuleAttr}>
             <div class="thumb ${escape(entry.dir)}">${picture}</div>
             <div class="card-body"><span class="category">${escape(entry.category)}</span><h2>${escape(entry.title)}</h2>
               <p>${escape(entry.description)}</p><p class="demo-summary" hidden>${escape(summary)}</p><span class="arrow" aria-hidden="true">↗</span></div>

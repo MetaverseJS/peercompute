@@ -143,18 +143,18 @@ test('PeerCompute previews a selection, opens its guide or live demo, and preser
     page.on('pageerror', error => errors.push(String(error)));
     const url = baseUrl + '?prod=1';
     await page.goto(url);
-    await waitForCells(page, '18 DEMOS');
+    await waitForCells(page, '19 DEMOS');
     assert.equal(await page.title(), 'PeerCompute');
     assert.equal(await page.evaluate(() => __desktop.windows().at(-1).title), 'PeerCompute');
     const anchors = await page.locator('[data-demo-dir]').evaluateAll(items => items.map(a => a.href));
-    assert.equal(new Set(anchors).size, 18);
+    assert.equal(new Set(anchors).size, 19);
     const menu = await page.evaluate(() => window.__desktop.menu().items);
     assert.deepEqual(menu.filter(item => item.id.startsWith('launch-')).map(item => item.href), anchors);
     for (const id of ['settings', 'themes', 'builder']) assert.ok(menu.some(item => item.id === id));
     const touch = viewport.width < 600;
     const headings = await page.evaluate(() => {
       const lines = Array.from({ length: __desktop.stats().rows }, (_, i) => __desktop.row(i));
-      return { list: lines.findIndex(line => line.includes('18 DEMOS')),
+      return { list: lines.findIndex(line => line.includes('19 DEMOS')),
         preview: lines.findIndex(line => line.includes('PREVIEW')) };
     });
     assert.ok(touch ? headings.preview > headings.list : headings.preview === headings.list);
@@ -249,9 +249,9 @@ test('PeerCompute previews a selection, opens its guide or live demo, and preser
     page.on('request', request => { if (request.url().endsWith('/exowebtui.js')) desktopRequests.push(request.url()); });
     await page.goto(baseUrl + (javaScriptEnabled ? '?view=html&dev=1' : ''));
     assert.deepEqual(desktopRequests, []);
-    assert.equal(await page.locator('a[data-demo-dir]:visible').count(), 18);
+    assert.equal(await page.locator('a[data-demo-dir]:visible').count(), 19);
     const guides = page.locator('a.guide-link:visible');
-    assert.equal(await guides.count(), 18);
+    assert.equal(await guides.count(), 19);
     if (javaScriptEnabled) {
       assert.equal(new URL(await page.locator('#return-desktop').getAttribute('href')).search, '?dev=1');
       await page.getByRole('button', { name: 'AI & network' }).click();
@@ -259,7 +259,7 @@ test('PeerCompute previews a selection, opens its guide or live demo, and preser
       assert.equal(await guides.count(), 3);
       await page.getByRole('searchbox').fill('xyz-unmatched');
       await page.getByRole('button', { name: 'Show all demos' }).click();
-      assert.equal(await page.locator('#result-count').textContent(), '18 demos');
+      assert.equal(await page.locator('#result-count').textContent(), '19 demos');
     }
     const fanoCard = page.locator('.card').filter({ has: page.getByRole('heading', { name: 'Fano Reactor' }) });
     const fanoSummary = await fanoCard.locator('.demo-summary').textContent();
@@ -323,9 +323,9 @@ test('cold startup shows progress until the desktop paints or falls back to the 
     }
     if (failure) {
       await page.locator('#atlas').waitFor();
-      assert.equal(await page.locator('a[data-demo-dir]:visible').count(), 18);
+      assert.equal(await page.locator('a[data-demo-dir]:visible').count(), 19);
     } else {
-      await waitForCells(page, '18 DEMOS');
+      await waitForCells(page, '19 DEMOS');
       assert.equal(await page.locator('#atlas').isVisible(), false);
       await page.keyboard.press('ArrowDown');
       await waitForCells(page, '› CubeChat');
@@ -352,7 +352,7 @@ test('the gallery starts with fast scrolling and random window effects and resto
     await page.waitForFunction(title => {
       const { rows } = __desktop.stats();
       const heading = Array.from({ length: rows }, (_, row) => __desktop.row(row))
-        .findIndex(line => line.includes('18 DEMOS'));
+        .findIndex(line => line.includes('19 DEMOS'));
       return heading >= 0 && __desktop.row(heading + 1).includes(title);
     }, expectedFirst);
   }
@@ -433,7 +433,7 @@ test('the directory keeps its shape when a demo opens and no window outgrows a s
   assert.deepEqual(narrowed.windows.map(w => [w.id === 'demo-atlas', w.active]), [[true, false], [false, true]]);
 });
 
-test('VibeSlopDB launches inside the PeerCompute ExoWebTUI desktop and returns via atlas protocol', async t => {
+test('VibeSlopDB launches individual windows inside the PeerCompute ExoWebTUI desktop and also runs standalone', async t => {
   const baseUrl = await galleryBaseUrl(t);
   const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN || undefined });
   t.after(() => browser.close());
@@ -443,25 +443,143 @@ test('VibeSlopDB launches inside the PeerCompute ExoWebTUI desktop and returns v
   page.on('pageerror', error => errors.push(String(error)));
 
   await page.goto(baseUrl + '?prod=1');
-  await waitForCells(page, '18 DEMOS');
+  await waitForCells(page, '19 DEMOS');
   await page.keyboard.press('/');
   await page.getByRole('searchbox', { name: 'Find a demo' }).fill('VibeSlopDB');
   await page.getByRole('button', { name: 'Done' }).click();
   await waitForCells(page, '1 DEMO');
   await waitForCells(page, '› VibeSlopDB');
 
-  // Open VibeSlopDB live inside the PeerCompute ExoWebTUI iframe window
+  // Launch VibeSlopDB as individual native PeerCompute ExoWebTUI windows (no nested desktop iframe!)
   await clickCells(page, '[ Open demo ↗ ]');
-  const frameEl = page.locator('iframe[title="VibeSlopDB"]');
-  await frameEl.waitFor({ state: 'attached', timeout: 20_000 });
-  const frame = page.frameLocator('iframe[title="VibeSlopDB"]');
-  await frame.locator('#btn-atlas-return').waitFor({ state: 'visible', timeout: 25_000 });
-  await frame.locator('.vs-er-entity[data-table-name="users"]').first().waitFor({ state: 'visible', timeout: 25_000 });
+  await page.waitForFunction(() => {
+    const ids = new Set(__desktop.windows().map(w => w.id));
+    return ['vibeslopdb-schema', 'vibeslopdb-chat', 'vibeslopdb-query-1', 'vibeslopdb-carnage'].every(id => ids.has(id));
+  }, null, { timeout: 25_000 });
+  assert.equal(await page.locator('iframe[title="VibeSlopDB"]').count(), 0, 'VibeSlopDB should launch native windows rather than a nested desktop iframe');
 
-  // Clicking VibeSlopDB's own ← Atlas button triggers peercompute.atlas.return.v1
-  await frame.locator('#btn-atlas-return').click();
-  await page.waitForFunction(() => document.querySelectorAll('iframe[title="VibeSlopDB"]').length === 0, null, { timeout: 10_000 });
+  await page.locator('[data-demo-window="vibeslopdb-schema"] .vs-er-entity[data-table-name="users"]').first().waitFor({ state: 'attached', timeout: 25_000 });
+  await page.locator('[data-demo-window="vibeslopdb-query-1"] .vs-table').first().waitFor({ state: 'attached', timeout: 25_000 });
+
+  // Native clients are siblings of the cell surface. Empty toolbar space inherits
+  // the browser cursor, while links and editors keep their own cursor styles.
+  const queryWindow = page.locator('[data-demo-window="vibeslopdb-query-1"]');
+  assert.equal(await queryWindow.locator('nav').evaluate(el => getComputedStyle(el).cursor), 'auto');
+  assert.equal(await queryWindow.locator('nav button').first().evaluate(el => getComputedStyle(el).cursor), 'pointer');
+  await page.mouse.move(400, 6);
+  await page.waitForFunction(() => __desktop.pointer()?.kind === 'move:mouse');
+  await queryWindow.locator('textarea').first().hover();
+  await page.waitForFunction(() => __desktop.pointer()?.kind === 'leave:mouse');
+  assert.equal(await page.locator('.desktop-surface').evaluate(el => getComputedStyle(el).cursor), 'none');
+
+  // Spawning another query window creates a 5th individual PeerCompute ExoWebTUI window
+  await page.locator('[data-demo-window="vibeslopdb-chat"] [data-vs-nav-action="new-query"]').click();
+  await page.waitForFunction(() => __desktop.windows().some(w => w.id === 'vibeslopdb-query-2'), null, { timeout: 10_000 });
+
+  // Close DB tears down all individual VibeSlopDB windows cleanly and returns to PeerCompute
+  await page.locator('[data-demo-window="vibeslopdb-query-2"] [data-vs-nav-action="close-db"]').click();
+  await page.waitForFunction(() => !__desktop.windows().some(w => w.id.startsWith('vibeslopdb-')), null, { timeout: 10_000 });
   await waitForCells(page, '› VibeSlopDB');
+
+  // Verify standalone VibeSlopDB still boots its own complete ExoWebTUI desktop independently
+  const standalone = await context.newPage();
+  standalone.on('pageerror', error => errors.push(String(error)));
+  await standalone.goto(baseUrl + 'vibeslopdb/');
+  await standalone.locator('#btn-new-query').waitFor({ state: 'visible', timeout: 25_000 });
+  await standalone.locator('.vs-er-entity[data-table-name="users"]').first().waitFor({ state: 'visible', timeout: 25_000 });
+  assert.equal(await standalone.evaluate(() => window.__vibeslopdb?.embedded), false);
+  await standalone.close();
+
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('Eshkols in Space launches through the PeerCompute fused shader stack and returns via atlas protocol', async t => {
+  const baseUrl = await galleryBaseUrl(t);
+  const browser = await chromium.launch({
+    executablePath: process.env.CHROME_BIN || undefined,
+    args: ['--enable-unsafe-webgpu', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--enable-features=Vulkan', '--use-vulkan=swiftshader', '--disable-vulkan-surface']
+  });
+  t.after(() => browser.close());
+  const context = await browser.newContext({ viewport: { width: 1366, height: 900 }, ignoreHTTPSErrors: true, reducedMotion: 'no-preference' });
+  const page = await context.newPage();
+  const errors = [];
+  page.on('pageerror', error => errors.push(String(error)));
+
+  await page.goto(baseUrl + '?prod=1');
+  await waitForCells(page, '19 DEMOS');
+  await page.keyboard.press('/');
+  await page.getByRole('searchbox', { name: 'Find a demo' }).fill('Eshkols in Space');
+  await page.getByRole('button', { name: 'Done' }).click();
+  await waitForCells(page, '1 DEMO');
+  await waitForCells(page, '› Eshkols in Space');
+
+  await clickCells(page, '[ Open demo ↗ ]');
+  const frameEl = page.locator('iframe[title="Eshkols in Space"]');
+  await frameEl.waitFor({ state: 'attached', timeout: 20_000 });
+  const stage = page.locator('.pc-demo-stage[aria-label="Eshkols in Space"]');
+  const frame = page.frameLocator('iframe[title="Eshkols in Space"]');
+  await frame.locator('#btn-atlas-return').waitFor({ state: 'visible', timeout: 25_000 });
+  await frame.locator('#preset').waitFor({ state: 'visible', timeout: 25_000 });
+  await page.waitForFunction(() => {
+    const iframe = document.querySelector('iframe[title="Eshkols in Space"]');
+    const state = iframe?.contentWindow?.__eshkolsInSpace?.getState?.();
+    return Boolean(state?.ready && state.steps > 0);
+  }, null, { timeout: 30_000 });
+
+  const supportsCapture = await page.evaluate(() => 'drawElementImage' in CanvasRenderingContext2D.prototype);
+  if (supportsCapture) {
+    await page.waitForFunction(() => {
+      const el = document.querySelector('.pc-demo-stage[aria-label="Eshkols in Space"]');
+      return el?.dataset.presentation === 'shader';
+    }, null, { timeout: 15_000 });
+    assert.equal(await stage.locator('.pc-demo-capture').count(), 1, 'Eshkols in Space should present through the shared shader stack');
+    const starCoverage = await page.evaluate(() => {
+      const stage = document.querySelector('.pc-demo-stage[aria-label="Eshkols in Space"]');
+      const cap = stage?.querySelector('canvas.pc-demo-capture');
+      const iframe = stage?.querySelector('iframe');
+      const vp = iframe?.contentDocument?.getElementById('viewport');
+      if (!cap || !cap.width || !cap.height || !vp) return { leftHalf: 0, rightHalf: 0 };
+      const vr = vp.getBoundingClientRect();
+      const sx = cap.width / stage.clientWidth;
+      const sy = cap.height / stage.clientHeight;
+      const x0 = Math.max(0, Math.round((iframe.offsetLeft + vr.left) * sx));
+      const y0 = Math.max(0, Math.round((iframe.offsetTop + vr.top) * sy));
+      const w = Math.max(1, Math.min(cap.width - x0, Math.round(vr.width * sx)));
+      const h = Math.max(1, Math.min(cap.height - y0, Math.round(vr.height * sy)));
+      const d = cap.getContext('2d').getImageData(x0, y0, w, h).data;
+      let leftHalf = 0, rightHalf = 0;
+      for (let y = Math.round(h * 0.22); y < Math.round(h * 0.8); y += 2) {
+        for (let x = 10; x < w - 10; x += 2) {
+          const i = (y * w + x) * 4;
+          if (d[i] > 120 || d[i + 1] > 120 || d[i + 2] > 120) {
+            if (x < w / 2) leftHalf++; else rightHalf++;
+          }
+        }
+      }
+      return { leftHalf, rightHalf };
+    });
+    assert.ok(starCoverage.leftHalf > 50 && starCoverage.rightHalf > 50,
+      `Expected unclipped WebGPU stars across both halves of Eshkols viewport, got ${JSON.stringify(starCoverage)}`);
+  }
+
+  // Verify mobile layout inside PeerCompute keeps Parameters button visible without horizontal overflow
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForFunction(() => {
+    const iframe = document.querySelector('iframe[title="Eshkols in Space"]');
+    const doc = iframe?.contentDocument;
+    const btn = doc?.getElementById('menu-toggle');
+    if (!btn) return false;
+    const r = btn.getBoundingClientRect();
+    return r.width > 40 && r.right <= iframe.clientWidth + 1 && doc.documentElement.scrollWidth <= iframe.clientWidth + 1;
+  }, null, { timeout: 10_000 });
+  await frame.locator('#menu-toggle').click();
+  await frame.locator('#preset').waitFor({ state: 'visible', timeout: 5_000 });
+  await frame.locator('#menu-toggle').click();
+
+  await frame.locator('#btn-atlas-return').click();
+  await page.waitForFunction(() => document.querySelectorAll('iframe[title="Eshkols in Space"]').length === 0, null, { timeout: 10_000 });
+  await waitForCells(page, '› Eshkols in Space');
   assert.deepEqual(errors, []);
   await context.close();
 });

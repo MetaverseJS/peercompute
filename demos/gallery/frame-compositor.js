@@ -16,27 +16,47 @@ export function drawFrameLayers(context, width, height, layers) {
   }
 }
 
-// Rectangles are fractions of the unwarped desktop. Use the terminal's
-// backing resolution so every pass sees the same pixels and screen origin.
+// Rectangles are fractions of the unwarped desktop. Composite at the shader's
+// backing resolution and skip redundant 2D copies/uploads when layers are clean.
 export function createFrameCompositor(shader, guideLayers = () => []) {
   const output = document.createElement('canvas');
   let layers = [];
-  shader.setSourceComposer(source => {
+  let sourceVersion = 1;
+  let layoutVersion = 1;
+  let lastKey = '';
+  let lastSource = null;
+  shader.setSourceComposer((source, targetWidth, targetHeight, forceUpload) => {
     const media = guideLayers();
-    if (!layers.length && !media.length) return source;
-    const { width, height } = source;
+    const width = targetWidth || source.width;
+    const height = targetHeight || source.height;
+    const animatedMedia = media.some(layer => {
+      const src = layer.canvas?.currentSrc || layer.canvas?.src || '';
+      return /\.gif(?:$|[?#])/i.test(src);
+    });
+    const key = animatedMedia ? '' : [
+      sourceVersion, layoutVersion, width, height,
+      ...media.map(l => `${l.key || ''}:${l.canvas.width}x${l.canvas.height}:${l.parts.length}`),
+      ...layers.map(l => `${l.canvas.width}x${l.canvas.height}:${l.version?.() ?? ''}`),
+    ].join('|');
+    if (!forceUpload && !animatedMedia && key === lastKey && lastSource === source) return null;
+    lastKey = key;
+    lastSource = source;
+    if (!layers.length && !media.length && width === source.width && height === source.height) {
+      return source;
+    }
     if (output.width !== width) output.width = width;
     if (output.height !== height) output.height = height;
     const context = output.getContext('2d');
     context.globalCompositeOperation = 'copy';
-    context.drawImage(source, 0, 0);
+    context.drawImage(source, 0, 0, width, height);
     context.globalCompositeOperation = 'source-over';
     drawFrameLayers(context, width, height, media);
     drawFrameLayers(context, width, height, layers);
     return output;
   });
   return {
-    setLayers(nextLayers) { layers = nextLayers; },
+    setLayers(nextLayers) { layers = nextLayers; layoutVersion++; },
+    markSourceDirty() { sourceVersion++; },
     dispose() {
       shader.setSourceComposer(null);
       layers = [];

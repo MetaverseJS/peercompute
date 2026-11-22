@@ -1,0 +1,51 @@
+;; Native Eshkol entry point. The browser build specializes the same records and functions.
+(load "bodies.esk")
+(load "gravity.esk")
+(load "presets.esk")
+
+;; The previous constructor accepted a restitution coefficient. Contacts now
+;; stick for every caller, including saved scripts that supply that argument.
+(define (law dt gravity softening collisions . legacy-restitution)
+  (make-gravity-law dt gravity softening collisions))
+(define (law-restitution model) 0.0)
+
+;; Reference step for small worlds. All target bodies read the original snapshot.
+(define (gravity-step bodies model)
+  (let* ((count (vector-length bodies)) (next (make-vector count)))
+    (do ((i 0 (+ i 1))) ((= i count) next)
+      (let ((a (vector-ref bodies i)) (kick (vec3 0.0 0.0 0.0)))
+        (do ((j 0 (+ j 1))) ((= j count))
+          (if (not (= i j))
+              (set! kick (v-add kick (pair-kick a (vector-ref bodies j) model)))))
+        (vector-set! next i (advance-body a kick model))))))
+
+;; All choices refer to the post-drift snapshot. Mutual choices ensure that
+;; each body participates in at most one merge per step, independent of order.
+(define (first-contact bodies i)
+  (let ((count (vector-length bodies)) (a (vector-ref bodies i)))
+    (let scan ((j 0))
+      (if (= j count) count
+          (if (and (not (= i j)) (touching a (vector-ref bodies j))) j
+              (scan (+ j 1)))))))
+
+(define (merge-world bodies)
+  (let* ((count (vector-length bodies)) (partners (make-vector count))
+         (next (make-vector count)))
+    (do ((i 0 (+ i 1))) ((= i count))
+      (vector-set! partners i (first-contact bodies i)))
+    (do ((i 0 (+ i 1))) ((= i count) next)
+      (let ((j (vector-ref partners i)) (a (vector-ref bodies i)))
+        (vector-set! next i
+          (if (and (< j count) (= (vector-ref partners j) i))
+              (if (< i j) (merge-body a (vector-ref bodies j)) (absorbed-body))
+              a))))))
+
+(define (step-world bodies model)
+  (let ((advanced (gravity-step bodies model)))
+    (if (law-collisions model) (merge-world advanced) advanced)))
+
+;; Host-facing model API. The force law and tiling implementation stay internal.
+(provide vec3 vec3? vec-x vec-y vec-z
+         body body? body-position body-mass body-velocity body-radius
+         law law? law-dt law-gravity law-softening law-collisions law-restitution
+         initial-body step-world)

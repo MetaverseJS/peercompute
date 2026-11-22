@@ -1,5 +1,72 @@
 ## PeerCompute Test Strategy
 
+### Gallery mouse pointer
+
+The VibeSlopDB scenario in `demos/tests/gallery-browser.mjs` moves a real mouse from the cell surface into the SQL
+editor. It checks the desktop leave event, the native toolbar and button cursors, and the cell surface's hidden OS
+cursor. Run with `CHROME_BIN=/usr/bin/google-chrome node --test --test-name-pattern=VibeSlopDB demos/tests/gallery-browser.mjs`.
+
+
+
+### Full GitHub Pages release & merge to main — November 22
+
+- Full release build (`npm run build:all` + `PEERCOMPUTE_PAGES_SHARED_RUNTIME=1` + `npm run build:gallery` + `pagesReleaseAssets.mjs finalize`): **PASS** (`3,079` active files + `221` retained previous-release hashed assets, `716,173,638` bytes < 1,000,000,000 byte limit). Every file in `docs/` verified by exact byte count and SHA-256 against `docs/release-manifest.json` with zero unlisted or missing entries.
+- Automated suites against the full GH Pages build (all PASS):
+  - `npm run test:eshkols-in-space` (**8/8**), `npm run test:vibeslopdb` (**10/10**), `npm run test:capabilities` (**PASS**).
+  - `demo-ports`, `demo-release` (including updated root `README.md`), `gallery-guides`, `console-navigation`, `pages-release-assets`, `pages-shared-runtime`, `pages-isolation` — **76/76 PASS**.
+  - `CHROME_BIN=/usr/bin/google-chrome node demos/eshkols-in-space/scripts/browser-check.mjs` — **PASS** (`6,039` bright pixels, direct 16,384 + Barnes–Hut tree 65,536 sticky mergers, mobile drawer, WebGPU-unavailable fallback).
+  - `CHROME_BIN=/usr/bin/google-chrome node --test demos/tests/gallery-browser.mjs demos/tests/guide-interaction-browser.mjs demos/tests/frame-effects-browser.mjs demos/tests/gallery-overlays-browser.mjs` — **15/15 PASS** (including multi-window VibeSlopDB `docs/vibeslopdb/host.js` over pooled shared runtime, Eshkols bilateral star coverage + mobile `Parameters` drawer, CRT curvature, and taskbar switches).
+  - `PAGES_HOST=0.0.0.0 PAGES_PUBLIC_HOST=fastbox.tail5c077c.ts.net PAGES_ROUTES=overview,vibeslopdb,eshkols-in-space ... node demos/tests/pages-runtime.mjs` — **3/3 PASS** (`overview` 5.1s, `vibeslopdb` 9.7s with cold/warm COOP/COEP self-isolation + authenticated SecretWorkshop relay + Models Stored/Browse/Config desktop+mobile, `eshkols-in-space` 4.6s; 0 console/page/HTTP/WebSocket errors).
+
+
+### Eshkols embedded canvas clip & mobile Parameters button fix — November 22
+
+- Bilateral viewport star-coverage check (`1200×900 @ 2x` and `1366×900 @ 1x` inside PeerCompute's fused shader stack): before fix, Chrome's `drawElementImage` clipped `#scene` by its `(290, 66)` iframe offset (`starPct: [1%, 48%]`, `leftHalf: 6,390`, `rightHalf: 0`). After anchoring `.is-embedded #scene` at `(0, 0)` with `WebGPURenderer.setViewport` + `setScissor` synced to `#viewport`, coverage is dead-centered (`starPct: [12%, 87%]`, `leftHalf: 5,009`, `rightHalf: 4,921`) and visually verified in `fixed-desktop-dpr2.png`.
+- Mobile `390×844 @ 3x` header & drawer check inside PeerCompute: before fix, `#menu-toggle` (`Parameters`) was pushed off-screen (`right: 448.8 > 372`, `docScrollW: 449`). After fix, `Parameters` fits cleanly (`right: 362 <= 372`, `docScrollW: 372`, `overflow: false`) and opens the full `Control panel` drawer cleanly (visually verified in `fixed-mobile-dpr3.png` and `fixed-mobile-drawer.png`).
+- Automated regression suites (all PASS):
+  - `npm run test:eshkols-in-space` — **8/8 PASS**
+  - `node --test demos/tests/demo-ports.test.js demos/tests/demo-release.test.js demos/tests/gallery-guides.test.mjs demos/tests/console-navigation.test.js` — **53/53 PASS**
+  - `CHROME_BIN=/usr/bin/google-chrome node demos/eshkols-in-space/scripts/browser-check.mjs` — **PASS** (`6,039` bright pixels, direct 16,384 + Barnes–Hut tree 65,536 sticky mergers, mobile drawer, WebGPU-unavailable fallback)
+  - `CHROME_BIN=/usr/bin/google-chrome node --test demos/tests/gallery-browser.mjs demos/tests/frame-effects-browser.mjs demos/tests/gallery-overlays-browser.mjs` — **14/14 PASS** (with new desktop bilateral star-coverage `leftHalf > 50 && rightHalf > 50` and mobile `390×844` `Parameters` visibility/drawer toggle assertions in `gallery-browser.mjs`).
+
+
+### Fused PeerCompute shader stack & full-shader Eshkols in Space — November 22
+
+- Real hardware GPU (NVIDIA RTX 5060 Ti, Vulkan ANGLE, Butterchurn + all 5 GLSL shaders `vhs`/`crt`/`phosphor`/`scanlines`/`degauss` active, live 60 Hz GPU iframe via `drawElementImage`):
+  - `1366×900 @ 1x` (`liveGpu`): **`59.7 FPS`** (`childFps 60.1`, `paintFps 59.7`, `presentation: "shader"`).
+  - `1366×900 @ 2x` (`liveGpu`): **`60.0 FPS`** (`childFps 60.4`, `paintFps 60.0`, up from `37.0 FPS` baseline).
+  - `1920×1080 @ 2x` (4K, `liveGpu`): **`59.9 FPS`** (`childFps 60.3`, `paintFps 59.9`, up from `21.8 FPS` baseline — **2.75× faster**).
+  - `1920×1080 @ 2x` (4K, standard demo `fano-reactor`): **`54.2 FPS`** (up from `21.8 FPS` baseline — **2.5× faster**).
+- Software WebGPU (SwiftShader Vulkan, `1366×900 @ 1x`, real Eshkols in Space 2,048 bodies, Butterchurn + all 5 shaders active):
+  - Improved from `6.0 FPS` / `3.0 steps/s` / `349.4 ms` latency to **`11.5 FPS`** / **`5.6 steps/s`** / **`171.3 ms`** latency (`2,934` bright stars in capture canvas, `presentation: "shader"`, 0 errors); visually verified curved CRT/phosphor/scanlines starfield screenshot.
+- Automated regression suites (all PASS):
+  - `npm run test:eshkols-in-space` — **8/8 PASS**
+  - `npm run test:vibeslopdb` — **10/10 PASS**
+  - `node --test demos/tests/demo-ports.test.js demos/tests/demo-release.test.js demos/tests/gallery-guides.test.mjs demos/tests/console-navigation.test.js` — **53/53 PASS** (updated `demo-ports.test.js` for `data-live-gpu="1"`)
+  - `CHROME_BIN=/usr/bin/google-chrome node demos/eshkols-in-space/scripts/browser-check.mjs` — **PASS** (`6,039` bright pixels, direct 16,384 + Barnes–Hut tree 65,536 sticky mergers, mobile drawer, WebGPU-unavailable fallback)
+  - `CHROME_BIN=/usr/bin/google-chrome node --test demos/tests/gallery-browser.mjs demos/tests/guide-interaction-browser.mjs demos/tests/frame-effects-browser.mjs demos/tests/gallery-overlays-browser.mjs` — **15/15 PASS** (including updated Eshkols test asserting `data-presentation="shader"`, `.pc-demo-capture` mounted, `brightStars > 50`, live WebGPU stepping, and `← Atlas` return, plus CRT barrel-distortion pixel checks and taskbar-switch `texImage2D` pixel checks)
+  - Live Tailscale HTTPS (`https://fastbox.tail5c077c.ts.net:4174/peercompute/`) end-to-end check — **PASS** (Eshkols `presentation: "shader"`, `hasCapture: true`, live WebGPU steps + `← Atlas` return; VibeSlopDB 4 native ExoWebTUI windows; 0 page errors, 0 HTTP 4xx/5xx).
+
+
+### Launcher ordering, Eshkols direct-GPU framerate, and multi-window VibeSlopDB — November 22
+
+- Catalog ordering & wiring: `node --test demos/tests/demo-ports.test.js demos/tests/demo-release.test.js demos/tests/gallery-guides.test.mjs demos/tests/console-navigation.test.js` (**53/53 PASS**) asserts tile order (`Local Model Console`, `CubeChat`, `Eshkols in Space`, `VibeSlopDB`, `Universes`, …), `data-direct-gpu="1"` on Eshkols in Space, and `data-host-module="./vibeslopdb/host.js"` + `peercomputeHost.js` on VibeSlopDB.
+- Eshkols in Space framerate benchmark inside PeerCompute ExoWebTUI launcher (default Butterchurn + all 5 GLSL CRT shaders enabled, SwiftShader WebGPU, `1366x900`): improved from `6.1 FPS` / `3.2 paintFps` / `2.9 steps/s` / `324.0 ms` latency to `53.1 FPS` / `0 paintFps` (direct GPU swapchain) / `7.3 steps/s` / `128.5 ms` latency (standalone baseline `60.1 FPS` / `6.0 steps/s`). Standalone `demos/eshkols-in-space/scripts/browser-check.mjs` PASS (`6,039` bright pixels, direct 16,384 + Barnes–Hut tree 65,536 sticky mergers, mobile drawer, WebGPU-unavailable fallback).
+- VibeSlopDB native multi-window + standalone checks:
+  - `npm run test:vibeslopdb` (**10/10 PASS**) and `npm run test:eshkols-in-space` (**8/8 PASS**).
+  - Live Tailscale HTTPS (`https://fastbox.tail5c077c.ts.net:4174/peercompute/`) verified: launching VibeSlopDB opens 4 individual PeerCompute ExoWebTUI windows (`vibeslopdb-schema`, `vibeslopdb-chat`, `vibeslopdb-query-1`, `vibeslopdb-carnage`) with 0 nested iframes, live Mermaid ER entities, live SQL query results, dynamic spawning of `vibeslopdb-query-2` via `+ Query`, live engine switching to PostgreSQL 17 WASM (PGlite) and back to SQLite WASM, opening/closing PeerCompute's CubeChat-style `⚙ Models` modal with 0 404s, clean `Close DB` teardown, AND independent standalone VibeSlopDB at `https://fastbox.tail5c077c.ts.net:4174/peercompute/vibeslopdb/` (`embedded: false`, Matrix Phosphor standalone ExoWebTUI desktop).
+  - Full Chromium ExoWebTUI gallery suite (`demos/tests/gallery-browser.mjs`, `guide-interaction-browser.mjs`, `frame-effects-browser.mjs`, `gallery-overlays-browser.mjs`) covers both multi-window + standalone VibeSlopDB and direct-GPU Eshkols in Space alongside all CRT/overlay/resize/guide regressions.
+
+
+### Eshkols in Space WebGPU N-body demo — November 22
+
+- Physics, octree, and ULG capsule suite: `npm run test:eshkols-in-space` (`demos/eshkols-in-space/physics/physics.test.mjs`, `src/compute/gravity.test.mjs`, `integration/ulg.test.mjs`). Verifies pure Eshkol `.esk` sources match generated WGSL/JS (`build-physics.py --check`), deterministic seeded initial states and chunked cancellation, native `eshkol-run` reference agreement with analytic pairs and Deno WebGPU direct + subrange dispatches using workspace `GPUHubManager`, Barnes–Hut tree GPU forces against analytic point clusters and direct preset forces, and ULG `simulation.step` capsule validation. Latest run: **8/8 PASS**.
+- Standalone production WebGPU browser suite: `CHROME_BIN=/usr/bin/google-chrome node demos/eshkols-in-space/scripts/browser-check.mjs`. Serves built `docs/eshkols-in-space/` over loopback Vite preview (`https: false`), verifies `window.__eshkolsInSpace` readiness, live WebGPU star rendering via swapchain readback (`5,771` bright pixels), gravity stepping, camera orbit/zoom/recenter, grid toggle, presets/distributions/seeds, direct 16,384 sticky mergers (`16,372` active), Barnes–Hut tree 65,536 sticky mergers (`65,494` active, `29,565` lit pixels), mobile parameter drawer (`390x750`), zero page/console/shader validation errors, and clean WebGPU-unavailable fallback. Latest run: **PASS**.
+- Gallery, release, guide, and ExoWebTUI integration suites:
+  - `node --test demos/tests/demo-ports.test.js demos/tests/demo-release.test.js demos/tests/gallery-guides.test.mjs demos/tests/console-navigation.test.js` — **53/53 PASS** (includes all 19 destinations, illustrated Mermaid guides, and `eshkols-in-space` workspace/port/docs/atlas wiring).
+  - `CHROME_BIN=/usr/bin/google-chrome node --test demos/tests/gallery-browser.mjs demos/tests/guide-interaction-browser.mjs demos/tests/frame-effects-browser.mjs demos/tests/gallery-overlays-browser.mjs` — **15/15 PASS** (includes live launch of Eshkols in Space inside the PeerCompute ExoWebTUI desktop, verified `window.__eshkolsInSpace.getState().ready && steps > 0`, and `← Atlas` return handshake).
+- Live Tailscale HTTPS isolated overview check against `https://fastbox.tail5c077c.ts.net:4174/peercompute/`: verifies 302 root redirect, HTTP 200 + COOP (`same-origin`) / COEP (`credentialless`) across overview, Eshkols, VibeSlopDB, guide HTML/JSON, and thumbnail PNG, `crossOriginIsolated === true` / `SharedArrayBuffer`, 19 demo cards, native guide + standalone Mermaid SVG diagram render, embedded Eshkols live stepping + `← Atlas` return, and mobile `390x844` load with 0 page errors and 0 failed requests. Latest run: **PASS**.
+
 
 ### Hardware capabilities detection, microbenchmarking, and right-sizing — November 21
 

@@ -64871,3 +64871,248 @@ Commands run and results:
 Open items / notes:
 - Preserved pre-existing uncommitted files under `peercompute/experiments/conjecture/` untouched.
 - Commit kept strictly local on the current branch (`feature/conjecture-experiment`); no push performed.
+
+
+### 2026-11-22 12:46:49 AKST — Complete Eshkols in Space Demo Integration & Stand Up Local Overview Preview
+
+Prompt (exact local clock `2026-11-22T12:46:49-09:00`): “I'm not sure where we left off here. but I think we were trying to integrate the eshkols-in-space project as a full fleged demo and also stand up the local peercompute demo overview locally so I can take a look before we commit everything.”
+
+Actions:
+- Inspected git state on `feature/capabilities-detection`, `plan/plan.md`, `plan/tests.md`, `plan/log.md`, and ICC control plane (`codebase_repo_list`, `codebase_assistant_status`, `codebase_source_drift`). Identified in-progress uncommitted `demos/eshkols-in-space/` integration left mid-way after commit `871be181` (VibeSlopDB) alongside pre-existing uncommitted files under `peercompute/experiments/conjecture/`.
+- Audited `demos/eshkols-in-space/` against upstream `/home/cos/projects/eshkols-in-space/` and found four remaining blockers/gaps:
+  1. `demos/eshkols-in-space/index.html` had mismatched DOM IDs (`#controls` vs `#menu`, `#gravity-out`/`#dt-out`/`#softening-out` vs `*-value`, missing `#scale-label`), missing body-count options, and unnecessary external Google Fonts links that would throw `TypeError` on load in `src/app.js`. Restored upstream markup structure with relative `./src/` paths and the embedded `#btn-atlas-return` (`← Atlas`) button.
+  2. `docs/eshkols-in-space/` was stale (86 MB with unused ONNX/Transformers WASM from before `src/compute/runtime.js` switched to `@peercompute/gpu-hub`). Updated `demos/eshkols-in-space/vite.config.js` to use explicit ordered array aliases, ran `npm install` under Node `v24.18.0` to register the workspace in `package-lock.json`, and rebuilt `docs/eshkols-in-space/` down to `904 KB` (26 modules, 0 ONNX/Transformers chunks).
+  3. Missing gallery thumbnail `docs/assets/eshkols-in-space.png` and unbuilt gallery guides/cards (`docs/guides/eshkols-in-space.{html,json}` and 19th card in `docs/index.html`). Added `demos/eshkols-in-space/scripts/browser-check.mjs` (using Vite preview with `https: false` and `CHROME_BIN` support), ran `npm run build:gallery` (`Built 19 demo guides and previews`), captured a genuine `1200x750` WebGPU swapchain screenshot of the running spiral disk (`12,827` bright star pixels, step 22) into `docs/assets/eshkols-in-space.png`, and visually inspected it.
+  4. Strengthened `demos/tests/gallery-browser.mjs` so the embedded Eshkols in Space launch test also asserts `window.__eshkolsInSpace.getState().ready && state.steps > 0` before clicking `#btn-atlas-return`.
+- Stood up a dedicated loopback static isolated preview server (`peercompute-local-overview-preview.service` -> `/home/cos/.cache/peercompute-local-overview/serve.py` on `127.0.0.1:14174`, serving `/home/cos/projects/peercompute/docs` at `/peercompute/` with `COOP: same-origin`, `COEP: credentialless`, and `/` -> `/peercompute/` redirect) and exposed it on Tailscale HTTPS via `tailscale serve --bg --yes --https=4174 http://127.0.0.1:14174` without disturbing existing `5176` (CubeChat) or `5190` previews.
+- Refreshed ICC derived stores via `icc reindex --repo peercompute --full`.
+
+Files touched:
+- `demos/eshkols-in-space/index.html`
+- `demos/eshkols-in-space/vite.config.js`
+- `demos/eshkols-in-space/scripts/browser-check.mjs`
+- `demos/tests/gallery-browser.mjs`
+- `docs/eshkols-in-space/**` (rebuilt `904 KB` production bundle)
+- `docs/assets/eshkols-in-space.png` (`1200x750` real WebGPU swapchain thumbnail)
+- `docs/guides/eshkols-in-space.html`, `docs/guides/eshkols-in-space.json`, `docs/index.html`, `docs/assets/exowebtui.js` (and gallery outputs from `npm run build:gallery`)
+- `package-lock.json`
+- `plan/plan.md`, `plan/tests.md`, `plan/log.md`
+
+Commands run and results:
+- `npm install` (Node `v24.18.0`) — **PASS**
+- `npm run build:eshkols-in-space` — **PASS** (`26` modules, `904 KB` in `docs/eshkols-in-space/`, built in `3.10s`)
+- `npm run test:eshkols-in-space` — **PASS** (`8/8` physics, native Eshkol + Deno WebGPU direct/tree, and ULG capsule tests)
+- `npm run build:gallery` — **PASS** (`Built 19 demo guides and previews.`)
+- `CHROME_BIN=/usr/bin/google-chrome node demos/eshkols-in-space/scripts/browser-check.mjs` — **PASS** (SwiftShader WebGPU; direct 16,384 -> 16,372 active, Barnes–Hut tree 65,536 -> 65,494 active with `29,565` lit pixels, `5,771` initial bright scene pixels, mobile drawer, WebGPU-unavailable fallback, 0 errors; note headless native Vulkan without surface returned no adapter in Chrome here)
+- `node --test demos/tests/demo-ports.test.js demos/tests/demo-release.test.js demos/tests/gallery-guides.test.mjs demos/tests/console-navigation.test.js` — **PASS** (`53/53`)
+- `CHROME_BIN=/usr/bin/google-chrome node --test demos/tests/gallery-browser.mjs demos/tests/guide-interaction-browser.mjs demos/tests/frame-effects-browser.mjs demos/tests/gallery-overlays-browser.mjs` — **PASS** (`15/15`, including live embedded VibeSlopDB and Eshkols in Space launch + WebGPU stepping + `← Atlas` return)
+- Live Tailscale HTTPS verification against `https://fastbox.tail5c077c.ts.net:4174/peercompute/` — **PASS** (302 `/` redirect, HTTP 200 + COOP/COEP, `crossOriginIsolated: true`, `SharedArrayBuffer`, 19 demos, native guide + standalone Mermaid SVG diagram, embedded Eshkols live stepping + `← Atlas` return, desktop `1440x900` + mobile `390x844`, 0 page errors, 0 failed requests)
+
+Open items / notes:
+- Live overview preview intentionally kept running at `https://fastbox.tail5c077c.ts.net:4174/peercompute/` (`peercompute-local-overview-preview.service`) for user inspection before committing.
+- Pre-existing uncommitted files under `peercompute/experiments/conjecture/` remain untouched; no git commit performed per user request ("so I can take a look before we commit everything").
+
+
+### 2026-11-22 13:03:14 AKST — Reorder Catalog, Fix Eshkols Launcher Framerate, and Integrate Multi-Window VibeSlopDB in PeerCompute ExoWebTUI
+
+Prompt (exact local clock `2026-11-22T13:03:14-09:00`): “move eshkols in space and the vibeslop db entries to the top of the list below cubechat. also, see if you can fix the framerate issue when the space demo is launched from the peercompute launcher. then do a better integration for vibeslopdb so the actual query schema windows etc lauch as individual windows in the peercompute demo launcher. but it should still retain the ability to run standalone too.”
+
+Actions:
+1. **Catalog reordering (`demos/gallery/catalog.json`, `scripts/gallery-guides.mjs`, `demos/tests/demo-release.test.js`, `docs/index.html`):**
+   - Moved **Eshkols in Space** (3rd, with `directGpu: true`) and **VibeSlopDB** (4th, with `hostModule: "./vibeslopdb/host.js"`) directly below **Local Model Console** (1st) and **CubeChat** (2nd), ahead of **Universes** (5th).
+   - Emitted `data-direct-gpu="1"` and `data-host-module="..."` metadata attributes in `scripts/gallery-guides.mjs`.
+2. **Diagnosed and fixed Eshkols in Space framerate collapse inside PeerCompute launcher:**
+   - Benchmarked Eshkols standalone vs inside PeerCompute's ExoWebTUI launcher under default settings (Butterchurn 120 Hz wallpaper + all 5 GLSL CRT/phosphor/VHS/scanlines/degauss shaders + Chrome HTML-in-Canvas `drawElementImage`): observed a ~10× framerate drop from `60.1 FPS` standalone to `6.1 FPS` (`3.2 paintFps`, `2.9 steps/s`, `324.0 ms` latency).
+   - Isolated the two compounding bottlenecks:
+     - Wrapping a live WebGPU `<canvas>` inside `<canvas content="drawable">` (`drawElementImage`) forced per-frame WebGPU→Skia 2D→WebGL2 `texImage2D` synchronization barriers (dropping FPS from `60.3` to `16.7` even with shaders off).
+     - Running Butterchurn wallpaper + 5 full-screen WebGL2 shader passes (including the 25-tap `phosphor` blur) at 60–120 Hz on the parent canvas behind an active WebGPU iframe starved the child's GPU/compositor queue (dropping FPS from `60.3` to `9.5` even without `drawElementImage`).
+   - Fixed cleanly without regressing shared-shader demos (Fano Reactor, Schrodinger, overlays):
+     - `demos/gallery/frame-windows.js`: skip `createFrameCapture` for `entry.directGpu === true` so WebGPU swapchains composite directly on GPU while remaining fitted inside curved ExoWebTUI chrome with `clipPath` menu/window occlusion; expose `hasActiveDirectGpu()`.
+     - `scripts/build-gallery.mjs` (`canvas_shader.ts` patch): added `setFrameInterval(ms)` and `requestRedraw()` to the pinned shader presenter.
+     - `demos/gallery/desktop.js`: when `frames.hasActiveDirectGpu() && !blocked && !animating && !dragging`, pause Butterchurn `advance()` and throttle background desktop shader + cell repaints to `1000 ms`, immediately waking at `0 ms` on any pointer/key/wheel/resize/menu/drag/degauss event. (Caught and fixed an initial `overlays.length <= 1` bug where the top bar + degauss chip kept `overlays.length === 2`.)
+     - `demos/eshkols-in-space/src/app.js`: replaced the `1000 / 30` step-interval gate (which beat against 60 Hz vsync) with smooth `1000 / 60 - 2` cadence.
+   - Re-benchmarked after fix (default Butterchurn + all 5 shaders ON): `childFps` jumped from `6.1 FPS` → **`53.1 FPS`**, `stepsPerSec` `2.9` → **`7.3`**, `latencyMs` `324.0 ms` → **`128.5 ms`** (matching standalone `60.1 FPS` / `6.0 steps/s`).
+3. **Native multi-window VibeSlopDB integration in PeerCompute ExoWebTUI (preserving 100% standalone):**
+   - Scoped global styles in `demos/vibeslopdb/src/styles.css` under `.vs-standalone` (added `class="vs-standalone vs-scope"` in `demos/vibeslopdb/index.html`) and `.vs-scope` / `.vs-models-host` / `.vs-models-dialog`, and updated `applyThemeCssVars` in `demos/vibeslopdb/src/ui/exowebtuiDesktop.js` so VibeSlopDB styles never leak onto PeerCompute's document.
+   - Created `demos/vibeslopdb/src/peercomputeHost.js` exporting `mountVibeSlopDbHost(host)` and updated `demos/vibeslopdb/vite.config.js` (`cssCodeSplit: false`, `preserveEntrySignatures: 'exports-only'`, dual inputs `index.html` + `src/peercomputeHost.js` emitting `docs/vibeslopdb/host.js`, `34.84 kB` / `10.03 kB` gzip sharing Vite chunks).
+   - Added `desktopBodyBounds`, `registerDesktopApplication`, `unregisterDesktopApplication`, and `placeDesktopWindows` helpers in `scripts/build-gallery.mjs` (preserving existing open window states across `reconcileWindows`), plus `openNativeWindow` / `closeNativeWindow` in `demos/gallery/frame-windows.js` and `hostModule` lazy dynamic import in `demos/gallery/desktop.js` (with cross-origin `?dev=1` iframe fallback).
+   - Launching VibeSlopDB from PeerCompute now opens **VibeSlopDB · Schema ER**, **VibeSlopDB · YOLO Chat**, **VibeSlopDB · SQL Query #1**, and **VibeSlopDB · Carnage Log** as individual first-class PeerCompute ExoWebTUI windows in a non-overlapping 2×2 quad (sharing PeerCompute's taskbar, live desktop theme, CRT shaders, snapping/tiling, `+ Query` spawning `SQL Query #2..N`, `Tile DB`, `Close DB`, `Tab ↗`, and CubeChat-style `⚙ Models` modal).
+   - Updated `demos/vibeslopdb/README.md`, `demos/tests/demo-ports.test.js`, `demos/tests/demo-release.test.js`, and `demos/tests/gallery-browser.mjs` (covering both native multi-window launch + `+ Query` + `Close DB` and standalone `docs/vibeslopdb/`). Visually inspected screenshots of the reordered catalog, 4-window native PeerCompute VibeSlopDB layout, and standalone VibeSlopDB.
+
+Files touched:
+- `demos/gallery/catalog.json`, `demos/gallery/desktop.js`, `demos/gallery/frame-capture.js`, `demos/gallery/frame-input.js`, `demos/gallery/frame-windows.js`
+- `scripts/build-gallery.mjs`, `scripts/gallery-guides.mjs`
+- `demos/eshkols-in-space/src/app.js`
+- `demos/vibeslopdb/index.html`, `demos/vibeslopdb/vite.config.js`, `demos/vibeslopdb/README.md`, `demos/vibeslopdb/src/styles.css`, `demos/vibeslopdb/src/ui/exowebtuiDesktop.js`, `demos/vibeslopdb/src/peercomputeHost.js`
+- `demos/tests/demo-ports.test.js`, `demos/tests/demo-release.test.js`, `demos/tests/gallery-browser.mjs`
+- `docs/index.html`, `docs/assets/exowebtui.js`, `docs/eshkols-in-space/**`, `docs/vibeslopdb/**` (including `docs/vibeslopdb/host.js`), `docs/guides/vibeslopdb.{html,json}`
+- `plan/plan.md`, `plan/tests.md`, `plan/log.md`
+
+Commands run and results:
+- `npm run build:eshkols-in-space` — **PASS** (`2.38s`)
+- `npm run build:vibeslopdb` — **PASS** (`36.89s`, emitted `docs/vibeslopdb/host.js` `34.84 kB` + `index.html`)
+- `npm run build:gallery` — **PASS** (`Built 19 demo guides and previews.`)
+- `npm run test:eshkols-in-space` — **PASS** (`8/8`)
+- `npm run test:vibeslopdb` — **PASS** (`10/10`)
+- `node --test demos/tests/demo-ports.test.js demos/tests/demo-release.test.js demos/tests/gallery-guides.test.mjs demos/tests/console-navigation.test.js` — **PASS** (`53/53`)
+- `CHROME_BIN=/usr/bin/google-chrome node demos/eshkols-in-space/scripts/browser-check.mjs` — **PASS** (`6,039` bright pixels, direct 16,384 + Barnes–Hut tree 65,536 sticky mergers, mobile drawer, WebGPU-unavailable fallback, 0 errors)
+- `CHROME_BIN=/usr/bin/google-chrome node --test demos/tests/gallery-browser.mjs demos/tests/guide-interaction-browser.mjs demos/tests/frame-effects-browser.mjs demos/tests/gallery-overlays-browser.mjs` — **PASS** (`15/15`, including native multi-window + standalone VibeSlopDB and direct-GPU Eshkols in Space)
+- Eshkols FPS benchmark on live Tailscale HTTPS (`https://fastbox.tail5c077c.ts.net:4174/peercompute/`) — **PASS** (`53.1 FPS` / `7.3 steps/s` / `128.5 ms` in default Butterchurn + 5-shader gallery vs `6.1 FPS` / `2.9 steps/s` / `324 ms` before fix)
+- Live multi-window VibeSlopDB + PGlite/SQLite + `+ Query` + Models modal + standalone verification on `https://fastbox.tail5c077c.ts.net:4174/peercompute/` — **PASS** (0 page errors, 0 HTTP 4xx/5xx)
+
+Open items / notes:
+- Live Tailscale HTTPS preview remains running at `https://fastbox.tail5c077c.ts.net:4174/peercompute/` (`peercompute-local-overview-preview.service`) for user inspection.
+- No git commit performed; pre-existing uncommitted files under `peercompute/experiments/conjecture/` remain untouched.
+
+
+## 2026-11-22 13:36:13 AKST — Keep PeerCompute Shader Stack on Eshkols in Space at High FPS (Fused GLSL Pipeline + HiDPI Scaling + Dirty Compositing)
+Prompt time/date: `2026-11-22 13:36:13 AKST` (`2026-11-22T13:36:13-09:00`).
+Goal: Answer whether — and engineer the PeerCompute ExoWebTUI shader stack so — **Eshkols in Space** can stay inside the full PeerCompute CRT/VHS/phosphor/scanlines/degauss shader stack without tanking its framerate (replacing the earlier `directGpu` shader bypass).
+
+Profiling & root-cause analysis (real NVIDIA RTX 5060 Ti Vulkan ANGLE + SwiftShader WebGPU):
+- Verified `drawElementImage` **does** capture Eshkols in Space's live WebGPU starfield cleanly (`3,438` bright pixels visible through curved CRT/phosphor/scanlines), whereas direct `drawImage(sceneCanvas)` / `gl.texImage2D(sceneCanvas)` outside Eshkols' rAF reads `0` bright pixels because WebGPU clears its swapchain after presentation.
+- Isolated the exact bottlenecks tanking FPS inside the PeerCompute shader stack on both real GPUs and SwiftShader:
+  1. **HiDPI `drawElementImage` + shader overlay blow-up:** On a real **NVIDIA RTX 5060 Ti**, a live 60 FPS GPU canvas inside `drawElementImage` ran at `59.5 FPS` at `1366×900 @ 1x` (`capSize: 1167×738`), dropped to **`36–37 FPS`** at `1366×900 @ 2x` (`capSize: 2334×1476`, `overlaySize: 2718×1800`) even with shaders OFF, and collapsed to **`21.8 FPS`** at `1920×1080 @ 2x` (4K: `capSize: 2848×1800`, `overlaySize: 3834×2160` = 33 MB/frame copied via 2D `drawImage` + `gl.texImage2D`).
+  2. **5 separate full-res ping-pong passes in `canvas_shader.ts`:** `vhs` → `crt` → `phosphor` (**25-tap `5×5` loop per pixel!**) → `scanlines` (full-screen FBO pass for a 1-line multiply) → `degauss` = **36 texture fetches/pixel, 4 full-res FBO writes** every rAF. On SwiftShader, `phosphor` alone added `+89 ms/frame` (`14.3 → 6.3 FPS`) and all 5 passes added `+102 ms/frame`.
+  3. **Redundant per-frame 2D `frame-compositor.js` copies + `gl.texImage2D` uploads** even when neither desktop cells nor window captures changed.
+  4. **120 Hz Butterchurn MilkDrop wallpaper** running a second WebGL2 context + 7,500-cell CPU rasterizer behind the focused GPU demo.
+  5. **Per-frame DOM churn in Eshkols (`view.js` & `app.js`)** mutating `#scale-label` text/width every rAF and 4 meter text nodes every step inside the `drawElementImage` subtree, plus 6 `getImageData` `ReadPixels` retries in `frame-capture.js`'s `verifyCanvases` on transparent WebGPU canvases.
+
+Concrete actions taken:
+1. **Fused multi-shader pipeline + quarter-res separable phosphor (`scripts/build-gallery.mjs` patch on pinned `canvas_shader.ts`):**
+   - Compiled & cached a specialized single-pass fused GLSL ES 3.00 fragment shader per 5-bit active shader mask (`vhs`, `crt`, `phosphor`, `scanlines`, `degauss`), preserving all upstream catalog IDs, options, defaults, `warpPoint`, `magnetism`, and `degauss` thump behavior.
+   - Replaced the full-res 25-tap `5×5` `phosphor` loop with a mathematically equivalent separable 5-tap H + 5-tap V blur at quarter pixel count (`0.5× × 0.5×` = `2.5` full-res-equivalent taps vs `25`), dirty-cached so unchanged frames skip both blur passes and `gl.texImage2D` completely.
+   - Added `setMaxPixelRatio(maxDpr)` (default `1.5`, `1.0` when a `liveGpu` demo is active & unobstructed) and passed `(source, targetWidth, targetHeight, forceUpload)` to `composeSource`.
+2. **Dirty-tracking resolution-aware compositor (`demos/gallery/frame-compositor.js`, `demos/gallery/butterchurn-presenter.js`):**
+   - `createButterchurnPresenter.present()` now returns `false` when no cells changed so `desktop.js` only marks the source dirty on real paints.
+   - `createFrameCompositor` scales cleanly to the shader's `(targetWidth, targetHeight)`, tracks `sourceVersion`, `layoutVersion`, and each layer's `capture.version()`, preserves animated `.gif` guide media, and returns `null` when clean to avoid wasted 2D `drawImage` + `gl.texImage2D` uploads (while remaining 100% compatible with `gallery-overlays-browser.mjs`'s `texImage2D` pixel assertion on taskbar switches).
+3. **HiDPI-capped & adaptively paced `frame-capture.js` + `liveGpu` shader mode (`demos/gallery/catalog.json`, `scripts/gallery-guides.mjs`, `demos/gallery/frame-capture.js`, `demos/gallery/frame-windows.js`, `demos/gallery/desktop.js`):**
+   - Replaced `directGpu: true` (shader bypass) with `liveGpu: true` (`data-live-gpu="1"`) on **Eshkols in Space** so it runs **through the full PeerCompute shader stack**.
+   - Capped `frame-capture.js` backing DPR (`1×` for `liveGpu`, `1.25×` for standard iframes, `2×` for native multi-window panes), exposed `version()`, capped transparent-canvas `verifyCanvases` retries at 2 attempts, and added adaptive `onpaint` pacing (`0` throttle on hardware GPUs where `drawElementImage <= 12 ms`; paces cleanly on slow/software GPUs).
+   - Updated `desktop.js` so when a `liveGpu` demo is focused & unobstructed, Butterchurn pauses, background cell-grid redraws pace to 4 Hz (waking immediately on any input), shader DPR caps to `1×`, and the PeerCompute shader stack stays live at **60 FPS** (`setFrameInterval(0)`).
+4. **Eshkols embedded DOM/pixel-ratio polish (`demos/eshkols-in-space/src/view.js`, `demos/eshkols-in-space/src/app.js`):**
+   - Cached `scaleLabel.textContent` and `style.width` in `view.js` to stop 60 Hz redundant DOM mutations; capped embedded WebGPU pixel ratio to `1.25` (standalone stays `2`).
+   - Paced continuous running `meters()` DOM writes in `app.js` to ~15 Hz (`>= 66 ms`), flushing immediately on reset, step 1, pause/resume, and single-step.
+5. **Updated tests & rebuilt production outputs:**
+   - Updated `demos/tests/demo-ports.test.js` (`data-live-gpu="1"`) and `demos/tests/gallery-browser.mjs` (verifying Eshkols runs with `data-presentation="shader"`, `.pc-demo-capture` present, `brightStars > 50`, live WebGPU stepping, and `← Atlas` return).
+   - Rebuilt `docs/eshkols-in-space/` and `docs/` gallery (`docs/index.html`, `docs/assets/exowebtui.js`, `docs/guides/`). Visually inspected screenshot `eshkols-after-fused.png` confirming crisp curved CRT/phosphor/scanlines/VHS rendering of Eshkols' live spiral galaxy.
+
+Files touched:
+- `scripts/build-gallery.mjs`, `scripts/gallery-guides.mjs`
+- `demos/gallery/catalog.json`, `demos/gallery/butterchurn-presenter.js`, `demos/gallery/frame-capture.js`, `demos/gallery/frame-compositor.js`, `demos/gallery/frame-windows.js`, `demos/gallery/desktop.js`
+- `demos/eshkols-in-space/src/view.js`, `demos/eshkols-in-space/src/app.js`
+- `demos/tests/demo-ports.test.js`, `demos/tests/gallery-browser.mjs`
+- `docs/index.html`, `docs/assets/exowebtui.js`, `docs/eshkols-in-space/**`
+- `plan/plan.md`, `plan/tests.md`, `plan/log.md`
+
+Commands run and results:
+- `npm run build:eshkols-in-space && npm run build:gallery` — **PASS** (`1.84s` Eshkols, `Built 19 demo guides and previews.`)
+- Fused shader benchmark (`bench-after-fused.mjs`, all 5 shaders + Butterchurn ON):
+  - NVIDIA RTX 5060 Ti `1366×900 @ 1x` (`liveGpu`): **`59.7 FPS`** (`childFps 60.1`, `paintFps 59.7`, `presentation: "shader"`, 0 errors)
+  - NVIDIA RTX 5060 Ti `1366×900 @ 2x` (`liveGpu`): **`60.0 FPS`** (`childFps 60.4`, `paintFps 60.0` vs `37.0 FPS` before)
+  - NVIDIA RTX 5060 Ti `1920×1080 @ 2x` 4K (`liveGpu`): **`59.9 FPS`** (`childFps 60.3`, `paintFps 59.9` vs `21.8 FPS` before — **2.75× faster**)
+  - NVIDIA RTX 5060 Ti `1920×1080 @ 2x` 4K (standard demo): **`54.2 FPS`** (vs `21.8 FPS` before — **2.5× faster**)
+  - SwiftShader WebGPU Eshkols (`1366×900 @ 1x`, 2,048 bodies): **`11.5 FPS`**, `5.6 steps/s`, `171.3 ms` latency, `2,934` bright stars (vs `6.0 FPS`, `3.0 steps/s`, `349.4 ms` before)
+- `npm run test:eshkols-in-space` — **PASS** (`8/8`)
+- `npm run test:vibeslopdb` — **PASS** (`10/10`)
+- `node --test demos/tests/demo-ports.test.js demos/tests/demo-release.test.js demos/tests/gallery-guides.test.mjs demos/tests/console-navigation.test.js` — **PASS** (`53/53`)
+- `CHROME_BIN=/usr/bin/google-chrome node demos/eshkols-in-space/scripts/browser-check.mjs` — **PASS** (`6,039` bright pixels, direct 16,384 + Barnes–Hut tree 65,536 sticky mergers, mobile drawer, WebGPU-unavailable fallback)
+- `CHROME_BIN=/usr/bin/google-chrome node --test demos/tests/gallery-browser.mjs demos/tests/guide-interaction-browser.mjs demos/tests/frame-effects-browser.mjs demos/tests/gallery-overlays-browser.mjs` — **PASS** (`15/15`)
+- Live Tailscale HTTPS verification on `https://fastbox.tail5c077c.ts.net:4174/peercompute/` — **PASS** (`eshkol: { presentation: "shader", hasCapture: true, steps: 3, activeCount: 2048 }`, `vsCount: 4`, 0 page errors, 0 HTTP 4xx/5xx)
+
+Open items / notes:
+- Live Tailscale HTTPS preview (`https://fastbox.tail5c077c.ts.net:4174/peercompute/`) reflects the rebuilt `docs/` automatically via `peercompute-local-overview-preview.service`.
+- All changes remain uncommitted pending user review; pre-existing uncommitted files under `peercompute/experiments/conjecture/` remain untouched.
+
+
+## 2026-11-22 13:59:35 AKST — Fix Eshkols in Space Embedded Canvas Offset Clip (`drawElementImage`) & Mobile `Parameters` Button Overflow
+Prompt time/date: `2026-11-22 13:59:35 AKST` (`2026-11-22T13:59:35-09:00`).
+Goal: Investigate and fix two visual issues reported via screenshots on the live preview: (1) Eshkols in Space's WebGPU starfield clipped cleanly along the right/bottom inside the PeerCompute desktop window, and (2) on mobile, the `Parameters` button in Eshkols' header was pushed off the right edge.
+
+Root-cause diagnosis:
+1. **Desktop canvas clipping (Chromium `drawElementImage` child-canvas offset bug):**
+   - Reproduced immediately at `1200×900` (`DPR=2` and `DPR=1`) and `1440×900`: star coverage inside `#viewport` stopped cleanly at `48%` (`leftHalf: 6,390`, `rightHalf: 0`).
+   - Isolated with a 2D `<canvas>` diagnostic (`test2d`) inside `#viewport` (`rect: { x: 290, y: 66, width: 739, height: 576 }`): Chrome's `drawElementImage` clipped even a 2D `<canvas>` to `[448, 509]` = **`[739 - 290, 576 - 66]`** — i.e., subtracting the canvas's `(left, top)` offset inside the iframe from its own drawable width/height! Positioning a full-bleed `<canvas>` at `(0, 0)` (`position: fixed; inset: 0`) immediately eliminated the clip (`[737, 575]` of `[739, 576]`).
+   - Also noticed `main { min-height: 520px }` clipped the bottom `.telemetry` numbers on shorter ExoWebTUI desktop windows.
+2. **Mobile hidden `Parameters` button & horizontal scrollbar:**
+   - Reproduced at `390×844 @ 3x` (`iframeW: 372`): `#btn-atlas-return` (`← Atlas`, `74 px`) + title + `.engine` (`PeerCompute · WebGPU`, `72 px`) pushed `#menu-toggle` (`Parameters`, `92.5 px`) to `x: 356..448.8` (`77 px` past the right edge), causing `docScrollW: 449 > 372` and a horizontal scrollbar at the bottom.
+
+Concrete actions taken:
+1. **`demos/eshkols-in-space/src/style.css`:**
+   - Changed `main` `min-height: 520px` → `min-height: 0` so `.telemetry` never gets pushed below shorter ExoWebTUI windows.
+   - Added `.is-embedded` layout rules anchoring `#scene` full-bleed at `(0, 0)` (`position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: auto`) behind opaque `.mast`, `aside`, and `.telemetry` (`z-index: 2`, mobile `aside` `z-index: 3`), with `.viewport` transparent (`z-index: 1; pointer-events: none`) and `.view-tools`/`#notice` keeping `pointer-events: auto`. Standalone mode (`browser-check.mjs`) remains completely untouched.
+   - Fixed mobile `@media(max-width:740px)` header flex layout (`min-width: 0; overflow: hidden; text-overflow: ellipsis` on `.brand strong`, compact `.atlas-return` & `.orbit-logo`, `flex-shrink: 0; margin-left: auto; white-space: nowrap` on `.mobile-toggle`) and hid `.engine` below `600px` (`@media(max-width:600px)`).
+2. **`demos/eshkols-in-space/src/view.js`:**
+   - Verified Three.js r182 `WebGPURenderer.setViewport` / `setScissor` take top-left CSS pixel coordinates and scale by `pixelRatio`.
+   - When `.is-embedded`, observe both `#scene` and `#viewport` with `ResizeObserver`, size the WebGPU swapchain to full iframe `(fullW, fullH)`, and clamp `renderer.setViewport(vx, vy, vw, vh)` + `renderer.setScissor(vx, vy, vw, vh)` + `renderer.setScissorTest(true)` to `#viewport.getBoundingClientRect()` (with a cheap per-frame layout-key check inside `render()` so viewport shifts/resizes stay locked in sync).
+3. **`demos/tests/gallery-browser.mjs`:**
+   - Upgraded the Eshkols shader test to assert bilateral star coverage (`leftHalf > 50 && rightHalf > 50` inside `#viewport`) and mobile `390×844` `Parameters` button visibility (`r.right <= iframe.clientWidth + 1`, `doc.documentElement.scrollWidth <= iframe.clientWidth + 1`) + drawer open/close toggle.
+4. **Rebuilt `docs/eshkols-in-space/` & visually verified screenshots** (`fixed-desktop-dpr2.png`, `fixed-mobile-dpr3.png`, `fixed-mobile-drawer.png`).
+
+Files touched:
+- `demos/eshkols-in-space/src/style.css`, `demos/eshkols-in-space/src/view.js`
+- `demos/tests/gallery-browser.mjs`
+- `docs/eshkols-in-space/**`
+- `plan/plan.md`, `plan/tests.md`, `plan/log.md`
+
+Commands run and results:
+- `npm run build:eshkols-in-space` — **PASS** (`2.23s`)
+- Live Tailscale HTTPS (`https://fastbox.tail5c077c.ts.net:4174/peercompute/`) visual + DOM check:
+  - Desktop `1200×900 @ 2x`: `starPct: [12, 87]`, `leftHalf: 5,009`, `rightHalf: 4,921` (dead-centered, 0 clipping)
+  - Mobile `390×844 @ 3x`: `iframeW: 372`, `docScrollW: 372`, `menuBtn.right: 362`, `overflow: false`, drawer opens cleanly
+- `npm run test:eshkols-in-space` — **PASS** (`8/8`)
+- `node --test demos/tests/demo-ports.test.js demos/tests/demo-release.test.js demos/tests/gallery-guides.test.mjs demos/tests/console-navigation.test.js` — **PASS** (`53/53`)
+- `CHROME_BIN=/usr/bin/google-chrome node demos/eshkols-in-space/scripts/browser-check.mjs` — **PASS** (`6,039` bright pixels, direct 16,384 + Barnes–Hut tree 65,536 sticky mergers, mobile drawer, WebGPU-unavailable fallback)
+- `CHROME_BIN=/usr/bin/google-chrome node --test demos/tests/gallery-browser.mjs demos/tests/frame-effects-browser.mjs demos/tests/gallery-overlays-browser.mjs` — **PASS** (`14/14`)
+
+Open items / notes:
+- Live Tailscale HTTPS preview (`https://fastbox.tail5c077c.ts.net:4174/peercompute/`) immediately reflects the rebuilt `docs/eshkols-in-space/`.
+- All changes remain uncommitted pending user review; pre-existing uncommitted files under `peercompute/experiments/conjecture/` remain untouched.
+
+## November 22, 2026 — PeerCompute desktop mouse pointer
+
+The maintainer reported poor pointer contrast and a disappearing cursor in VibeSlopDB. The first live page fetch
+completed at 14:11:41 AKST. The exact prompt timestamps were unavailable. Chrome hit tests on the running gallery
+showed `cursor: none` on plain areas of all four native windows. Buttons still had a hand, editors had an I-beam,
+and the schema viewport retained its grab cursor. The parent hid the OS pointer outside the cell input surface.
+
+Scoped cursor hiding in `docs/assets/gallery.css` to the cell surface. The gallery build applies
+`scripts/gallery-pointer.patch` to its pinned Exotui sources for the two-color cell and native enter/leave events.
+In `scripts/build-gallery.mjs` and `demos/gallery/desktop.js`, guide media excludes the cursor's cell when drawing an
+image. The native window hit area stays whole. Rebuilt `docs/assets/exowebtui.js` and its boot size in `docs/index.html`.
+
+Added a real mouse handoff to the VibeSlopDB case in `demos/tests/gallery-browser.mjs`. `node scripts/build-gallery.mjs`
+and the focused browser test passed. A before/after Chrome probe confirmed all four native clients now inherit
+`auto` in plain areas, and retain text, grab, and button cursor styles. The bundle served over Fastbox HTTPS matched
+the rebuilt gallery. Test coverage is recorded in `plan/tests.md`.
+The full gallery, frame-effects, and overlay Chrome run passed all 14 tests. Screenshot sampling on the HTTPS preview
+with shaders disabled measured both bright and dark pixels in the pointer over the catalog thumbnail and a title bar.
+
+
+## 2026-11-22 14:27:42–14:52:28 AKST — Full GitHub Pages Release Build, README Update, Merge to `main`, and Push to `origin`
+Prompt times/dates:
+- `2026-11-22 14:27:42 AKST` (`2026-11-22T14:27:42-09:00`): "why don't you merge this back in after you make a new gh pages build"
+- `2026-11-22 14:31:02 AKST` (`2026-11-22T14:31:02-09:00`): "and push to origin"
+- `2026-11-22 14:33:22 AKST` (`2026-11-22T14:33:22-09:00`): "how is that conjecture going btw?"
+- `2026-11-22 14:38:12 AKST` (`2026-11-22T14:38:12-09:00`): "alright I think we shuold probably update the readme to mention the new demos as well and then you're free to push to origin main"
+- `2026-11-22 14:44:35 AKST` & `2026-11-22 14:52:28 AKST`: architecture discussion on conjecture relay scaling (`gossipsub` already configured in `config/relay.json` vs `NetworkManager.js` `floodsub` fallback in `browserRun.mjs`), physical laptop + Pi LAN network, and mDNS/`RTCPeerConnection.getStats()` direct LAN verification.
+
+Concrete actions taken:
+1. Updated `scripts/build-all.sh` to run `npm run build:gallery` right after `PEERCOMPUTE_PAGES_SHARED_RUNTIME=1 npm run build:demos` and before `pagesReleaseAssets.mjs finalize`, ensuring every full Pages build refreshes and fingerprints `docs/assets/exowebtui.js`, `docs/index.html`, and all 19 illustrated guides into `docs/release-manifest.json`.
+2. Ran the complete GitHub Pages release build (`npm run build:all` under Node `v24.18.0`): captured `564` active hashed assets (`545.6 MB`) from the previous release (`560a53c0`), rebuilt `peercompute`, all 17 Vite demos with `PEERCOMPUTE_PAGES_SHARED_RUNTIME=1`, and the ExoWebTUI gallery, and finalized `docs/release-manifest.json` (`3,079` active files + `221` retained hashed assets, `716,173,638` bytes < 1 GB limit).
+3. Updated root `README.md` concisely (preserving the core conjecture lead and all original diagrams/screenshots per `AGENTS.md`) to add **Eshkols in Space** and **VibeSlopDB** to the `## Demos` table and fill the two open screenshot cells in `## Screenshots`.
+4. Exposed `getRuntime: () => runtime` in `demos/vibeslopdb/src/ai/peercomputeBridge.js` and added VibeSlopDB `#btn-peers`, `#btn-models`, and `vibeslopdb-models` network inspector hooks in `demos/tests/pages-runtime.mjs`; rebuilt `docs/vibeslopdb/` with `PEERCOMPUTE_PAGES_SHARED_RUNTIME=1` and refreshed `docs/release-manifest.json` while preserving all 221 retained `560a53c0` assets.
+5. Verified the complete release build:
+   - Exact SHA-256 & byte-count check across all `3,300` active + retained files in `docs/` against `docs/release-manifest.json` — **PASS**.
+   - `npm run test:eshkols-in-space` (**8/8 PASS**), `npm run test:vibeslopdb` (**10/10 PASS**), `npm run test:capabilities` (**PASS**).
+   - `demo-ports`, `demo-release`, `gallery-guides`, `console-navigation`, `pages-release-assets`, `pages-shared-runtime`, `pages-isolation` — **76/76 PASS**.
+   - `CHROME_BIN=/usr/bin/google-chrome node demos/eshkols-in-space/scripts/browser-check.mjs` — **PASS** (`6,039` bright pixels).
+   - `CHROME_BIN=/usr/bin/google-chrome node --test demos/tests/gallery-browser.mjs demos/tests/guide-interaction-browser.mjs demos/tests/frame-effects-browser.mjs demos/tests/gallery-overlays-browser.mjs` — **15/15 PASS**.
+   - `PAGES_HOST=0.0.0.0 PAGES_PUBLIC_HOST=fastbox.tail5c077c.ts.net PAGES_ROUTES=overview,vibeslopdb,eshkols-in-space ... node demos/tests/pages-runtime.mjs` — **3/3 PASS** (`overview` 5.1s, `vibeslopdb` 9.7s including cold/warm COOP/COEP self-isolation + authenticated SecretWorkshop relay + Models Stored/Browse/Config desktop+mobile, `eshkols-in-space` 4.6s; 0 console/page/HTTP/WebSocket errors).
+
+Files touched in this slice:
+- `scripts/build-all.sh`
+- `README.md`
+- `demos/vibeslopdb/src/ai/peercomputeBridge.js`, `demos/tests/pages-runtime.mjs`
+- `docs/**` (full GH Pages release + `docs/release-manifest.json`)
+- `plan/plan.md`, `plan/tests.md`, `plan/log.md`

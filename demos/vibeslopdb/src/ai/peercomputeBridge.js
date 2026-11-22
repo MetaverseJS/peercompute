@@ -555,6 +555,7 @@ export function createPeerComputeAiBridge({ sessionManager, onCapabilitiesReady 
 
   return {
     initCapabilities,
+    getRuntime: () => runtime,
     getCapabilities: () => capabilities,
     getModelStatus,
     connectPeerNetwork,

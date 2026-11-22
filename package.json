@@ -20,7 +20,8 @@
     "demos/webgpuphys",
     "demos/sneakywoods",
     "demos/inference",
-    "demos/vibeslopdb"
+    "demos/vibeslopdb",
+    "demos/eshkols-in-space"
   ],
   "scripts": {
     "prepare:gguf": "node scripts/prepare-gguf-runtime.mjs",
@@ -106,7 +107,7 @@
     "build:schrodinger": "npm --prefix demos/schrodinger run build",
     "build:netviz": "npm --prefix demos/netviz run build",
     "build:peercompute": "npm --prefix peercompute run build",
-    "build:demos": "npm run build:hyperborea && npm run build:cubechat && npm run build:planetgen && npm run build:wxglobe && npm run build:earth && npm run build:motorcycle && npm run build:multiscale && npm run build:universes && npm run build:webgpuphys && npm run build:sneakywoods && npm run build:daddygo && npm run build:fano-reactor && npm run build:schrodinger && npm run build:netviz && npm run build:inference && npm run build:vibeslopdb",
+    "build:demos": "npm run build:hyperborea && npm run build:cubechat && npm run build:planetgen && npm run build:wxglobe && npm run build:earth && npm run build:motorcycle && npm run build:multiscale && npm run build:universes && npm run build:webgpuphys && npm run build:sneakywoods && npm run build:daddygo && npm run build:fano-reactor && npm run build:schrodinger && npm run build:netviz && npm run build:inference && npm run build:vibeslopdb && npm run build:eshkols-in-space",
     "build:all": "bash scripts/build-all.sh",
     "build": "npm run build:all",
     "dev:inference": "npm --prefix demos/inference run dev -- --host",
@@ -114,6 +115,9 @@
     "dev:vibeslopdb": "npm --prefix demos/vibeslopdb run dev -- --host",
     "build:vibeslopdb": "npm --prefix demos/vibeslopdb run build",
     "test:vibeslopdb": "npm --prefix demos/vibeslopdb test",
+    "dev:eshkols-in-space": "npm --prefix demos/eshkols-in-space run dev -- --host",
+    "build:eshkols-in-space": "npm --prefix demos/eshkols-in-space run build",
+    "test:eshkols-in-space": "npm --prefix demos/eshkols-in-space test",
     "import:artifact": "node scripts/import-ipfs-artifact.mjs",
     "test:artifacts": "node --test peercompute/tests/unit/artifactStore.test.js peercompute/tests/unit/ipfsArtifactTransport.test.js peercompute/tests/unit/stateManager.artifacts.test.js",
     "test:capabilities": "node --test peercompute/tests/unit/capabilities.test.js peercompute/tests/unit/modelDeviceCompatibility.test.js peercompute/tests/unit/gpuhubmanager.test.js peercompute/tests/unit/placementAdmissionPolicy.test.js",

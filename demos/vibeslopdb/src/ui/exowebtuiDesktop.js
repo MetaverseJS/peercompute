@@ -177,18 +177,25 @@ function subtractRect(box, cover) {
 }
 
 export function applyThemeCssVars(theme) {
-  const root = document.documentElement.style;
-  root.setProperty('--vs-bg', rgbCss(theme.background));
-  root.setProperty('--vs-surface', rgbCss(theme.surface));
-  root.setProperty('--vs-surface-strong', rgbCss(theme.surfaceStrong));
-  root.setProperty('--vs-border', rgbCss(theme.border));
-  root.setProperty('--vs-text', rgbCss(theme.text));
-  root.setProperty('--vs-muted', rgbCss(theme.muted));
-  root.setProperty('--vs-accent', rgbCss(theme.accent));
-  root.setProperty('--vs-accent-fg', rgbCss(shellActiveTitlebarForeground(theme)));
-  root.setProperty('--vs-success', rgbCss(theme.success));
-  root.setProperty('--vs-warning', rgbCss(theme.warning));
-  root.setProperty('--vs-danger', rgbCss(theme.danger));
+  let style = document.head.querySelector('style[data-vibeslopdb-theme-css]');
+  if (!style) {
+    style = document.createElement('style');
+    style.setAttribute('data-vibeslopdb-theme-css', '1');
+    document.head.append(style);
+  }
+  style.textContent = `.vs-scope, .vs-models-host, .vs-models-dialog {
+  --vs-bg: ${rgbCss(theme.background)};
+  --vs-surface: ${rgbCss(theme.surface)};
+  --vs-surface-strong: ${rgbCss(theme.surfaceStrong)};
+  --vs-border: ${rgbCss(theme.border)};
+  --vs-text: ${rgbCss(theme.text)};
+  --vs-muted: ${rgbCss(theme.muted)};
+  --vs-accent: ${rgbCss(theme.accent)};
+  --vs-accent-fg: ${rgbCss(shellActiveTitlebarForeground(theme))};
+  --vs-success: ${rgbCss(theme.success)};
+  --vs-warning: ${rgbCss(theme.warning)};
+  --vs-danger: ${rgbCss(theme.danger)};
+}`;
 }
 
 /**

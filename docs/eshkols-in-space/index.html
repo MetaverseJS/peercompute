@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#101416">
+  <title>Eshkols in Space · PeerCompute</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='10' fill='%23121617'/%3E%3Cellipse cx='20' cy='20' rx='17' ry='6' transform='rotate(-38 20 20)' stroke='%238fe9ba' fill='none' stroke-width='2'/%3E%3Ccircle cx='20' cy='20' r='6' fill='%238fe9ba'/%3E%3C/svg%3E">
+  <script type="module" crossorigin src="./assets/index-CGhAEHns.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-h3az9Wqq.css">
+</head>
+<body>
+  <header class="mast">
+    <div class="brand">
+      <button id="btn-atlas-return" class="atlas-return" type="button" hidden>← Atlas</button>
+      <span class="orbit-logo" aria-hidden="true"></span>
+      <strong>Eshkols in Space</strong>
+    </div>
+    <span class="product">Gravity laboratory</span>
+    <span class="engine" id="engine">Initializing engine</span>
+    <button class="mobile-toggle" type="button" aria-controls="menu" aria-expanded="false" id="menu-toggle">Parameters</button>
+  </header>
+  <main>
+    <aside id="menu" aria-label="Simulation settings">
+      <h1>Control panel</h1>
+      <section>
+        <h2><i class="section-mark"></i>Initial conditions</h2>
+        <label for="preset">Formation</label>
+        <select id="preset"><option value="disk">Spiral disk</option><option value="binary">Binary clusters</option><option value="sphere">Globular cluster</option></select>
+        <div class="pair">
+          <div><label for="count">Body count</label>
+            <select id="count"><option>128</option><option>512</option><option value="1024">1,024</option><option selected value="2048">2,048</option><option value="4096">4,096</option><option value="8192">8,192</option><option value="16384">16,384</option><option value="65536">65,536</option><option value="250000">250,000</option><option value="500000">500,000</option><option value="1000000">1,000,000</option><option value="2000000">2,000,000</option></select>
+          </div>
+          <div><label for="seed">Seed</label><input type="number" required id="seed" value="42" min="1" max="65535" step="1"></div>
+        </div>
+        <label for="distribution">Mass distribution</label>
+        <select id="distribution"><option value="spectrum">Mass spectrum</option><option value="equal">Equal mass</option><option value="heavy">Heavy core</option></select>
+      </section>
+      <section class="physics">
+        <h2><i class="section-mark"></i>Physics</h2>
+        <div class="solver"><span>Gravity solver</span><span id="gravity-mode">Direct pairs</span></div>
+        <label class="range-label" for="gravity">Gravity <output for="gravity" id="gravity-value">1.00</output></label>
+        <input type="range" id="gravity" value="1" min="0" max="3" step="0.05">
+        <label class="range-label" for="dt">Time step <output for="dt" id="dt-value">0.015</output></label>
+        <input type="range" id="dt" value="0.015" min="0.001" max="0.04" step="0.001">
+        <label class="range-label" for="softening">Softening <output for="softening" id="softening-value">0.18</output></label>
+        <input type="range" id="softening" value="0.18" min="0.03" max="0.60" step="0.01">
+        <label class="toggle-row" for="collisions">Merge on contact<input type="checkbox" id="collisions" role="switch"><span class="switch" aria-hidden="true"></span></label>
+      </section>
+      <div class="actions">
+        <button type="button" class="primary" id="play" disabled><span class="pause-icon" aria-hidden="true"></span><span id="play-text">Pause</span></button>
+        <button type="button" class="secondary" id="step" title="Advance one time step" disabled>Step</button>
+        <button type="button" class="restart" id="restart"><span aria-hidden="true">↺</span> Restart simulation</button>
+      </div>
+    </aside>
+    <div class="workspace">
+      <div class="viewport" id="viewport">
+        <canvas id="scene" aria-label="Interactive three-dimensional view of the simulated bodies"></canvas>
+        <div class="overlay">
+          <div class="view-head"><span class="status" id="status" role="status">Initializing</span><h2 id="formation">Spiral disk</h2></div>
+          <div class="view-tools">
+            <button class="icon-button" id="grid" title="Toggle reference grid" aria-label="Reference grid" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-5 9 5-9 5zM3 14l9 5 9-5M7.5 7.5l9 5m-9 0 9-5"/></svg></button>
+            <button class="icon-button" id="recenter" title="Reset camera" aria-label="Reset camera"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5m6 0h5v5m0 6v5h-5m-6 0H4v-5"/><circle cx="12" cy="12" r="2"/></svg></button>
+          </div>
+        </div>
+        <div id="notice" role="alert" hidden></div>
+        <div class="view-foot"><span id="scale"><i></i><span id="scale-label"></span></span><span class="camera-hint">Drag to orbit <b>·</b> Scroll to zoom</span></div>
+      </div>
+      <section class="telemetry" aria-label="Simulation telemetry">
+        <div><span>Active bodies</span><strong id="body-meter">—</strong></div>
+        <div><span>Simulated time</span><strong id="time-meter">0.00 <small>t</small></strong></div>
+        <div><span>Step latency</span><strong id="latency-meter">—</strong></div>
+        <div><span>Steps</span><strong id="steps-meter">0</strong></div>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

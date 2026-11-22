@@ -1,8 +1,8 @@
-// A drawable iframe has one rectangular native hit surface. Translate that
-// invisible surface at the pointer so the browser can dispatch its own trusted
-// events, focus controls, open selects, scroll and drag at the displayed pixel.
+// A drawable iframe or native DOM surface has one rectangular native hit surface.
+// Translate that invisible surface at the pointer so the browser can dispatch its own
+// trusted events, focus controls, open selects, scroll and drag at the displayed pixel.
 // The desktop compositor always draws its pixels at their unwarped location.
-export function createFrameInput({ stage, frame, root, shader }) {
+export function createFrameInput({ stage, frame = null, root, shader }) {
   const own = new AbortController();
   let childEvents;
   let active = false;
@@ -31,7 +31,7 @@ export function createFrameInput({ stage, frame, root, shader }) {
       lastScreenX = event.screenX;
       lastScreenY = event.screenY;
       let { clientX: x, clientY: y } = event;
-      if (child) {
+      if (child && frame) {
         // Events don't bubble out of the iframe. Its current bounds already
         // include the last translation, so this recovers viewport coordinates.
         const box = frame.getBoundingClientRect();
@@ -51,14 +51,17 @@ export function createFrameInput({ stage, frame, root, shader }) {
   function bindChild() {
     childEvents?.abort();
     lastScreenX = lastScreenY = undefined;
+    if (!frame) return;
     const doc = frame.contentDocument;
     if (!doc) return;
     childEvents = new AbortController();
     listen(doc, childEvents.signal, true);
   }
   listen(window, own.signal);
-  frame.addEventListener('load', bindChild, { signal: own.signal });
-  bindChild();
+  if (frame) {
+    frame.addEventListener('load', bindChild, { signal: own.signal });
+    bindChild();
+  }
 
   return {
     setActive(value) {

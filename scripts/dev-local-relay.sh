@@ -164,6 +164,7 @@ if [[ -z "${RELAY_CONFIG_DIRS:-}" ]]; then
     "$repo_root/demos/universes/public"
     "$repo_root/demos/webgpuphys/public"
     "$repo_root/demos/vibeslopdb/public"
+    "$repo_root/demos/eshkols-in-space/public"
     "$repo_root/docs/hyperborea"
     "$repo_root/docs/cubechat"
     "$repo_root/docs/sneakywoods"
@@ -177,6 +178,7 @@ if [[ -z "${RELAY_CONFIG_DIRS:-}" ]]; then
     "$repo_root/docs/universes"
     "$repo_root/docs/webgpuphys"
     "$repo_root/docs/vibeslopdb"
+    "$repo_root/docs/eshkols-in-space"
   )
   RELAY_CONFIG_DIRS="$(IFS=,; echo "${relay_config_dirs[*]}")"
 else
@@ -245,6 +247,7 @@ export VITE_FANO_REACTOR_URL="${demo_base}:5183/"
 export VITE_SCHRODINGER_URL="${demo_base}:5184/"
 export VITE_NETVIZ_URL="${demo_base}:5182/"
 export VITE_VIBESLOPDB_URL="${demo_base}:5190/"
+export VITE_ESHKOLS_IN_SPACE_URL="${demo_base}:5191/"
 open_overview() {
   local url="$1"
   if [[ -n "${BROWSER:-}" ]]; then
@@ -294,8 +297,9 @@ echo "  fano-reactor: https://$(to_url_host "$overview_host"):5183/"
 echo "  schrodinger: https://$(to_url_host "$overview_host"):5184/"
 echo "  netviz:     https://$(to_url_host "$overview_host"):5182/"
 echo "  vibeslopdb: https://$(to_url_host "$overview_host"):5190/"
+echo "  eshkols-in-space: https://$(to_url_host "$overview_host"):5191/"
 
-"$repo_root/node_modules/.bin/concurrently" -k --prefix "[{name}]" --prefix-colors auto -n relay,geodata,hyperborea,cubechat,planetgen,wxglobe,earth,motorcycle,multiscale,universes,webgpuphys,sneakywoods,daddygo,fano,schrodinger,netviz,vibeslopdb,docs \
+"$repo_root/node_modules/.bin/concurrently" -k --prefix "[{name}]" --prefix-colors auto -n relay,geodata,hyperborea,cubechat,planetgen,wxglobe,earth,motorcycle,multiscale,universes,webgpuphys,sneakywoods,daddygo,fano,schrodinger,netviz,vibeslopdb,eshkols-in-space,docs \
   "npm run dev:relay" \
   "GEODATA_ALLOW_PUBLIC_OVERPASS=1 npm --prefix \"$repo_root/services/geodata\" start" \
   "npm --prefix \"$repo_root/demos/hyperborea\" run dev -- $vite_extra_args" \
@@ -313,4 +317,5 @@ echo "  vibeslopdb: https://$(to_url_host "$overview_host"):5190/"
   "npm --prefix \"$repo_root/demos/schrodinger\" run dev -- $vite_extra_args" \
   "npm --prefix \"$repo_root/demos/netviz\" run dev -- $vite_extra_args" \
   "npm --prefix \"$repo_root/demos/vibeslopdb\" run dev -- $vite_extra_args" \
+  "npm --prefix \"$repo_root/demos/eshkols-in-space\" run dev -- $vite_extra_args" \
   "npm run docs:dev -- $vite_extra_args"

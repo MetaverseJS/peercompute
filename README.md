@@ -89,6 +89,8 @@ distinguishes implemented components, experimental paths and remaining research.
 | --- | --- |
 | [NetViz](demos/netviz/README.md) | Peer topology, connection paths and runtime telemetry. |
 | [CubeChat](demos/cubechat/README.md) | Multiplayer state, video/text chat and embodied agents. |
+| [Eshkols in Space](demos/eshkols-in-space/README.md) | WebGPU N-body gravity (up to 2M bodies) using Eshkol laws, Barnes–Hut octrees and shared GPU Hub. |
+| [VibeSlopDB](demos/vibeslopdb/README.md) | Natural-language SQL over SQLite/Postgres WASM and IndexedDB with live Mermaid ER and local/peer inference. |
 | [Models and agents](demos/inference/README.md) | IPFS model storage and local/peer text, vision, image and voice inference. |
 | [PlanetGen](demos/planetgen/README.md) / [Universes](demos/universes/README.md) | Procedural worlds and compute-driven generation. |
 | [EarthGrid](demos/earth/README.md) / [RoadVector](demos/motorcycle/README.md) | Geodata rendering, interactive worlds and vehicle simulation. |
@@ -105,7 +107,7 @@ physics experiments. Each demo owns its setup, controls and implementation notes
 | [![Daddy Go](docs/assets/daddygo.png)](demos/daddygo/README.md) | [![PlanetGen](docs/assets/planetgen.png)](demos/planetgen/README.md) | [![WXGlobe](docs/assets/wxglobe.png)](demos/wxglobe/README.md) |
 | [![EarthGrid](docs/assets/earth.png)](demos/earth/README.md) | [![RoadVector](docs/assets/motorcycle.png)](demos/motorcycle/README.md) | [![Universes](docs/assets/universes.png)](demos/universes/README.md) |
 | [![Multiscale Ladder](docs/assets/multiscale.svg)](demos/multiscale/README.md) | [![NetViz](docs/assets/netviz.png)](demos/netviz/README.md) | [![WebGPUPhys](docs/assets/webgpuphys.png)](demos/webgpuphys/README.md) |
-| [![Schrodinger](docs/assets/schrodinger.svg)](demos/schrodinger/README.md) | | |
+| [![Schrodinger](docs/assets/schrodinger.svg)](demos/schrodinger/README.md) | [![Eshkols in Space](docs/assets/eshkols-in-space.png)](demos/eshkols-in-space/README.md) | [![VibeSlopDB](docs/assets/vibeslopdb.png)](demos/vibeslopdb/README.md) |
 
 ## Development
 

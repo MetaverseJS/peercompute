@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Eshkols in Space guide · PeerCompute</title><link rel="stylesheet" href="../assets/gallery-guide.css">
+<script type="module" src="../assets/gallery-guide-theme.js"></script>
+<script type="module" src="../assets/gallery-diagram.js"></script></head>
+<body class="pc-guide"><nav aria-label="Demo navigation"><a href="../">← PeerCompute</a><a href="../eshkols-in-space/" target="_blank" rel="noopener">Open demo in tab ↗</a></nav>
+<main><h1 id="eshkols-in-space">Eshkols in Space</h1>
+<h2 id="overview">Overview</h2>
+<p>Eshkols in Space simulates up to two million gravitating bodies on a single WebGPU device using pure typed Eshkol physics laws, PeerCompute&#39;s <code>GPUHubManager</code>, and Three.js WebGPU rendering. Choose a spiral disk, binary clusters, or a globular cluster, adjust gravity, time step, softening, and sticky contact mergers live, and watch the solver transition automatically from direct all-pairs summation to a resident Barnes–Hut octree above 16,384 bodies.</p>
+<h2 id="architecture">Architecture</h2>
+<figure><div class="diagram" tabindex="0" role="img" aria-label="Eshkols in Space architecture diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 552.04 654.5999999999999" width="552.04" height="654.5999999999999" style="--bg:#101918;--fg:#e0eee4;--line:#82b59b;--accent:#c3ed8e;background:var(--bg)">
+<style>
+
+  text { font-family: 'Inter', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="arrowhead" markerWidth="8" markerHeight="5" refX="7" refY="2.5" orient="auto">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+  <marker id="arrowhead-start" markerWidth="8" markerHeight="5" refX="1" refY="2.5" orient="auto-start-reverse">
+    <polygon points="8 0, 0 2.5, 8 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+</defs>
+<polyline class="edge" data-from="esk" data-to="lower" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="294.545,56.900000000000006 294.545,104.9" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="lower" data-to="wgsl" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="294.545,141.8 294.545,165.8 159.53500000000003,165.8 159.53500000000003,189.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="lower" data-to="init" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="294.545,141.8 294.545,165.8 429.555,165.8 429.555,189.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="init" data-to="hub" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="429.555,226.70000000000002 429.555,250.70000000000005 294.545,250.70000000000005 294.545,274.70000000000005" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="wgsl" data-to="hub" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="159.53500000000003,226.70000000000002 159.53500000000003,250.70000000000005 294.545,250.70000000000005 294.545,274.70000000000005" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="hub" data-to="direct" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="&lt;= 16,384 bodies" points="240.62333333333336,311.6 240.62333333333336,347.6 186.58150000000003,347.6 186.58150000000003,427.90000000000003" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="hub" data-to="tree" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="&gt; 16,384 bodies" points="348.46666666666664,311.6 348.46666666666664,347.6 402.50849999999997,347.6 402.5085,427.90000000000003" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="direct" data-to="merge" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="186.58150000000003,464.80000000000007 186.58150000000003,488.8 294.545,488.8 294.545,512.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="tree" data-to="merge" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="402.5085,464.80000000000007 402.5085,488.8 294.545,488.8 294.545,512.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="merge" data-to="view" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="294.545,549.7 294.545,597.7" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<g class="edge-label" data-from="hub" data-to="direct" data-label="&lt;= 16,384 bodies">
+  <rect x="139.58150000000003" y="354.6" width="93.682" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="186.42250000000004" y="369.75" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">&lt;= 16,384 bodies</text>
+</g>
+<g class="edge-label" data-from="hub" data-to="tree" data-label="&gt; 16,384 bodies">
+  <rect x="358.50849999999997" y="354.6" width="87.742" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="402.37949999999995" y="369.75" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">&gt; 16,384 bodies</text>
+</g>
+<g class="node" data-id="esk" data-label="Eshkol physics laws (.esk)" data-shape="rectangle">
+  <rect x="196.13550000000004" y="20" width="196.819" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="294.545" y="38.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Eshkol physics laws (.esk)</text>
+</g>
+<g class="node" data-id="lower" data-label="build-physics.py lowering" data-shape="rectangle">
+  <rect x="198.72900000000004" y="104.9" width="191.63199999999998" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="294.545" y="123.35000000000001" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">build-physics.py lowering</text>
+</g>
+<g class="node" data-id="wgsl" data-label="WGSL pair law + octree &amp; merger passes" data-shape="rectangle">
+  <rect x="20" y="189.8" width="279.07000000000005" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="159.53500000000003" y="208.25" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">WGSL pair law + octree &amp; merger passes</text>
+</g>
+<g class="node" data-id="init" data-label="Reproducible JS initializers" data-shape="rectangle">
+  <rect x="327.07000000000005" y="189.8" width="204.96999999999994" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="429.555" y="208.25" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Reproducible JS initializers</text>
+</g>
+<g class="node" data-id="hub" data-label="PeerCompute GPUHubManager resident buffers" data-shape="rectangle">
+  <rect x="132.78000000000006" y="274.70000000000005" width="323.5299999999999" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="294.545" y="293.15000000000003" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">PeerCompute GPUHubManager resident buffers</text>
+</g>
+<g class="node" data-id="direct" data-label="Direct all-pairs gravity" data-shape="rectangle">
+  <rect x="100.76900000000003" y="427.90000000000003" width="171.625" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="186.58150000000003" y="446.35" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Direct all-pairs gravity</text>
+</g>
+<g class="node" data-id="tree" data-label="Resident Barnes-Hut octree" data-shape="rectangle">
+  <rect x="300.39400000000006" y="427.90000000000003" width="204.22899999999996" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="402.5085" y="446.35" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Resident Barnes-Hut octree</text>
+</g>
+<g class="node" data-id="merge" data-label="Optional sticky contact mergers" data-shape="rectangle">
+  <rect x="182.05650000000003" y="512.8" width="224.97699999999998" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="294.545" y="531.25" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Optional sticky contact mergers</text>
+</g>
+<g class="node" data-id="view" data-label="Three.js WebGPURenderer (GPU-to-GPU copy)" data-shape="rectangle">
+  <rect x="135.74400000000006" y="597.7" width="317.6019999999999" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="294.545" y="616.1500000000001" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Three.js WebGPURenderer (GPU-to-GPU copy)</text>
+</g>
+</svg></div><details><summary>Mermaid source</summary><pre>flowchart TD
+    esk[&quot;Eshkol physics laws (.esk)&quot;] --&gt; lower[&quot;build-physics.py lowering&quot;]
+    lower --&gt; wgsl[&quot;WGSL pair law + octree &amp; merger passes&quot;]
+    lower --&gt; init[&quot;Reproducible JS initializers&quot;]
+    init --&gt; hub[&quot;PeerCompute GPUHubManager resident buffers&quot;]
+    wgsl --&gt; hub
+    hub --&gt;|&lt;= 16,384 bodies| direct[&quot;Direct all-pairs gravity&quot;]
+    hub --&gt;|&gt; 16,384 bodies| tree[&quot;Resident Barnes-Hut octree&quot;]
+    direct --&gt; merge[&quot;Optional sticky contact mergers&quot;]
+    tree --&gt; merge
+    merge --&gt; view[&quot;Three.js WebGPURenderer (GPU-to-GPU copy)&quot;]</pre></details></figure>
+<p>Eshkol defines the immutable <code>Vec3</code>, <code>Body</code>, and <code>Law</code> records, pairwise gravitational attraction, symplectic Euler drift, sticky contact conservation, and seeded initial conditions. <code>GPUHubManager</code> from the workspace PeerCompute library owns the resident ping-pong state buffers, octree storage, and merger index on the same WebGPU device that Three.js uses to draw sprites or GPU points without CPU round-trips. When launched inside the PeerCompute ExoWebTUI desktop (<code>peercompute-atlas-demo:</code>), the masthead exposes <strong>← Atlas</strong> (<code>peercompute.atlas.return.v1</code>). <a href="https://github.com/MetaverseJS/peercompute/blob/main/demos/README.md">All demos</a> · <a href="https://github.com/MetaverseJS/peercompute/blob/main/peercompute/README.md">PeerCompute library</a></p>
+<h2 id="run-locally">Run locally</h2>
+<p>Use Node.js 24 LTS from the repository root:</p>
+<pre><code class="language-sh">nvm use 24
+npm install
+npm run dev:eshkols-in-space
+</code></pre>
+<p>Open <code>https://localhost:5191/</code> (or launch <strong>Eshkols in Space</strong> from the PeerCompute ExoWebTUI desktop at <code>https://localhost:4173/?prod=1</code>). Run <code>npm run test:eshkols-in-space</code> for physics, octree, and ULG capsule tests, and <code>npm run build:eshkols-in-space</code> to build <code>docs/eshkols-in-space/</code>.</p>
+<h2 id="controls-and-scaling">Controls and scaling</h2>
+<ul>
+<li><strong>Formation, Body count, Seed, Mass distribution:</strong> Rebuild reproducible spiral disk, binary cluster, or globular cluster initial states from 128 to 2,000,000 bodies.</li>
+<li><strong>Gravity, Time step, Softening, Merge on contact:</strong> Tune Newtonian softening, integration step size, and momentum/volume-conserving sticky mergers live without resetting the system.</li>
+<li><strong>Pause, Step, Restart, Frame, Reference plane:</strong> Freeze or single-step the simulation while orbiting and zooming freely in 3D.</li>
+<li><strong>Direct pairs vs Barnes–Hut tree:</strong> Up through 16,384 bodies, the GPU evaluates every pair directly; larger populations switch automatically to a resident spatial octree rebuilt on GPU every step.</li>
+</ul>
+</main></body></html>

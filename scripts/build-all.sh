@@ -18,4 +18,5 @@ rm -rf -- "$repo_root/docs/assets/runtime"
 npm run build:peercompute
 node "$repo_root/scripts/write-prod-relay-config.mjs"
 PEERCOMPUTE_PAGES_SHARED_RUNTIME=1 npm run build:demos
+npm run build:gallery
 node "$repo_root/scripts/pagesReleaseAssets.mjs" finalize --repo "$repo_root" --snapshot "$release_snapshot"

@@ -101,6 +101,19 @@ export default defineConfig(({ command }) => ({
   build: {
     target: 'esnext',
     outDir: path.join(docsRoot, 'vibeslopdb'),
-    emptyOutDir: true
+    emptyOutDir: true,
+    cssCodeSplit: false,
+    rollupOptions: {
+      preserveEntrySignatures: 'exports-only',
+      input: {
+        index: path.join(demoRoot, 'index.html'),
+        host: path.join(demoRoot, 'src/peercomputeHost.js')
+      },
+      output: {
+        entryFileNames: (chunkInfo) => (
+          chunkInfo.name === 'host' ? 'host.js' : 'assets/[name]-[hash].js'
+        )
+      }
+    }
   }
 }));

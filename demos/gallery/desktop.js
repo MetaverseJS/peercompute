@@ -1,4 +1,13 @@
-import { createDesktopApp, desktopWindowStates, focusDesktopWindow, closeDesktopWindow } from 'exowebtui-desktop';
+import {
+  createDesktopApp,
+  desktopWindowStates,
+  desktopBodyBounds,
+  focusDesktopWindow,
+  closeDesktopWindow,
+  registerDesktopApplication,
+  unregisterDesktopApplication,
+  placeDesktopWindows
+} from 'exowebtui-desktop';
 import { webPresenter } from 'exowebtui-presenter';
 import { browserAudioSource } from 'exowebtui-audio';
 import { copyBrowserText } from 'exowebtui-clipboard';
@@ -9,7 +18,7 @@ import { openDiagram } from '../../docs/assets/gallery-diagram.js';
 import { createCatalogWindow } from './catalog-window.js';
 import { createFrameWindows, returnFromFramedAtlas } from './frame-windows.js';
 
-function wallpaper(audio, onDispose) {
+function wallpaper(audio, onDispose, isPaused) {
   let field;
   let disposed = false;
   const url = new URL('./desktop-butterchurn.js', import.meta.url);
@@ -18,7 +27,7 @@ function wallpaper(audio, onDispose) {
     if (!disposed) field = createButterchurnBackground(audio);
   }).catch(error => console.warn('Butterchurn wallpaper unavailable.', error));
   return {
-    advance: options => field?.advance(options) ?? false,
+    advance: options => (isPaused?.() ? false : (field?.advance(options) ?? false)),
     rasterizeCells: (bounds, theme) => field?.rasterizeCells(bounds, theme) ?? [],
     setPointer: (point, now) => field?.setPointer(point, now),
     clearPointer: () => field?.clearPointer(),
@@ -51,8 +60,11 @@ async function mountDesktop(viewport, atlas) {
     summary: anchor.querySelector('.demo-summary')?.textContent.trim() || anchor.querySelector('p').textContent.trim(),
     category: anchor.dataset.category,
     href: anchor.href,
+    liveGpu: anchor.dataset.liveGpu === '1',
+    hostModule: anchor.dataset.hostModule || null,
     image: anchor.querySelector('img,canvas'),
   }));
+  const entryById = new Map(entries.map(entry => [entry.id, entry]));
 
   const source = atlas.querySelector('.source');
   const dialog = document.querySelector('#desktop-search');
@@ -66,6 +78,11 @@ async function mountDesktop(viewport, atlas) {
   let nextFrame = 0;
   let butterchurnPresenter;
   let activeWallpaper;
+  let liveGpuFocused = false;
+  let currentTheme;
+  const themeListeners = new Set();
+  const hostSessions = new Map();
+  const hostBooting = new Map();
   const focusDesktop = () => presenter.focus();
   function openAtlas() { desktop.openWindow(catalog.id); focusDesktop(); }
   const guides = new Map();
@@ -120,16 +137,94 @@ async function mountDesktop(viewport, atlas) {
     openSettings: () => desktop.openWindow('settings'),
     openHtml: () => location.assign(plainUrl) });
   const media = createGuideMedia(root, presenter, new Map([...guides, [catalog.id, catalog]]));
-  const frames = createFrameWindows({ entries, root, presenter, focusDesktop, guideLayers: media.layers,
-    focusWindow: focusDesktopWindow, closeWindow: closeDesktopWindow,
-    openAtlas });
+  const frames = createFrameWindows({
+    entries, root, presenter, focusDesktop, guideLayers: media.layers,
+    focusWindow: focusDesktopWindow,
+    closeWindow: closeDesktopWindow,
+    registerApp: registerDesktopApplication,
+    unregisterApp: unregisterDesktopApplication,
+    openAtlas
+  });
+
+  function launchHostedMultiWindow(entry) {
+    const existing = hostSessions.get(entry.id);
+    if (existing) {
+      existing.reopen?.();
+      presenter.shader?.requestRedraw?.();
+      return;
+    }
+    if (hostBooting.has(entry.id)) return;
+    const moduleUrl = new URL(entry.hostModule, document.baseURI).href;
+    const promise = import(moduleUrl).then(async (mod) => {
+      if (stopped) return;
+      const mountFn = mod.mountVibeSlopDbHost || mod.mountPeerComputeHost;
+      if (typeof mountFn !== 'function') throw new Error('Host module missing mount function');
+      const hostBridge = {
+        standaloneHref: entry.href,
+        openAtlas,
+        getTheme: () => currentTheme,
+        onThemeChange(listener) {
+          themeListeners.add(listener);
+          return () => themeListeners.delete(listener);
+        },
+        getBodyBounds: () => desktopBodyBounds(),
+        openNativeWindow(options) {
+          frames.openNativeWindow(options);
+          desktop.openWindow(options.id);
+          if (options.rect) {
+            placeDesktopWindows([{ id: options.id, rect: options.rect, focus: true }]);
+          }
+          presenter.shader?.requestRedraw?.();
+        },
+        focusWindow(winId) {
+          focusDesktopWindow(winId);
+          presenter.shader?.requestRedraw?.();
+        },
+        closeWindow(winId) {
+          closeDesktopWindow(winId);
+          frames.closeNativeWindow(winId);
+          presenter.shader?.requestRedraw?.();
+        },
+        placeWindows(placements) {
+          placeDesktopWindows(placements);
+          presenter.shader?.requestRedraw?.();
+        },
+        onDisposed() {
+          hostSessions.delete(entry.id);
+        }
+      };
+      const session = await mountFn(hostBridge);
+      if (stopped) {
+        await session?.dispose?.();
+        return;
+      }
+      if (session) hostSessions.set(entry.id, session);
+    }).catch((error) => {
+      console.warn('Falling back to framed demo for ' + entry.title + ':', error);
+      if (!stopped) {
+        frames.open(entry.id);
+        desktop.openWindow(entry.id);
+      }
+    }).finally(() => {
+      hostBooting.delete(entry.id);
+    });
+    hostBooting.set(entry.id, promise);
+  }
+
   function openDemo(id) {
     const guide = guides.get(id);
     if (guide?.goToAnchor && guide.pendingAnchor) {
       guide.goToAnchor(guide.pendingAnchor);
       delete guide.pendingAnchor;
     }
-    if (!guide) frames.open(id);
+    if (!guide) {
+      const entry = entryById.get(id);
+      if (entry?.hostModule && new URL(entry.href, location.href).origin === location.origin) {
+        launchHostedMultiWindow(entry);
+        return;
+      }
+      frames.open(id);
+    }
     desktop.openWindow(id);
   }
   function openSearch() {
@@ -145,7 +240,6 @@ async function mountDesktop(viewport, atlas) {
   menuLinks.push({ id: 'source', title: 'Project source', summary: 'PeerCompute on GitHub', href: source.href },
     { id: 'plain', title: 'HTML directory', summary: 'Browse accessible direct links', href: plainUrl });
 
-  let currentTheme;
   desktop = createDesktopApp({
     startLabel: 'PeerCompute', initialWindow: catalog.id,
     applications: [catalog, ...frames.applications, ...guides.values()],
@@ -165,7 +259,7 @@ async function mountDesktop(viewport, atlas) {
           presenter.host.canvas.rerenderAll();
           presenter.host.renderLoop.start();
         }
-      });
+      }, () => liveGpuFocused);
       return activeWallpaper;
     } }],
     copyText: copyBrowserText, selectionText: () => getSelection()?.toString() ?? '',
@@ -175,10 +269,29 @@ async function mountDesktop(viewport, atlas) {
       else if (href === source.href) source.click();
       else if (href === plainUrl) location.assign(plainUrl);
     },
-    onWindows(windows, blocked, theme, animating, overlays) {
-      if (currentTheme !== theme) { syncGuideTheme(theme); currentTheme = theme; }
-      media.project(windows, theme, overlays, animating);
+    onWindows(windows, blocked, theme, animating, overlays, cursor) {
+      if (currentTheme !== theme) {
+        currentTheme = theme;
+        syncGuideTheme(theme);
+        for (const listener of themeListeners) {
+          try { listener(theme); } catch { /* ignore listener error */ }
+        }
+      }
+      // Guide images paint over the cell canvas. Leave the drawn pointer visible there.
+      // Native windows own their hit regions and let the browser draw its cursor.
+      const mediaCovers = cursor ? [...overlays, { ...cursor, width: 1, height: 1 }] : overlays;
+      media.project(windows, theme, mediaCovers, animating);
       frames.project(windows, blocked, theme, desktopWindowStates(), overlays);
+      // When a live GPU demo (such as Eshkols in Space) is focused and unobstructed,
+      // keep the full PeerCompute shader stack live at 60 FPS while pausing Butterchurn
+      // background stepping and capping HiDPI shader backing scale to 1x CSS pixels.
+      const dragging = root.parentElement?.classList.contains('pc-demo-dragging');
+      const nextLiveGpu = frames.hasActiveLiveGpu() && !blocked && !animating && !dragging;
+      if (liveGpuFocused !== nextLiveGpu) {
+        liveGpuFocused = nextLiveGpu;
+        presenter.shader?.setMaxPixelRatio?.(liveGpuFocused ? 1 : 1.5);
+        presenter.shader?.requestRedraw?.();
+      }
     },
   });
 
@@ -200,6 +313,9 @@ async function mountDesktop(viewport, atlas) {
     listeners.abort();
     if (dialog.open) dialog.close();
     for (const off of remove) off();
+    for (const session of [...hostSessions.values()]) void session.dispose?.();
+    hostSessions.clear();
+    themeListeners.clear();
     activeWallpaper?.dispose();
     retired = true;
     for (const guide of guides.values()) guide.dispose?.();
@@ -220,14 +336,15 @@ async function mountDesktop(viewport, atlas) {
   function renderFrame(now) {
     // Painting the desktop may activate or dispose its wallpaper as settings change.
     const frame = desktop.frame(now, presenter.size());
-    (butterchurnPresenter ?? presenter).present(frame);
+    const painted = (butterchurnPresenter ?? presenter).present(frame);
+    if (painted !== false) frames.markSourceDirty();
   }
   function tick(now) {
     if (stopped) return;
     try {
       if (now + 0.5 >= nextFrame) {
         renderFrame(now);
-        const period = 1000 / (butterchurnPresenter ? 120 : 30);
+        const period = liveGpuFocused ? 250 : (1000 / (butterchurnPresenter ? 120 : 30));
         // Retain the phase when a display refresh arrives a little early or late.
         nextFrame += Math.max(1, Math.floor((now + 0.5 - nextFrame) / period) + 1) * period;
       }
@@ -239,7 +356,11 @@ async function mountDesktop(viewport, atlas) {
     dialog.addEventListener('close', focusDesktop, options);
     await desktop.init(presenter);
     for (const [subscribe, handle] of [['onKey', 'key'], ['onPointer', 'pointer'], ['onWheel', 'wheel'], ['onResize', 'resize']]) {
-      remove.push(presenter[subscribe](event => desktop[handle](event)));
+      remove.push(presenter[subscribe](event => {
+        presenter.shader?.requestRedraw?.();
+        nextFrame = Math.min(nextFrame, performance.now());
+        desktop[handle](event);
+      }));
     }
     // Keep normal link semantics for the standalone HTML view and modifier clicks.
     // Programmatic activation (including assistive controls) uses the native windows here.

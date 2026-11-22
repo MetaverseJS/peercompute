@@ -2,9 +2,9 @@ const samplePositions = [[.5, .5], [.25, .25], [.75, .75], [.25, .75], [.75, .25
   [.5, .2], [.5, .8], [.2, .5], [.8, .5]];
 const retryDelays = [400, 700, 1200, 2400, 4800, 8000];
 
-// A drawable ancestor lets Chrome paint the toolbar and the live same-origin
-// iframe into one bitmap. drawElementImage also keeps the nested DOM hittable.
-export function createFrameCapture({ stage, surface, frame }) {
+// A drawable ancestor lets Chrome paint the toolbar and a live same-origin
+// iframe or native DOM surface into one bitmap while keeping nested DOM hittable.
+export function createFrameCapture({ stage, surface, frame = null, maxDpr = 0, adaptiveThrottle = false }) {
   if (surface.hasAttribute('data-pc-foreign')) return null;
   const canvas = document.createElement('canvas');
   if (!('content' in canvas) || typeof canvas.requestPaint !== 'function' ||
@@ -20,6 +20,10 @@ export function createFrameCapture({ stage, surface, frame }) {
   stage.append(canvas);
 
   let width = 0, height = 0, ready = false, stopped = false, nextSceneScan = 0;
+  let paintVersion = 0;
+  let emaPaintMs = 0;
+  let nextPaintAt = 0;
+  let deferredPaint = 0;
   let pendingCheck;
   let scheduled = Infinity;
   let samples;
@@ -29,14 +33,16 @@ export function createFrameCapture({ stage, surface, frame }) {
     stopped = true;
     ready = false;
     clearTimeout(pendingCheck);
-    frame.removeEventListener('load', loaded);
+    clearTimeout(deferredPaint);
+    deferredPaint = 0;
+    frame?.removeEventListener('load', loaded);
     canvas.onpaint = null;
   }
 
   function fallback(reason) {
     dispose();
     stage.dataset.captureFallback = reason;
-    // moveBefore preserves the iframe's browsing context and running workers.
+    // moveBefore preserves an iframe's browsing context and running workers.
     stage.moveBefore(surface, canvas);
     canvas.remove();
     surface.removeAttribute('drawable');
@@ -81,7 +87,7 @@ export function createFrameCapture({ stage, surface, frame }) {
     }
     if (opaque && close >= Math.ceil(opaque * .65)) return 'match';
     if (opaque >= 2 && distant >= Math.ceil(opaque * .75)) return 'mismatch';
-    return 'unknown';
+    return opaque ? 'unknown' : 'transparent';
   }
 
   function schedule(at) {
@@ -90,11 +96,12 @@ export function createFrameCapture({ stage, surface, frame }) {
     scheduled = at;
     pendingCheck = setTimeout(() => {
       scheduled = Infinity;
-      canvas.requestPaint();
+      if (!stopped) canvas.requestPaint();
     }, Math.max(0, Math.ceil(at - performance.now())));
   }
 
   function verifyCanvases(doc, now) {
+    if (!frame) return true;
     for (const child of doc.getElementsByTagName('canvas')) {
       const check = checks.get(child) || { attempts: 0, next: 0, mismatches: 0, firstMismatch: 0 };
       if (check.next > now) {
@@ -120,7 +127,9 @@ export function createFrameCapture({ stage, surface, frame }) {
       } else {
         check.mismatches = 0;
       }
-      check.next = result === 'match' || check.attempts >= retryDelays.length
+      check.next = result === 'match' ||
+        (result === 'transparent' && check.attempts >= 1) ||
+        check.attempts >= retryDelays.length
         ? Infinity : now + retryDelays[check.attempts];
       check.attempts++;
       checks.set(child, check);
@@ -132,17 +141,40 @@ export function createFrameCapture({ stage, surface, frame }) {
 
   canvas.onpaint = () => {
     if (stopped || !width || !height || stage.hidden) return;
+    const now = performance.now();
+    if (adaptiveThrottle && ready && now < nextPaintAt) {
+      if (!deferredPaint) {
+        deferredPaint = setTimeout(() => {
+          deferredPaint = 0;
+          if (!stopped && !stage.hidden) canvas.requestPaint();
+        }, Math.max(4, Math.ceil(nextPaintAt - now)));
+      }
+      return;
+    }
+    if (deferredPaint) {
+      clearTimeout(deferredPaint);
+      deferredPaint = 0;
+    }
     try {
-      const doc = frame.contentDocument;
+      const doc = frame ? frame.contentDocument : surface.ownerDocument;
       if (!doc) { fallback('foreign-document'); return; }
+      const paintStart = performance.now();
       context.clearRect(0, 0, canvas.width, canvas.height);
       // The element snapshot has its own physical pixel density. An explicit
       // destination size avoids applying devicePixelRatio a second time.
       context.drawElementImage(surface, 0, 0, canvas.width, canvas.height);
-      const now = performance.now();
-      if (now >= nextSceneScan) {
-        nextSceneScan = now + 500;
-        if (!verifyCanvases(doc, now)) { fallback('uncaptured-canvas'); return; }
+      const paintMs = performance.now() - paintStart;
+      paintVersion++;
+      if (adaptiveThrottle) {
+        emaPaintMs = emaPaintMs ? emaPaintMs * 0.7 + paintMs * 0.3 : paintMs;
+        // Zero throttling on hardware GPUs (<=12 ms). Only pace when a slow or
+        // software GPU blocks the main thread on WebGPU/Skia readback.
+        nextPaintAt = emaPaintMs > 12 ? performance.now() + Math.min(100, Math.round(emaPaintMs * 1.15)) : 0;
+      }
+      const afterPaint = performance.now();
+      if (frame && afterPaint >= nextSceneScan) {
+        nextSceneScan = afterPaint + 500;
+        if (!verifyCanvases(doc, afterPaint)) { fallback('uncaptured-canvas'); return; }
       }
       ready = true;
     } catch {
@@ -156,13 +188,15 @@ export function createFrameCapture({ stage, surface, frame }) {
     canvas.requestPaint();
     schedule(performance.now() + 650);
   }
-  frame.addEventListener('load', loaded);
+  frame?.addEventListener('load', loaded);
   return {
     canvas,
     isReady: () => ready,
+    version: () => paintVersion,
     resize(nextWidth, nextHeight) {
       if (stopped || nextWidth <= 0 || nextHeight <= 0) return;
-      const dpr = window.devicePixelRatio || 1;
+      const rawDpr = window.devicePixelRatio || 1;
+      const dpr = maxDpr > 0 ? Math.min(rawDpr, maxDpr) : rawDpr;
       const w = Math.max(1, Math.round(nextWidth * dpr));
       const h = Math.max(1, Math.round(nextHeight * dpr));
       if (width === nextWidth && height === nextHeight && canvas.width === w && canvas.height === h) return;
@@ -173,6 +207,11 @@ export function createFrameCapture({ stage, surface, frame }) {
       canvas.width = w;
       canvas.height = h;
       ready = false;
+      nextPaintAt = 0;
+      if (deferredPaint) {
+        clearTimeout(deferredPaint);
+        deferredPaint = 0;
+      }
       canvas.requestPaint();
     },
     dispose,

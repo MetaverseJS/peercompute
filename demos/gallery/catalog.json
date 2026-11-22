@@ -15,6 +15,24 @@
     "image": "cubechat.png"
   },
   {
+    "dir": "eshkols-in-space",
+    "title": "Eshkols in Space",
+    "port": 5191,
+    "category": "Earth & space",
+    "description": "Simulate up to two million gravitating bodies with Eshkol laws, Barnes–Hut octrees, and WebGPU.",
+    "image": "eshkols-in-space.png",
+    "liveGpu": true
+  },
+  {
+    "dir": "vibeslopdb",
+    "title": "VibeSlopDB",
+    "port": 5190,
+    "category": "AI & network",
+    "description": "Issue YOLO natural-language SQL to a local or peer LLM against live SQLite, Postgres, and IndexedDB databases.",
+    "image": "vibeslopdb.png",
+    "hostModule": "./vibeslopdb/host.js"
+  },
+  {
     "dir": "universes",
     "title": "Universes",
     "port": 5178,
@@ -139,13 +157,5 @@
     "category": "Simulation",
     "description": "Explore atoms, orbitals, and the properties of water and other materials.",
     "image": "schrodinger.svg"
-  },
-  {
-    "dir": "vibeslopdb",
-    "title": "VibeSlopDB",
-    "port": 5190,
-    "category": "AI & network",
-    "description": "Issue YOLO natural-language SQL to a local or peer LLM against live SQLite, Postgres, and IndexedDB databases.",
-    "image": "vibeslopdb.png"
   }
 ]

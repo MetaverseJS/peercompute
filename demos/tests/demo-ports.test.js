@@ -78,6 +78,11 @@ const demoSpecs = [
     name: 'vibeslopdb',
     requiresRelayConfig: false,
     entryCandidates: ['index.html']
+  },
+  {
+    name: 'eshkols-in-space',
+    requiresRelayConfig: false,
+    entryCandidates: ['index.html']
   }
 ];
 
@@ -658,4 +663,35 @@ test('vibeslopdb is wired as a first-class PeerCompute ExoWebTUI demo', () => {
   assert.ok(docsIndex.includes('href="./vibeslopdb/"'), 'docs overview missing vibeslopdb link');
   assert.ok(docsIndex.includes('data-demo-dir="vibeslopdb"'), 'docs overview missing vibeslopdb metadata');
   assert.ok(docsIndex.includes('data-demo-port="5190"'), 'docs overview missing vibeslopdb dev port');
+  assert.ok(docsIndex.includes('data-host-module="./vibeslopdb/host.js"'), 'docs overview missing vibeslopdb multi-window host module');
+  assert.ok(fs.existsSync(path.join(demosRoot, 'vibeslopdb', 'src', 'peercomputeHost.js')), 'vibeslopdb peercomputeHost.js missing');
+});
+
+test('eshkols-in-space is wired as a first-class PeerCompute WebGPU N-body demo', () => {
+  const rootPackage = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
+  const viteConfig = fs.readFileSync(path.join(demosRoot, 'eshkols-in-space', 'vite.config.js'), 'utf8');
+  const runtime = fs.readFileSync(path.join(demosRoot, 'eshkols-in-space', 'src', 'compute', 'runtime.js'), 'utf8');
+  const app = fs.readFileSync(path.join(demosRoot, 'eshkols-in-space', 'src', 'app.js'), 'utf8');
+  const devAll = fs.readFileSync(path.join(repoRoot, 'scripts', 'dev-all.sh'), 'utf8');
+  const devLocalRelay = fs.readFileSync(path.join(repoRoot, 'scripts', 'dev-local-relay.sh'), 'utf8');
+  const docsIndex = fs.readFileSync(path.join(repoRoot, 'docs', 'index.html'), 'utf8');
+
+  assert.ok(rootPackage.workspaces.includes('demos/eshkols-in-space'), 'root workspaces missing demos/eshkols-in-space');
+  assert.equal(rootPackage.scripts['dev:eshkols-in-space'], 'npm --prefix demos/eshkols-in-space run dev -- --host');
+  assert.equal(rootPackage.scripts['build:eshkols-in-space'], 'npm --prefix demos/eshkols-in-space run build');
+  assert.equal(rootPackage.scripts['test:eshkols-in-space'], 'npm --prefix demos/eshkols-in-space test');
+  assert.ok(rootPackage.scripts['build:demos'].includes('npm run build:eshkols-in-space'), 'build:demos missing eshkols-in-space');
+  assert.match(viteConfig, /port:\s*5191/, 'eshkols-in-space Vite config must use port 5191');
+  assert.ok(viteConfig.includes("path.resolve(docsRoot, 'eshkols-in-space')"), 'eshkols-in-space must build to docs/eshkols-in-space');
+  assert.ok(runtime.includes("from '@peercompute/gpu-hub'"), 'eshkols-in-space runtime must import GPUHubManager from @peercompute/gpu-hub');
+  assert.ok(app.includes('returnToPeerComputeAtlas'), 'eshkols-in-space must support PeerCompute ExoWebTUI return protocol');
+  assert.ok(app.includes('window.__eshkolsInSpace'), 'eshkols-in-space must expose diagnostics handle');
+  [devAll, devLocalRelay].forEach((script) => {
+    assert.ok(script.includes('demos/eshkols-in-space'), 'dev launcher missing eshkols-in-space');
+    assert.ok(script.includes(':5191/'), 'dev launcher missing eshkols-in-space port 5191');
+  });
+  assert.ok(docsIndex.includes('href="./eshkols-in-space/"'), 'docs overview missing eshkols-in-space link');
+  assert.ok(docsIndex.includes('data-demo-dir="eshkols-in-space"'), 'docs overview missing eshkols-in-space metadata');
+  assert.ok(docsIndex.includes('data-demo-port="5191"'), 'docs overview missing eshkols-in-space dev port');
+  assert.ok(docsIndex.includes('data-live-gpu="1"'), 'docs overview missing eshkols-in-space live GPU shader flag');
 });
