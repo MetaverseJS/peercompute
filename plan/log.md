@@ -64838,3 +64838,36 @@ Open items / next opportunities:
 - `demos/multiscale` was intentionally skipped per user instruction (deprecated in favor of ULG).
 - `root-node` native driver sampler (`nvidia-smi` / `os.totalmem()` into `probeCapabilities({ nativeMetrics })`) can be wired in a future slice when deploying native host telemetry.
 - No GitHub Pages `docs/` bundles were rebuilt or pushed; commit kept strictly local.
+
+
+### 2026-11-21 17:48:22 AKST — Add VibeSlopDB as a PeerCompute Demo Launching Inside the PeerCompute ExoWebTUI Desktop
+
+Prompt (exact local clock `2026-11-21T17:48:22-09:00`): “can you add this as a peercompute demo that launches inside the peercompute exowebtui environment?”
+
+Actions:
+- Checked ICC control plane (`codebase_work` MCP on `peercompute`) and reviewed `plan/plan.md`, `plan/log.md`, `demos/gallery/*`, `scripts/build-gallery.mjs`, `scripts/gallery-guides.mjs`, `demos/inference/vite.config.js`, and all gallery/release test contracts.
+- Added `demos/vibeslopdb/` as a first-class workspace demo (`port 5190`, `outDir: docs/vibeslopdb`) bundling VibeSlopDB's full feature set: 3 live-switchable browser DBs (SQLite WASM `sql.js@1.17.0`, PostgreSQL 17 WASM `@electric-sql/pglite@0.5.17`, native IndexedDB SQL), draggable ExoTUI Mermaid ER schema diagram (with self-loop + parallel FK routing & ExoTUI ASCII cell view), CubeChat-style PeerCompute `mountInferencePanel({ managementOnly: true })` modal + peer P2P inference (`1024`-token turns + up to 2 seamless auto-continuations + truncated `INSERT` salvage), HiDPI/zoom-aligned ExoWebTUI sub-windows with `clip-path` occlusion, local PeerCompute `StateManager` persistence (`y-indexeddb`), and embedded `← Atlas` (`peercompute.atlas.return.v1`) return handshake.
+- Authored `demos/vibeslopdb/README.md` with `## Overview` and a `beautiful-mermaid`-compatible architecture diagram so `scripts/gallery-guides.mjs` compiles `docs/guides/vibeslopdb.html` and `docs/guides/vibeslopdb.json` for native ExoWebTUI guide rendering.
+- Captured real `1200x750` gallery thumbnail `docs/assets/vibeslopdb.png` (`166 KB`).
+- Registered VibeSlopDB across `demos/gallery/catalog.json` (18th destination, category `AI & network`, port `5190`), root `package.json` (`workspaces`, `dev:vibeslopdb`, `build:vibeslopdb`, `test:vibeslopdb`, `build:demos`), `scripts/dev-all.sh`, `scripts/dev-local-relay.sh`, `demos/README.md`, `demos/tests/demo-ports.test.js`, `demos/tests/demo-release.test.js`, `demos/tests/gallery-browser.mjs` (including live launch + ER render + `← Atlas` return test inside PeerCompute's ExoWebTUI desktop), and `demos/tests/pages-runtime.mjs`.
+- Installed workspace dependencies under Node `v24.18.0`, built `docs/vibeslopdb/` with `modelEvidenceBuildPlugin`, `pagesSharedRuntimePlugin`, and `pagesIsolationPlugin`, and rebuilt the ExoWebTUI gallery (`npm run build:gallery` -> `18 demo guides and previews`).
+
+Files touched:
+- `demos/vibeslopdb/**` (new workspace demo: `package.json`, `vite.config.js`, `index.html`, `README.md`, `src/**`, `tests/unit/**`)
+- `docs/vibeslopdb/**`, `docs/assets/vibeslopdb.png`, `docs/guides/vibeslopdb.{html,json}`, `docs/index.html`, `docs/assets/exowebtui.js` (and gallery guide bundle outputs)
+- `demos/gallery/catalog.json`, `demos/README.md`, `package.json`, `package-lock.json`
+- `scripts/dev-all.sh`, `scripts/dev-local-relay.sh`
+- `demos/tests/{demo-ports.test.js,demo-release.test.js,gallery-browser.mjs,pages-runtime.mjs}`
+- `plan/plan.md`, `plan/log.md`
+
+Commands run and results:
+- `npm install` (Node `v24.18.0`) — **PASS**
+- `npm run test:vibeslopdb` — **PASS** (`10/10` unit tests)
+- `npm run build:vibeslopdb` — **PASS** (`6,858` modules built into `docs/vibeslopdb/` in `37.14s`)
+- `npm run build:gallery` — **PASS** (`Built 18 demo guides and previews.`)
+- `node --test demos/tests/demo-ports.test.js demos/tests/demo-release.test.js demos/tests/gallery-guides.test.mjs` — **PASS** (`49/49`)
+- `CHROME_BIN=/usr/bin/google-chrome node --test demos/tests/gallery-browser.mjs demos/tests/guide-interaction-browser.mjs demos/tests/frame-effects-browser.mjs demos/tests/gallery-overlays-browser.mjs` — **PASS** (`14/14`, including `VibeSlopDB launches inside the PeerCompute ExoWebTUI desktop and returns via atlas protocol` with `0` page errors)
+
+Open items / notes:
+- Preserved pre-existing uncommitted files under `peercompute/experiments/conjecture/` untouched.
+- Commit kept strictly local on the current branch (`feature/conjecture-experiment`); no push performed.

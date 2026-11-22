@@ -100,7 +100,8 @@ test('docs index includes all demos and screenshots', () => {
     './motorcycle/',
     './multiscale/',
     './universes/',
-    './webgpuphys/'
+    './webgpuphys/',
+    './vibeslopdb/'
   ];
   requiredLinks.forEach((href) => {
     assert.ok(html.includes(href), `docs index missing link: ${href}`);
@@ -116,7 +117,8 @@ test('docs index includes all demos and screenshots', () => {
     './assets/wxglobe.png',
     './assets/earth.png',
     './assets/motorcycle.png',
-    './assets/webgpuphys.png'
+    './assets/webgpuphys.png',
+    './assets/vibeslopdb.png'
   ];
   requiredImages.forEach((src) => {
     assert.ok(html.includes(src), `docs index missing image: ${src}`);
@@ -145,7 +147,8 @@ test('docs overview keeps expected tile order', () => {
     'EarthGrid',
     'RoadVector',
     'Fano Reactor',
-    'Schrodinger'
+    'Schrodinger',
+    'VibeSlopDB'
   ];
   assert.deepEqual(names, expected, 'docs overview tile order mismatch');
 });

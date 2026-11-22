@@ -143,18 +143,18 @@ test('PeerCompute previews a selection, opens its guide or live demo, and preser
     page.on('pageerror', error => errors.push(String(error)));
     const url = baseUrl + '?prod=1';
     await page.goto(url);
-    await waitForCells(page, '17 DEMOS');
+    await waitForCells(page, '18 DEMOS');
     assert.equal(await page.title(), 'PeerCompute');
     assert.equal(await page.evaluate(() => __desktop.windows().at(-1).title), 'PeerCompute');
     const anchors = await page.locator('[data-demo-dir]').evaluateAll(items => items.map(a => a.href));
-    assert.equal(new Set(anchors).size, 17);
+    assert.equal(new Set(anchors).size, 18);
     const menu = await page.evaluate(() => window.__desktop.menu().items);
     assert.deepEqual(menu.filter(item => item.id.startsWith('launch-')).map(item => item.href), anchors);
     for (const id of ['settings', 'themes', 'builder']) assert.ok(menu.some(item => item.id === id));
     const touch = viewport.width < 600;
     const headings = await page.evaluate(() => {
       const lines = Array.from({ length: __desktop.stats().rows }, (_, i) => __desktop.row(i));
-      return { list: lines.findIndex(line => line.includes('17 DEMOS')),
+      return { list: lines.findIndex(line => line.includes('18 DEMOS')),
         preview: lines.findIndex(line => line.includes('PREVIEW')) };
     });
     assert.ok(touch ? headings.preview > headings.list : headings.preview === headings.list);
@@ -249,17 +249,17 @@ test('PeerCompute previews a selection, opens its guide or live demo, and preser
     page.on('request', request => { if (request.url().endsWith('/exowebtui.js')) desktopRequests.push(request.url()); });
     await page.goto(baseUrl + (javaScriptEnabled ? '?view=html&dev=1' : ''));
     assert.deepEqual(desktopRequests, []);
-    assert.equal(await page.locator('a[data-demo-dir]:visible').count(), 17);
+    assert.equal(await page.locator('a[data-demo-dir]:visible').count(), 18);
     const guides = page.locator('a.guide-link:visible');
-    assert.equal(await guides.count(), 17);
+    assert.equal(await guides.count(), 18);
     if (javaScriptEnabled) {
       assert.equal(new URL(await page.locator('#return-desktop').getAttribute('href')).search, '?dev=1');
       await page.getByRole('button', { name: 'AI & network' }).click();
-      assert.equal(await page.locator('#result-count').textContent(), '2 demos');
-      assert.equal(await guides.count(), 2);
+      assert.equal(await page.locator('#result-count').textContent(), '3 demos');
+      assert.equal(await guides.count(), 3);
       await page.getByRole('searchbox').fill('xyz-unmatched');
       await page.getByRole('button', { name: 'Show all demos' }).click();
-      assert.equal(await page.locator('#result-count').textContent(), '17 demos');
+      assert.equal(await page.locator('#result-count').textContent(), '18 demos');
     }
     const fanoCard = page.locator('.card').filter({ has: page.getByRole('heading', { name: 'Fano Reactor' }) });
     const fanoSummary = await fanoCard.locator('.demo-summary').textContent();
@@ -323,9 +323,9 @@ test('cold startup shows progress until the desktop paints or falls back to the 
     }
     if (failure) {
       await page.locator('#atlas').waitFor();
-      assert.equal(await page.locator('a[data-demo-dir]:visible').count(), 17);
+      assert.equal(await page.locator('a[data-demo-dir]:visible').count(), 18);
     } else {
-      await waitForCells(page, '17 DEMOS');
+      await waitForCells(page, '18 DEMOS');
       assert.equal(await page.locator('#atlas').isVisible(), false);
       await page.keyboard.press('ArrowDown');
       await waitForCells(page, '› CubeChat');
@@ -352,7 +352,7 @@ test('the gallery starts with fast scrolling and random window effects and resto
     await page.waitForFunction(title => {
       const { rows } = __desktop.stats();
       const heading = Array.from({ length: rows }, (_, row) => __desktop.row(row))
-        .findIndex(line => line.includes('17 DEMOS'));
+        .findIndex(line => line.includes('18 DEMOS'));
       return heading >= 0 && __desktop.row(heading + 1).includes(title);
     }, expectedFirst);
   }
@@ -431,4 +431,37 @@ test('the directory keeps its shape when a demo opens and no window outgrows a s
   assertInside(narrowed);
   // Refitting leaves the demo in front of the directory.
   assert.deepEqual(narrowed.windows.map(w => [w.id === 'demo-atlas', w.active]), [[true, false], [false, true]]);
+});
+
+test('VibeSlopDB launches inside the PeerCompute ExoWebTUI desktop and returns via atlas protocol', async t => {
+  const baseUrl = await galleryBaseUrl(t);
+  const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN || undefined });
+  t.after(() => browser.close());
+  const context = await browser.newContext({ viewport: { width: 1366, height: 900 }, ignoreHTTPSErrors: true, reducedMotion: 'reduce' });
+  const page = await context.newPage();
+  const errors = [];
+  page.on('pageerror', error => errors.push(String(error)));
+
+  await page.goto(baseUrl + '?prod=1');
+  await waitForCells(page, '18 DEMOS');
+  await page.keyboard.press('/');
+  await page.getByRole('searchbox', { name: 'Find a demo' }).fill('VibeSlopDB');
+  await page.getByRole('button', { name: 'Done' }).click();
+  await waitForCells(page, '1 DEMO');
+  await waitForCells(page, '› VibeSlopDB');
+
+  // Open VibeSlopDB live inside the PeerCompute ExoWebTUI iframe window
+  await clickCells(page, '[ Open demo ↗ ]');
+  const frameEl = page.locator('iframe[title="VibeSlopDB"]');
+  await frameEl.waitFor({ state: 'attached', timeout: 20_000 });
+  const frame = page.frameLocator('iframe[title="VibeSlopDB"]');
+  await frame.locator('#btn-atlas-return').waitFor({ state: 'visible', timeout: 25_000 });
+  await frame.locator('.vs-er-entity[data-table-name="users"]').first().waitFor({ state: 'visible', timeout: 25_000 });
+
+  // Clicking VibeSlopDB's own ← Atlas button triggers peercompute.atlas.return.v1
+  await frame.locator('#btn-atlas-return').click();
+  await page.waitForFunction(() => document.querySelectorAll('iframe[title="VibeSlopDB"]').length === 0, null, { timeout: 10_000 });
+  await waitForCells(page, '› VibeSlopDB');
+  assert.deepEqual(errors, []);
+  await context.close();
 });

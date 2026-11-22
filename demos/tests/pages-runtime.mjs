@@ -17,11 +17,12 @@ const startupModelId = 'smolvlm-256m-q4';
 const startupModelUrls = new Set(MODEL_CATALOG[startupModelId].files.map((file) => modelFileUrl(startupModelId, file.path)));
 const route = (id, pathname, network = 'local-only', extra = {}) => Object.freeze({ id, pathname, network, ...extra });
 
-// Seventeen overview cards, five additional built HTML entries, and overview.
+// Eighteen overview cards, five additional built HTML entries, and overview.
 // Network-free demos deliberately have no relay-connect acceptance condition.
 export const PAGES_ROUTES = Object.freeze([
   route('overview', '', 'none'),
   route('inference', 'inference/', 'automatic', { isolation: true }),
+  route('vibeslopdb', 'vibeslopdb/', 'opt-in', { isolation: true }),
   route('cubechat', 'cubechat/', 'automatic', { isolation: true }),
   route('universes', 'universes/'),
   route('multiscale', 'multiscale/', 'opt-in'),
@@ -177,8 +178,10 @@ export function sceneSnapshot(id) {
       visible: canvas.getBoundingClientRect().width > 4 && canvas.getBoundingClientRect().height > 4 })),
     scrollWidth: document.documentElement.scrollWidth, viewportWidth: innerWidth };
   const canvas = visible('canvas');
-  if (id === 'overview') return { ...base, ready: document.querySelectorAll('[data-demo-dir]').length === 17,
+  if (id === 'overview') return { ...base, ready: document.querySelectorAll('[data-demo-dir]').length === 18,
     cardCount: document.querySelectorAll('[data-demo-dir]').length };
+  if (id === 'vibeslopdb') return { ...base, ready: Boolean(window.__vibeslopdb?.schemaWin?.stage?.getEntityNames?.().length >= 6),
+    entities: window.__vibeslopdb?.schemaWin?.stage?.getEntityNames?.().length ?? 0 };
   if (id === 'inference') {
     const runtime = window.inferencePanel?.runtime;
     return { ...base, ready: !!runtime && visible('.pc-inference-panel'),
@@ -263,7 +266,7 @@ async function basicInteraction(page, id, { reducedPhysics = false } = {}) {
     const links = await page.locator('[data-demo-dir]').evaluateAll((elements) => elements.map((element) => ({
       demo: element.dataset.demoDir, href: element.href, title: element.textContent.trim().slice(0, 200), origin: location.origin,
     })));
-    assert.equal(links.length, 17, 'Gallery card count changed');
+    assert.equal(links.length, 18, 'Gallery card count changed');
     for (const link of links) {
       const target = new URL(link.href);
       assert.equal(target.origin, link.origin, 'Built gallery points outside the Pages origin');

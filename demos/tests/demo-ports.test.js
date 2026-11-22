@@ -73,6 +73,11 @@ const demoSpecs = [
     name: 'webgpuphys',
     requiresRelayConfig: false,
     entryCandidates: ['index.html']
+  },
+  {
+    name: 'vibeslopdb',
+    requiresRelayConfig: false,
+    entryCandidates: ['index.html']
   }
 ];
 
@@ -626,4 +631,31 @@ test('schrodinger ships material packet and visualization modules', () => {
   assert.ok(structures.includes('bondClass'), 'schrodinger bond classification metadata missing');
   assert.ok(structures.includes('ionic'), 'schrodinger ionic bond template missing');
   assert.ok(reactive.includes('toy-reactive-atoms-v0'), 'schrodinger reactive toy model label missing');
+});
+
+test('vibeslopdb is wired as a first-class PeerCompute ExoWebTUI demo', () => {
+  const rootPackage = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
+  const viteConfig = fs.readFileSync(path.join(demosRoot, 'vibeslopdb', 'vite.config.js'), 'utf8');
+  const main = fs.readFileSync(path.join(demosRoot, 'vibeslopdb', 'src', 'main.js'), 'utf8');
+  const devAll = fs.readFileSync(path.join(repoRoot, 'scripts', 'dev-all.sh'), 'utf8');
+  const devLocalRelay = fs.readFileSync(path.join(repoRoot, 'scripts', 'dev-local-relay.sh'), 'utf8');
+  const docsIndex = fs.readFileSync(path.join(repoRoot, 'docs', 'index.html'), 'utf8');
+
+  assert.ok(rootPackage.workspaces.includes('demos/vibeslopdb'), 'root workspaces missing demos/vibeslopdb');
+  assert.equal(rootPackage.scripts['dev:vibeslopdb'], 'npm --prefix demos/vibeslopdb run dev -- --host');
+  assert.equal(rootPackage.scripts['build:vibeslopdb'], 'npm --prefix demos/vibeslopdb run build');
+  assert.ok(rootPackage.scripts['build:demos'].includes('npm run build:vibeslopdb'), 'build:demos missing vibeslopdb');
+  assert.match(viteConfig, /port:\s*5190/, 'vibeslopdb Vite config must use port 5190');
+  assert.ok(viteConfig.includes("path.join(docsRoot, 'vibeslopdb')"), 'vibeslopdb must build to docs/vibeslopdb');
+  assert.ok(viteConfig.includes('pagesIsolationPlugin'), 'vibeslopdb must wire pagesIsolationPlugin');
+  assert.ok(main.includes('createLocalStateStore'), 'vibeslopdb must persist state via PeerCompute StateManager');
+  assert.ok(main.includes('createPeerComputeAiBridge'), 'vibeslopdb must wire PeerCompute AI bridge');
+  assert.ok(main.includes('returnToPeerComputeAtlas'), 'vibeslopdb must support PeerCompute ExoWebTUI return protocol');
+  [devAll, devLocalRelay].forEach((script) => {
+    assert.ok(script.includes('demos/vibeslopdb'), 'dev launcher missing vibeslopdb');
+    assert.ok(script.includes(':5190/'), 'dev launcher missing vibeslopdb port 5190');
+  });
+  assert.ok(docsIndex.includes('href="./vibeslopdb/"'), 'docs overview missing vibeslopdb link');
+  assert.ok(docsIndex.includes('data-demo-dir="vibeslopdb"'), 'docs overview missing vibeslopdb metadata');
+  assert.ok(docsIndex.includes('data-demo-port="5190"'), 'docs overview missing vibeslopdb dev port');
 });

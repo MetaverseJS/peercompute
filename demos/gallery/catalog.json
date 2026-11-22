@@ -139,5 +139,13 @@
     "category": "Simulation",
     "description": "Explore atoms, orbitals, and the properties of water and other materials.",
     "image": "schrodinger.svg"
+  },
+  {
+    "dir": "vibeslopdb",
+    "title": "VibeSlopDB",
+    "port": 5190,
+    "category": "AI & network",
+    "description": "Issue YOLO natural-language SQL to a local or peer LLM against live SQLite, Postgres, and IndexedDB databases.",
+    "image": "vibeslopdb.png"
   }
 ]
