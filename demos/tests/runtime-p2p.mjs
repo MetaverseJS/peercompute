@@ -788,6 +788,10 @@ async function runCubeChat(context) {
     await waitForCubeChatDirectoryProbe(pageA, directoryProbeB, 'CubeChat pageA');
 
     await pageA.click('#settings-button');
+    const mediaSectionBtn = pageA.locator('[data-settings-section="media"]');
+    if (await mediaSectionBtn.isVisible().catch(() => false)) {
+      await mediaSectionBtn.click();
+    }
     await pageA.click('#screen-share-toggle');
     await pageA.waitForFunction(
       () => document.getElementById('screen-share-status')?.textContent?.includes('Screen is being shared'),

@@ -65287,3 +65287,41 @@ Files touched (Slices 4 & 5):
 - `demos/netviz/{index.html,README.md,src/{main.js,networkAnalysis.js,observedNetworkUi.js}}`
 - `peercompute/tests/unit/{networkManager.slice4.test.js,lanRelayTooling.test.js}`
 - `plan/{plan.md,tests.md,log.md,branch/network-scaling-netviz.md}`
+
+
+## 2026-11-22 19:28:09 AKST — Full 17-Demo Build, Headless Chromium Runtime & Live 2-Browser P2P Compatibility Sweep
+Prompt time/date: `2026-11-22 19:13:58 AKST` (`2026-11-22T19:13:58-09:00`).
+Goal: Answer the user's check (*"did you test this with all of the demos? to see if it broke anything?"*) with real end-to-end verification across **all 17 demos** (production Vite builds into `/tmp/all-demos-docs/` keeping `docs/` untouched, headless Chromium smoke, live 2-browser P2P multiplayer + Go relay in both `floodsub` and `gossipsub`, and all per-demo/workspace unit suites) and fix any breakage uncovered.
+
+Concrete actions attempted, problems discovered & solutions:
+1. **Caught & Fixed Real Slice 3 Compatibility Regression (`RoomDirectory.stateManager`)**:
+   - Inspecting `demos/tests/runtime-p2p.mjs:644-679` before running revealed that CubeChat's `announceCubeChatDirectoryProbe` / `waitForCubeChatDirectoryProbe` asserts `window.__cubechat.roomDirectory.stateManager.readScoped('rooms', entry.key)`. When Slice 3 consolidated `RoomDirectory` onto the shared `NetworkManager` (`subscribeTopic`/`publishTopic`), `this.stateManager` was left `null` in shared mode!
+   - Fixed cleanly in both `demos/cubechat/src/p2p/roomDirectory.js` and `demos/hyperborea/src/game/roomDirectory.js` by adding `_createSharedStateManager()` (`readScoped`, `writeScoped`, `observeNamespace` backed by `this.rooms` + topic publishes), adding a lightweight `{ type: 'room-sync-request' }` handshake on attach/init so late-joining peers converge immediately, and scheduling a single `1500ms` quick rebroadcast in `announceRoom()` alongside the 10s heartbeat so freshly-grafted GossipSub meshes receive announcements right away.
+   - Extended `peercompute/tests/unit/networkManager.slice3.test.js` to assert the `stateManager` facade and late-join `room-sync-request` convergence (`7/7 PASS`).
+2. **Caught & Fixed Pre-Existing CubeChat UI Selector Drift in `demos/tests/runtime-p2p.mjs`**:
+   - First `runtime-p2p.mjs` run passed all P2P, WebRTC media (`1.19 MB` direct UDP host stream each way), movement sync, `moon`/`jungle` theme sync, and A↔B `RoomDirectory` probe checks on CubeChat (plus full PASS on `hyperborea`, `sneakywoods`, `daddygo`, and `netviz`), then timed out clicking `#screen-share-toggle` because CubeChat's `CubeSettingsUi.js` moved `#screen-share-toggle` into the `[data-settings-section="media"]` sub-dialog.
+   - Updated `demos/tests/runtime-p2p.mjs:790` to click `[data-settings-section="media"]` when visible before clicking `#screen-share-toggle`.
+3. **Full 17-Demo Build & Headless Chromium Verification**:
+   - Built all 17 demos via Vite into `/tmp/all-demos-docs/<demo>` (`docs/` untouched): **17/17 PASS**.
+   - Ran `demos/tests/runtime-smoke.mjs` (`11` demos): `hyperborea`, `sneakywoods`, `daddygo`, `planetgen`, `wxglobe`, `motorcycle`, `universes`, `fano-reactor` passed directly. `cubechat` and `earth` surfaced only Chrome's self-signed HTTPS ServiceWorker fetch error (`pages-isolation-sw.js`), and `webgpuphys` rejected Chrome's software fallback adapter (expected per Nov 21 hardware capabilities policy). Re-verified `earth` over HTTP `127.0.0.1` (`crossOriginIsolated: true`, 0 errors), `webgpuphys` with native Vulkan hardware WebGPU (`1280×800`, 0 errors), and `cubechat` via HTTP `runtime-p2p.mjs` (0 errors).
+   - Verified the remaining 6 demos (`eshkols-in-space`, `vibeslopdb`, `inference`, `multiscale`, `schrodinger`, `netviz`) over HTTP `127.0.0.1` with COOP/COEP headers in headless Chromium: **6/6 PASS** (0 page/console errors).
+   - Ran full `demos/tests/runtime-p2p.mjs` (`cubechat`, `hyperborea`, `sneakywoods`, `daddygo`, `netviz`) against our production **Go relay** (`peercompute/src/relay-go/main.go`) in **BOTH** `floodsub` and `RELAY_PUBSUB=gossipsub` modes: **5/5 PASS in floodsub AND 5/5 PASS in gossipsub**! Confirmed from Go relay logs that CubeChat, Hyperborea, and SneakyWoods each open only **1 relay connection per browser tab** (2 relay connections total for 2 tabs — half of pre-Slice 3).
+
+Commands run & test results:
+- `node --test peercompute/tests/unit/networkManager.slice3.test.js` — **7/7 PASS**.
+- 17-demo Vite build loop to `/tmp/all-demos-docs/<demo>` — **17/17 PASS**, `git status --short docs/` clean.
+- Per-demo unit suites (`earth`, `eshkols-in-space`, `motorcycle`, `multiscale`, `planetgen`, `schrodinger`, `vibeslopdb`, `wxglobe`) — **8/8 suites PASS** (`55`, `8`, `120`, `206`, pass, `20`, `10`, `28` passing tests).
+- `npm run test:network-telemetry && npm run test:capabilities && npm run test:inference && npm run test:peer-inference` — **PASS** (`22/22`, capabilities PASS, `109/109`, `204/204`).
+- `npm run test:geo-core && npm run test:geodata && npm run test:physics && npm run test:traffic && npm run test:xr` — **PASS** (`physics 54/54`, `traffic 12/12`, `xr 24/24`).
+- `npm --prefix peercompute run test:unit` — **1,383/1,384 PASS** (1 pre-existing unrelated failure at `serviceOrchestration.test.js:4095` reading external staged ULG artifact `ULG_STAGED_ESHKOL_MAGNETAR_ARTIFACT_PATH`; `serviceOrchestration/` untouched on this branch).
+- `RUNTIME_SMOKE_DOCS_ROOT=/tmp/all-demos-docs CHROME_EXECUTABLE_PATH=/usr/bin/google-chrome DOCS_HOST=127.0.0.1 DOCS_PORT=43949 node demos/tests/runtime-smoke.mjs` + native-Vulkan `webgpuphys` & HTTP `earth` follow-up — **11/11 smoke demos verified PASS**.
+- `DOCS_ROOT=/tmp/all-demos-docs CHROME_BIN=/usr/bin/google-chrome node .../scratch/verify-remaining-demos.mjs` — **6/6 PASS** (`eshkols-in-space`, `vibeslopdb`, `inference`, `multiscale`, `schrodinger`, `netviz`).
+- `PATH="$HOME/.local/bin:$PATH" RUNTIME_P2P_DOCS_ROOT=/tmp/all-demos-docs CHROME_EXECUTABLE_PATH=/usr/bin/google-chrome node demos/tests/runtime-p2p.mjs` (both default `floodsub` and `RELAY_PUBSUB=gossipsub`) — **5/5 PASS (floodsub) & 5/5 PASS (gossipsub)**.
+- Cleaned up `/tmp/all-demos-docs`, `/tmp/build-*.log`, `/tmp/test-*.log`; zero stray servers or browsers running.
+
+Files touched:
+- `demos/cubechat/src/p2p/roomDirectory.js`
+- `demos/hyperborea/src/game/roomDirectory.js`
+- `demos/tests/runtime-p2p.mjs`
+- `peercompute/tests/unit/networkManager.slice3.test.js`
+- `plan/{plan.md,tests.md,log.md,branch/network-scaling-netviz.md}`

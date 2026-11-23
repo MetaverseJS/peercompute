@@ -427,8 +427,34 @@ test('RoomDirectory shares existing NetworkManager topic without spawning a seco
   assert.equal(discovered[0].name, 'LAN Lounge');
   assert.equal(discovered[0].roomId, 'lan-lounge');
 
+  // stateManager compatibility facade (used by runtime-p2p probes and legacy readers)
+  assert.equal(dir1.stateManager?.readScoped('rooms', 'room-lan-lounge')?.roomId, 'lan-lounge');
+  assert.equal(dir2.stateManager?.readScoped('rooms', 'room-lan-lounge')?.roomId, 'lan-lounge');
+
+  const observed = [];
+  const unsubObs = dir2.stateManager.observeNamespace('rooms', (value, key) => {
+    observed.push({ key, roomId: value?.roomId ?? null });
+  });
+  dir1.stateManager.writeScoped('rooms', 'room-scoped-probe', {
+    name: 'Scoped Probe',
+    slug: 'scoped-probe',
+    visibility: 'public',
+    updatedAt: Date.now(),
+    roomId: 'scoped-probe'
+  });
+  unsubObs();
+  assert.equal(dir2.stateManager.readScoped('rooms', 'room-scoped-probe')?.roomId, 'scoped-probe');
+  assert.ok(observed.some((e) => e.key === 'room-scoped-probe' && e.roomId === 'scoped-probe'));
+
+  // Late-joining peer receives current room via room-sync-request on attach/init
+  const nm3 = makeFakeNetworkManager('peer-3');
+  const dir3 = new RoomDirectory({ gameId: 'cubechat', networkManager: nm3 });
+  t.after(async () => { await dir3.stop(); });
+  await dir3.init();
+  assert.equal(dir3.stateManager?.readScoped('rooms', 'room-lan-lounge')?.roomId, 'lan-lounge');
+
   // Room switch re-attaches without losing discovered rooms
   const nm2New = makeFakeNetworkManager('peer-2-new');
   dir2.attachNetworkManager(nm2New);
-  assert.equal(dir2.getRooms().length, 1);
+  assert.equal(dir2.getRooms().length, 2);
 });

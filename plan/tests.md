@@ -1,5 +1,21 @@
 ## PeerCompute Test Strategy
 
+### Full 17-demo compatibility & live 2-browser P2P sweep (`feature/network-scaling-netviz`) — November 22
+
+- **All 17 demo production Vite builds** (`--outDir /tmp/all-demos-docs/<demo> --emptyOutDir`, keeping `docs/` untouched): **17/17 PASS** (`hyperborea`, `cubechat`, `planetgen`, `wxglobe`, `earth`, `motorcycle`, `multiscale`, `universes`, `webgpuphys`, `sneakywoods`, `daddygo`, `fano-reactor`, `schrodinger`, `netviz`, `inference`, `vibeslopdb`, `eshkols-in-space`).
+- **Live 2-browser P2P + Go relay multiplayer suite (`demos/tests/runtime-p2p.mjs`, `RUNTIME_P2P_DOCS_ROOT=/tmp/all-demos-docs`)**:
+  - Go relay (`floodsub`): **5/5 PASS** (`cubechat` WebRTC A/V 1.19 MB direct UDP host media + movement + theme sync + A↔B `RoomDirectory` probes + screen share, `hyperborea`, `sneakywoods`, `daddygo`, `netviz` attachSession).
+  - Go relay (`RELAY_PUBSUB=gossipsub`): **5/5 PASS** (`cubechat`, `hyperborea`, `sneakywoods`, `daddygo`, `netviz`).
+  - Confirmed in relay logs: exactly **2** relay peer connections per 2-tab demo test in CubeChat, Hyperborea, and SneakyWoods (confirming Slice 3 `__rooms__` consolidation halved relay reservations per tab).
+- **Headless Chromium runtime smoke across all 17 demos** (`/tmp/all-demos-docs/`):
+  - `demos/tests/runtime-smoke.mjs` (11 demos): `hyperborea`, `sneakywoods`, `daddygo`, `planetgen`, `wxglobe`, `motorcycle` (full Cesium + OSM + 6-body physics + traffic + race course), `universes`, `fano-reactor` PASS directly; `cubechat` and `earth` hit only self-signed HTTPS ServiceWorker rejection (`pages-isolation-sw.js`), and `webgpuphys` requires hardware WebGPU (rejects fallback adapter per capabilities policy).
+  - Re-verified `earth` (HTTP `127.0.0.1`, `crossOriginIsolated: true`, 0 errors), `webgpuphys` (native Vulkan WebGPU, `1280×800`, 0 errors), and `cubechat` (via `runtime-p2p.mjs` over HTTP `127.0.0.1`, 0 errors): **PASS**.
+  - Remaining 6 demos over HTTP `127.0.0.1` COOP/COEP secure context (`eshkols-in-space`, `vibeslopdb`, `inference`, `multiscale`, `schrodinger`, `netviz`): **6/6 PASS** (0 page/console errors; `eshkols-in-space` `Running` with `activeCount: 2048` & live steps; `vibeslopdb` `isolated: true` + `host.js`; `inference` `isolated: true` + `SharedArrayBuffer` + 75 buttons).
+- **Unit & package suites**:
+  - Updated `peercompute/tests/unit/networkManager.slice3.test.js` (+facade `readScoped`/`writeScoped`/`observeNamespace` and late-join `room-sync-request` assertions): **7/7 PASS**.
+  - All 8 per-demo unit suites: `earth` (**55/55**), `eshkols-in-space` (**8/8**), `motorcycle` (**120/120**), `multiscale` (**206/206**), `planetgen` (**PASS**), `schrodinger` (**20/20**), `vibeslopdb` (**10/10**), `wxglobe` (**28/28**).
+  - Workspace & core suites: `test:network-telemetry` (**22/22**), `test:capabilities` (**PASS**), `test:inference` (**109/109**), `test:peer-inference` (**204/204**), `test:geo-core`, `test:geodata`, `test:physics` (**54/54**), `test:traffic` (**12/12**), `test:xr` (**24/24**), and full `npm --prefix peercompute run test:unit` (**1,383/1,384 PASS**; single failure is pre-existing unrelated external staged-ULG fixture at `serviceOrchestration.test.js:4095`).
+
 ### Conjecture browser/gossipsub breakthrough & turnkey LAN/Pi kit (`feature/network-scaling-netviz` Slices 4 & 5) — November 22
 
 - Core network, topology, WorkMesh, telemetry, NativeCompanion, conjecture, LAN relay tooling, NetViz & demo scaffold/release suite (`node --test peercompute/tests/unit/networkManager.*.test.js peercompute/tests/unit/topologyController.test.js peercompute/tests/unit/throughputTopologyPolicy.test.js peercompute/tests/unit/workMesh*.test.js peercompute/tests/unit/networkTelemetry*.test.js peercompute/tests/unit/nodeKernelTelemetry.test.js peercompute/tests/unit/nativeCompanion.test.js peercompute/tests/unit/conjectureSimulation.test.js peercompute/tests/unit/lanRelayTooling.test.js demos/netviz/tests/observedNetwork.test.js demos/netviz/tests/networkAnalysis.test.js demos/netviz/tests/relayOverlay.test.js demos/tests/model-telemetry.test.js demos/tests/demo-ports.test.js demos/tests/demo-release.test.js`): **240/240 PASS**.

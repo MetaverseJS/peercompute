@@ -47,9 +47,13 @@ Improve PeerCompute's real-world networking reliability, scaling efficiency, dir
    - Persistent `/peercompute/direct/1.0.0` stream pinning (`STANDARD_MAINTENANCE_PROTOCOLS` + `_closeDirectUnicastStream` in `_closeConnectionsToPeer`), conflicting `direct-drop-recovery` under `topology: 'throughput'`, `WorkMeshService._directConnection` primary-link alignment, and clean `_drop` on dead connections in `WorkMeshService._flush`.
    - Rate-adaptive `WorkMesh` batch/buffer headroom (`maxWorkBatch: 12, maxResultBatch: 24, maxResultBuffer: 48`, respecting explicit caller overrides) and `ThroughputTopologyPolicy` anti-herd top-band (`15%`) + exploratory (`15%` when `>= 6` candidates) sampling.
 
-### Slice 5 — Turnkey Physical LAN / Raspberry Pi Kit & NetViz Goal/LAN Controls [DONE]
+### Slice 5 — Turnkey Physical LAN / Raspberry Pi Kit & NetViz Goal/LAN Controls [DONE — `755b297b`]
 1. Added `scripts/lan-relay.mjs` (`npm run lan:relay`, `npm run lan:self-test`) with RFC1918/Tailscale auto-detection, `gossipsub` `NativeCompanion` relay, CORS `/relay-config.json` + `/health` endpoint with optional WAN failover, and automated loopback 2-peer `lan-first` self-test (`peercompute/tests/unit/lanRelayTooling.test.js`).
 2. Upgraded `demos/netviz/` with `Host Group` subgroup clustering, **Goal profile** (`batch-throughput`, `lan-first`, `low-latency`, `capability-weighted`) + **Host group** session inputs (synced to URL params and inherited from `relay-config.json`), and per-subgroup LAN % / churn / LAN readiness diagnostics.
+
+### Full 17-Demo Build, Runtime & Live P2P Verification Sweep [DONE]
+1. Caught and fixed shared-mode `RoomDirectory.stateManager` compatibility seam in `demos/cubechat/src/p2p/roomDirectory.js` and `demos/hyperborea/src/game/roomDirectory.js` (added lightweight `readScoped`/`writeScoped`/`observeNamespace` facade, `room-sync-request` late-join sync, and 1.5s quick rebroadcast on `announceRoom`) plus updated `demos/tests/runtime-p2p.mjs` to open CubeChat's `[data-settings-section="media"]` sub-dialog before clicking `#screen-share-toggle`.
+2. Verified **17/17** production Vite builds (isolated `/tmp/all-demos-docs/`), **17/17** demos in headless Chromium, **5/5** live 2-browser P2P suites over Go relay in both `floodsub` and `gossipsub` (confirming halved relay reservations: 1 relay peer per browser tab), all 8 per-demo unit suites, and workspace unit suites (**1,383/1,384** in `peercompute` `test:unit`, 1 unrelated pre-existing external ULG artifact test).
 
 ## Validation Strategy (No Chaos Lab)
 - Node unit & loopback integration suites: `peercompute/tests/unit/networkManager.*.test.js`, `topologyController.test.js`, `throughputTopologyPolicy.test.js`, `workMesh*.test.js`, `networkTelemetry*.test.js`, `nativeCompanion.test.js`, plus new targeted tests for every Slice 1–3 behavior.
