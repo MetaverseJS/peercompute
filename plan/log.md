@@ -65325,3 +65325,40 @@ Files touched:
 - `demos/tests/runtime-p2p.mjs`
 - `peercompute/tests/unit/networkManager.slice3.test.js`
 - `plan/{plan.md,tests.md,log.md,branch/network-scaling-netviz.md}`
+
+
+## 2026-11-22 22:25:10 AKST — Production GitHub Pages Deployment (`dc509f73`), `secretworkshop.net` Staging & 25/25 Live Route Verification
+Prompt time/date: `2026-11-22 22:05:03 AKST` (`2026-11-22T22:05:03-09:00`).
+Goal: Deploy the verified `feature/network-scaling-netviz` work to `secretworkshop.net` (`cos@secretworkshop.net`) and GitHub Pages (`origin/main` → `https://metaversejs.github.io/peercompute/`), and re-verify everything live.
+
+Concrete actions attempted, problems discovered & solutions:
+1. **Production Server Inspection (`cos@secretworkshop.net`)**:
+   - Verified `peercompute-relay.service`, `peercompute-coturn.service`, `peercompute-root.service`, and `nginx.service` are all `active`.
+   - Confirmed `peercompute-relay.service` executes `/home/cos/projects/peercompute/scripts/pcserver.sh` (`RELAY_IMPL=go`, `RELAY_REQUIRE_GO=1`, `User=cos`, `Group=cos`), which was running the older `demo-fixes` (`861abd5b`) Go relay from Oct 16; `peercompute-root.service` runs `/opt/peercompute-root/releases/cc4f6dd7` (untouched by this branch).
+   - Confirmed `sudo -n -l` requires `cos`'s interactive sudo password (`sudo: a password is required`). Per strict access-control guidelines, did NOT attempt to bypass `sudo` (e.g., by killing PID `3937` to trigger systemd `Restart=on-failure`). Instead updated the server checkout, verified the Go relay tests & build right on `secretworkshop.net`, and prepared the exact single `sudo systemctl restart peercompute-relay.service` command for the user.
+2. **Production Relay Tuning & Full GitHub Pages Release (`dc509f73`)**:
+   - Updated `config/relay.json` `gossipsub.Dhi` from `16` to `32` (preserving `D: 8, Dout: 1`, `IPColocationFactorWeight: 0`, and pinned `relayPeerId: 12D3KooWN8PoXAkYjbzTD3SKJGP97peWDE9jFeqqS3ipJsgwDozs`) so larger rooms (>16 peers) on `secretworkshop.net` avoid GossipSub star-mesh pruning while browser peers stay lean at `D=8`.
+   - Ran full `bash scripts/build-all.sh`: built `peercompute`, regenerated all 17 demo `relay-config.json` / `relay-config-source.json`, built all 17 demos with `PEERCOMPUTE_PAGES_SHARED_RUNTIME=1`, rebuilt the ExoWebTUI gallery (`19` guides/previews), and finalized `docs/release-manifest.json` (`3,086` active + `243` retained files, `717,247,256` bytes < 1 GB).
+   - Ran pre-push verification: **76/76** static release/port/guide/isolation/shared-runtime tests PASS, **15/15** Chromium ExoWebTUI gallery tests PASS, and **11/11** staged trusted-TLS (`fastbox.tail5c077c.ts.net`) Pages runtime routes PASS against live `secretworkshop.net` (initially `eshkols-in-space` failed without SwiftShader WebGPU flags; re-ran with SwiftShader WebGPU flags and passed in `4.6s`).
+   - Committed release as `dc509f73` on `feature/network-scaling-netviz`, fast-forward merged into `main`, and pushed `74c01aa3..dc509f73 main -> main` to `origin/main` (leaving the 4 pre-existing conjecture/patch WIP files untouched and unstaged).
+3. **Server Checkout & Go Relay Build on `secretworkshop.net`**:
+   - Fetched `main` (`dc509f73`) from `https://github.com/MetaverseJS/peercompute.git`, checked out & fast-forwarded `main` in `/home/cos/projects/peercompute`.
+   - Verified `config/relay-peer-id.json` SHA-256 unchanged (`69ddea47487eed826eb40ad87203c4cadd64d2f626bcadc069e8c72b6a34a7db`).
+   - Ran `cd peercompute/src/relay-go && go test -v ./... && CGO_ENABLED=0 go build` on `secretworkshop.net` (Go `1.25.7`): **4/4 PASS** (`0.036s`) + clean build; `pcserver.sh --dry-run` PASS.
+4. **Live Public GitHub Pages & SecretWorkshop Verification (`25/25` Routes)**:
+   - Confirmed `https://metaversejs.github.io/peercompute/netviz/relay-config.json` serves `"Dhi": 32` and `release-manifest.json` serves `3,086` active / `243` retained assets.
+   - Ran `PAGES_BASE_URL=https://metaversejs.github.io/peercompute/ node demos/tests/pages-runtime.mjs` across ALL **25** public routes:
+     - 10 networked/isolated routes (`overview`, `inference`, `vibeslopdb`, `cubechat`, `earth`, `netviz`, `sneakywoods`, `daddygo`, `hyperborea`, `hyperborea-cb`): **10/10 PASS** (all authenticated SecretWorkshop relay checks & cold/warm COOP/COEP isolation checks green).
+     - 7 WebGPU/SwiftShader routes (`eshkols-in-space`, `universes`, `multiscale` + SecretWorkshop, `planetgen`, `wxglobe`, `motorcycle` + SecretWorkshop, `fano-reactor`): **7/7 PASS**.
+     - 8 hardware-Vulkan WebGPU routes (`schrodinger` + SecretWorkshop, plus all 7 `webgpuphys` routes: `toychest`, `mpm-visual`, `ppf-contact`, `index`, `gallery`, `ppf-cubic`, `mpm-headless`): **8/8 PASS** (note `schrodinger` timed out under SwiftShader WebGPU at `67.5s` and passed in `8.25s` under native Vulkan hardware GPU).
+   - Ran a live 2-browser NetViz P2P check on `https://metaversejs.github.io/peercompute/netviz/?room=live-verify-mwsxxf3z&topologyType=distributed&autoConnect=1&profile=lan-first&hostGroupId=verify-lan`: **PASS** (`connectionState: "connected"`, `profile: "lan-first"`, `hostGroupId: "verify-lan"`, `hasRelayAudit: true`, live peer discovery via `secretworkshop.net`, `0` page errors).
+   - Cleaned up all temporary `/tmp/peercompute-pages-*` report folders.
+
+Open action for user:
+- Restart the live Go relay daemon on `secretworkshop.net` with interactive `sudo` so the already-updated & verified `dc509f73` Go relay binary replaces the Oct 16 process: `ssh -t cos@secretworkshop.net 'sudo systemctl restart peercompute-relay.service'` (optional follow-up: confirm `curl -sS https://secretworkshop.net/peercompute/config/relay-config.json` shows `"Dhi": 32`).
+
+Files touched:
+- `config/relay.json`
+- `demos/*/public/relay-config.json` (17 demos)
+- `docs/` (full production GitHub Pages build & `docs/release-manifest.json`, committed in `dc509f73`)
+- `plan/{plan.md,tests.md,log.md}`

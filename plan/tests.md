@@ -1,5 +1,21 @@
 ## PeerCompute Test Strategy
 
+### Production GitHub Pages release & `secretworkshop.net` verification (`main` `dc509f73`) — November 22
+
+- **Full GitHub Pages build (`bash scripts/build-all.sh`)**: **PASS** (`3,086` active + `243` retained hashed assets, `717,247,256` bytes < `1,000,000,000` byte limit, verified against `docs/release-manifest.json`; `config/relay.json` + all 17 `relay-config.json` files updated to `gossipsub.Dhi = 32`).
+- **Pre-push Pages & gallery gates**:
+  - `demo-ports`, `demo-release`, `gallery-guides`, `console-navigation`, `pages-release-assets`, `pages-shared-runtime`, `pages-isolation` — **76/76 PASS**.
+  - `CHROME_BIN=/usr/bin/google-chrome node --test demos/tests/gallery-browser.mjs demos/tests/guide-interaction-browser.mjs demos/tests/frame-effects-browser.mjs demos/tests/gallery-overlays-browser.mjs` — **15/15 PASS**.
+  - Staged trusted-TLS Pages acceptance (`fastbox.tail5c077c.ts.net`, `demos/tests/pages-runtime.mjs`) — **11/11 PASS** (`overview`, `inference`, `vibeslopdb`, `eshkols-in-space`, `cubechat`, `earth`, `netviz`, `sneakywoods`, `daddygo`, `hyperborea`, `hyperborea-cb`).
+- **`secretworkshop.net` server staging verification (`cos@secretworkshop.net:~/projects/peercompute` at `dc509f73`)**:
+  - `config/relay-peer-id.json` SHA-256 verified unchanged (`69ddea47487eed826eb40ad87203c4cadd64d2f626bcadc069e8c72b6a34a7db`).
+  - `cd peercompute/src/relay-go && go test -v ./... && CGO_ENABLED=0 go build` — **4/4 PASS** (`0.036s`) + clean build on Go `1.25.7`; `pcserver.sh --dry-run` PASS.
+  - Note: live `peercompute-relay.service` restart requires interactive `sudo` (`sudo systemctl restart peercompute-relay.service`); `peercompute-relay.service`, `peercompute-coturn.service`, `peercompute-root.service`, and `nginx.service` remain `active`.
+- **Live public GitHub Pages verification (`https://metaversejs.github.io/peercompute/` at `dc509f73`, against live `secretworkshop.net`)**:
+  - Confirmed live `netviz/relay-config.json` serves `"Dhi": 32` and `release-manifest.json` serves `3,086` active / `243` retained entries.
+  - `PAGES_BASE_URL=https://metaversejs.github.io/peercompute/ node demos/tests/pages-runtime.mjs` — **25/25 routes PASS** (10 networked/isolated routes on default Chrome, 7 SwiftShader-compatible routes, and 8 hardware-GPU routes `schrodinger` + 7 `webgpuphys` entries with native Vulkan WebGPU; zero console/page/HTTP/WebSocket errors; all authenticated SecretWorkshop relay checks & cold/warm COOP/COEP isolation checks PASS).
+  - Live 2-browser NetViz check on `https://metaversejs.github.io/peercompute/netviz/?room=live-verify-mwsxxf3z&topologyType=distributed&autoConnect=1&profile=lan-first&hostGroupId=verify-lan` — **PASS** (`connectionState: "connected"`, `profile: "lan-first"`, `hostGroupId: "verify-lan"`, `hasRelayAudit: true`, live peer discovery through `secretworkshop.net`, `0` page errors).
+
 ### Full 17-demo compatibility & live 2-browser P2P sweep (`feature/network-scaling-netviz`) — November 22
 
 - **All 17 demo production Vite builds** (`--outDir /tmp/all-demos-docs/<demo> --emptyOutDir`, keeping `docs/` untouched): **17/17 PASS** (`hyperborea`, `cubechat`, `planetgen`, `wxglobe`, `earth`, `motorcycle`, `multiscale`, `universes`, `webgpuphys`, `sneakywoods`, `daddygo`, `fano-reactor`, `schrodinger`, `netviz`, `inference`, `vibeslopdb`, `eshkols-in-space`).
