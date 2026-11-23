@@ -724,7 +724,8 @@ export class NodeKernel {
       await this.computeManager.initialize();
       this.networkTelemetryRelease = this.networkManager.setNetworkTelemetryProvider(() => ({
         application: this.config.gameId, role: this.config.networkTelemetryRole || 'world',
-        compute: this.computeManager?.getStats?.() ?? null
+        compute: this.computeManager?.getStats?.() ?? null,
+        capabilities: this._buildPresenceCapabilities()
       }));
       this.computeManager.setCommitDeltaHandler((delta) => {
         this.stateManager?.commitDelta?.(delta);

@@ -17,7 +17,18 @@ const count = value => Number.isFinite(value) && value >= 0 ? Math.min(Number.MA
 const choice = (value, allowed, fallback = null) => allowed.includes(value) ? value : fallback;
 const ROLES = ['world', 'models', 'compute', 'observer'];
 const VIA = ['webrtc', 'relay-webrtc', 'relay', 'direct', 'direct-websocket', 'websocket', 'presence', 'unknown'];
+const ICE_PATHS = ['lan-host', 'nat-srflx', 'nat-prflx', 'turn-relay', 'circuit-relay', 'direct-ws', 'direct-tcp'];
+const ICE_PROTOCOLS = ['udp', 'tcp'];
+const DIRECTIONS = ['inbound', 'outbound', 'both'];
+const RELAY_ROLES = ['permanent', 'keeper', 'elected-keeper', 'holding', 'off-relay'];
+const RELAY_KEEP_REASONS = [
+  'drop-disabled', 'bootstrap-hold', 'no-direct', 'unhealthy-mesh',
+  'post-direct-hold', 'below-target', 'insufficient-candidates',
+  'retention-keeper', 'elected-keeper', 'none'
+];
+const RESOURCE_TIERS = ['mobile', 'laptop', 'desktop', 'workstation', 'cluster', 'unknown'];
 const countFields = (input, fields) => Object.fromEntries(fields.map(key => [key, count(input?.[key])]));
+const boundedRate = (value, maximum = 1e9) => Number.isFinite(value) && value >= 0 ? Math.min(maximum, value) : 0;
 
 /** Rebuild every field. No provider metadata, prompts, file paths, addresses or positions escape. */
 export function normalizeNetworkTelemetry(value) {
@@ -30,9 +41,34 @@ export function normalizeNetworkTelemetry(value) {
       const peer = object(candidate), id = text(peer.peerId);
       if (!id || id === peerId || seenPeers.has(id)) return [];
       seenPeers.add(id);
+      const icePath = choice(peer.icePath, ICE_PATHS);
+      const iceProtocol = choice(peer.iceProtocol, ICE_PROTOCOLS);
+      const direction = choice(peer.direction, DIRECTIONS);
+      const candidatePairRttMs = Number.isFinite(peer.candidatePairRttMs) && peer.candidatePairRttMs >= 0
+        ? Math.min(peer.candidatePairRttMs, 600000) : null;
+      const rawWorkMesh = peer.workMesh && typeof peer.workMesh === 'object' && !Array.isArray(peer.workMesh)
+        ? peer.workMesh : null;
+      const workMesh = rawWorkMesh ? {
+        tasksPerSec: boundedRate(rawWorkMesh.tasksPerSec),
+        linkCost: boundedRate(rawWorkMesh.linkCost, 600000),
+        inFlight: Math.min(10000, count(rawWorkMesh.inFlight)),
+        streamResets: Math.min(1000000, count(rawWorkMesh.streamResets))
+      } : null;
+      const workRate = Number.isFinite(peer.workRate) && peer.workRate >= 0
+        ? Math.min(1e9, peer.workRate)
+        : (workMesh ? workMesh.tasksPerSec : null);
       return [{ peerId: id, via: choice(peer.via, VIA, 'unknown'),
         signalingPath: choice(peer.signalingPath, ['direct', 'relay-scoped']),
         mediaPath: choice(peer.mediaPath, ['direct', 'turn-relay', 'unknown']),
+        ...(icePath ? { icePath } : {}),
+        ...(iceProtocol ? { iceProtocol } : {}),
+        ...(candidatePairRttMs !== null ? { candidatePairRttMs } : {}),
+        ...(direction ? { direction } : {}),
+        ...(Number.isFinite(peer.connectionCount) && peer.connectionCount > 0
+          ? { connectionCount: Math.min(64, Math.trunc(peer.connectionCount)) } : {}),
+        ...(peer.duplicateConnections === true ? { duplicateConnections: true } : {}),
+        ...(workRate !== null ? { workRate } : {}),
+        ...(workMesh ? { workMesh } : {}),
         rttMs: Number.isFinite(peer.rttMs) && peer.rttMs >= 0 ? Math.min(peer.rttMs, 600000) : null,
         ...countFields(peer, ['rxCount', 'txCount', 'rxBytes', 'txBytes', 'rxBps', 'txBps']) }];
     });
@@ -46,11 +82,56 @@ export function normalizeNetworkTelemetry(value) {
         modalities: [...new Set((Array.isArray(model.modalities) ? model.modalities : [])
           .slice(0, 8).map(value => text(value, 32)).filter(Boolean))] }];
     });
+  const rawRelay = input.relayState && typeof input.relayState === 'object' && !Array.isArray(input.relayState)
+    ? input.relayState : null;
+  const relayState = rawRelay ? {
+    connected: rawRelay.connected === true,
+    role: choice(rawRelay.role, RELAY_ROLES, rawRelay.connected === true ? 'holding' : 'off-relay'),
+    keepReason: choice(rawRelay.keepReason, RELAY_KEEP_REASONS, 'none'),
+    relayPeerId: text(rawRelay.relayPeerId) || null,
+    gossipMeshCount: Math.min(256, count(rawRelay.gossipMeshCount)),
+    directMeshPeerCount: Math.min(256, count(rawRelay.directMeshPeerCount)),
+    minDirectMeshPeers: Math.min(256, count(rawRelay.minDirectMeshPeers))
+  } : null;
+  const seenGossip = new Set();
+  const gossipMeshPeers = Array.isArray(input.gossipMeshPeers)
+    ? input.gossipMeshPeers
+      .slice(0, NETWORK_TELEMETRY_LIMITS.maximumPeers)
+      .map(value => text(value))
+      .filter(id => {
+        if (!id || id === peerId || seenGossip.has(id)) return false;
+        seenGossip.add(id);
+        return true;
+      })
+    : null;
+  const rawCaps = input.capabilities && typeof input.capabilities === 'object' && !Array.isArray(input.capabilities)
+    ? (input.capabilities.compute && typeof input.capabilities.compute === 'object' ? input.capabilities.compute : input.capabilities)
+    : null;
+  const capabilities = rawCaps ? {
+    resourceTier: choice(rawCaps.resourceTier || rawCaps.tier, RESOURCE_TIERS, 'unknown'),
+    gpuAvailable: rawCaps.gpuAvailable === true || count(rawCaps.gpuCount) > 0,
+    gpuHardwareVerified: rawCaps.gpuHardwareVerified === true,
+    cpuCores: Math.min(1024, count(rawCaps.cpuCores)),
+    performanceClass: text(rawCaps.performanceClass, 32) || null
+  } : null;
+  const hostGroupId = text(input.hostGroupId, 64) || null;
   return { peerId, ts: count(input.ts), application: text(input.application || input.gameId, 80),
     role: choice(input.role, ROLES, models.length ? 'models' : 'compute'),
     gameId: text(input.gameId), roomId: text(input.roomId), topologyId: text(input.topologyId),
     topology: choice(input.topology, ['distributed', 'hierarchical', 'emergent', 'throughput', 'static'], 'distributed'),
     isConnected: input.isConnected === true, peerCount: count(input.peerCount),
+    ...(Number.isFinite(input.targetConnections) && input.targetConnections >= 0
+      ? { targetConnections: Math.min(256, Math.trunc(input.targetConnections)) } : {}),
+    ...(Number.isFinite(input.maxConnections) && input.maxConnections >= 0
+      ? { maxConnections: Math.min(256, Math.trunc(input.maxConnections)) } : {}),
+    ...(Number.isFinite(input.rewiresPerMin) && input.rewiresPerMin >= 0
+      ? { rewiresPerMin: Math.min(10000, count(input.rewiresPerMin)) } : {}),
+    ...(Number.isFinite(input.dialFailures) && input.dialFailures >= 0
+      ? { dialFailures: Math.min(1000000, count(input.dialFailures)) } : {}),
+    ...(relayState ? { relayState } : {}),
+    ...(gossipMeshPeers ? { gossipMeshPeers } : {}),
+    ...(capabilities ? { capabilities } : {}),
+    ...(hostGroupId ? { hostGroupId } : {}),
     counts: countFields(input.counts, ['rx', 'tx', 'rxBytes', 'txBytes']),
     rates: countFields(input.rates, ['rxBps', 'txBps']), peers, models,
     modelsStatus: choice(input.modelsStatus, ['available', 'unavailable'], 'available'),
@@ -136,7 +217,10 @@ export class NetworkTelemetryService {
         if (signal.aborted || !this.manager.isConnected || provider !== this.provider) return;
         const snapshot = normalizeNetworkTelemetry({ ...this.manager.getTelemetrySnapshot(),
           application: extras?.application || this.manager.config.gameId,
-          role: extras?.role, compute: extras?.compute, models,
+          role: extras?.role, compute: extras?.compute,
+          ...(extras?.capabilities ? { capabilities: extras.capabilities } : {}),
+          ...(extras?.hostGroupId ? { hostGroupId: extras.hostGroupId } : {}),
+          models,
           modelsStatus: reportError ? 'unavailable' : 'available', ts: this.now() });
         if (!snapshot) return;
         const packet = { type: NETWORK_TELEMETRY_TYPE, schema: NETWORK_TELEMETRY_SCHEMA,

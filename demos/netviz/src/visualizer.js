@@ -14,10 +14,16 @@ const COLORS = {
   host: 0x00ffd4,
   root: 0xff4fb3,
   edge: 0xffb13b,
+  edgeLanHost: 0x00ff88,
+  edgeTurnRelay: 0xff4fb3,
   edgeRelay: 0x00ff6a,
   edgeRelayWebrtc: 0x66d9ff,
+  edgeDirectWs: 0x88eeff,
   edgeUnknown: 0x7f8c8d,
   edgeError: 0xff2d2d,
+  edgeBridge: 0xff3b30,
+  gossipMesh: 0x7aa7ff,
+  workMesh: 0xffe047,
   pubsub: 0xcaf6ff,
   grid: 0x00ff6a,
   radiusLocal: 0xffb347
@@ -34,6 +40,25 @@ const hashString = (value) => {
 };
 
 const buildEdgeKey = (from, to) => (from < to ? `${from}|${to}` : `${to}|${from}`);
+const positionsChanged = (prevFrom, prevTo, nextFrom, nextTo) => (
+  !prevFrom || !prevTo
+  || prevFrom.distanceToSquared(nextFrom) > 1e-4
+  || prevTo.distanceToSquared(nextTo) > 1e-4
+);
+const rttToColor = (rttMs) => {
+  if (!Number.isFinite(rttMs)) return COLORS.edgeUnknown;
+  if (rttMs <= 15) return 0x00ff88;
+  if (rttMs <= 50) return 0xb8ff4d;
+  if (rttMs <= 120) return 0xffb13b;
+  return 0xff3b30;
+};
+const tierToColor = (tier) => {
+  if (tier === 'cluster' || tier === 'workstation') return 0xff4fb3;
+  if (tier === 'desktop') return 0x00ffd4;
+  if (tier === 'laptop') return 0x00ff6a;
+  if (tier === 'mobile') return 0xffb13b;
+  return COLORS.edgeUnknown;
+};
 const EDGE_BASE_RADIUS = 0.035;
 const EDGE_MAX_RADIUS = 0.18;
 const PULSE_WINDOW_MS = 4000;
@@ -78,12 +103,57 @@ export class NetworkVisualizer {
     this.nodeMeshes = new Map();
     this.edgeMeshes = new Map();
     this.pubsubMeshes = new Map();
+    this.gossipMeshes = new Map();
+    this.workMeshMeshes = new Map();
+    this.hullMeshes = new Map();
+    this.keeperHaloMeshes = new Map();
     this.radiusMeshes = new Map();
     this.nodeGroup = new THREE.Group();
     this.edgeGroup = new THREE.Group();
+    this.gossipGroup = new THREE.Group();
+    this.workMeshGroup = new THREE.Group();
+    this.hullGroup = new THREE.Group();
     this.radiusGroup = new THREE.Group();
     this.nodeGeometry = new THREE.BoxGeometry(0.7, 0.7, 0.7);
     this.relayGeometry = new THREE.IcosahedronGeometry(0.65, 0);
+    this.keeperHaloGeometry = new THREE.RingGeometry(0.62, 0.78, 24);
+    this.keeperHaloMaterial = new THREE.MeshBasicMaterial({
+      color: COLORS.relay,
+      transparent: true,
+      opacity: 0.65,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    });
+    this.tubeTubularSegments = lowPower ? 14 : 24;
+    this.tubeRadialSegments = lowPower ? 4 : 5;
+    this.analysisOptions = {
+      colorLens: 'role',
+      showTransportLayer: true,
+      showGossipLayer: true,
+      showWorkMeshLayer: true,
+      showSubgroupHulls: true,
+      highlightBridges: true,
+      focusSubgroupId: ''
+    };
+    this.gossipMaterial = new THREE.MeshBasicMaterial({
+      color: COLORS.gossipMesh,
+      transparent: true,
+      opacity: 0.42,
+      blending: THREE.AdditiveBlending
+    });
+    this.workMeshMaterial = new THREE.MeshBasicMaterial({
+      color: COLORS.workMesh,
+      transparent: true,
+      opacity: 0.82,
+      blending: THREE.AdditiveBlending
+    });
+    this.workMeshPulseMaterial = new THREE.MeshBasicMaterial({
+      color: COLORS.workMesh,
+      transparent: true,
+      opacity: 0.95,
+      blending: THREE.AdditiveBlending
+    });
     this.connectionRadius = CONNECTION_RADIUS;
     this.radiusScale = RADIUS_SCALE;
     this.edgeMaterial = new THREE.MeshBasicMaterial({
@@ -161,8 +231,11 @@ export class NetworkVisualizer {
     this.groundPoint = new THREE.Vector3();
 
     this.scene.add(this.nodeGroup);
+    this.nodeGroup.add(this.hullGroup);
     this.nodeGroup.add(this.radiusGroup);
     this.nodeGroup.add(this.edgeGroup);
+    this.nodeGroup.add(this.gossipGroup);
+    this.nodeGroup.add(this.workMeshGroup);
 
     this._initScene();
     if (shouldRender) {
@@ -266,11 +339,19 @@ export class NetworkVisualizer {
       this.layoutMode = 'hierarchical';
       return;
     }
-    if (next === 'hierarchical' || next === 'distributed' || next === 'emergent') {
+    if (['hierarchical', 'distributed', 'emergent', 'throughput', 'static', 'clustered'].includes(next)) {
       this.layoutMode = next;
       return;
     }
     this.layoutMode = 'distributed';
+  }
+
+  setAnalysisOptions(options = {}) {
+    if (!options || typeof options !== 'object') return;
+    this.analysisOptions = {
+      ...this.analysisOptions,
+      ...options
+    };
   }
 
   setLocalMetric(metric) {
@@ -347,17 +428,138 @@ export class NetworkVisualizer {
     this.renderer.setSize(innerWidth, innerHeight);
   }
 
-  _layoutPeers(peers, localPeerId) {
+  _layoutPeers(peers, localPeerId, { subgroups = null, edges = null } = {}) {
+    if (this.layoutMode === 'clustered' && Array.isArray(subgroups) && subgroups.length > 0) {
+      return this._layoutClustered(peers, localPeerId, subgroups);
+    }
+    if (this.layoutMode === 'throughput') {
+      return this._layoutThroughput(peers, localPeerId, edges);
+    }
     if (this.layoutMode === 'hierarchical') {
       return this._layoutHierarchical(peers, localPeerId);
     }
-    if (this.layoutMode === 'emergent') {
+    if (this.layoutMode === 'emergent' || this.layoutMode === 'static') {
       return this._layoutEmergent(peers, localPeerId);
     }
     if (this.layoutMode === 'distributed') {
       return this._layoutDistributed(peers, localPeerId);
     }
     return this._layoutClassic(peers, localPeerId);
+  }
+
+  _layoutClustered(peers, localPeerId, subgroups = []) {
+    const positions = new Map();
+    const clusterMeta = [];
+    const peerById = new Map(peers.filter((p) => p?.peerId).map((p) => [p.peerId, p]));
+    const activeGroups = subgroups
+      .map((sg) => ({
+        ...sg,
+        members: (sg.peerIds || []).filter((id) => peerById.has(id) && !peerById.get(id)?.isRelay)
+      }))
+      .filter((sg) => sg.members.length > 0);
+
+    if (activeGroups.length === 0) {
+      return { positions: this._layoutClassic(peers, localPeerId), clusterMeta: [] };
+    }
+
+    const radii = activeGroups.map((sg) => (
+      sg.members.length <= 1 ? 2.4 : Math.max(3.0, Math.sqrt(sg.members.length) * 2.15)
+    ));
+    const singleGroup = activeGroups.length === 1;
+    const circumference = radii.reduce((sum, r) => sum + (r * 2 + 4.2), 0);
+    const macroRadius = singleGroup ? 0 : Math.max(9.5, circumference / (Math.PI * 2));
+
+    let angleCursor = 0;
+    activeGroups.forEach((sg, idx) => {
+      const r = radii[idx];
+      let cx = 0;
+      let cz = 0;
+      if (!singleGroup) {
+        const span = ((r * 2 + 4.2) / Math.max(1, circumference)) * Math.PI * 2;
+        const centerAngle = angleCursor + span * 0.5;
+        angleCursor += span;
+        cx = Math.cos(centerAngle) * macroRadius;
+        cz = Math.sin(centerAngle) * macroRadius;
+      }
+      clusterMeta.push({
+        id: sg.id,
+        label: sg.label,
+        colorHex: sg.colorHex || '#00ff6a',
+        center: new THREE.Vector3(cx, 0, cz),
+        radius: r + 1.15,
+        isPartitioned: Boolean(sg.isPartitioned),
+        peerCount: sg.members.length
+      });
+      const count = sg.members.length;
+      sg.members.forEach((peerId, memberIndex) => {
+        if (count === 1) {
+          positions.set(peerId, new THREE.Vector3(cx, this.gridHeight, cz));
+          return;
+        }
+        const localAngle = (memberIndex / count) * Math.PI * 2;
+        const localR = r * 0.78;
+        positions.set(peerId, new THREE.Vector3(
+          cx + Math.cos(localAngle) * localR,
+          this.gridHeight,
+          cz + Math.sin(localAngle) * localR
+        ));
+      });
+    });
+
+    // Place relays elevated centrally above the cluster ring.
+    const relays = peers.filter((p) => p?.peerId && p.isRelay);
+    relays.forEach((relay, idx) => {
+      const angle = (idx / Math.max(1, relays.length)) * Math.PI * 2;
+      const radius = relays.length === 1 ? 0 : 3.2;
+      positions.set(relay.peerId, new THREE.Vector3(
+        Math.cos(angle) * radius,
+        6.2,
+        Math.sin(angle) * radius
+      ));
+    });
+
+    // Any remaining ungrouped peers land on an outer perimeter ring.
+    const ungrouped = peers.filter((p) => p?.peerId && !positions.has(p.peerId));
+    ungrouped.forEach((peer, idx) => {
+      const angle = (idx / Math.max(1, ungrouped.length)) * Math.PI * 2;
+      const r = macroRadius + 7.5;
+      positions.set(peer.peerId, new THREE.Vector3(Math.cos(angle) * r, this.gridHeight, Math.sin(angle) * r));
+    });
+
+    return { positions, clusterMeta };
+  }
+
+  _layoutThroughput(peers, localPeerId, edges = []) {
+    const positions = new Map();
+    const flowByPeer = new Map();
+    for (const edge of Array.isArray(edges) ? edges : []) {
+      const from = Array.isArray(edge) ? edge[0] : edge?.from;
+      const to = Array.isArray(edge) ? edge[1] : edge?.to;
+      if (!from || !to) continue;
+      const flow = (Number(edge?.workRate) || 0) * 100 + ((Number(edge?.rxBps) || 0) + (Number(edge?.txBps) || 0)) / 1024;
+      flowByPeer.set(from, (flowByPeer.get(from) || 0) + flow);
+      flowByPeer.set(to, (flowByPeer.get(to) || 0) + flow);
+    }
+    const relays = peers.filter((p) => p?.peerId && p.isRelay);
+    relays.forEach((relay, idx) => {
+      const angle = (idx / Math.max(1, relays.length)) * Math.PI * 2;
+      const r = relays.length === 1 ? 0 : 3.2;
+      positions.set(relay.peerId, new THREE.Vector3(Math.cos(angle) * r, 5.4, Math.sin(angle) * r));
+    });
+    const workers = peers
+      .filter((p) => p?.peerId && !p.isRelay)
+      .slice()
+      .sort((a, b) => (flowByPeer.get(b.peerId) || 0) - (flowByPeer.get(a.peerId) || 0) || a.peerId.localeCompare(b.peerId));
+    const perRing = 6;
+    workers.forEach((peer, idx) => {
+      const ring = Math.floor(idx / perRing);
+      const slot = idx % perRing;
+      const ringCount = Math.min(perRing, workers.length - ring * perRing);
+      const angle = (slot / Math.max(1, ringCount)) * Math.PI * 2 + ring * 0.45;
+      const radius = 4.6 + ring * 4.4;
+      positions.set(peer.peerId, new THREE.Vector3(Math.cos(angle) * radius, this.gridHeight, Math.sin(angle) * radius));
+    });
+    return positions;
   }
 
   _layoutClassic(peers, localPeerId) {
@@ -597,9 +799,9 @@ export class NetworkVisualizer {
     this.spiralCoords.push({ x: nextX, z: nextZ });
   }
 
-  _buildCurve(fromPos, toPos) {
+  _buildCurve(fromPos, toPos, liftMultiplier = 1) {
     const mid = new THREE.Vector3().addVectors(fromPos, toPos).multiplyScalar(0.5);
-    const lift = 1.8 + fromPos.distanceTo(toPos) * 0.12;
+    const lift = (1.8 + fromPos.distanceTo(toPos) * 0.12) * liftMultiplier;
     const ctrl1 = new THREE.Vector3().lerpVectors(fromPos, mid, 0.45).add(new THREE.Vector3(0, lift, 0));
     const ctrl2 = new THREE.Vector3().lerpVectors(toPos, mid, 0.45).add(new THREE.Vector3(0, lift, 0));
 
@@ -665,21 +867,280 @@ export class NetworkVisualizer {
     };
   }
 
-  _createPulse(type, materialOverride = null) {
+  _createPulse(type, materialOverride = null, targetGroup = null) {
     const material = materialOverride || (type === 'tx' ? this.pulseMaterials.tx : this.pulseMaterials.rx);
     const mesh = new THREE.Mesh(this.pulseGeometry, material);
     mesh.visible = false;
     mesh.renderOrder = 2;
-    this.edgeGroup.add(mesh);
+    (targetGroup || this.edgeGroup).add(mesh);
     return { mesh, progress: Math.random() };
   }
 
-  updatePeers(peers, localPeerId, edges = null, pubsubEdges = null) {
+  _resolveEdgeColor(entry, isBridge = false) {
+    if (entry?.errorActive) return COLORS.edgeError;
+    if (isBridge && this.analysisOptions.highlightBridges !== false) return COLORS.edgeBridge;
+    const icePath = String(entry?.icePath || '').trim().toLowerCase();
+    if (icePath === 'lan-host') return COLORS.edgeLanHost;
+    if (icePath === 'nat-srflx' || icePath === 'nat-prflx') return COLORS.edge;
+    if (icePath === 'turn-relay') return COLORS.edgeTurnRelay;
+    if (icePath === 'circuit-relay') return COLORS.edgeRelay;
+    if (icePath === 'direct-ws' || icePath === 'direct-tcp') return COLORS.edgeDirectWs;
+    const via = entry?.via || null;
+    const mediaPath = String(entry?.mediaPath || '').trim().toLowerCase()
+      || (via === 'webrtc' || via === 'direct'
+        ? 'direct'
+        : via === 'relay'
+          ? 'turn-relay'
+          : 'unknown');
+    if (mediaPath === 'direct') return COLORS.edge;
+    if (mediaPath === 'turn-relay') return via === 'relay' ? COLORS.edgeRelay : COLORS.edgeTurnRelay;
+    if (via === 'relay-webrtc') return COLORS.edgeRelayWebrtc;
+    return COLORS.edgeUnknown;
+  }
+
+  _resolveNodeColor(peer, { isRelay, isRoot, isHost, isLocal, isGhost, peerEdgeStats }) {
+    if (isRelay) return COLORS.relay;
+    if (peer.stale) return COLORS.stale;
+    if (peer.sessionOnly) return COLORS.session;
+    const lens = this.analysisOptions?.colorLens || 'role';
+    const stats = peerEdgeStats?.get(peer.peerId) || null;
+    if (lens === 'transport') {
+      if (!stats || stats.degree === 0) return COLORS.edgeError;
+      if (stats.hasLanHost) return COLORS.edgeLanHost;
+      if (stats.hasDirect) return COLORS.edge;
+      if (stats.hasTurn) return COLORS.edgeTurnRelay;
+      if (stats.hasCircuit) return COLORS.edgeRelay;
+      return COLORS.edgeRelayWebrtc;
+    }
+    if (lens === 'rtt') {
+      return rttToColor(stats?.avgRttMs ?? null);
+    }
+    if (lens === 'degree') {
+      const deg = stats?.degree ?? 0;
+      const target = Number.isFinite(peer.targetConnections) && peer.targetConnections > 0 ? peer.targetConnections : 3;
+      if (deg === 0) return COLORS.edgeError;
+      if (deg < target) return COLORS.edge;
+      if (deg === target) return COLORS.edgeLanHost;
+      return COLORS.models;
+    }
+    if (lens === 'workmesh') {
+      const flow = stats?.workRate || 0;
+      const tasks = Number(peer.compute?.activeTasks) || 0;
+      if (flow >= 5 || tasks >= 2) return COLORS.workMesh;
+      if (flow > 0 || tasks > 0) return COLORS.edgeLanHost;
+      return COLORS.edgeUnknown;
+    }
+    if (lens === 'capabilities') {
+      return tierToColor(peer.capabilities?.resourceTier || 'unknown');
+    }
+    return peer.role === 'models' ? COLORS.models
+      : peer.role === 'world' ? COLORS.world
+        : isRoot ? COLORS.root
+          : isHost ? COLORS.host
+            : isGhost ? COLORS.ghost
+              : isLocal ? COLORS.local
+                : COLORS.remote;
+  }
+
+  _syncSubgroupHulls(clusterMeta = []) {
+    const showHulls = this.analysisOptions?.showSubgroupHulls !== false && Array.isArray(clusterMeta) && clusterMeta.length > 0;
+    const nextIds = new Set();
+    if (showHulls) {
+      for (const item of clusterMeta) {
+        nextIds.add(item.id);
+        let hull = this.hullMeshes.get(item.id);
+        const radius = Math.max(1.5, item.radius);
+        const colorHex = item.isPartitioned ? '#ff3b30' : (item.colorHex || '#00ff6a');
+        const focused = !this.analysisOptions.focusSubgroupId || this.analysisOptions.focusSubgroupId === item.id;
+        if (!hull) {
+          const ringGeo = new THREE.RingGeometry(Math.max(0.2, radius - 0.14), radius, 48);
+          const discGeo = new THREE.CircleGeometry(Math.max(0.2, radius - 0.14), 48);
+          const ringMat = new THREE.MeshBasicMaterial({
+            color: colorHex,
+            transparent: true,
+            opacity: focused ? 0.55 : 0.16,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending
+          });
+          const discMat = new THREE.MeshBasicMaterial({
+            color: colorHex,
+            transparent: true,
+            opacity: focused ? 0.08 : 0.02,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending
+          });
+          const ring = new THREE.Mesh(ringGeo, ringMat);
+          ring.rotation.x = -Math.PI / 2;
+          ring.position.set(item.center.x, 0.04, item.center.z);
+          ring.renderOrder = -2;
+          ring.userData = { type: 'subgroup', subgroupId: item.id, label: item.label };
+          const disc = new THREE.Mesh(discGeo, discMat);
+          disc.rotation.x = -Math.PI / 2;
+          disc.position.set(item.center.x, 0.03, item.center.z);
+          disc.renderOrder = -3;
+          disc.userData = { type: 'subgroup', subgroupId: item.id, label: item.label };
+          this.hullGroup.add(disc, ring);
+          hull = { ring, disc, radius };
+          this.hullMeshes.set(item.id, hull);
+        } else {
+          if (Math.abs(hull.radius - radius) > 0.15) {
+            hull.ring.geometry.dispose();
+            hull.disc.geometry.dispose();
+            hull.ring.geometry = new THREE.RingGeometry(Math.max(0.2, radius - 0.14), radius, 48);
+            hull.disc.geometry = new THREE.CircleGeometry(Math.max(0.2, radius - 0.14), 48);
+            hull.radius = radius;
+          }
+          hull.ring.position.set(item.center.x, 0.04, item.center.z);
+          hull.disc.position.set(item.center.x, 0.03, item.center.z);
+          hull.ring.material.color.set(colorHex);
+          hull.disc.material.color.set(colorHex);
+          hull.ring.material.opacity = focused ? 0.55 : 0.16;
+          hull.disc.material.opacity = focused ? 0.08 : 0.02;
+          hull.ring.userData = { type: 'subgroup', subgroupId: item.id, label: item.label };
+          hull.disc.userData = { type: 'subgroup', subgroupId: item.id, label: item.label };
+        }
+      }
+    }
+    for (const id of Array.from(this.hullMeshes.keys())) {
+      if (!nextIds.has(id)) {
+        const hull = this.hullMeshes.get(id);
+        this.hullGroup.remove(hull.ring, hull.disc);
+        hull.ring.geometry.dispose();
+        hull.ring.material.dispose();
+        hull.disc.geometry.dispose();
+        hull.disc.material.dispose();
+        this.hullMeshes.delete(id);
+      }
+    }
+  }
+
+  _syncOverlayEdges(edgeList, positions, meshMap, group, {
+    enabled = true,
+    baseMaterial,
+    color,
+    radius = 0.024,
+    liftMultiplier = 1.25,
+    layerType = 'gossip',
+    withPulses = false,
+    pulseMaterial = null
+  }) {
+    const nextKeys = new Set();
+    if (enabled && Array.isArray(edgeList)) {
+      for (const entry of edgeList) {
+        const from = entry?.from;
+        const to = entry?.to;
+        if (!from || !to || from === to) continue;
+        const fromPos = positions.get(from);
+        const toPos = positions.get(to);
+        if (!fromPos || !toPos) continue;
+        const edgeKey = buildEdgeKey(from, to);
+        nextKeys.add(edgeKey);
+        const tasksPerSec = Number(entry?.tasksPerSec ?? entry?.workRate) || 0;
+        const nextRadius = withPulses
+          ? THREE.MathUtils.clamp(radius + Math.log10(tasksPerSec + 1) * 0.045, radius, 0.14)
+          : radius;
+        let edgeData = meshMap.get(edgeKey);
+        const needsGeo = !edgeData
+          || positionsChanged(edgeData.fromPos, edgeData.toPos, fromPos, toPos)
+          || Math.abs((edgeData.radius || 0) - nextRadius) > 0.004;
+        if (!edgeData) {
+          const curve = this._buildCurve(fromPos, toPos, liftMultiplier);
+          const geometry = new THREE.TubeGeometry(curve, this.tubeTubularSegments, nextRadius, this.tubeRadialSegments, false);
+          const mesh = new THREE.Mesh(geometry, baseMaterial.clone());
+          mesh.material.color.set(color);
+          mesh.userData = { type: layerType, from, to };
+          group.add(mesh);
+          edgeData = {
+            mesh,
+            curve,
+            from,
+            to,
+            fromPos: fromPos.clone(),
+            toPos: toPos.clone(),
+            radius: nextRadius,
+            tasksPerSec,
+            pulses: withPulses ? { tx: this._createPulse('tx', pulseMaterial, group) } : null
+          };
+          meshMap.set(edgeKey, edgeData);
+        } else {
+          if (needsGeo) {
+            const curve = this._buildCurve(fromPos, toPos, liftMultiplier);
+            edgeData.mesh.geometry.dispose();
+            edgeData.mesh.geometry = new THREE.TubeGeometry(curve, this.tubeTubularSegments, nextRadius, this.tubeRadialSegments, false);
+            edgeData.curve = curve;
+            edgeData.fromPos.copy(fromPos);
+            edgeData.toPos.copy(toPos);
+            edgeData.radius = nextRadius;
+          }
+          edgeData.from = from;
+          edgeData.to = to;
+          edgeData.tasksPerSec = tasksPerSec;
+          edgeData.mesh.userData = { type: layerType, from, to };
+        }
+      }
+    }
+    for (const edgeKey of Array.from(meshMap.keys())) {
+      if (!nextKeys.has(edgeKey)) {
+        const edgeData = meshMap.get(edgeKey);
+        group.remove(edgeData.mesh);
+        edgeData.mesh.geometry.dispose();
+        edgeData.mesh.material.dispose();
+        if (edgeData.pulses?.tx?.mesh) group.remove(edgeData.pulses.tx.mesh);
+        meshMap.delete(edgeKey);
+      }
+    }
+  }
+
+  updatePeers(peers, localPeerId, edges = null, pubsubEdges = null, extra = {}) {
     if (!this.renderer) return;
-    const positions = this._layoutPeers(peers, localPeerId);
+    if (extra?.analysisOptions) this.setAnalysisOptions(extra.analysisOptions);
+    const subgroups = Array.isArray(extra?.subgroups) ? extra.subgroups : null;
+    const bridgeKeys = new Set(extra?.diagnostics?.bridgeEdgeKeys || []);
+    const layoutResult = this._layoutPeers(peers, localPeerId, { subgroups, edges });
+    const positions = layoutResult instanceof Map ? layoutResult : (layoutResult?.positions || new Map());
+    const clusterMeta = layoutResult instanceof Map ? [] : (layoutResult?.clusterMeta || []);
+    this._syncSubgroupHulls(clusterMeta);
+
     const now = Date.now();
     const showRadius = this.layoutMode === 'distributed' || this.layoutMode === 'emergent';
 
+    // Aggregate per-peer edge stats for Color-by-Lens views.
+    const peerEdgeStats = new Map();
+    const ensureStat = (id) => {
+      let s = peerEdgeStats.get(id);
+      if (!s) {
+        s = { degree: 0, hasLanHost: false, hasDirect: false, hasTurn: false, hasCircuit: false, rttSum: 0, rttCount: 0, workRate: 0 };
+        peerEdgeStats.set(id, s);
+      }
+      return s;
+    };
+    const peerIsRelay = new Set(peers.filter((p) => p?.isRelay).map((p) => p.peerId));
+    for (const entry of Array.isArray(edges) ? edges : []) {
+      const [from, to] = Array.isArray(entry) ? entry : [entry?.from, entry?.to];
+      if (!from || !to || peerIsRelay.has(from) || peerIsRelay.has(to)) continue;
+      const ice = String(entry?.icePath || '').toLowerCase();
+      const media = String(entry?.mediaPath || '').toLowerCase();
+      const via = String(entry?.via || '').toLowerCase();
+      const rtt = Number.isFinite(entry?.candidatePairRttMs) ? entry.candidatePairRttMs : entry?.rttMs;
+      const wr = Number(entry?.workRate) || Number(entry?.workMesh?.tasksPerSec) || 0;
+      for (const id of [from, to]) {
+        const s = ensureStat(id);
+        s.degree += 1;
+        if (ice === 'lan-host') s.hasLanHost = true;
+        if (ice === 'lan-host' || ice === 'nat-srflx' || ice === 'nat-prflx' || ice === 'direct-ws' || media === 'direct' || via === 'webrtc') s.hasDirect = true;
+        if (ice === 'turn-relay' || (media === 'turn-relay' && via !== 'relay')) s.hasTurn = true;
+        if (ice === 'circuit-relay' || via === 'relay') s.hasCircuit = true;
+        if (Number.isFinite(rtt) && rtt >= 0) { s.rttSum += rtt; s.rttCount += 1; }
+        s.workRate += wr;
+      }
+    }
+    for (const s of peerEdgeStats.values()) {
+      s.avgRttMs = s.rttCount > 0 ? s.rttSum / s.rttCount : null;
+    }
+
+    const activeKeeperHaloIds = new Set();
     for (const peer of peers) {
       if (!peer.peerId) continue;
       const position = positions.get(peer.peerId);
@@ -708,21 +1169,9 @@ export class NetworkVisualizer {
         this.nodeGroup.add(mesh);
         this.nodeMeshes.set(peer.peerId, mesh);
       }
-      const color = isRelay
-        ? COLORS.relay
-        : peer.stale ? COLORS.stale
-        : peer.sessionOnly ? COLORS.session
-        : peer.role === 'models' ? COLORS.models
-        : peer.role === 'world' ? COLORS.world
-        : isRoot
-          ? COLORS.root
-          : isHost
-            ? COLORS.host
-            : isGhost
-              ? COLORS.ghost
-              : isLocal
-                ? COLORS.local
-                : COLORS.remote;
+      const color = this._resolveNodeColor(peer, {
+        isRelay, isRoot, isHost, isLocal, isGhost, peerEdgeStats
+      });
       let emissive = isRelay
         ? 0x1a3240
         : isRoot
@@ -744,6 +1193,22 @@ export class NetworkVisualizer {
       mesh.userData.isRelay = isRelay;
       mesh.userData.role = peer.role || null;
       mesh.position.copy(position);
+
+      // Relay keeper halo for peers actively holding the relay open.
+      const isKeeper = !isRelay && peer.relayState?.connected
+        && ['keeper', 'elected-keeper', 'permanent'].includes(peer.relayState?.role);
+      if (isKeeper) {
+        activeKeeperHaloIds.add(peer.peerId);
+        let halo = this.keeperHaloMeshes.get(peer.peerId);
+        if (!halo) {
+          halo = new THREE.Mesh(this.keeperHaloGeometry, this.keeperHaloMaterial);
+          halo.rotation.x = -Math.PI / 2;
+          halo.renderOrder = 1;
+          this.nodeGroup.add(halo);
+          this.keeperHaloMeshes.set(peer.peerId, halo);
+        }
+        halo.position.set(position.x, position.y - 0.34, position.z);
+      }
 
       const shouldShowRadius = showRadius && !isRelay;
       const radiusMesh = this.radiusMeshes.get(peer.peerId);
@@ -767,6 +1232,14 @@ export class NetworkVisualizer {
       } else if (radiusMesh) {
         this.radiusGroup.remove(radiusMesh);
         this.radiusMeshes.delete(peer.peerId);
+      }
+    }
+
+    for (const peerId of Array.from(this.keeperHaloMeshes.keys())) {
+      if (!activeKeeperHaloIds.has(peerId)) {
+        const halo = this.keeperHaloMeshes.get(peerId);
+        this.nodeGroup.remove(halo);
+        this.keeperHaloMeshes.delete(peerId);
       }
     }
 
@@ -798,6 +1271,7 @@ export class NetworkVisualizer {
       }
     }
 
+    const showTransport = this.analysisOptions?.showTransportLayer !== false;
     let edgeList = Array.isArray(edges) ? edges : null;
     if (!edgeList) {
       edgeList = [];
@@ -806,6 +1280,7 @@ export class NetworkVisualizer {
         edgeList.push([localPeerId, peerId]);
       }
     }
+    if (!showTransport) edgeList = [];
 
     const nextEdges = new Set();
     for (const entry of edgeList) {
@@ -831,27 +1306,24 @@ export class NetworkVisualizer {
             ? 'direct'
             : via === 'relay'
               ? 'turn-relay'
-              : via === 'relay-webrtc'
-                ? 'unknown'
-                : 'unknown'
+              : 'unknown'
         );
       const relayPeerId = entry?.relayPeerId || null;
       const errorActive = Boolean(entry?.errorActive);
-      const radius = this._getEdgeRadius(rxBps + txBps);
-      const curve = this._buildCurve(fromPos, toPos);
-      const geometry = new THREE.TubeGeometry(curve, 48, radius, 6, false);
-      const isDirectMedia = mediaPath === 'direct';
-      const isRelayMedia = mediaPath === 'turn-relay';
-      const edgeColor = errorActive
-        ? COLORS.edgeError
-        : isDirectMedia
-          ? COLORS.edge
-          : isRelayMedia
-            ? COLORS.edgeRelay
-            : COLORS.edgeUnknown;
+      const isBridge = bridgeKeys.has(edgeKey);
+      const baseRadius = this._getEdgeRadius(rxBps + txBps);
+      const radius = isBridge && this.analysisOptions.highlightBridges !== false
+        ? Math.max(baseRadius, 0.085)
+        : baseRadius;
+      const edgeColor = this._resolveEdgeColor(entry, isBridge);
 
       let edgeData = this.edgeMeshes.get(edgeKey);
+      const needsGeo = !edgeData
+        || positionsChanged(edgeData.fromPos, edgeData.toPos, fromPos, toPos)
+        || Math.abs((edgeData.radius || 0) - radius) > 0.004;
       if (!edgeData) {
+        const curve = this._buildCurve(fromPos, toPos);
+        const geometry = new THREE.TubeGeometry(curve, this.tubeTubularSegments, radius, this.tubeRadialSegments, false);
         const mesh = new THREE.Mesh(geometry, this.edgeMaterial.clone());
         mesh.userData = { type: 'edge', from, to };
         this.edgeGroup.add(mesh);
@@ -860,6 +1332,8 @@ export class NetworkVisualizer {
           curve,
           from,
           to,
+          fromPos: fromPos.clone(),
+          toPos: toPos.clone(),
           radius,
           via,
           signalingPath,
@@ -879,13 +1353,18 @@ export class NetworkVisualizer {
         };
         this.edgeMeshes.set(edgeKey, edgeData);
       } else {
-        edgeData.mesh.geometry.dispose();
-        edgeData.mesh.geometry = geometry;
+        if (needsGeo) {
+          const curve = this._buildCurve(fromPos, toPos);
+          edgeData.mesh.geometry.dispose();
+          edgeData.mesh.geometry = new THREE.TubeGeometry(curve, this.tubeTubularSegments, radius, this.tubeRadialSegments, false);
+          edgeData.curve = curve;
+          edgeData.fromPos.copy(fromPos);
+          edgeData.toPos.copy(toPos);
+          edgeData.radius = radius;
+        }
         edgeData.mesh.userData = { type: 'edge', from, to };
-        edgeData.curve = curve;
         edgeData.from = from;
         edgeData.to = to;
-        edgeData.radius = radius;
         edgeData.via = via;
         edgeData.signalingPath = signalingPath;
         edgeData.mediaPath = mediaPath;
@@ -904,11 +1383,14 @@ export class NetworkVisualizer {
       const relayPos = relayPeerId ? positions.get(relayPeerId) : null;
       const isRelayed = (signalingPath === 'relay-scoped' || via === 'relay' || via === 'relay-webrtc') && relayPos;
       if (isRelayed) {
-        curve.getPointAt(0.5, this.midpointVector);
-        const relayCurve = this._buildCurve(this.midpointVector, relayPos);
+        edgeData.curve.getPointAt(0.5, this.midpointVector);
         const relayRadius = Math.max(EDGE_BASE_RADIUS * 0.8, radius * 0.6);
-        const relayGeometry = new THREE.TubeGeometry(relayCurve, 32, relayRadius, 6, false);
+        const needsRelayGeo = !edgeData.relay
+          || positionsChanged(edgeData.relay.fromPos, edgeData.relay.toPos, this.midpointVector, relayPos)
+          || Math.abs((edgeData.relay.radius || 0) - relayRadius) > 0.004;
         if (!edgeData.relay) {
+          const relayCurve = this._buildCurve(this.midpointVector, relayPos);
+          const relayGeometry = new THREE.TubeGeometry(relayCurve, Math.max(12, Math.floor(this.tubeTubularSegments * 0.75)), relayRadius, this.tubeRadialSegments, false);
           const relayMesh = new THREE.Mesh(relayGeometry, this.edgeMaterial.clone());
           relayMesh.userData = { type: 'edge', from, to, relayPeerId };
           relayMesh.material.color.set(COLORS.edgeRelay);
@@ -916,14 +1398,23 @@ export class NetworkVisualizer {
           edgeData.relay = {
             mesh: relayMesh,
             curve: relayCurve,
+            fromPos: this.midpointVector.clone(),
+            toPos: relayPos.clone(),
+            radius: relayRadius,
             relayPeerId
           };
         } else {
-          edgeData.relay.mesh.geometry.dispose();
-          edgeData.relay.mesh.geometry = relayGeometry;
+          if (needsRelayGeo) {
+            const relayCurve = this._buildCurve(this.midpointVector, relayPos);
+            edgeData.relay.mesh.geometry.dispose();
+            edgeData.relay.mesh.geometry = new THREE.TubeGeometry(relayCurve, Math.max(12, Math.floor(this.tubeTubularSegments * 0.75)), relayRadius, this.tubeRadialSegments, false);
+            edgeData.relay.curve = relayCurve;
+            edgeData.relay.fromPos.copy(this.midpointVector);
+            edgeData.relay.toPos.copy(relayPos);
+            edgeData.relay.radius = relayRadius;
+          }
           edgeData.relay.mesh.userData = { type: 'edge', from, to, relayPeerId };
           edgeData.relay.mesh.material.color.set(COLORS.edgeRelay);
-          edgeData.relay.curve = relayCurve;
           edgeData.relay.relayPeerId = relayPeerId;
         }
       } else if (edgeData.relay) {
@@ -958,6 +1449,25 @@ export class NetworkVisualizer {
     }
 
     this._syncPubsubEdges(pubsubEdges, positions);
+    this._syncOverlayEdges(extra?.gossipEdges || [], positions, this.gossipMeshes, this.gossipGroup, {
+      enabled: this.analysisOptions?.showGossipLayer !== false,
+      baseMaterial: this.gossipMaterial,
+      color: COLORS.gossipMesh,
+      radius: 0.022,
+      liftMultiplier: 1.35,
+      layerType: 'gossip',
+      withPulses: false
+    });
+    this._syncOverlayEdges(extra?.workMeshEdges || [], positions, this.workMeshMeshes, this.workMeshGroup, {
+      enabled: this.analysisOptions?.showWorkMeshLayer !== false,
+      baseMaterial: this.workMeshMaterial,
+      color: COLORS.workMesh,
+      radius: 0.045,
+      liftMultiplier: 0.7,
+      layerType: 'workmesh',
+      withPulses: true,
+      pulseMaterial: this.workMeshPulseMaterial
+    });
   }
 
   _syncPubsubEdges(pubsubEdges, positions) {
@@ -978,11 +1488,12 @@ export class NetworkVisualizer {
       const lastRxAt = Number(entry?.lastRxAt) || null;
       const txCount = Number(entry?.txCount) || 0;
       const rxCount = Number(entry?.rxCount) || 0;
-      const curve = this._buildCurve(fromPos, toPos);
-      const geometry = new THREE.TubeGeometry(curve, 36, PUBSUB_RADIUS, 6, false);
 
       let edgeData = this.pubsubMeshes.get(edgeKey);
+      const needsGeo = !edgeData || positionsChanged(edgeData.fromPos, edgeData.toPos, fromPos, toPos);
       if (!edgeData) {
+        const curve = this._buildCurve(fromPos, toPos);
+        const geometry = new THREE.TubeGeometry(curve, Math.max(12, Math.floor(this.tubeTubularSegments * 0.8)), PUBSUB_RADIUS, this.tubeRadialSegments, false);
         const mesh = new THREE.Mesh(geometry, this.pubsubMaterial.clone());
         mesh.userData = { type: 'pubsub', from, to };
         this.edgeGroup.add(mesh);
@@ -991,6 +1502,8 @@ export class NetworkVisualizer {
           curve,
           from,
           to,
+          fromPos: fromPos.clone(),
+          toPos: toPos.clone(),
           lastTxAt,
           lastRxAt,
           txCount,
@@ -1002,10 +1515,15 @@ export class NetworkVisualizer {
         };
         this.pubsubMeshes.set(edgeKey, edgeData);
       } else {
-        edgeData.mesh.geometry.dispose();
-        edgeData.mesh.geometry = geometry;
+        if (needsGeo) {
+          const curve = this._buildCurve(fromPos, toPos);
+          edgeData.mesh.geometry.dispose();
+          edgeData.mesh.geometry = new THREE.TubeGeometry(curve, Math.max(12, Math.floor(this.tubeTubularSegments * 0.8)), PUBSUB_RADIUS, this.tubeRadialSegments, false);
+          edgeData.curve = curve;
+          edgeData.fromPos.copy(fromPos);
+          edgeData.toPos.copy(toPos);
+        }
         edgeData.mesh.userData = { type: 'pubsub', from, to };
-        edgeData.curve = curve;
         edgeData.from = from;
         edgeData.to = to;
         edgeData.lastTxAt = lastTxAt;
@@ -1049,7 +1567,10 @@ export class NetworkVisualizer {
       ...Array.from(this.edgeMeshes.values()).flatMap((edge) => (
         edge?.relay?.mesh ? [edge.mesh, edge.relay.mesh] : [edge.mesh]
       )),
-      ...Array.from(this.pubsubMeshes.values()).map((edge) => edge.mesh)
+      ...Array.from(this.workMeshMeshes.values()).map((edge) => edge.mesh),
+      ...Array.from(this.gossipMeshes.values()).map((edge) => edge.mesh),
+      ...Array.from(this.pubsubMeshes.values()).map((edge) => edge.mesh),
+      ...Array.from(this.hullMeshes.values()).map((hull) => hull.ring)
     ];
     const hits = this.raycaster.intersectObjects(targets, true);
     if (!hits.length) return null;
@@ -1067,11 +1588,31 @@ export class NetworkVisualizer {
       lastFrame = now;
       this._updateEdgePulses(delta);
       this._updatePubsubPulses(delta);
+      this._updateWorkMeshPulses(delta);
       this.controls?.update();
       this.renderer.render(this.scene, this.camera);
       requestAnimationFrame(tick);
     };
     tick();
+  }
+
+  _updateWorkMeshPulses(delta) {
+    for (const edgeData of this.workMeshMeshes.values()) {
+      const pulse = edgeData.pulses?.tx;
+      const curve = edgeData.curve;
+      if (!pulse?.mesh || !curve) continue;
+      const rate = Number(edgeData.tasksPerSec) || 0;
+      if (rate <= 0) {
+        pulse.mesh.visible = false;
+        continue;
+      }
+      pulse.mesh.visible = true;
+      const speed = this._getPulseSpeedFromMsgRate(rate);
+      pulse.progress = (pulse.progress + delta * speed) % 1;
+      curve.getPointAt(pulse.progress, this.pulseVector);
+      pulse.mesh.position.copy(this.pulseVector);
+      pulse.mesh.scale.setScalar(this._getPulseScaleFromMsgRate(rate));
+    }
   }
 
   _updateEdgePulses(delta) {

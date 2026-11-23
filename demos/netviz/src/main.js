@@ -5,6 +5,11 @@ import { TelemetryStore } from './telemetryStore.js';
 import { NetworkVisualizer } from './visualizer.js';
 import { buildObservedNetwork, attachedScope, describeObservedPeer } from './observedNetwork.js';
 import { renderObservedSummary } from './observedNetworkUi.js';
+import {
+  RollingMetricsHistory,
+  buildAnalysisSnapshot,
+  computeGraphDiagnostics
+} from './networkAnalysis.js';
 
 const canvas = document.getElementById('netviz-canvas');
 const statusEl = document.getElementById('status');
@@ -17,7 +22,15 @@ const gameIdInput = document.getElementById('game-id');
 const networkViewSelect = document.getElementById('network-view');
 const applicationFilter = document.getElementById('application-filter');
 const roleFilter = document.getElementById('role-filter');
+const subgroupBySelect = document.getElementById('subgroup-by');
+const subgroupFilterSelect = document.getElementById('subgroup-filter');
+const colorLensSelect = document.getElementById('color-lens');
 const observedSummary = document.getElementById('observed-summary');
+const analysisDiagnosticsEl = document.getElementById('analysis-diagnostics');
+const subgroupSummaryEl = document.getElementById('subgroup-summary');
+const relayAuditEl = document.getElementById('relay-audit');
+const sparklinesBoxEl = document.getElementById('sparklines-box');
+const exportAnalysisBtn = document.getElementById('export-analysis-btn');
 const hostedModels = document.getElementById('hosted-models');
 const observedControls = document.getElementById('observed-controls');
 const attachSessionSelect = document.getElementById('attach-session-select');
@@ -32,6 +45,11 @@ const relayRetentionModeSelect = document.getElementById('relay-retention-mode')
 const relayRetentionMinInput = document.getElementById('relay-retention-min');
 const showP2PTopologyToggle = document.getElementById('show-p2p-topology');
 const showIPTopologyToggle = document.getElementById('show-ip-topology');
+const layerTransportToggle = document.getElementById('layer-transport');
+const layerGossipsubToggle = document.getElementById('layer-gossipsub');
+const layerWorkMeshToggle = document.getElementById('layer-workmesh');
+const layerHullsToggle = document.getElementById('layer-hulls');
+const layerBridgesToggle = document.getElementById('layer-bridges');
 const hideGhostsToggle = document.getElementById('hide-ghosts');
 const autoRotateToggle = document.getElementById('auto-rotate');
 const consoleToggle = document.getElementById('console-toggle');
@@ -653,7 +671,52 @@ const normalizeTopologyType = (value) => {
   const raw = String(value || '').trim().toLowerCase();
   if (raw === 'hierarchy' || raw === 'hierarchical') return 'hierarchical';
   if (raw === 'emergent') return 'emergent';
+  if (raw === 'throughput') return 'throughput';
+  if (raw === 'static') return 'static';
   return 'distributed';
+};
+
+const rollingHistory = new RollingMetricsHistory({ maxSamples: 180, minIntervalMs: 1500 });
+let lastDiagnostics = null;
+
+const readAnalysisOptions = () => ({
+  groupBy: subgroupBySelect?.value || 'room',
+  subgroup: subgroupFilterSelect?.value || '',
+  colorLens: colorLensSelect?.value || 'role',
+  showTransportLayer: layerTransportToggle ? layerTransportToggle.checked : true,
+  showGossipLayer: layerGossipsubToggle ? layerGossipsubToggle.checked : true,
+  showWorkMeshLayer: layerWorkMeshToggle ? layerWorkMeshToggle.checked : true,
+  showSubgroupHulls: layerHullsToggle ? layerHullsToggle.checked : true,
+  highlightBridges: layerBridgesToggle ? layerBridgesToggle.checked : true,
+  focusSubgroupId: subgroupFilterSelect?.value || ''
+});
+
+const getExportableAnalysisSnapshot = () => {
+  const opts = readAnalysisOptions();
+  return buildAnalysisSnapshot({
+    viewMode: networkView,
+    groupBy: opts.groupBy,
+    colorLens: opts.colorLens,
+    focusSubgroup: opts.subgroup,
+    observedView,
+    diagnostics: lastDiagnostics || observedView?.diagnostics || null,
+    subgroups: observedView?.subgroups || [],
+    history: rollingHistory.list()
+  });
+};
+
+const downloadAnalysisSnapshot = () => {
+  const snapshot = getExportableAnalysisSnapshot();
+  const blob = new Blob([`${JSON.stringify(snapshot, null, 2)}\n`], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `peercompute-netviz-snapshot-${Date.now()}.json`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  logEvent(`Exported analysis JSON (${snapshot.diagnostics?.nodeCount ?? 0} peers)`);
 };
 
 const readTopologyInputs = () => {
@@ -2852,14 +2915,38 @@ const buildNodeInfo = (peerId) => {
 
 const buildEdgeInfo = (fromId, toId, edgeType = 'edge') => {
   if (isAllDemos()) {
-    const edge = observedView.edges.find((value) => buildEdgeKey(value.from, value.to) === buildEdgeKey(fromId, toId));
-    if (edge) return { title: 'Reported connection', lines: [
-      `From: ${fromId}`, `To: ${toId}`, `Transport: ${edge.via}`,
-      `Signaling: ${edge.signalingPath} · media: ${edge.mediaPath}`,
-      `Report: ${edge.stale ? 'stale' : 'recent'}`,
-      `Reported by ${edge.reportedBy.length} endpoint(s)`,
-      'Connection reported by an endpoint; no link is inferred from proximity.'
-    ] };
+    const edgeKey = buildEdgeKey(fromId, toId);
+    const edge = observedView.edges.find((value) => buildEdgeKey(value.from, value.to) === edgeKey);
+    const isBridge = Boolean(observedView?.diagnostics?.bridgeEdgeKeys?.includes(edgeKey));
+    if (edgeType === 'gossip') {
+      const ge = (observedView.gossipEdges || []).find((value) => buildEdgeKey(value.from, value.to) === edgeKey);
+      return {
+        title: 'Gossipsub mesh edge',
+        lines: [
+          `From: ${fromId}`,
+          `To: ${toId}`,
+          `Reported by: ${(ge?.reportedBy || []).length} endpoint(s)`,
+          `Transport edge present: ${edge ? `${edge.icePath || edge.via}` : 'no'}`
+        ]
+      };
+    }
+    if (edge) {
+      const lines = [
+        `From: ${fromId}`,
+        `To: ${toId}`,
+        `Transport: ${edge.via}${edge.icePath ? ` · ICE: ${edge.icePath}${edge.iceProtocol ? ` (${edge.iceProtocol})` : ''}` : ''}`,
+        `Signaling: ${edge.signalingPath} · media: ${edge.mediaPath}`,
+        `RTT: ${formatMs(Number.isFinite(edge.candidatePairRttMs) ? edge.candidatePairRttMs : edge.rttMs)}`,
+        `Rates: rx ${formatRate(edge.rxBps)} · tx ${formatRate(edge.txBps)}`,
+        ...(edge.duplicateConnections ? [`WARNING: duplicate open connections (${edge.connectionCount || 2})`] : []),
+        ...(isBridge ? ['WARNING: single-point-of-failure bridge edge (cut splits component)'] : []),
+        ...(edge.workRate > 0 || edge.workMesh ? [`WorkMesh: ${edge.workRate || edge.workMesh?.tasksPerSec || 0} tasks/s · in-flight ${edge.workMesh?.inFlight ?? 0} · resets ${edge.workMesh?.streamResets ?? 0}`] : []),
+        `Report: ${edge.stale ? 'stale' : 'recent'}`,
+        `Reported by ${edge.reportedBy.length} endpoint(s)`,
+        'Connection reported by an endpoint; no link is inferred from proximity.'
+      ];
+      return { title: edgeType === 'workmesh' ? 'WorkMesh flow link' : 'Reported connection', lines };
+    }
   }
   const edgeKey = buildEdgeKey(fromId, toId);
   const edgeMeta = lastDisplayedEdgesByKey.get(edgeKey)
@@ -3026,12 +3113,29 @@ const updateObservedHud = () => {
   syncAttachSessionsFromNode();
   renderSessionInspector();
   updateRelayStatus();
+  const analysisOptions = readAnalysisOptions();
   observedView = buildObservedNetwork(networkManager?.getNetworkTelemetryService?.()?.list() || [], {
-    application: applicationFilter?.value || '', role: roleFilter?.value || '',
-    includeGhosts: !shouldHideGhosts(), legacySessions: [...attachSessions.values()], relayIds: relayPeerIds
+    application: applicationFilter?.value || '',
+    role: roleFilter?.value || '',
+    groupBy: analysisOptions.groupBy === 'none' ? 'room' : analysisOptions.groupBy,
+    subgroup: analysisOptions.subgroup,
+    includeGhosts: !shouldHideGhosts(),
+    legacySessions: [...attachSessions.values()],
+    relayIds: relayPeerIds
   });
-  renderObservedSummary({ summaryElement: observedSummary, modelsElement: hostedModels, applicationSelect: applicationFilter }, observedView);
-  visualizer.setTopologyMode('emergent');
+  lastDiagnostics = observedView.diagnostics || null;
+  rollingHistory.record(lastDiagnostics);
+  renderObservedSummary({
+    summaryElement: observedSummary,
+    modelsElement: hostedModels,
+    applicationSelect: applicationFilter,
+    subgroupSelect: subgroupFilterSelect,
+    diagnosticsElement: analysisDiagnosticsEl,
+    subgroupsElement: subgroupSummaryEl,
+    relayAuditElement: relayAuditEl,
+    sparklinesElement: sparklinesBoxEl
+  }, observedView, rollingHistory.list());
+  visualizer.setTopologyMode(analysisOptions.groupBy === 'none' ? 'emergent' : 'clustered');
   const chaosOverlay = buildChaosOverlay();
   const chaosP2P = buildChaosP2POverlay(chaosOverlay.topology);
   const p2pPeers = mergePeersForDisplay(observedView.peers, chaosP2P.peers);
@@ -3044,11 +3148,18 @@ const updateObservedHud = () => {
   lastDisplayedPeersById = new Map(peers.map((peer) => [peer.peerId, peer]));
   lastDisplayedEdgesByKey = new Map(edges.map((edge) => [buildEdgeKey(edge.from, edge.to), edge]));
   lastChaosOverlay = { ...chaosOverlay, peerInfo: new Map([...chaosOverlay.peerInfo, ...chaosP2P.peerInfo]), edgeInfo: new Map([...chaosOverlay.edgeInfo, ...chaosP2P.edgeInfo]) };
-  visualizer.updatePeers(peers, localPeerId, edges, []);
+  visualizer.updatePeers(peers, localPeerId, edges, [], {
+    subgroups: analysisOptions.groupBy === 'none' ? [] : observedView.subgroups,
+    gossipEdges: shouldShowP2PTopology() ? observedView.gossipEdges : [],
+    workMeshEdges: shouldShowP2PTopology() ? observedView.workMeshEdges : [],
+    diagnostics: observedView.diagnostics,
+    analysisOptions
+  });
   setStatus([`Status: ${connectionState} · All demos`, 'Shared operational reports; game room traffic stays scoped.']);
   peerListEl.textContent = observedView.peers.length ? observedView.peers.map((peer) => {
     const label = peer.sessionOnly ? 'SESSION ONLY' : peer.inferred ? 'ENDPOINT' : peer.stale ? 'STALE' : peer.role?.toUpperCase() || 'PEER';
-    return `${label} ${formatPeerId(peer.peerId)} · ${peer.application || peer.gameId || 'unknown'}`;
+    const relayTag = peer.relayState?.connected ? ` [${peer.relayState.role}]` : '';
+    return `${label} ${formatPeerId(peer.peerId)} · ${peer.application || peer.gameId || 'unknown'}${relayTag}`;
   }).join('\n') : 'Waiting for reporting peers. Older demo builds may appear only as sessions.';
 };
 
@@ -3104,7 +3215,26 @@ const updateHud = () => {
   lastDisplayedPeersById = new Map(displayPeers.map((peer) => [peer.peerId, peer]));
   lastDisplayedEdgesByKey = new Map(displayEdges.map((edge) => [buildEdgeKey(edge.from, edge.to), edge]));
 
-  visualizer.updatePeers(displayPeers, localPeerId, displayEdges, displayPubsubEdges);
+  const sessionAnalysisOptions = readAnalysisOptions();
+  lastDiagnostics = computeGraphDiagnostics(displayPeers, displayEdges, { relayIds: relayPeerIds });
+  rollingHistory.record(lastDiagnostics);
+  const sessionGossipEdges = [];
+  const seenSessionGossip = new Set();
+  for (const peer of displayPeers) {
+    for (const meshPeerId of peer.gossipMeshPeers || []) {
+      const gk = buildEdgeKey(peer.peerId, meshPeerId);
+      if (seenSessionGossip.has(gk)) continue;
+      seenSessionGossip.add(gk);
+      sessionGossipEdges.push({ from: peer.peerId, to: meshPeerId, layer: 'gossipsub' });
+    }
+  }
+  const sessionWorkEdges = displayEdges.filter((e) => (Number(e.workRate) || Number(e.workMesh?.tasksPerSec) || 0) > 0);
+  visualizer.updatePeers(displayPeers, localPeerId, displayEdges, displayPubsubEdges, {
+    gossipEdges: p2pEnabled ? sessionGossipEdges : [],
+    workMeshEdges: p2pEnabled ? sessionWorkEdges : [],
+    diagnostics: lastDiagnostics,
+    analysisOptions: sessionAnalysisOptions
+  });
 
   const local = localPeerId ? telemetryStore.get(localPeerId) : null;
   if (local) {
@@ -3387,7 +3517,7 @@ const connect = async () => {
       topicPrefix: 'pc',
       useScopedTopics: true,
       enforceTopologyScope: true,
-      allowDiscoveryDialWhenIsolated: true,
+      allowDiscoveryDialWhenIsolated: false,
       topologyMetric: localMetric,
       topologyMetricInitialized: false,
       targetConnections,
@@ -3525,9 +3655,18 @@ const attachDebugHandles = () => {
       attachSessions: Array.from(attachSessions.values()),
       gameId: networkManager?.config?.gameId || gameId,
       view: networkView,
-      filters: { application: applicationFilter?.value || '', role: roleFilter?.value || '' },
+      filters: {
+        application: applicationFilter?.value || '',
+        role: roleFilter?.value || '',
+        groupBy: subgroupBySelect?.value || 'room',
+        subgroup: subgroupFilterSelect?.value || '',
+        colorLens: colorLensSelect?.value || 'role'
+      },
       reports: networkManager?.getNetworkTelemetryService?.()?.list() || [],
       observed: observedView,
+      diagnostics: lastDiagnostics || observedView?.diagnostics || null,
+      subgroups: observedView?.subgroups || [],
+      history: rollingHistory.list(),
       displayedPeers: Array.from(lastDisplayedPeersById.values()),
       displayedEdges: Array.from(lastDisplayedEdgesByKey.values()),
       rtcPath: { ...rtcPathState },
@@ -3539,6 +3678,19 @@ const attachDebugHandles = () => {
         shouldKeepRelay: networkManager._shouldKeepRelayBootstrapConnection?.()
       } : null)
     }),
+    exportAnalysisSnapshot: () => getExportableAnalysisSnapshot(),
+    setGroupBy: (value) => {
+      if (subgroupBySelect) subgroupBySelect.value = value;
+      updateHud();
+    },
+    setSubgroupFilter: (value) => {
+      if (subgroupFilterSelect) subgroupFilterSelect.value = value;
+      updateHud();
+    },
+    setColorLens: (value) => {
+      if (colorLensSelect) colorLensSelect.value = value;
+      updateHud();
+    },
     connect: () => connect(),
     disconnect: () => disconnect(),
     toggleConnection: () => {
@@ -3600,9 +3752,26 @@ const handlePick = (event) => {
     }
     return;
   }
-  if (hit.type === 'edge') {
-    const info = buildEdgeInfo(hit.from, hit.to);
+  if (hit.type === 'edge' || hit.type === 'gossip' || hit.type === 'workmesh') {
+    const info = buildEdgeInfo(hit.from, hit.to, hit.type);
     showInspector(info.title, info.lines);
+    return;
+  }
+  if (hit.type === 'subgroup') {
+    const sg = (observedView?.subgroups || []).find((entry) => entry.id === hit.subgroupId);
+    if (sg) {
+      showInspector(`Subgroup · ${sg.label}`, [
+        `Subgroup ID: ${sg.id}`,
+        `Peers: ${sg.peerCount} (${sg.activeCount} active · ${sg.staleCount} stale)`,
+        `Edges: ${sg.internalEdges} internal · ${sg.crossEdges} cross-group`,
+        `Components: ${sg.componentCount}${sg.isPartitioned ? ' (PARTITIONED)' : ' (connected)'}`,
+        `Bridges: ${sg.bridgeCount}`,
+        `Direct paths: ${sg.directPct}% (${sg.lanEdgeCount} LAN host)`,
+        `On-relay peers: ${sg.relayConnectedCount}`,
+        `Median RTT: ${Number.isFinite(sg.medianRttMs) ? `${sg.medianRttMs}ms` : '--'}`,
+        `WorkMesh: ${sg.totalWorkRate} tasks/s`
+      ]);
+    }
     return;
   }
   if (hit.type === 'pubsub') {
@@ -3696,8 +3865,28 @@ networkViewSelect?.addEventListener('change', () => {
   updateHud();
   syncQueryParams(readUrlInputState());
 });
-for (const control of [applicationFilter, roleFilter]) control?.addEventListener('change', () => {
-  updateHud(); syncQueryParams(readUrlInputState());
+for (const control of [
+  applicationFilter,
+  roleFilter,
+  subgroupBySelect,
+  subgroupFilterSelect,
+  colorLensSelect,
+  layerTransportToggle,
+  layerGossipsubToggle,
+  layerWorkMeshToggle,
+  layerHullsToggle,
+  layerBridgesToggle
+]) {
+  control?.addEventListener('change', () => {
+    if (control === subgroupBySelect && subgroupFilterSelect) {
+      subgroupFilterSelect.value = '';
+    }
+    updateHud();
+    syncQueryParams(readUrlInputState());
+  });
+}
+exportAnalysisBtn?.addEventListener('click', () => {
+  downloadAnalysisSnapshot();
 });
 
 topologyIdInput?.addEventListener('input', () => {

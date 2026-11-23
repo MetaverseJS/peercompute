@@ -1678,6 +1678,12 @@ export class NetworkManager {
       lastRttAt: peer.lastRttAt || null,
       rttMs: Number.isFinite(peer.rttMs) ? peer.rttMs : null,
       ...(this.config.topology === 'throughput' ? { workRate: this.peerWork.get(peer.peerId)?.rate || 0 } : {}),
+      ...(typeof this.workMeshTelemetryProvider === 'function'
+        ? (() => {
+            const wm = this.workMeshTelemetryProvider(peer.peerId);
+            return wm ? { workMesh: wm } : {};
+          })()
+        : {}),
       via: peer.via || null,
       signalingPath: normalizeSignalingPath(peer.signalingPath) || null,
       mediaPath: normalizeMediaPath(peer.mediaPath) || null,
@@ -1714,6 +1720,9 @@ export class NetworkManager {
       metricInitialized: this.metricInitialized,
       isConnected: this.isConnected,
       peerCount: networkStats.peerCount,
+      targetConnections: this.config.targetConnections,
+      maxConnections: this.config.maxConnections,
+      ...(this.config.hostGroupId ? { hostGroupId: this.config.hostGroupId } : {}),
       connections: networkStats.connections,
       lastRxAt: health.lastRxAt,
       lastTxAt: health.lastTxAt,

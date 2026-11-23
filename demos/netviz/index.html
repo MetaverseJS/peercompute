@@ -342,6 +342,48 @@
       color: var(--hot);
     }
 
+    .diag-warn {
+      color: var(--hot) !important;
+      border-left: 2px solid var(--hot);
+      padding-left: 6px;
+    }
+
+    .spark-box {
+      display: grid;
+      gap: 4px;
+      margin-top: 4px;
+    }
+
+    .spark-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      font-size: 0.62rem;
+      color: var(--text-dim);
+    }
+
+    .spark-label {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .spark-svg {
+      flex-shrink: 0;
+      border: 1px solid rgba(0, 255, 106, 0.25);
+      background: rgba(0, 12, 6, 0.65);
+    }
+
+    .analysis-block {
+      font-size: 0.66rem;
+      color: var(--text-dim);
+      white-space: pre-wrap;
+      line-height: 1.45;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
     @media (max-width: 640px) {
       .console-shell {
         left: 12px;
@@ -376,7 +418,19 @@
           <div id="observed-controls">
             <div class="field"><label for="application-filter">Application</label><select id="application-filter"><option value="">All applications</option></select></div>
             <div class="field"><label for="role-filter">Connection</label><select id="role-filter"><option value="">All roles</option><option value="world">World</option><option value="models">Models</option><option value="compute">Compute</option><option value="observer">Observer</option></select></div>
+            <div class="field"><label for="subgroup-by">Group by</label><select id="subgroup-by"><option value="room" selected>App / Room</option><option value="relay">Relay</option><option value="topology">Topology</option><option value="transport">Transport / LAN</option><option value="none">Flat</option></select></div>
+            <div class="field"><label for="subgroup-filter">Subgroup</label><select id="subgroup-filter"><option value="">All subgroups (0)</option></select></div>
+            <div class="field"><label for="color-lens">Color lens</label><select id="color-lens"><option value="role" selected>Role / App</option><option value="transport">Transport / ICE</option><option value="rtt">RTT Heatmap</option><option value="degree">Degree vs Target</option><option value="workmesh">WorkMesh Flow</option><option value="capabilities">Hardware Tier</option></select></div>
             <div id="observed-summary" class="status">Waiting for reports.</div>
+            <div class="group-title">Graph Diagnostics</div>
+            <div id="analysis-diagnostics" class="analysis-block">Waiting for telemetry...</div>
+            <div class="group-title">Subgroups</div>
+            <div id="subgroup-summary" class="analysis-block">No subgroups detected yet.</div>
+            <div class="group-title">Relay Audit</div>
+            <div id="relay-audit" class="analysis-block">No relay telemetry yet.</div>
+            <div class="group-title">Rolling 5m Trends</div>
+            <div id="sparklines-box" class="spark-box">Collecting rolling history...</div>
+            <div class="field"><label for="export-analysis-btn">Snapshot</label><button id="export-analysis-btn" type="button">Export JSON</button></div>
             <div class="group-title">Hosted models</div>
             <div id="hosted-models" class="status">No fresh reports advertise hosted models.</div>
           </div>
@@ -386,8 +440,10 @@
             <label for="topology-select">Topology</label>
             <select id="topology-select">
               <option value="distributed" selected>Distributed</option>
+              <option value="throughput">Throughput</option>
               <option value="hierarchical">Hierarchical</option>
               <option value="emergent">Emergent</option>
+              <option value="static">Static</option>
             </select>
           </div>
           <div class="field">
@@ -459,7 +515,7 @@
           </div>
         </div>
         <div class="control-group">
-          <div class="group-title">Display</div>
+          <div class="group-title">Display &amp; Layers</div>
           <div class="field">
             <label for="show-p2p-topology">Show P2P</label>
             <input id="show-p2p-topology" type="checkbox" checked />
@@ -467,6 +523,26 @@
           <div class="field">
             <label for="show-ip-topology">Show IP topology</label>
             <input id="show-ip-topology" type="checkbox" checked />
+          </div>
+          <div class="field">
+            <label for="layer-transport">Transport layer</label>
+            <input id="layer-transport" type="checkbox" checked />
+          </div>
+          <div class="field">
+            <label for="layer-gossipsub">Gossipsub mesh</label>
+            <input id="layer-gossipsub" type="checkbox" checked />
+          </div>
+          <div class="field">
+            <label for="layer-workmesh">WorkMesh flow</label>
+            <input id="layer-workmesh" type="checkbox" checked />
+          </div>
+          <div class="field">
+            <label for="layer-hulls">Subgroup hulls</label>
+            <input id="layer-hulls" type="checkbox" checked />
+          </div>
+          <div class="field">
+            <label for="layer-bridges">Bridge alerts</label>
+            <input id="layer-bridges" type="checkbox" checked />
           </div>
           <div class="field">
             <label for="hide-ghosts">Hide ghosts</label>
@@ -520,9 +596,14 @@
           <div><span style="color:#89949a">STALE</span> report older than 15 seconds</div>
           <div><span>SESSION ONLY</span> legacy beacon, no operational report</div>
           <div><span>GHOST</span> inferred nodes (no telemetry yet)</div>
-          <div><span class="legend-relay">RELAY</span> relay servers</div>
-          <div><span class="legend-amber">WEBRTC</span> direct peer link (amber)</div>
-          <div><span>RELAY PATH</span> relayed hop + spur (green)</div>
+          <div><span class="legend-relay">RELAY</span> relay servers / keeper halos</div>
+          <div><span style="color:#00ff88">LAN HOST</span> direct same-LAN ICE host pair</div>
+          <div><span class="legend-amber">NAT DIRECT</span> direct WebRTC (srflx/prflx)</div>
+          <div><span style="color:#ff4fb3">TURN RELAY</span> WebRTC over TURN relay</div>
+          <div><span>CIRCUIT</span> libp2p circuit relay hop + spur</div>
+          <div><span style="color:#7aa7ff">GOSSIP MESH</span> active gossipsub mesh edge</div>
+          <div><span style="color:#ffe047">WORKMESH</span> active task-flow link</div>
+          <div><span style="color:#ff3b30">BRIDGE</span> single-point-of-failure cut edge</div>
           <div><span class="legend-pubsub">RELAY LINK</span> relay keepers / pubsub (blue-white)</div>
         </div>
       </div>

@@ -56,23 +56,30 @@ opens a specific scope.
 - Attach session metadata is preserved in the console. The Session Runtime panel renders worker counts, manager task totals, top task families, solver pressure, autoscale state, and warm-delta counts when a demo publishes structured metadata such as Multiscale Ladder's `peercompute.multiscale.netviz-session.v0`.
 
 ## UI Notes
-- Click a node or edge to open an inspector panel with RTT, throughput, and traffic counters.
-- Topology selection sits above rooms; hierarchical view groups hosts/clients in the layout.
+- Click a node or edge to open an inspector panel with RTT, throughput, traffic counters, true ICE path (`lan-host`, `nat-srflx`, `nat-prflx`, `turn-relay`, `circuit-relay`, `direct-ws`, `direct-tcp`), relay retention role/`keepReason`, capability summary, and WorkMesh flow/resets.
+- **Whole-network & Subgroup Analysis** (`All demos` view):
+  - **Subgroup Clustering (`Group by`)**: organize peers into `Room / App`, `Relay`, `Topology`, `Transport / LAN`, or `None` with translucent subgroup hulls, member/link/isolation badges, and non-disruptive subgroup focus (`Subgroup` selector or clicking a hull).
+  - **Multi-Layer Overlays**: toggle **Transport** (colored by true ICE path), **Gossipsub** (control mesh edges), **WorkMesh** (active work-flow edges), **Hulls** (subgroup enclosures), and **Bridges** (Tarjan articulation/bridge cut edges highlighted in red).
+  - **Color-by-Lens**: recolor nodes by `Role`, `Transport` (ICE path / direct vs relay), `RTT`, `Degree`, `WorkMesh` flow, or `Capabilities` (GPU/WASM/cores).
+  - **Graph Diagnostics & Relay-Off Resilience**: live connected-component counts with relays vs with relays removed (instant warning if dropping relays partitions the mesh), isolated peer count, bridge/cut-vertex counts, ICE path mix, median/p95 RTT, and per-relay fan-in & `keepReason` breakdown in the **Relay Audit** card.
+  - **Rolling 5-Minute Sparklines & JSON Export**: inline SVG sparklines tracking Peer count, Direct %, Relays, Median RTT, Rewires/min, and WorkMesh rate, plus **Export JSON** (`peercompute.netviz-analysis.v1`) for offline comparison.
+  - **Passive Observer Hygiene**: NetViz sets `allowDiscoveryDialWhenIsolated: false` so observing an active mesh never mutates peer connectivity.
+- Topology selection sits above rooms and supports `distributed`, `hierarchical`, `throughput`, and `static` modes.
 - Use "Attach demo" to target a running demo without manually typing topology/room values (connect NetViz first so it can discover session beacons).
 - The Session Runtime panel follows the selected/latest attach session and shows runtime metadata without requiring console access.
 - In selected-session distributed topology, drag your local cube to move its metric position and trigger neighbor recomputation.
 - Use the "Hide ghosts" toggle to hide inferred nodes that have no telemetry yet.
 - Orbit controls are enabled for pan/zoom; optional auto-rotate can be toggled on.
-- NURBS links thicken with higher bandwidth and animate pulses when traffic is flowing.
-- Local-node inspector now shows `RTC path evidence` (selected candidate-pair summary) so direct ICE success can be detected even when libp2p addresses remain relay-scoped.
-- Edge transport rendering now also aggregates peer telemetry `via` from both edge directions, so remote direct links do not depend solely on the local browser's current connection table.
-- Edge colors reflect transport truth per link (`webrtc` direct, `relay-webrtc`, `relay`, `unknown`) and avoid coercing unknown or relay-scoped states into direct.
+- NURBS links thicken with higher bandwidth, cache tube geometries across snapshots to avoid per-tick disposal churn, and animate pulses when traffic is flowing.
+- Local-node inspector shows `RTC path evidence` (selected candidate-pair summary) and per-edge ICE path classification so LAN-host, STUN, TURN, and circuit-relay links are never conflated.
+- Edge aggregation merges telemetry from both endpoints (`observedNetwork.js`) so neither side's ICE path, RTT, WorkMesh stats, or connection counts are discarded.
 - Add `?chaosApi=/chaos-api` (or `?chaosApi=http://127.0.0.1:8866`) to show live chaos-lab topology + scenario behavior in the NetViz console and 3D graph overlay.
 - Add `&autoConnect=0` to watch chaos-lab without immediately dialing relay bootstrap endpoints.
 
 ## Tests
 ```bash
-node --test demos/netviz/tests/observedNetwork.test.js demos/netviz/tests/relayOverlay.test.js
+node --test demos/netviz/tests/observedNetwork.test.js demos/netviz/tests/networkAnalysis.test.js demos/netviz/tests/relayOverlay.test.js
+CHROME_BIN=/usr/bin/google-chrome node demos/netviz/tests/analysisBrowserCheck.mjs
 npm --prefix demos/netviz run build
 env NETVIZ_SMOKE_URL=https://localhost:4173/netviz/?render=off npm --prefix demos/netviz run test:session
 ```

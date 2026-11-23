@@ -57,11 +57,28 @@ export class WorkMeshService {
     this.closed = false;
     this.bytesSent = 0;
     this.streamResets = 0;
+    this.peerStreamResets = new Map();
     this.mesh = new WorkMesh({
       nodeId: manager.peerId, config, execute,
       send: (peerId, message) => this._send(peerId, message),
       onWork: (peerId, units) => manager.recordPeerWork?.(peerId, units)
     });
+    this._telemetryProvider = (peerId) => this.getPeerTelemetry(peerId);
+  }
+
+  getPeerTelemetry(peerId) {
+    if (!peerId || this.closed || !this.peers.has(peerId)) return null;
+    const rate = this.manager.peerWork?.get?.(peerId)?.rate || 0;
+    const linkState = this.mesh?.links?.get?.(peerId) || null;
+    const inFlight = linkState?.inFlight?.size || 0;
+    const linkCost = Number.isFinite(linkState?.cost) ? linkState.cost : 0;
+    const streamResets = this.peerStreamResets.get(peerId) || 0;
+    return {
+      tasksPerSec: Number(rate.toFixed(3)),
+      linkCost: Number(linkCost.toFixed(3)),
+      inFlight,
+      streamResets
+    };
   }
 
   async start() {
@@ -72,6 +89,7 @@ export class WorkMeshService {
     }, { maxInboundStreams: 64, maxOutboundStreams: 64 });
     // The topology closes a link by asking for it here first.
     this.manager.topologyLinkReleasers?.add(this.releaseLink);
+    this.manager.workMeshTelemetryProvider = this._telemetryProvider;
     this.timer = setInterval(() => this.tick(), this.tickMs);
     return this;
   }
@@ -100,6 +118,9 @@ export class WorkMeshService {
     this.closed = true;
     clearInterval(this.timer);
     this.manager.topologyLinkReleasers?.delete(this.releaseLink);
+    if (this.manager.workMeshTelemetryProvider === this._telemetryProvider) {
+      this.manager.workMeshTelemetryProvider = null;
+    }
     for (const peerId of [...this.peers.keys()]) this._drop(peerId);
     for (const channel of this.inbound.keys()) channel.abort(new Error('Work mesh is closed'));
     this.mesh.destroy();
@@ -148,6 +169,7 @@ export class WorkMeshService {
     peer.out = null;
     peer.outbox = [];
     this.streamResets += 1;
+    this.peerStreamResets.set(peerId, (this.peerStreamResets.get(peerId) || 0) + 1);
     this.mesh.linkDown(peerId);
     this.mesh.linkUp(peerId);
   }

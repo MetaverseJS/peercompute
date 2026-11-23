@@ -41,6 +41,66 @@ test('operational whitelist removes private and executable fields and bounds nes
   assert.equal(value.peers[0].metric, undefined);
 });
 
+test('operational whitelist preserves safe ICE path, relayState, gossipMeshPeers, WorkMesh, and coarse capabilities while rejecting bad values', () => {
+  const rich = {
+    ...report(),
+    targetConnections: 4,
+    maxConnections: 6,
+    rewiresPerMin: 2,
+    dialFailures: 1,
+    hostGroupId: 'lab-pi-subnet',
+    relayState: {
+      connected: true,
+      role: 'keeper',
+      keepReason: 'retention-keeper',
+      relayPeerId: 'relay-1',
+      gossipMeshCount: 3,
+      directMeshPeerCount: 2,
+      minDirectMeshPeers: 2,
+      secretField: 'SECRET'
+    },
+    gossipMeshPeers: ['peer-b', 'peer-a', 'peer-b', 'peer-c'],
+    capabilities: {
+      compute: {
+        resourceTier: 'workstation',
+        gpuAvailable: true,
+        gpuHardwareVerified: true,
+        cpuCores: 16,
+        performanceClass: 'high',
+        gpuVendor: 'SECRET'
+      }
+    },
+    peers: [{
+      peerId: 'peer-b',
+      via: 'webrtc',
+      mediaPath: 'direct',
+      icePath: 'lan-host',
+      iceProtocol: 'udp',
+      candidatePairRttMs: 2,
+      direction: 'outbound',
+      connectionCount: 1,
+      duplicateConnections: false,
+      workRate: 8.5,
+      workMesh: { tasksPerSec: 8.5, linkCost: 3.1, inFlight: 2, streamResets: 0, secret: 'SECRET' }
+    }]
+  };
+  const normalized = normalizeNetworkTelemetry(rich);
+  assert.equal(normalized.peers[0].icePath, 'lan-host');
+  assert.equal(normalized.peers[0].iceProtocol, 'udp');
+  assert.equal(normalized.peers[0].candidatePairRttMs, 2);
+  assert.equal(normalized.peers[0].direction, 'outbound');
+  assert.equal(normalized.peers[0].workMesh.tasksPerSec, 8.5);
+  assert.equal(normalized.relayState.role, 'keeper');
+  assert.equal(normalized.relayState.keepReason, 'retention-keeper');
+  assert.deepEqual(normalized.gossipMeshPeers, ['peer-b', 'peer-c']);
+  assert.equal(normalized.capabilities.resourceTier, 'workstation');
+  assert.equal(normalized.capabilities.cpuCores, 16);
+  assert.equal(normalized.hostGroupId, 'lab-pi-subnet');
+  assert.equal(normalized.rewiresPerMin, 2);
+  assert.equal(normalized.dialFailures, 1);
+  assert.ok(!JSON.stringify(normalized).includes('SECRET'));
+});
+
 test('signed sender binding, schema and byte admission reject spoofing without updating records', t => {
   const { service } = fixture(t);
   assert.equal(service.handlePubsubMessage(message()), true);

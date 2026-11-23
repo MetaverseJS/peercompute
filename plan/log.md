@@ -65161,3 +65161,32 @@ Files touched (Slice 1):
 - `peercompute/src/relay/server.js`
 - `peercompute/tests/unit/networkManager.scalingFixes.test.js`
 - `plan/branch/network-scaling-netviz.md`, `plan/plan.md`, `plan/tests.md`, `plan/log.md`
+
+
+## 2026-11-22 16:03:00 AKST — Slice 2: NetViz Whole-Network & Subgroup Analysis Tool
+Prompt time/date: `2026-11-22 15:28:44 AKST` (continued `2026-11-22 16:02:53 AKST`).
+Goal: Implement Slice 2 of `plan/branch/network-scaling-netviz.md` — extend operational telemetry safely and upgrade `demos/netviz/` into a whole-network & subgroup analysis tool without breaking existing operational telemetry or demos.
+
+Concrete actions attempted & completed:
+1. Extended `peercompute/src/peercompute/networkManager/NetworkTelemetryService.js`, `NetworkManager.js`, `NodeKernel.js`, and `WorkMeshService.js`:
+   - Added backward-compatible optional fields to the strict operational whitelist: per-edge `icePath`, `iceProtocol`, `candidatePairRttMs`, `direction`, `connectionCount`, `duplicateConnections`, `workRate`, `workMesh`; per-node `relayState`, `gossipMeshPeers`, `rewiresPerMin`, `dialFailures`, `targetConnections`, `maxConnections`, `capabilities` (coarse `gpuTier`, `webgpu`, `wasmSimd`, `cores`, `deviceMemoryGB`, `bench`), and `hostGroupId` — while keeping raw addresses, prompts, files, and spatial positions stripped.
+   - Added per-peer `streamResets` tracking and `getPeerTelemetry(peerId)` to `WorkMeshService.js`, automatically registering/clearing `manager.workMeshTelemetryProvider` on `start()`/`stop()`.
+   - Wired `capabilities: this._buildPresenceCapabilities()` into `NodeKernel.js`'s telemetry provider.
+2. Created `demos/netviz/src/networkAnalysis.js` and upgraded `demos/netviz/src/{observedNetwork.js,observedNetworkUi.js,visualizer.js,main.js}` + `demos/netviz/index.html` + `demos/netviz/README.md`:
+   - Fixed `observedNetwork.js` edge-merge bug that dropped the second endpoint's transport/ICE/RTT/connectionCount/WorkMesh data; emits `gossipEdges`, `workMeshEdges`, `subgroups`, and `diagnostics`, with `groupBy` (`room`, `relay`, `topology`, `transport`, `none`) and non-disruptive `subgroup` focus filtering.
+   - Added `computeGraphDiagnostics` (connected components with & without relays for **Relay-Off Resilience**, isolated peers, Tarjan bridges & cut vertices, ICE path mix, median/p95 RTT, per-relay fan-in & `keepReason` audit, WorkMesh totals), `buildSubgroupClusters`, `RollingMetricsHistory` (5m window), inline SVG `buildSparklinePath`, and `peercompute.netviz-analysis.v1` JSON snapshot export.
+   - Upgraded `visualizer.js` with `clustered` subgroup rings + clickable translucent hull discs/rings, `throughput`/`static` layouts, true ICE-path edge colors, toggleable `transport`/`gossipsub`/`workmesh`/`hulls`/`bridges` layers, 6 `colorLens` modes (`role`, `transport`, `rtt`, `degree`, `workmesh`, `capabilities`), Relay Keeper halo rings, and geometry-signature caching to stop per-500ms `TubeGeometry` dispose/rebuild churn.
+   - Fixed `allowDiscoveryDialWhenIsolated: false` in `demos/netviz/src/main.js`, added `throughput`/`static` to topology selector, added retro-terminal Analysis Controls / Diagnostics / Subgroups / Relay Audit / Sparklines / Export JSON UI, and exposed `diagnostics`, `subgroups`, `history`, `exportAnalysisSnapshot()`, `setGroupBy()`, `setSubgroupFilter()`, `setColorLens()` on `window.__NETVIZ__`.
+3. Added `demos/netviz/tests/networkAnalysis.test.js` (4 tests), `demos/netviz/tests/analysisBrowserCheck.mjs` (headless Chromium production-build E2E check), and expanded `peercompute/tests/unit/networkTelemetry.test.js`.
+
+Commands run & test results (Slice 2):
+- `node --test peercompute/tests/unit/networkTelemetry*.test.js peercompute/tests/unit/nodeKernelTelemetry.test.js peercompute/tests/unit/workMesh*.test.js demos/netviz/tests/observedNetwork.test.js demos/netviz/tests/networkAnalysis.test.js demos/netviz/tests/relayOverlay.test.js demos/tests/model-telemetry.test.js` — **48/48 PASS**.
+- `CHROME_BIN=/usr/bin/google-chrome node demos/netviz/tests/analysisBrowserCheck.mjs` — **PASS** (`nodeCount: 4`, 2 subgroups, 3 bridges, 3 gossipEdges, 2 workMeshEdges, 6 live SVG sparklines, all 5 `groupBy` and 6 `colorLens` modes, subgroup focus, JSON export, mobile `390×844` zero overflow, 0 page errors, `allowDiscoveryDialWhenIsolated === false`).
+
+Files touched (Slice 2):
+- `peercompute/src/peercompute/networkManager/NetworkTelemetryService.js`, `NetworkManager.js`, `WorkMeshService.js`
+- `peercompute/src/peercompute/nodeKernel/NodeKernel.js`
+- `peercompute/tests/unit/networkTelemetry.test.js`
+- `demos/netviz/index.html`, `demos/netviz/README.md`, `demos/netviz/src/{main.js,observedNetwork.js,observedNetworkUi.js,visualizer.js,networkAnalysis.js}`
+- `demos/netviz/tests/{networkAnalysis.test.js,analysisBrowserCheck.mjs}`
+- `plan/plan.md`, `plan/tests.md`, `plan/log.md`
