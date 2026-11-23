@@ -65362,3 +65362,26 @@ Files touched:
 - `demos/*/public/relay-config.json` (17 demos)
 - `docs/` (full production GitHub Pages build & `docs/release-manifest.json`, committed in `dc509f73`)
 - `plan/{plan.md,tests.md,log.md}`
+
+
+## 2026-11-22 23:06:00 AKST — Live `secretworkshop.net` Go Relay Cutover & Post-Restart End-to-End Production Verification
+Prompt time/date: `2026-11-22 23:01:47 AKST` (`2026-11-22T23:01:47-09:00`).
+Prompt (credential redacted): user provided `sudo` authorization and asked to restart `peercompute-relay.service` on `cos@secretworkshop.net` and verify live.
+
+Concrete actions & verification results:
+1. **Live Go Relay Cutover on `secretworkshop.net`**:
+   - Passed the user-provided credential strictly over stdin (`sudo -S -p ""`) without storing or echoing it anywhere to execute `systemctl restart peercompute-relay.service`.
+   - Verified `peercompute-relay.service`, `peercompute-coturn.service`, `peercompute-root.service`, and `nginx.service` all `active`, `MainPID=843976`, `ExecMainStartTimestamp=Mon 2026-11-23 08:02:11 UTC`.
+   - Verified fresh relay logs: loaded pinned identity `12D3KooWN8PoXAkYjbzTD3SKJGP97peWDE9jFeqqS3ipJsgwDozs`, `Circuit limits: duration=3600s data=64MB/dir`, `Gossipsub params: D=8 Dlo=5 Dhi=32 Dout=1 Dlazy=6 scoring=true`, `Peer directory enabled (TTL: 300000ms)`, `/dns4` + `/dns6` advertised WSS addresses, wrote `/home/cos/projects/peercompute/config/relay-config.json`, and `peercompute-root.service` (`12D3KooWKVQa4CC8BSPFY7o6yot7T2vGymhbn3BWMPPJTXzXGccG`) reconnected automatically within 5s.
+   - Verified `curl -sS https://secretworkshop.net/peercompute/config/relay-config.json` serves `"Dhi": 32`, `"IPColocationFactorWeight": 0`, `"pubsubType": "gossipsub"`, `/dns4` + `/dns6`, and STUN/TURN.
+2. **Post-Restart Live Production End-to-End Verification (`https://metaversejs.github.io/peercompute/` ↔ Restarted `secretworkshop.net` Go Relay)**:
+   - Re-ran all **12 networked live GitHub Pages routes** (`demos/tests/pages-runtime.mjs`):
+     - `inference`, `vibeslopdb`, `cubechat`, `earth`, `netviz`, `sneakywoods`, `daddygo`, `hyperborea`, `hyperborea-cb`: **9/9 PASS** (`0` console/page/HTTP/WebSocket errors, all authenticated SecretWorkshop relay & cold/warm COOP/COEP isolation checks green).
+     - `multiscale`, `motorcycle`, `schrodinger` (native Vulkan WebGPU): **3/3 PASS** (`0` errors, all authenticated SecretWorkshop relay checks green).
+   - Ran live **2-browser real P2P** verification over the restarted `secretworkshop.net` Go relay:
+     - **CubeChat (`cc-prod-mwszazxx`)**: **PASS** — both browsers established direct WebRTC A/V media (`remoteStreams: 1` each), synced `moon` world theme, and synced consolidated single-`NodeKernel` `RoomDirectory` A→B (`dirSynced: true`, `0` page errors).
+     - **NetViz (`nv-prod-*`, `?profile=lan-first&hostGroupId=prod-verify`)**: **PASS** — both browsers connected to `secretworkshop.net`, discovered each other, established direct peer connections, and rendered live Relay Audit (`On-relay: 4 · keepers: 0 · off-relay: 0 / Reasons: bootstrap-hold=4`, `0` page errors).
+   - Cleaned up all temporary `/tmp/peercompute-pages-*` report folders.
+
+Files touched:
+- `plan/{plan.md,tests.md,log.md}` (credential strictly redacted)
