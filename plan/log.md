@@ -65520,3 +65520,20 @@ Commands run & verified results (Node `v24.18.0`, Chrome `/usr/bin/google-chrome
 
 Files touched:
 - `plan/tests.md`, `plan/log.md` (zero source changes required).
+
+
+## 2026-11-23 12:02:15 AKST — Fast-Forward Merged `feat/ulg-scale-ladder-extensions` to `main` & Pushed to `origin`
+Prompt time/date: `2026-11-23 12:01:42 AKST` (`2026-11-23T12:01:42-09:00`).
+Prompt: *"go ahead and merge to main and push to origin"*
+
+Concrete actions taken:
+- Fetched `origin`, verified `main` and `origin/main` aligned at `47b0cbfd` with zero conflicts.
+- Fast-forward merged `feat/ulg-scale-ladder-extensions` (`fd08ff5a` + `61335f55`) into `main` (`git checkout main && git merge --ff-only feat/ulg-scale-ladder-extensions`).
+- Updated `plan/plan.md` and `plan/log.md` on `main`, committed cleanly, and pushed `main` to `origin/main` while leaving pre-existing conjecture/patch WIP files (`meshRun.js`, `2026-11-20-calibration.json`, `scaleCalibrated.mjs`, `scripts/gallery-pointer.patch`) and `plan/todo/` unstaged and untouched.
+
+Commands run:
+- `git fetch origin && git checkout main && git merge --ff-only feat/ulg-scale-ladder-extensions`
+- `git add plan/plan.md plan/log.md && git commit && git push origin main`
+
+Files touched:
+- `plan/plan.md`, `plan/log.md`.
