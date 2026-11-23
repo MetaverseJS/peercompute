@@ -1,5 +1,28 @@
 ## PeerCompute Test Strategy
 
+### NetViz root visibility, dual-role subgroup clarity & CubeChat model discovery / dial-churn fixes (`main` `62484e70`) — November 23
+
+- **Focused unit & integration suites**:
+  - `node --test demos/netviz/tests/*.test.js peercompute/tests/unit/networkManager.webrtc.test.js peercompute/tests/unit/networkManager.scalingFixes.test.js peercompute/tests/unit/networkManager.slice3.test.js peercompute/tests/unit/networkManager.slice4.test.js peercompute/tests/unit/networkManager.inferenceRecovery.test.js peercompute/tests/unit/peerInferenceNetwork.test.js peercompute/tests/unit/peerInferenceRecovery.test.js peercompute/tests/unit/modelInference.test.js` — **208/208 PASS**.
+  - New regression coverage added:
+    - `demos/netviz/tests/observedNetwork.test.js`: root directory discovery (`model-evidence.json` derivation via `resolveRootDirectoryUrl`), first-class root node rendering + relay link + peer edge merging + `root` role filter + stale expiry.
+    - `demos/netviz/tests/networkAnalysis.test.js`: shared global `default-room` model-network peers (`inference` + `cubechat`) coalesce into one `models / default-room` subgroup with `appCounts` breakdown (`{ inference: 1, cubechat: 1 }`) separate from `cubechat / global`, plus clarified `describeObservedPeer()` role description.
+    - `peercompute/tests/unit/networkManager.webrtc.test.js`: skipping bare `/webrtc/p2p/<peer>` placeholders when `relay-webrtc` is available or already open (`dialFailureCount === 0`), clearing stale dial backoff/throttle on `_handleRelayAssistReady`, and rescheduling `_maybePruneDuplicateConnections` when a duplicate connection is transiently busy.
+    - `peercompute/tests/unit/peerInferenceRecovery.test.js`: `PeerInferenceService.refresh()` pacing disconnected peers to `PeerConnectionRecovery.maxConcurrent` so queued hosts behind unreachable peers are still discovered.
+    - `peercompute/tests/unit/modelInference.test.js`: `loadInferenceRelayConfig()` defaults `maxConnections: 16, targetConnections: 8, maxDialPeers: 16`.
+  - `npm run test:network-telemetry` — **23/23 PASS**.
+  - `npm run test:peer-inference` — **205/205 PASS**.
+  - `npm run test:inference` — **109/109 PASS**.
+- **Headless Chromium UI & runtime suites**:
+  - `CHROME_BIN=/usr/bin/google-chrome node demos/netviz/tests/analysisBrowserCheck.mjs` — **PASS** (including `#analysis-panel` visible in Session mode, `#relay-config-url`, `Root` role filter, live `#throughput-profile` / `#host-group-id` updates, snapshot `relayHealth`/`directUnicastPeers`, 0 page errors).
+  - `CHROME_BIN=/usr/bin/google-chrome node --test demos/tests/world-agent-host.test.js demos/tests/cubechat-native-ui.test.js` — **115/115 PASS**.
+- **Full GitHub Pages release & live production verification (`62484e70` at `https://metaversejs.github.io/peercompute/` ↔ `secretworkshop.net`)**:
+  - `bash scripts/build-all.sh` — **PASS** (`3,086` active + `246` retained assets, `717,644,587` bytes < 1 GB).
+  - Static Pages release/port/guide/isolation/shared-runtime gates (`demo-ports`, `demo-release`, `gallery-guides`, `console-navigation`, `pagesReleaseAssets`, `pagesSharedRuntime`, `pagesIsolation`) — **51/51 PASS**.
+  - Live `PAGES_ROUTES="netviz,cubechat,inference,earth,vibeslopdb" node demos/tests/pages-runtime.mjs` — **5/5 PASS** (authenticated SecretWorkshop relay + cold/warm COOP/COEP isolation).
+  - Live headless Chromium NetViz (`?view=all&autoConnect=1`) — **PASS**: discovered live root node `12D3KooWKVQa4CC8BSPFY7o6yot7T2vGymhbn3BWMPPJTXzXGccG` linked to `12D3KooWN8PoXAkYjbzTD3SKJGP97peWDE9jFeqqS3ipJsgwDozs`, grouped live `cubechat` + `inference` model peers into one `models / default-room` subgroup (`appCounts: { cubechat: 1, inference: 1 }`), zero duplicate `cubechat / default-room` subgroup, `duplicateEdgeCount: 0`, `#analysis-panel` visible in Session mode, `0` page errors.
+  - Live headless Chromium CubeChat (`https://metaversejs.github.io/peercompute/cubechat/`) — **PASS**: auto-discovered live `Qwen3.5 2B Vision (q4)` via background `refreshModelPeers()` in `5.05s` (`stateBeforeClick: "healthy"` without opening popup), and retained `Healthy` + `Qwen3.5 2B Vision (q4)` across `22s` with popover closed (`0` page errors).
+
 ### Production GitHub Pages release & `secretworkshop.net` verification (`main` `dc509f73`) — November 22
 
 - **Full GitHub Pages build (`bash scripts/build-all.sh`)**: **PASS** (`3,086` active + `243` retained hashed assets, `717,247,256` bytes < `1,000,000,000` byte limit, verified against `docs/release-manifest.json`; `config/relay.json` + all 17 `relay-config.json` files updated to `gossipsub.Dhi = 32`).

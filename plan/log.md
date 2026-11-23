@@ -65385,3 +65385,50 @@ Concrete actions & verification results:
 
 Files touched:
 - `plan/{plan.md,tests.md,log.md}` (credential strictly redacted)
+
+
+## 2026-11-23 00:51:00 AKST — NetViz Slices 1–4 + Root Node Visibility, Unified Model-Subgroup Clarity & CubeChat Model-Discovery / Dial-Churn Fixes (`62484e70`)
+Prompt times/dates:
+- `2026-11-23 00:04:49 AKST` (`2026-11-23T00:04:49-09:00`): *"does the netviz demo need updating now that you have fixed the networking? if so go ahead and update and then publish to gh pages"*
+- `2026-11-23 00:09:38 AKST` (`2026-11-23T00:09:38-09:00`): *"the root node should also be shown here right?"*
+- `2026-11-23 00:15:37 AKST` (`2026-11-23T00:15:37-09:00`, with live NetViz screenshot): *"it's also looking like netviz shows duplicate peers. there appears to be two sets of cubechat peers in the nevtiz screenshot but really it's just two clients connected to wone another / it's also looking like cubechat clients don't always see available inference models on the network or they get lost."*
+
+Concrete root causes diagnosed, actions taken & solutions:
+1. **NetViz Networking Feature Gaps & Persistent Root Node Visibility (`demos/netviz/`)**:
+   - Exposed `#analysis-panel` (Color Lens, Graph Diagnostics, Relay Audit with multi-relay `[LAN]`/`[WAN]` failover health and active `/peercompute/direct/1.0.0` unicast stream count, 5m Sparklines, and JSON Export) in both `All demos` and `Selected session` views; added `#relay-config-url` for LAN/Pi relay switching, live `#throughput-profile` / `#host-group-id` updates without disconnecting, and full Slice 1–4 edge/node/status metadata (`icePath`, `iceProtocol`, `candidatePairRttMs`, `directUnicast`, `relayHealth`, `rootNodes`).
+   - Added opt-in root node discovery (started inside `connect()`, 30s poll) via `resolveRootDirectoryUrl()` / `loadRootDirectory()` in `demos/netviz/src/relayConfig.js` reading the relay's sibling `model-evidence.json` descriptor (`peercompute.model-evidence-directory.v1`, `?rootDirectoryUrl=` override). Integrated root nodes in `demos/netviz/src/observedNetwork.js` (`isRoot: true`, `role: 'root'`, `keepReason: 'root-service'`, linked to attached relay(s), merged cleanly with peer edges, stale on expiry), rendered as magenta octahedrons (`#ff4fb3`, scale `1.35`) in `visualizer.js` with `Root` role filter and `ROOT` peer-list badge.
+2. **NetViz "Duplicate CubeChat Peers" Visual & Subgroup Confusion**:
+   - Diagnosed from the user's screenshot (`INFERENCE / DEFAULT-ROOM` 7 peers, `CUBECHAT / DEFAULT-ROOM` 2 peers with 14 cross-edges, `CUBECHAT / GLOBAL` 2 peers): each CubeChat tab opens two distinct libp2p identities — a `world` peer (`cubechat / global`) and a `models` peer joined to the shared global model mesh (`default-game / default-room`). Splitting the single shared model mesh by `application` produced two `CUBECHAT` rings, and `visualizer.js` gave both `models` and `world` cubes the same amber emissive (`0x2a1a00`), washing cyan `#00ffd4` toward green.
+   - Updated `demos/netviz/src/networkAnalysis.js` to coalesce shared global `role === 'models'` peers (`default-game` / `peercompute-models`) into a single `models / default-room` subgroup with `appCounts` (`apps: inference×N, cubechat×M` shown in `observedNetworkUi.js`), clarified `describeObservedPeer()` for non-inference model clients, gave `role === 'models'` distinct electric-cyan (`#00d4ff`, emissive `0x002d42`) 6-sided hex pillars (`CylinderGeometry`) vs green (`#00ff6a`, emissive `0x0a2e16`) `world` cubes, labeled relays `RELAY` in the peer list, and updated `demos/netviz/index.html` and `demos/netviz/README.md`.
+3. **CubeChat Missing/Lost Inference Models + Live Screenshot `192 DIAL FAILS` & `DUPES: 9`**:
+   - **Model-network `maxConnections` bottleneck (`demos/inference/src/{relayConfig,runtime}.js`)**: neither `loadInferenceRelayConfig()` nor `runtime.connect()` set connection limits, inheriting `NetworkManager`'s default `maxConnections: 4, targetConnections: 3, maxDialPeers: 8`. On a 9-peer model mesh (7 inference + 2 CubeChat) with 1 hosting peer, CubeChat filled its 4 slots with non-hosting peers and both `PeerConnectionRecovery.recover()` (`!_hasAvailableLogicalPeerSlot`) and `_maybeDialPeer()` refused to dial the host (`ERR_INFERENCE_UNREACHABLE`). Raised defaults to `maxConnections: 16, targetConnections: 8, maxDialPeers: 16`.
+   - **Recovery concurrency thundering herd & short TTL (`PeerInferenceService.js`, `protocol.js`)**: `PeerInferenceService.refresh()` fired `Promise.allSettled` across all peers at once against `PeerConnectionRecovery.maxConcurrent = 2`, causing peers #3..N to immediately fail with `'Connection recovery is busy'`. Refactored `refresh()` to prioritize and query already-connected peers in parallel while pacing disconnected peers to `maxConcurrent`, and raised `PEER_INFERENCE_LIMITS.recordTtlMs` from `15000 ms` to `30000 ms`.
+   - **No background model refresh in CubeChat (`demos/shared/agents/WorldAgentHost.js`)**: unlike standalone `agentPanel.js` (10s timer), CubeChat only called `runtime.refreshPeers()` while the Network Status popover or Models modal was open, causing cached remote models to expire after 15s and disappear from both the HUD badge and `getActionCapabilities()`. Added non-overlapping background `refreshModelPeers()` (10s cadence while `runtime.networkReady`, immediate on connect, debounced 1.5s on model `peer:connect`, cleanly unwired in `dispose()`).
+   - **Browser bare-`/webrtc` dial churn & stuck duplicate pruning (`NetworkManager.js`)**: initiators of browser WebRTC links (`remoteAddr = .../p2p-circuit/webrtc/p2p/...`) had `isTrulyDirectAddr === false` and repeatedly attempted to dial undialable bare `/webrtc/p2p/<peer>` placeholders from presence/peerStore, generating ~192 dial failures and persistent dial backoffs that also blocked inference discovery; additionally `_maybePruneDuplicateConnections()` did not reschedule when `_retireIdleConnection()` returned `false` on a momentarily busy stream (`dupes: 9`). Stopped `_maybeDialPeer()` from re-dialing already-open `relay-webrtc` connections, filtered bare `/webrtc` placeholders behind `relay-webrtc` / concrete direct targets, cleared stale backoff/throttle in `_handleRelayAssistReady()`, and rescheduled `_maybePruneDuplicateConnections()` (`2000 ms`) when busy.
+
+Files touched:
+- `peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `peercompute/src/peercompute/networkManager/inference/{PeerInferenceService.js,protocol.js}`
+- `demos/inference/src/{relayConfig.js,runtime.js}`
+- `demos/shared/agents/WorldAgentHost.js`
+- `demos/netviz/{index.html,README.md}`
+- `demos/netviz/src/{main.js,networkAnalysis.js,observedNetwork.js,observedNetworkUi.js,relayConfig.js,visualizer.js}`
+- `demos/netviz/tests/{observedNetwork.test.js,networkAnalysis.test.js,analysisBrowserCheck.mjs}`
+- `peercompute/tests/unit/{networkManager.webrtc.test.js,peerInferenceRecovery.test.js,modelInference.test.js}`
+- `docs/` (full GitHub Pages release build committed in `62484e70`)
+- `plan/{plan.md,tests.md,log.md}`
+
+Commands run & verification results:
+- Focused unit/integration suite (`demos/netviz/tests/*.test.js` + `networkManager.{webrtc,scalingFixes,slice3,slice4,inferenceRecovery}.test.js` + `peerInference{Network,Recovery}.test.js` + `modelInference.test.js`): **208/208 PASS** (after fixing our initial new busy-duplicate test fixture where only 1 of 2 connections had an active stream so `_maybePruneDuplicateConnections` cleanly retired the idle one instead of rescheduling).
+- `npm run test:network-telemetry`: **23/23 PASS**.
+- `npm run test:peer-inference`: **205/205 PASS**.
+- `npm run test:inference`: **109/109 PASS**.
+- `CHROME_BIN=/usr/bin/google-chrome node demos/netviz/tests/analysisBrowserCheck.mjs`: **PASS**.
+- `CHROME_BIN=/usr/bin/google-chrome node --test demos/tests/world-agent-host.test.js demos/tests/cubechat-native-ui.test.js`: **115/115 PASS**.
+- `bash scripts/build-all.sh`: **PASS** (`3,086` active + `246` retained files, `717,644,587` bytes < 1 GB).
+- Static Pages release/port/guide/isolation/shared-runtime gates: **51/51 PASS**.
+- Committed & pushed `62484e70` to `origin/main` (leaving the 4 pre-existing conjecture/patch WIP files and `plan/todo/` untouched); GitHub Actions `pages-build-deployment` (`45149241559`) succeeded.
+- Live GitHub Pages verification (`https://metaversejs.github.io/peercompute/` ↔ `secretworkshop.net`):
+  - `PAGES_ROUTES="netviz,cubechat,inference,earth,vibeslopdb" node demos/tests/pages-runtime.mjs`: **5/5 PASS**.
+  - Live headless Chromium NetViz (`?view=all&autoConnect=1`): **PASS** — displayed live root node `12D3KooWKVQa4CC8BSPFY7o6yot7T2vGymhbn3BWMPPJTXzXGccG` linked to relay `12D3KooWN8PoXAkYjbzTD3SKJGP97peWDE9jFeqqS3ipJsgwDozs`, grouped live `cubechat` + `inference` model peers into one `models / default-room` subgroup (`appCounts: { cubechat: 1, inference: 1 }`), zero duplicate `cubechat / default-room` subgroup, `duplicateEdgeCount: 0`, `#analysis-panel` visible in Session mode, `0` page errors.
+  - Live headless Chromium CubeChat (`https://metaversejs.github.io/peercompute/cubechat/`): **PASS** — auto-discovered live `Qwen3.5 2B Vision (q4)` via background refresh in `5.05s` (`stateBeforeClick: "healthy"` without clicking popover) and retained `Healthy` + `Qwen3.5 2B Vision (q4)` after `22s` with popover closed (`0` page errors). Note: pre-existing un-refreshed browser tabs still running older builds on the network will continue reporting older dial-failure counts until refreshed.
