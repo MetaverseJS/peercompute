@@ -222,3 +222,56 @@ test('RollingMetricsHistory, sparklines, and JSON snapshot export are determinis
   assert.equal(snapshot.history.length, 10);
   assert.equal(snapshot.colorLens, 'transport');
 });
+
+test('buildSubgroupClusters merges shared default-room model-network peers across apps instead of showing duplicate app subgroups', () => {
+  const reports = [
+    makeReport('inf-1', {
+      application: 'inference',
+      role: 'models',
+      gameId: 'default-game',
+      roomId: 'default-room',
+      topologyId: 'default-topology',
+      peers: [{ peerId: 'cc-model-1', via: 'webrtc', icePath: 'lan-host' }]
+    }),
+    makeReport('cc-model-1', {
+      application: 'cubechat',
+      role: 'models',
+      gameId: 'default-game',
+      roomId: 'default-room',
+      topologyId: 'default-topology',
+      peers: [{ peerId: 'inf-1', via: 'webrtc', icePath: 'lan-host' }]
+    }),
+    makeReport('cc-world-1', {
+      application: 'cubechat',
+      role: 'world',
+      gameId: 'cubechat',
+      roomId: 'global',
+      topologyId: 'cubechat',
+      peers: [{ peerId: 'cc-world-2', via: 'webrtc', icePath: 'lan-host' }]
+    }),
+    makeReport('cc-world-2', {
+      application: 'cubechat',
+      role: 'world',
+      gameId: 'cubechat',
+      roomId: 'global',
+      topologyId: 'cubechat',
+      peers: [{ peerId: 'cc-world-1', via: 'webrtc', icePath: 'lan-host' }]
+    })
+  ];
+
+  const view = buildObservedNetwork(reports, { now, groupBy: 'room' });
+  assert.equal(view.subgroups.length, 2, 'should group into models/default-room and cubechat/global, not two cubechat groups');
+  const modelsGroup = view.subgroups.find((g) => g.label === 'models / default-room');
+  const worldGroup = view.subgroups.find((g) => g.label === 'cubechat / global');
+  assert.ok(modelsGroup);
+  assert.ok(worldGroup);
+  assert.equal(modelsGroup.peerCount, 2);
+  assert.equal(modelsGroup.internalEdges, 1);
+  assert.equal(modelsGroup.crossEdges, 0);
+  assert.deepEqual(modelsGroup.appCounts, { inference: 1, cubechat: 1 });
+  assert.equal(worldGroup.peerCount, 2);
+  assert.match(
+    describeObservedPeer(reports[1], now).lines.join('\n'),
+    /shared model-network client for cubechat/
+  );
+});

@@ -79,6 +79,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
   const lifetime = new AbortController(), bodies = new Map(), heads = new Map(), transcripts = new Map();
   let runtime, agents, network, worldManager, speech, audio, ui, selectedKey, disposed = false, closing, unsubscribe;
   let refreshing, refreshPending = false, networkStarting, modelStarting, networkTimer, navigationTimer, panel, panelOpening, panelClosing, panelShell, panelReturnFocus, embodimentLease;
+  let peerRefreshing = null, lastPeerRefreshAt = 0, peerConnectDebounce = null, attachedModelLibp2p = null, onModelPeerConnect = null;
   let operation, operationDone, voicePreparation, voicePreparationDone, recordingStart, voiceEnabled = false, recording = false;
   let appearance, appearancePresenter, generatedObjects, residentAvatars, worldChat, experience, conversations, motor, memory, social, socialOperation, socialDone;
   let objectives, objectiveStore, unsubscribeObjectives, knowledgeStore, knowledge, mind;
@@ -544,16 +545,60 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     }
     return conversationReply(output);
   }
+  function detachModelPeerListener() {
+    clearTimeout(peerConnectDebounce); peerConnectDebounce = null;
+    if (attachedModelLibp2p && onModelPeerConnect) {
+      attachedModelLibp2p.removeEventListener?.('peer:connect', onModelPeerConnect);
+    }
+    attachedModelLibp2p = null; onModelPeerConnect = null;
+  }
+  function syncModelPeerListener() {
+    if (disposed) return;
+    const manager = runtime?.networkManager;
+    const libp2p = manager?.getLibp2pNode?.() ?? manager?.libp2p ?? null;
+    if (libp2p === attachedModelLibp2p) return;
+    detachModelPeerListener();
+    if (!libp2p?.addEventListener) return;
+    attachedModelLibp2p = libp2p;
+    onModelPeerConnect = (event) => {
+      if (disposed || !runtime?.networkReady) return;
+      const peerId = event?.detail?.remotePeer?.toString?.() || event?.detail?.toString?.();
+      if (!peerId || manager?.bootstrapPeerIds?.has?.(peerId)) return;
+      if (peerConnectDebounce) return;
+      peerConnectDebounce = setTimeout(() => {
+        peerConnectDebounce = null;
+        void refreshModelPeers({ force: true });
+      }, 1500);
+    };
+    libp2p.addEventListener('peer:connect', onModelPeerConnect);
+  }
+  function refreshModelPeers({ force = false } = {}) {
+    if (disposed || !runtime?.networkReady || typeof runtime.refreshPeers !== 'function') return;
+    if (peerRefreshing) return peerRefreshing;
+    const now = Date.now();
+    if (!force && now - lastPeerRefreshAt < 10_000) return;
+    lastPeerRefreshAt = now;
+    peerRefreshing = Promise.resolve().then(() => runtime.refreshPeers({ signal: lifetime.signal }))
+      .catch(() => {})
+      .finally(() => { peerRefreshing = null; });
+    return peerRefreshing;
+  }
   async function ensureModelNetwork() {
     if (disposed || modelStarting) return modelStarting;
     const applicationReady = runtime.networkReady;
+    if (applicationReady) syncModelPeerListener();
     if (applicationReady && (runtime.artifactReady || typeof runtime.retryArtifactNetwork !== 'function')) return;
     // Chat discovery and retained file delivery have separate lifecycles. A
     // connected application does not prove that its artifact service started.
     // The connection owns retry/backoff; maintenance never reloads a model.
     modelStarting = Promise.resolve().then(() => applicationReady
       ? runtime.retryArtifactNetwork({ signal: lifetime.signal })
-      : runtime.connectBackend({ signal: lifetime.signal })).catch((error) => {
+      : runtime.connectBackend({ signal: lifetime.signal })).then(() => {
+      if (!disposed && runtime.networkReady) {
+        syncModelPeerListener();
+        if (!applicationReady) void refreshModelPeers({ force: true });
+      }
+    }).catch((error) => {
       if (!disposed) ui.setStatus(`Model network unavailable: ${error.message}. Local models still work.`);
     }).finally(() => { modelStarting = null; });
     return modelStarting;
@@ -1518,8 +1563,13 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     }
     social?.sync(); standing?.sync(); ooda?.sync();
     void ensureModelNetwork(); void ensureNetwork();
+    if (runtime.networkReady) {
+      syncModelPeerListener();
+      void refreshModelPeers({ force: true });
+    }
     networkTimer = setInterval(() => {
       void ensureModelNetwork(); void ensureNetwork();
+      void refreshModelPeers();
       void generatedObjects?.syncNetwork();
       if (embodimentLease) void refreshLocal().catch(fail);
       else updateList();
@@ -1544,7 +1594,7 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     get runtime() { return runtime; },
     async dispose() {
       if (closing) return closing;
-      disposed = true; mind?.dispose(); inspector?.dispose(); inspectorData?.dispose(); lifetime.abort(new DOMException('World closed', 'AbortError')); clearInterval(networkTimer); clearInterval(navigationTimer); unsubscribe?.();
+      disposed = true; detachModelPeerListener(); mind?.dispose(); inspector?.dispose(); inspectorData?.dispose(); lifetime.abort(new DOMException('World closed', 'AbortError')); clearInterval(networkTimer); clearInterval(navigationTimer); unsubscribe?.();
       closing = (async () => {
         await ready.catch(() => {}); await cancel(); await networkStarting; await modelStarting; await closePanel();
         await ooda?.dispose(); await objectives?.dispose(); unsubscribeObjectives?.();

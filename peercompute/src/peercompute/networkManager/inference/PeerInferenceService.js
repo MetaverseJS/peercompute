@@ -310,13 +310,56 @@ export class PeerInferenceService {
       const op = operation([this.controller.signal, signal], this.queryTimeoutMs * 2 + 100);
       try {
         this._remember(this.peerId, await this._state(op.signal));
-        const peers = [...new Set([...this.manager.libp2p.getConnections().map((item) => item.remotePeer.toString()),
-          ...(this.manager.peers?.keys() ?? [])])].filter((id) => id !== this.peerId && !this.manager.bootstrapPeerIds?.has(id)).slice(0, this.maximumPeers);
-        const results = await Promise.allSettled(peers.map((peerId) => this._query(peerId, op.signal)));
+        const connectedPeerIds = new Set(
+          this.manager.libp2p.getConnections()
+            .filter((item) => encryptedConnection(item))
+            .map((item) => item.remotePeer.toString())
+        );
+        const rawPeers = [...new Set([
+          ...connectedPeerIds,
+          ...this.manager.libp2p.getConnections().map((item) => item.remotePeer.toString()),
+          ...(this.manager.peers?.keys() ?? [])
+        ])].filter((id) => id !== this.peerId && !this.manager.bootstrapPeerIds?.has(id)).slice(0, this.maximumPeers);
+        const connectedPeers = [];
+        const disconnectedPeers = [];
+        for (const peerId of rawPeers) {
+          if (connectedPeerIds.has(peerId)) connectedPeers.push(peerId);
+          else disconnectedPeers.push(peerId);
+        }
+        const resultsByPeer = new Map();
+        const runQuery = async (peerId) => {
+          try {
+            await this._query(peerId, op.signal);
+            resultsByPeer.set(peerId, { status: 'fulfilled' });
+          } catch (reason) {
+            resultsByPeer.set(peerId, { status: 'rejected', reason });
+          }
+        };
+        // Query already-connected peers in parallel, and pace disconnected peers
+        // to the connection-recovery concurrency cap so peers beyond slot 2 do
+        // not immediately fail with "Connection recovery is busy".
+        const recoveryConcurrency = Math.max(1, Math.min(4, this.manager.peerConnectionRecovery?.maxConcurrent ?? 2));
+        let cursor = 0;
+        const recoveryWorkers = disconnectedPeers.length > 0
+          ? Array.from({ length: Math.min(recoveryConcurrency, disconnectedPeers.length) }, async () => {
+              while (cursor < disconnectedPeers.length && !op.signal.aborted) {
+                const peerId = disconnectedPeers[cursor++];
+                await runQuery(peerId);
+              }
+            })
+          : [];
+        await Promise.all([
+          ...connectedPeers.map((peerId) => runQuery(peerId)),
+          ...recoveryWorkers
+        ]);
         op.signal.throwIfAborted();
-        this.lastErrors = results.flatMap((result, index) => result.status === 'rejected'
-          ? [{ peerId: peers[index], code: String(result.reason?.code ?? 'ERR_PEER_INFERENCE').slice(0, 80),
-            message: String(result.reason?.message ?? 'Directory unavailable').slice(0, 256) }] : []);
+        this.lastErrors = rawPeers.flatMap((peerId) => {
+          const result = resultsByPeer.get(peerId);
+          return result?.status === 'rejected'
+            ? [{ peerId, code: String(result.reason?.code ?? 'ERR_PEER_INFERENCE').slice(0, 80),
+              message: String(result.reason?.message ?? 'Directory unavailable').slice(0, 256) }]
+            : [];
+        });
         return { models: this.listModels(), hosts: this.listHosts(), errors: structuredClone(this.lastErrors) };
       } finally { op.dispose(); }
     };

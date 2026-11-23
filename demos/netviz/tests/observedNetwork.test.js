@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { attachedScope, buildObservedNetwork, describeObservedPeer } from '../src/observedNetwork.js';
+import { resolveRootDirectoryUrl } from '../src/relayConfig.js';
 
 const now = 1_000_000;
 const report = (peerId, fields = {}) => ({ peerId, application: 'cubechat', role: 'world',
@@ -89,4 +90,54 @@ test('unavailable model summary is explicit partial evidence, never a live host'
   assert.equal(view.summary.modelsUnavailable, 1);
   assert.equal(view.models[0].hostCount, 1);
   assert.match(describeObservedPeer(unavailable, now).lines.join(' '), /not a confirmed empty/);
+});
+
+test('root directory entries render as first-class root nodes linked to their relay and merge with peer edges', () => {
+  const rootId = '12D3KooWRootPeerTest000000000000000000000001';
+  const relayId = '12D3KooWRelayPeerTest00000000000000000000001';
+  const rootEntry = {
+    schema: 'peercompute.model-evidence-directory.v1',
+    protocol: '/peercompute/model-evidence/1.0.0',
+    peerId: rootId,
+    addresses: [`/dns4/secretworkshop.net/tcp/443/wss/p2p/${relayId}/p2p-circuit/p2p/${rootId}`],
+    relayPeerIds: [relayId],
+    expiresAt: now + 60_000,
+    fetchedAt: now,
+    sourceUrl: 'https://secretworkshop.net/peercompute/config/model-evidence.json'
+  };
+  const client = report('client-1', { peers: [{ peerId: rootId, via: 'relay', icePath: 'circuit-relay' }] });
+  const view = buildObservedNetwork([client], { now, rootNodes: [rootEntry] });
+
+  assert.equal(view.summary.rootNodes, 1);
+  const rootPeer = view.peers.find((p) => p.peerId === rootId);
+  assert.ok(rootPeer);
+  assert.equal(rootPeer.isRoot, true);
+  assert.equal(rootPeer.role, 'root');
+  assert.equal(rootPeer.stale, false);
+  assert.equal(rootPeer.relayState.keepReason, 'root-service');
+  assert.equal(view.peers.some((p) => p.peerId === relayId && p.isRelay), true);
+  assert.equal(view.edges.some((e) => (e.from === rootId && e.to === relayId) || (e.from === relayId && e.to === rootId)), true);
+  assert.equal(view.edges.some((e) => (e.from === 'client-1' && e.to === rootId) || (e.from === rootId && e.to === 'client-1')), true);
+  assert.match(describeObservedPeer(rootPeer, now).title, /Root Node/);
+  assert.match(describeObservedPeer(rootPeer, now).lines.join(' '), /model-evidence\/1\.0\.0/);
+
+  // Role filter for 'root' isolates the root node + its relay cleanly.
+  const rootOnly = buildObservedNetwork([client], { now, role: 'root', rootNodes: [rootEntry] });
+  assert.equal(rootOnly.summary.rootNodes, 1);
+  assert.equal(rootOnly.peers.some((p) => p.peerId === 'client-1'), false);
+
+  // Expired root directory entry marks root peer stale.
+  const expiredView = buildObservedNetwork([], { now, rootNodes: [{ ...rootEntry, expiresAt: now - 5_000 }] });
+  assert.equal(expiredView.peers.find((p) => p.peerId === rootId)?.stale, true);
+
+  // resolveRootDirectoryUrl derives sibling model-evidence.json from relay-config.json URL.
+  assert.equal(
+    resolveRootDirectoryUrl({ relayConfigUrl: 'https://secretworkshop.net/peercompute/config/relay-config.json' }),
+    'https://secretworkshop.net/peercompute/config/model-evidence.json'
+  );
+  assert.equal(
+    resolveRootDirectoryUrl({ relayConfig: { bootstrapPeers: ['/dns4/secretworkshop.net/tcp/443/wss/p2p/abc'] } }),
+    'https://secretworkshop.net/peercompute/config/model-evidence.json'
+  );
+  assert.equal(resolveRootDirectoryUrl({ relayConfig: { bootstrapPeers: [] } }), '');
 });

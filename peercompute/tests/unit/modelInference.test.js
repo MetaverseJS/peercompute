@@ -1208,6 +1208,9 @@ test('standalone relay configuration preserves secure WSS and rejects unapproved
     : { bootstrapPeers: [address], pubsubType: 'gossipsub' }));
   const config = await loadInferenceRelayConfig({ fetchImpl, baseUrl: 'http://localhost/inference/' });
   assert.deepEqual(config.bootstrapPeers, [address]);
+  assert.equal(config.maxConnections, 16);
+  assert.equal(config.targetConnections, 8);
+  assert.equal(config.maxDialPeers, 16);
   await assert.rejects(loadInferenceRelayConfig({ baseUrl: origin,
     fetchImpl: async () => new Response(JSON.stringify({ relayConfigUrl: 'https://unapproved.test/config.json' })) }), /approved/);
   await assert.rejects(loadInferenceRelayConfig({ baseUrl: origin, fetchImpl: async () => new Response(' '.repeat(70 * 1024)) }), /byte limit/);

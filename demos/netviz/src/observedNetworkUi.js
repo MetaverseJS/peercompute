@@ -48,7 +48,7 @@ export function renderObservedSummary({
   subgroupsElement,
   relayAuditElement,
   sparklinesElement
-}, view, historySamples = []) {
+}, view, historySamples = [], { relayHealth = [], directUnicastCount = 0 } = {}) {
   if (applicationSelect) {
     const selected = applicationSelect.value;
     const values = ['', ...view.applications];
@@ -89,7 +89,7 @@ export function renderObservedSummary({
   const { summary, compute, diagnostics } = view;
   if (summaryElement) {
     summaryElement.textContent = [
-      `${summary.active} reporting peers · ${summary.stale} stale · ${summary.sessionOnly} session only`,
+      `${summary.active} reporting peers · ${summary.stale} stale · ${summary.sessionOnly} session only${summary.rootNodes ? ` · ${summary.rootNodes} root` : ''}`,
       `${compute.workerCount} workers · ${compute.activeTasks} active tasks · ${compute.queuedTasks} queued`,
       'Reachable reporting network instances; coverage is partial.',
       ...(summary.sessionOnly ? ['Older demo tabs need an updated build for full telemetry.'] : [])
@@ -141,27 +141,44 @@ export function renderObservedSummary({
           const rtt = Number.isFinite(sg.medianRttMs) ? `${sg.medianRttMs}ms` : '--';
           const lanPart = sg.lanEdgeCount > 0 ? ` · ${sg.lanPct ?? 0}% LAN` : '';
           const churnPart = sg.totalRewiresPerMin > 0 ? ` · ${sg.totalRewiresPerMin} rw/m` : '';
-          return `${sg.label}${partFlag}\n  ${sg.peerCount} peers · ${sg.internalEdges} int / ${sg.crossEdges} x-edges · ${sg.directPct}% direct${lanPart} · ${sg.relayConnectedCount} on-relay · RTT ${rtt}${sg.totalWorkRate > 0 ? ` · ${sg.totalWorkRate} t/s` : ''}${churnPart}`;
+          const appEntries = Object.entries(sg.appCounts || {}).sort((a, b) => (b[1] - a[1]) || a[0].localeCompare(b[0]));
+          const appsPart = appEntries.length > 1
+            ? ` · apps: ${appEntries.map(([name, count]) => `${name}×${count}`).join(', ')}`
+            : '';
+          return `${sg.label}${partFlag}\n  ${sg.peerCount} peers · ${sg.internalEdges} int / ${sg.crossEdges} x-edges · ${sg.directPct}% direct${lanPart} · ${sg.relayConnectedCount} on-relay · RTT ${rtt}${sg.totalWorkRate > 0 ? ` · ${sg.totalWorkRate} t/s` : ''}${churnPart}${appsPart}`;
         }).join('\n')
       : 'No subgroups detected yet.';
   }
 
-  if (relayAuditElement && diagnostics?.relayAudit) {
-    const audit = diagnostics.relayAudit;
-    const reasonSummary = Object.entries(audit.keepReasonCounts || {})
-      .sort((a, b) => b[1] - a[1])
-      .map(([reason, count]) => `${reason}=${count}`)
-      .join(', ');
-    const lines = [
-      `On-relay: ${audit.connectedPeers} · keepers: ${audit.keeperCount} · off-relay: ${audit.offRelayPeers}`,
-      ...(reasonSummary ? [`Reasons: ${reasonSummary}`] : [])
-    ];
-    for (const relay of audit.relays || []) {
-      lines.push(
-        `${shortId(relay.relayPeerId)}: ${relay.connectedPeers} peers (keep=${relay.keepers + relay.electedKeepers + relay.permanent}, hold=${relay.holding})`
-      );
+  if (relayAuditElement) {
+    const audit = diagnostics?.relayAudit;
+    const lines = [];
+    if (audit) {
+      const reasonSummary = Object.entries(audit.keepReasonCounts || {})
+        .sort((a, b) => b[1] - a[1])
+        .map(([reason, count]) => `${reason}=${count}`)
+        .join(', ');
+      lines.push(`On-relay: ${audit.connectedPeers} · keepers: ${audit.keeperCount} · off-relay: ${audit.offRelayPeers}`);
+      if (reasonSummary) lines.push(`Reasons: ${reasonSummary}`);
+      for (const relay of audit.relays || []) {
+        lines.push(
+          `${shortId(relay.relayPeerId)}: ${relay.connectedPeers} peers (keep=${relay.keepers + relay.electedKeepers + relay.permanent}, hold=${relay.holding})`
+        );
+      }
     }
-    relayAuditElement.textContent = lines.join('\n');
+    if (Array.isArray(relayHealth) && relayHealth.length > 0) {
+      lines.push(`Configured relays (${relayHealth.length}):`);
+      for (const entry of relayHealth) {
+        const tag = entry.isLan ? 'LAN' : 'WAN';
+        const state = entry.ok === true ? 'ok' : (entry.ok === false ? `fail(${entry.failures || 1})` : 'pending');
+        const rtt = Number.isFinite(entry.rttMs) ? ` ${Math.round(entry.rttMs)}ms` : '';
+        lines.push(`  [${tag}] ${shortId(entry.peerId || entry.addr)} ${state}${rtt}`);
+      }
+    }
+    if (directUnicastCount > 0) {
+      lines.push(`Direct unicast streams: ${directUnicastCount}`);
+    }
+    relayAuditElement.textContent = lines.length ? lines.join('\n') : 'No relay telemetry yet.';
   }
 
   if (sparklinesElement && typeof document !== 'undefined') {
@@ -181,11 +198,12 @@ export function renderObservedSummary({
     }
   }
 
-  const modelText = view.models.length
-    ? view.models.map((model) => `${model.name || model.manifestCid}\n${model.task || 'unknown'} · ${model.hostCount} hosting peer${model.hostCount === 1 ? '' : 's'} · ${model.busyCount} busy${model.busy ? ' (all busy)' : ''}`).join('\n\n')
-    : 'No fresh reports advertise hosted models.';
   if (modelsElement) {
-    modelsElement.textContent = modelText + (summary.modelsUnavailable
+    const models = Array.isArray(view?.models) ? view.models : [];
+    const modelText = models.length
+      ? models.map((model) => `${model.name || model.manifestCid}\n${model.task || 'unknown'} · ${model.hostCount} hosting peer${model.hostCount === 1 ? '' : 's'} · ${model.busyCount} busy${model.busy ? ' (all busy)' : ''}`).join('\n\n')
+      : 'No fresh reports advertise hosted models.';
+    modelsElement.textContent = modelText + (summary?.modelsUnavailable
       ? `\n\nHosting status unavailable from ${summary.modelsUnavailable} reporting peer${summary.modelsUnavailable === 1 ? '' : 's'}; counts are partial.`
       : '');
   }

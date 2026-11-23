@@ -1,5 +1,10 @@
 import { NodeKernel, probeCapabilities, readCapabilityOverrides } from '@peercompute';
-import { loadRelayConfig, normalizeBootstrapPeers } from './relayConfig.js';
+import {
+  loadRelayConfig,
+  normalizeBootstrapPeers,
+  resolveRootDirectoryUrl,
+  loadRootDirectory
+} from './relayConfig.js';
 import { buildPubsubEdges, buildRelayState } from './relayOverlay.js';
 import { TelemetryStore } from './telemetryStore.js';
 import { NetworkVisualizer } from './visualizer.js';
@@ -43,6 +48,7 @@ const connectionRadiusInput = document.getElementById('connection-radius');
 const maxConnectionsInput = document.getElementById('max-connections');
 const targetConnectionsInput = document.getElementById('target-connections');
 const dropRelayToggle = document.getElementById('drop-relay');
+const relayConfigUrlInput = document.getElementById('relay-config-url');
 const relayRetentionModeSelect = document.getElementById('relay-retention-mode');
 const relayRetentionMinInput = document.getElementById('relay-retention-min');
 const showP2PTopologyToggle = document.getElementById('show-p2p-topology');
@@ -84,6 +90,7 @@ const QUERY_PARAM_CONNECTION_RADIUS = 'connectionRadius';
 const QUERY_PARAM_MAX_CONNECTIONS = 'maxConnections';
 const QUERY_PARAM_TARGET_CONNECTIONS = 'targetConnections';
 const QUERY_PARAM_DROP_RELAY = 'dropRelay';
+const QUERY_PARAM_RELAY_CONFIG_URL = 'relayConfigUrl';
 const QUERY_PARAM_RELAY_RETENTION_MODE = 'relayRetentionMode';
 const QUERY_PARAM_RELAY_RETENTION_MIN = 'relayRetentionMin';
 const QUERY_PARAM_CHAOS_API = 'chaosApi';
@@ -682,6 +689,49 @@ const normalizeTopologyType = (value) => {
 
 const rollingHistory = new RollingMetricsHistory({ maxSamples: 180, minIntervalMs: 1500 });
 let lastDiagnostics = null;
+const ROOT_DIRECTORY_POLL_MS = 30000;
+let discoveredRootNodes = [];
+let rootDirectoryTimer = null;
+let activeRootDirectoryUrl = '';
+
+const refreshRootDirectory = async (url = activeRootDirectoryUrl) => {
+  const target = String(url || '').trim();
+  if (!target) {
+    discoveredRootNodes = [];
+    return discoveredRootNodes;
+  }
+  const entry = await loadRootDirectory(target);
+  discoveredRootNodes = entry ? [entry] : [];
+  if (entry?.relayPeerIds?.length) {
+    for (const rid of entry.relayPeerIds) relayPeerIds.add(rid);
+  }
+  return discoveredRootNodes;
+};
+
+const stopRootDirectoryPoll = () => {
+  if (rootDirectoryTimer) {
+    clearInterval(rootDirectoryTimer);
+    rootDirectoryTimer = null;
+  }
+  activeRootDirectoryUrl = '';
+  discoveredRootNodes = [];
+};
+
+const startRootDirectoryPoll = (url) => {
+  stopRootDirectoryPoll();
+  const target = String(url || '').trim();
+  if (!target) return;
+  activeRootDirectoryUrl = target;
+  refreshRootDirectory(target).then((roots) => {
+    if (roots.length > 0) {
+      logEvent(`Root node discovered (${formatPeerId(roots[0].peerId)})`);
+      updateHud();
+    }
+  }).catch(() => {});
+  rootDirectoryTimer = setInterval(() => {
+    refreshRootDirectory(activeRootDirectoryUrl).catch(() => {});
+  }, ROOT_DIRECTORY_POLL_MS);
+};
 
 const readAnalysisOptions = () => ({
   groupBy: subgroupBySelect?.value || 'room',
@@ -695,6 +745,18 @@ const readAnalysisOptions = () => ({
   focusSubgroupId: subgroupFilterSelect?.value || ''
 });
 
+const getDirectUnicastPeers = () => (
+  networkManager?.directUnicastStreams instanceof Map
+    ? Array.from(networkManager.directUnicastStreams.keys())
+    : []
+);
+
+const getBootstrapRelayHealthList = () => (
+  typeof networkManager?.getBootstrapRelayHealth === 'function'
+    ? networkManager.getBootstrapRelayHealth()
+    : []
+);
+
 const getExportableAnalysisSnapshot = () => {
   const opts = readAnalysisOptions();
   return buildAnalysisSnapshot({
@@ -703,8 +765,14 @@ const getExportableAnalysisSnapshot = () => {
     colorLens: opts.colorLens,
     focusSubgroup: opts.subgroup,
     observedView,
+    sessionPeers: Array.from(lastDisplayedPeersById.values()),
+    sessionEdges: Array.from(lastDisplayedEdgesByKey.values()),
     diagnostics: lastDiagnostics || observedView?.diagnostics || null,
     subgroups: observedView?.subgroups || [],
+    relayHealth: getBootstrapRelayHealthList(),
+    directUnicastPeers: getDirectUnicastPeers(),
+    throughputProfile: networkManager?.config?.throughputTopology?.profile || throughputProfileSelect?.value || null,
+    hostGroupId: networkManager?.config?.hostGroupId || hostGroupIdInput?.value?.trim() || null,
     history: rollingHistory.list()
   });
 };
@@ -883,6 +951,7 @@ const readQueryParams = () => {
     attachSession,
     profile: params.get(QUERY_PARAM_THROUGHPUT_PROFILE)?.trim() || '',
     hostGroupId: params.get(QUERY_PARAM_HOST_GROUP)?.trim() || '',
+    relayConfigUrl: (params.get(QUERY_PARAM_RELAY_CONFIG_URL) || params.get('relayConfig') || '').trim(),
     gameId: params.get('gameId')?.trim() || '',
     view: params.get('view') || '',
     application: params.get('application') || '',
@@ -929,6 +998,9 @@ const applyQueryParams = () => {
   }
   if (query.hostGroupId && hostGroupIdInput) {
     hostGroupIdInput.value = query.hostGroupId;
+  }
+  if (query.relayConfigUrl && relayConfigUrlInput) {
+    relayConfigUrlInput.value = query.relayConfigUrl;
   }
   const normalizedRender = normalizeRenderModeValue(query.renderMode) || renderMode;
   if (renderModeSelect && normalizedRender) {
@@ -1000,6 +1072,7 @@ const syncQueryParams = ({
   setParam(QUERY_PARAM_TOPOLOGY_TYPE, nextType);
   setParam(QUERY_PARAM_THROUGHPUT_PROFILE, throughputProfileSelect?.value && throughputProfileSelect.value !== 'batch-throughput' ? throughputProfileSelect.value : '');
   setParam(QUERY_PARAM_HOST_GROUP, hostGroupIdInput?.value?.trim() || '');
+  setParam(QUERY_PARAM_RELAY_CONFIG_URL, relayConfigUrlInput?.value?.trim() || '');
   setParam(QUERY_PARAM_RENDER, nextRender);
   setParam(QUERY_PARAM_CONNECTION_RADIUS, connectionRadius);
   setParam(QUERY_PARAM_MAX_CONNECTIONS, maxConnections);
@@ -2231,6 +2304,7 @@ const setConfigInputsDisabled = (disabled) => {
     maxConnectionsInput,
     targetConnectionsInput,
     dropRelayToggle,
+    relayConfigUrlInput,
     relayRetentionModeSelect,
     relayRetentionMinInput
   ];
@@ -2501,15 +2575,41 @@ const updateHierarchicalRelayPolicy = () => {
   networkManager.setRelayBootstrapBehavior({ keepRelay });
 };
 
+const ICE_PATH_RANK = {
+  'lan-host': 6,
+  'direct-ws': 5,
+  'direct-tcp': 5,
+  'nat-prflx': 4,
+  'nat-srflx': 3,
+  'turn-relay': 2,
+  'circuit-relay': 1
+};
+
+const preferStrongerIcePath = (a, b) => {
+  const rankA = a ? (ICE_PATH_RANK[a] || 0) : 0;
+  const rankB = b ? (ICE_PATH_RANK[b] || 0) : 0;
+  if (rankB > rankA) return b;
+  return a || b || null;
+};
+
 const buildEdges = (peers, localId, relayState = null) => {
   const edgeMap = new Map();
   const knownIds = new Set(peers.map((peer) => peer?.peerId).filter(Boolean));
   const relayIds = new Set(relayState?.activeRelayIds || []);
   const connectionSnapshot = localId ? getConnectionAddressSnapshot() : null;
+  const liveConnectedPeersById = new Map(
+    (networkManager?.getConnectedPeers?.() || [])
+      .filter((entry) => entry?.peerId)
+      .map((entry) => [entry.peerId, entry])
+  );
+  const directUnicastSet = new Set(getDirectUnicastPeers());
   const buildEdgeKey = (from, to) => (from < to ? `${from}|${to}` : `${to}|${from}`);
   const telemetryViaByEdge = new Map();
   const telemetrySignalingPathByEdge = new Map();
   const telemetryMediaPathByEdge = new Map();
+  const telemetryIcePathByEdge = new Map();
+  const telemetryIceProtocolByEdge = new Map();
+  const telemetryCandidateRttByEdge = new Map();
   peers.forEach((peer) => {
     const from = peer?.peerId;
     if (!from) return;
@@ -2533,6 +2633,19 @@ const buildEdges = (peers, localId, relayState = null) => {
         key,
         preferStrongerMediaPath(telemetryMediaPathByEdge.get(key), mediaPath)
       );
+      if (neighbor?.icePath) {
+        telemetryIcePathByEdge.set(key, preferStrongerIcePath(telemetryIcePathByEdge.get(key), neighbor.icePath));
+      }
+      if (neighbor?.iceProtocol && !telemetryIceProtocolByEdge.has(key)) {
+        telemetryIceProtocolByEdge.set(key, neighbor.iceProtocol);
+      }
+      if (Number.isFinite(neighbor?.candidatePairRttMs)) {
+        const prev = telemetryCandidateRttByEdge.get(key);
+        telemetryCandidateRttByEdge.set(
+          key,
+          Number.isFinite(prev) ? Math.min(prev, neighbor.candidatePairRttMs) : neighbor.candidatePairRttMs
+        );
+      }
     });
   });
   const resolveLiveViaForEdge = (from, to) => {
@@ -2633,6 +2746,38 @@ const buildEdges = (peers, localId, relayState = null) => {
       liveMediaPath
     ) || mediaPathFromVia(via) || 'unknown';
     const relayPeerId = resolveRelayForEdge(from, to, signalingPath, via);
+    const liveRemotePeerId = from === localId ? to : (to === localId ? from : null);
+    const livePeerInfo = liveRemotePeerId ? liveConnectedPeersById.get(liveRemotePeerId) : null;
+    const icePath = preferStrongerIcePath(
+      preferStrongerIcePath(metrics?.icePath || null, telemetryIcePathByEdge.get(key) || null),
+      livePeerInfo?.icePath || null
+    );
+    const iceProtocol = metrics?.iceProtocol
+      || telemetryIceProtocolByEdge.get(key)
+      || livePeerInfo?.iceProtocol
+      || null;
+    const candidatePairRttMs = Number.isFinite(metrics?.candidatePairRttMs)
+      ? metrics.candidatePairRttMs
+      : (Number.isFinite(telemetryCandidateRttByEdge.get(key))
+        ? telemetryCandidateRttByEdge.get(key)
+        : (Number.isFinite(livePeerInfo?.candidatePairRttMs) ? livePeerInfo.candidatePairRttMs : null));
+    const rttMs = Number.isFinite(metrics?.rttMs)
+      ? metrics.rttMs
+      : (Number.isFinite(livePeerInfo?.rttMs) ? livePeerInfo.rttMs : candidatePairRttMs);
+    const direction = metrics?.direction || livePeerInfo?.direction || null;
+    const connectionCount = Math.max(
+      Number(metrics?.connectionCount) || 0,
+      Number(livePeerInfo?.connectionCount) || 0,
+      1
+    );
+    const duplicateConnections = Boolean(
+      metrics?.duplicateConnections
+      || livePeerInfo?.duplicateConnections
+      || connectionCount > 1
+    );
+    const workRate = Number(metrics?.workRate) || Number(metrics?.workMesh?.tasksPerSec) || 0;
+    const workMesh = metrics?.workMesh && typeof metrics.workMesh === 'object' ? { ...metrics.workMesh } : null;
+    const directUnicast = Boolean(liveRemotePeerId && directUnicastSet.has(liveRemotePeerId));
     const existing = edgeMap.get(key);
     if (existing) {
       existing.via = preferStrongerVia(existing.via, via) || existing.via || via;
@@ -2642,6 +2787,24 @@ const buildEdges = (peers, localId, relayState = null) => {
       existing.mediaPath = preferStrongerMediaPath(existing.mediaPath, mediaPath)
         || existing.mediaPath
         || mediaPath;
+      existing.icePath = preferStrongerIcePath(existing.icePath, icePath);
+      if (!existing.iceProtocol && iceProtocol) existing.iceProtocol = iceProtocol;
+      if (Number.isFinite(candidatePairRttMs)) {
+        existing.candidatePairRttMs = Number.isFinite(existing.candidatePairRttMs)
+          ? Math.min(existing.candidatePairRttMs, candidatePairRttMs)
+          : candidatePairRttMs;
+      }
+      if (Number.isFinite(rttMs)) {
+        existing.rttMs = Number.isFinite(existing.rttMs) ? Math.min(existing.rttMs, rttMs) : rttMs;
+      }
+      if (!existing.direction && direction) existing.direction = direction;
+      existing.connectionCount = Math.max(existing.connectionCount || 1, connectionCount);
+      existing.duplicateConnections = Boolean(existing.duplicateConnections || duplicateConnections);
+      existing.workRate = Math.max(existing.workRate || 0, workRate);
+      if (workMesh && (!existing.workMesh || (workMesh.tasksPerSec || 0) >= (existing.workMesh.tasksPerSec || 0))) {
+        existing.workMesh = workMesh;
+      }
+      if (directUnicast) existing.directUnicast = true;
       if (!existing.relayPeerId && relayPeerId) {
         existing.relayPeerId = relayPeerId;
       }
@@ -2679,6 +2842,16 @@ const buildEdges = (peers, localId, relayState = null) => {
       via,
       signalingPath,
       mediaPath,
+      icePath,
+      iceProtocol,
+      candidatePairRttMs,
+      rttMs: Number.isFinite(rttMs) ? rttMs : null,
+      direction,
+      connectionCount,
+      duplicateConnections,
+      workRate,
+      workMesh,
+      directUnicast,
       relayPeerId
     });
   };
@@ -2889,7 +3062,37 @@ const buildNodeInfo = (peerId) => {
     `Last Rx: ${formatLocalTime(data.lastRxAt)}`,
     `Last Tx: ${formatLocalTime(data.lastTxAt)}`
   ];
+  const hostGroup = data.hostGroupId || (peerId === localPeerId ? (networkManager?.config?.hostGroupId || hostGroupIdInput?.value?.trim() || null) : null);
+  if (hostGroup) {
+    lines.push(`Host group: ${hostGroup}`);
+  }
+  const relayDebug = peerId === localPeerId ? networkManager?.getRelayRetentionDebug?.() : null;
+  const relayInfo = data.relayState || (relayDebug ? {
+    connected: relayDebug.hasBootstrapRelayConnections,
+    role: relayDebug.role || (relayDebug.shouldKeepRelay ? 'keeper' : 'off-relay'),
+    keepReason: relayDebug.keepReason || 'none'
+  } : null);
+  if (relayInfo) {
+    lines.push(`Relay state: ${relayInfo.connected ? 'connected' : 'off-relay'} · role=${relayInfo.role || '--'} · reason=${relayInfo.keepReason || 'none'}`);
+  }
+  const gossipCount = Array.isArray(data.gossipMeshPeers) ? data.gossipMeshPeers.length : data.relayState?.gossipMeshCount;
+  if (Number.isFinite(gossipCount) || Number.isFinite(data.rewiresPerMin) || Number.isFinite(data.dialFailures)) {
+    lines.push(
+      `Control: gossipMesh=${Number.isFinite(gossipCount) ? gossipCount : '--'} | rewires/m=${data.rewiresPerMin ?? 0} | dialFails=${data.dialFailures ?? 0}`
+    );
+  }
   if (peerId === localPeerId) {
+    const profile = networkManager?.config?.throughputTopology?.profile || throughputProfileSelect?.value || null;
+    if (profile) {
+      lines.push(`Goal profile: ${profile}`);
+    }
+    const directStreams = getDirectUnicastPeers();
+    lines.push(`Direct unicast streams: ${directStreams.length}`);
+    const relayHealth = getBootstrapRelayHealthList();
+    if (relayHealth.length > 0) {
+      const summary = relayHealth.map((r) => `[${r.isLan ? 'LAN' : 'WAN'}] ${formatPeerId(r.peerId || r.addr)} ${r.ok === true ? 'ok' : (r.ok === false ? 'fail' : 'pending')}${Number.isFinite(r.rttMs) ? ` ${Math.round(r.rttMs)}ms` : ''}`).join(', ');
+      lines.push(`Relay health: ${summary}`);
+    }
     lines.push(`Announce addrs: total ${localAddrSummary.length} | webrtc ${localWebrtcAddrs.length} | relay ${localRelayAddrs.length}`);
     lines.push(
       `RTC path evidence: direct=${rtcPath?.hasDirectPair ? 'yes' : 'no'} | relay=${rtcPath?.hasRelayPair ? 'yes' : 'no'} | pairs=${rtcPath?.pairCount ?? 0}`
@@ -3035,19 +3238,35 @@ const buildEdgeInfo = (fromId, toId, edgeType = 'edge') => {
   const liveConnections = localPeer ? (connectionSnapshot.byPeer.get(localPeer) || []) : [];
   const observedIpv4 = uniqueList(liveConnections.map((entry) => entry.ip4));
   const observedIpv6 = uniqueList(liveConnections.map((entry) => entry.ip6));
+  const icePath = edgeMeta?.icePath || fromMetrics?.icePath || toMetrics?.icePath || null;
+  const iceProtocol = edgeMeta?.iceProtocol || fromMetrics?.iceProtocol || toMetrics?.iceProtocol || null;
+  const candidatePairRttMs = Number.isFinite(edgeMeta?.candidatePairRttMs)
+    ? edgeMeta.candidatePairRttMs
+    : (Number.isFinite(fromMetrics?.candidatePairRttMs) ? fromMetrics.candidatePairRttMs : toMetrics?.candidatePairRttMs);
+  const direction = edgeMeta?.direction || fromMetrics?.direction || toMetrics?.direction || null;
+  const duplicateConnections = Boolean(edgeMeta?.duplicateConnections || fromMetrics?.duplicateConnections || toMetrics?.duplicateConnections);
+  const isBridge = Boolean(lastDiagnostics?.bridgeEdgeKeys?.includes(edgeKey));
+  const workRate = Number(edgeMeta?.workRate) || Number(edgeMeta?.workMesh?.tasksPerSec) || 0;
+  const workMesh = edgeMeta?.workMesh || fromMetrics?.workMesh || toMetrics?.workMesh || null;
+  const directUnicast = Boolean(edgeMeta?.directUnicast || (localPeer && getDirectUnicastPeers().includes(localPeer)));
 
   return {
-    title: `${edgeType === 'pubsub' ? 'Pubsub' : 'Edge'} ${formatPeerId(fromId)} ↔ ${formatPeerId(toId)}`,
+    title: `${edgeType === 'pubsub' ? 'Pubsub' : (edgeType === 'workmesh' ? 'WorkMesh' : 'Edge')} ${formatPeerId(fromId)} ↔ ${formatPeerId(toId)}`,
     lines: [
       `From: ${fromId}`,
       `To: ${toId}`,
+      `ICE path: ${icePath || '--'}${iceProtocol ? ` (${iceProtocol})` : ''}`,
       `Signaling path: ${signalingPath}`,
       `Media path: ${mediaPath}`,
-      `Transport key: ${via}`,
+      `Transport key: ${via}${direction ? ` · dir: ${direction}` : ''}`,
+      `Direct unicast: ${directUnicast ? 'active (/peercompute/direct/1.0.0)' : 'pubsub fallback'}`,
       relayPeerId ? `Relay peer: ${relayPeerId}` : 'Relay peer: --',
-      `RTT: ${formatMs(rttMs)}`,
+      `RTT: ${formatMs(Number.isFinite(candidatePairRttMs) ? candidatePairRttMs : rttMs)}${Number.isFinite(candidatePairRttMs) ? ' (ICE pair)' : ''}`,
       `Rx rate: ${formatRate(rxBps)} (${rxCount} msgs)`,
       `Tx rate: ${formatRate(txBps)} (${txCount} msgs)`,
+      ...(duplicateConnections ? [`WARNING: duplicate open connections (${edgeMeta?.connectionCount || 2})`] : []),
+      ...(isBridge ? ['WARNING: single-point-of-failure bridge edge (cut splits component)'] : []),
+      ...(workRate > 0 || workMesh ? [`WorkMesh: ${workRate || workMesh?.tasksPerSec || 0} tasks/s · in-flight ${workMesh?.inFlight ?? 0} · resets ${workMesh?.streamResets ?? 0}`] : []),
       `Observed IPv4: ${formatCompactList(observedIpv4)}`,
       `Observed IPv6: ${formatCompactList(observedIpv6)}`,
       `Last Rx: ${formatLocalTime(lastRxAt)}`,
@@ -3135,6 +3354,7 @@ const updateObservedHud = () => {
     subgroup: analysisOptions.subgroup,
     includeGhosts: !shouldHideGhosts(),
     legacySessions: [...attachSessions.values()],
+    rootNodes: discoveredRootNodes,
     relayIds: relayPeerIds
   });
   lastDiagnostics = observedView.diagnostics || null;
@@ -3148,7 +3368,10 @@ const updateObservedHud = () => {
     subgroupsElement: subgroupSummaryEl,
     relayAuditElement: relayAuditEl,
     sparklinesElement: sparklinesBoxEl
-  }, observedView, rollingHistory.list());
+  }, observedView, rollingHistory.list(), {
+    relayHealth: getBootstrapRelayHealthList(),
+    directUnicastCount: getDirectUnicastPeers().length
+  });
   visualizer.setTopologyMode(analysisOptions.groupBy === 'none' ? 'emergent' : 'clustered');
   const chaosOverlay = buildChaosOverlay();
   const chaosP2P = buildChaosP2POverlay(chaosOverlay.topology);
@@ -3171,8 +3394,10 @@ const updateObservedHud = () => {
   });
   setStatus([`Status: ${connectionState} · All demos`, 'Shared operational reports; game room traffic stays scoped.']);
   peerListEl.textContent = observedView.peers.length ? observedView.peers.map((peer) => {
-    const label = peer.sessionOnly ? 'SESSION ONLY' : peer.inferred ? 'ENDPOINT' : peer.stale ? 'STALE' : peer.role?.toUpperCase() || 'PEER';
-    const relayTag = peer.relayState?.connected ? ` [${peer.relayState.role}]` : '';
+    const label = peer.isRoot ? 'ROOT' : peer.isRelay ? 'RELAY' : peer.sessionOnly ? 'SESSION ONLY' : peer.inferred ? 'ENDPOINT' : peer.stale ? 'STALE' : peer.role?.toUpperCase() || 'PEER';
+    const relayTag = peer.isRoot
+      ? (peer.stale ? ' [stale]' : ' [live]')
+      : (peer.relayState?.connected ? ` [${peer.relayState.role}]` : '');
     return `${label} ${formatPeerId(peer.peerId)} · ${peer.application || peer.gameId || 'unknown'}${relayTag}`;
   }).join('\n') : 'Waiting for reporting peers. Older demo builds may appear only as sessions.';
 };
@@ -3232,6 +3457,20 @@ const updateHud = () => {
   const sessionAnalysisOptions = readAnalysisOptions();
   lastDiagnostics = computeGraphDiagnostics(displayPeers, displayEdges, { relayIds: relayPeerIds });
   rollingHistory.record(lastDiagnostics);
+  renderObservedSummary({
+    diagnosticsElement: analysisDiagnosticsEl,
+    relayAuditElement: relayAuditEl,
+    sparklinesElement: sparklinesBoxEl
+  }, {
+    diagnostics: lastDiagnostics,
+    summary: {},
+    compute: {},
+    models: [],
+    applications: []
+  }, rollingHistory.list(), {
+    relayHealth: getBootstrapRelayHealthList(),
+    directUnicastCount: getDirectUnicastPeers().length
+  });
   const sessionGossipEdges = [];
   const seenSessionGossip = new Set();
   for (const peer of displayPeers) {
@@ -3251,6 +3490,12 @@ const updateHud = () => {
   });
 
   const local = localPeerId ? telemetryStore.get(localPeerId) : null;
+  const directUnicastSet = new Set(getDirectUnicastPeers());
+  const liveConnectedById = new Map(
+    (networkManager?.getConnectedPeers?.() || [])
+      .filter((entry) => entry?.peerId)
+      .map((entry) => [entry.peerId, entry])
+  );
   if (local) {
     if (local.metric) {
       localMetric = {
@@ -3263,10 +3508,13 @@ const updateHud = () => {
     if (local.metricInitialized) {
       localMetricInitialized = true;
     }
+    const activeProfile = networkManager?.config?.throughputTopology?.profile || throughputProfileSelect?.value || '';
+    const activeHostGroup = networkManager?.config?.hostGroupId || hostGroupIdInput?.value?.trim() || '';
     setStatus([
       `Status: connected (${formatPeerId(local.peerId)})`,
-      `Topology: ${topologyType} (${topologyId})`,
-      `Peers: ${local.peerCount ?? peers.length - 1}`,
+      `Topology: ${topologyType} (${topologyId})${activeProfile ? ` · ${activeProfile}` : ''}`,
+      ...(activeHostGroup ? [`Host group: ${activeHostGroup}`] : []),
+      `Peers: ${local.peerCount ?? peers.length - 1} · Direct streams: ${directUnicastSet.size}`,
       `Rx: ${local.counts?.rx ?? 0} (${formatBytes(local.counts?.rxBytes)})`,
       `Rx rate: ${formatRate(local.rates?.rxBps)}`,
       `Tx: ${local.counts?.tx ?? 0} (${formatBytes(local.counts?.txBytes)})`,
@@ -3300,11 +3548,17 @@ const updateHud = () => {
             : 'PEER ';
       const rx = peer.counts?.rx ?? peer.rxCount ?? 0;
       const tx = peer.counts?.tx ?? peer.txCount ?? 0;
-      const rtt = Number.isFinite(peer.rttMs) ? ` | rtt ${Math.round(peer.rttMs)}ms` : '';
+      const livePeer = liveConnectedById.get(peer.peerId);
+      const rttVal = Number.isFinite(livePeer?.candidatePairRttMs)
+        ? livePeer.candidatePairRttMs
+        : (Number.isFinite(peer.rttMs) ? peer.rttMs : livePeer?.rttMs);
+      const rtt = Number.isFinite(rttVal) ? ` | rtt ${Math.round(rttVal)}ms` : '';
+      const iceTag = livePeer?.icePath ? ` [${livePeer.icePath}]` : (livePeer?.via ? ` [${livePeer.via}]` : '');
+      const directTag = directUnicastSet.has(peer.peerId) ? ' [direct-stream]' : '';
       const displayId = isChaosNodeId(peer.peerId)
         ? String(peer.peerId).slice(CHAOS_NODE_PREFIX.length, CHAOS_NODE_PREFIX.length + 18)
         : formatPeerId(peer.peerId);
-      return `${tag} ${displayId} | rx ${rx} | tx ${tx}${rtt}`;
+      return `${tag} ${displayId}${iceTag}${directTag} | rx ${rx} | tx ${tx}${rtt}`;
     });
   peerListEl.textContent = lines.join('\n');
 };
@@ -3397,10 +3651,21 @@ const resetRuntimeState = () => {
   lastPeerView = [];
   connectionErrors.clear();
   telemetryStore.clear();
+  stopRootDirectoryPoll();
   observedView = buildObservedNetwork();
+  lastDiagnostics = null;
   lastDisplayedPeersById.clear();
   lastDisplayedEdgesByKey.clear();
-  renderObservedSummary({ summaryElement: observedSummary, modelsElement: hostedModels, applicationSelect: applicationFilter }, observedView);
+  renderObservedSummary({
+    summaryElement: observedSummary,
+    modelsElement: hostedModels,
+    applicationSelect: applicationFilter,
+    subgroupSelect: subgroupFilterSelect,
+    diagnosticsElement: analysisDiagnosticsEl,
+    subgroupsElement: subgroupSummaryEl,
+    relayAuditElement: relayAuditEl,
+    sparklinesElement: sparklinesBoxEl
+  }, observedView, []);
   setDragActive(false);
   dragMoved = false;
   skipNextClick = false;
@@ -3455,7 +3720,8 @@ const connect = async () => {
   lastRelayPeerId = null;
 
   try {
-    const cfg = await loadRelayConfig();
+    const relayConfigOverride = relayConfigUrlInput?.value?.trim() || '';
+    const cfg = await loadRelayConfig(relayConfigOverride);
     relayConfig = cfg;
     const bootstrapPeers = normalizeBootstrapPeers(cfg.bootstrapPeers || []);
     relayPeerIds = new Set(
@@ -3464,6 +3730,13 @@ const connect = async () => {
         .concat(extractPeerId(cfg.relayPeerId))
         .filter(Boolean)
     );
+    const rootDirectoryUrl = resolveRootDirectoryUrl({
+      relayConfigUrl: relayConfigOverride,
+      relayConfig: cfg
+    });
+    if (rootDirectoryUrl) {
+      startRootDirectoryPoll(rootDirectoryUrl);
+    }
     if (bootstrapPeers.length === 0) {
       logEvent('Relay config missing bootstrap peers.');
     } else {
@@ -3646,13 +3919,28 @@ const attachDebugHandles = () => {
         const addrs = libp2p.getMultiaddrs?.().map((addr) => addr.toString()) || [];
         const announceAddrs = networkManager?.getAnnounceAddrs?.() || addrs;
         const connections = libp2p.getConnections?.() || [];
+        const livePeersById = new Map(
+          (networkManager?.getConnectedPeers?.() || [])
+            .filter((entry) => entry?.peerId)
+            .map((entry) => [entry.peerId, entry])
+        );
+        const directUnicastSet = new Set(getDirectUnicastPeers());
         const summarized = Array.isArray(connections)
           ? connections.map((conn) => {
+              const peerId = conn?.remotePeer?.toString?.() || '';
               const remoteAddr = conn?.remoteAddr?.toString?.() || '';
+              const livePeer = livePeersById.get(peerId) || null;
               return {
-                peerId: conn?.remotePeer?.toString?.() || '',
+                peerId,
                 remoteAddr,
                 kind: classifyConnectionKind(remoteAddr),
+                via: livePeer?.via || null,
+                icePath: livePeer?.icePath || null,
+                iceProtocol: livePeer?.iceProtocol || null,
+                candidatePairRttMs: Number.isFinite(livePeer?.candidatePairRttMs) ? livePeer.candidatePairRttMs : null,
+                mediaPath: livePeer?.mediaPath || null,
+                direction: conn?.direction || livePeer?.direction || null,
+                directUnicast: directUnicastSet.has(peerId),
                 isRelay: remoteAddr.includes('/p2p-circuit'),
                 isWebRTC: remoteAddr.includes('/webrtc')
               };
@@ -3671,9 +3959,15 @@ const attachDebugHandles = () => {
       localPeerId,
       topologyType,
       topologyId,
+      throughputProfile: networkManager?.config?.throughputTopology?.profile || throughputProfileSelect?.value || 'batch-throughput',
+      hostGroupId: networkManager?.config?.hostGroupId || hostGroupIdInput?.value?.trim() || null,
+      relayConfigUrl: relayConfigUrlInput?.value?.trim() || null,
       roomId: roomInput?.value?.trim() || null,
       relayPeerIds: Array.from(relayPeerIds),
       relayReachable,
+      relayHealth: getBootstrapRelayHealthList(),
+      directUnicastPeers: getDirectUnicastPeers(),
+      rootNodes: discoveredRootNodes.slice(),
       telemetry: networkManager?.getTelemetrySnapshot?.() || null,
       peers: telemetryStore.list(),
       chaosApiBase,
@@ -3898,6 +4192,36 @@ topologySelect?.addEventListener('change', () => {
   syncInputsToUrl();
 });
 
+throughputProfileSelect?.addEventListener('change', () => {
+  const next = throughputProfileSelect.value || 'batch-throughput';
+  if (networkManager) {
+    networkManager.config.throughputTopology = {
+      ...(networkManager.config.throughputTopology || {}),
+      profile: next
+    };
+  }
+  updateHud();
+  syncInputsToUrl();
+});
+
+hostGroupIdInput?.addEventListener('input', () => {
+  const next = hostGroupIdInput.value.trim();
+  if (networkManager) {
+    networkManager.config.hostGroupId = next || null;
+  }
+  syncInputsToUrl();
+});
+
+relayConfigUrlInput?.addEventListener('input', () => {
+  syncInputsToUrl();
+});
+
+relayConfigUrlInput?.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' && connectionState === CONNECTION_STATE.DISCONNECTED) {
+    connect().catch(() => {});
+  }
+});
+
 gameIdInput?.addEventListener('input', () => { gameId = gameIdInput.value.trim() || 'netviz'; syncInputsToUrl(); });
 
 networkViewSelect?.addEventListener('change', () => {
@@ -3998,6 +4322,7 @@ window.addEventListener('beforeunload', () => {
   stopTelemetryLoop();
   stopDebugLoop();
   stopChaosPolling();
+  stopRootDirectoryPoll();
   if (attachSessionChannel) {
     try {
       attachSessionChannel.close();

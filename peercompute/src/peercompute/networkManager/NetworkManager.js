@@ -154,6 +154,11 @@ const isRelayOnlyAddr = (addr) => isRelayAddr(addr) && !isWebRTCAddr(addr);
 const isRelayWebRTCAddr = (addr) => isRelayAddr(addr) && isWebRTCAddr(addr);
 const isTrulyDirectAddr = (addr) => !isRelayAddr(addr);
 const isDirectAddr = (addr) => isTrulyDirectAddr(addr);
+const isBareWebRTCPlaceholderAddr = (addr) => {
+  const str = toAddrString(addr);
+  if (!str || !isWebRTCAddr(str) || isRelayAddr(str) || str.includes('/webrtc-direct')) return false;
+  return !/\/(?:ip4|ip6|dns|dns4|dns6|dnsaddr)\//.test(str);
+};
 const normalizeSignalingPath = (value) => {
   const raw = String(value || '').trim().toLowerCase();
   if (!raw) return null;
@@ -3315,6 +3320,8 @@ export class NetworkManager {
     if (Array.isArray(payload.multiaddrs) && payload.multiaddrs.length > 0) {
       this._rememberPeerAddresses(from, payload.multiaddrs);
     }
+    this._clearDialFailureBackoff(from);
+    this.recentDialAttempts.delete(from);
     this.peerConnectionRecovery?.notifyRelayReady(from);
     await this._maybeDialPeer(from, 'relay-assist-ready', payload.multiaddrs || null, { force: true });
   }
@@ -5148,8 +5155,10 @@ export class NetworkManager {
     const hasRelay = active.some((conn) => isRelayAddr(conn?.remoteAddr));
     const hasRelayWebrtc = active.some((conn) => isRelayWebRTCAddr(conn?.remoteAddr));
     const preferDirect = this.config.webrtc?.preferDirect !== false;
+    const countRelayWebrtcAsDirectCapable = this.config.webrtc?.countRelayWebrtcAsDirectCapable !== false;
     const forceDial = options?.force === true;
     if (hasDirect) return;
+    if (hasRelayWebrtc && countRelayWebrtcAsDirectCapable && !forceDial) return;
     if (!preferDirect && active.length > 0 && !forceDial) return;
     const now = Date.now();
     // Deterministic bilateral dial-glare tie-breaker: on unsolicited presence
@@ -5287,13 +5296,22 @@ export class NetworkManager {
       let orderedTargets = [];
       const preferIpv6 = this._hasLocalIpv6Addrs();
       if (preferDirect) {
-        if (directTargets.length > 0) {
-          orderedTargets = orderDialTargets(directTargets, preferIpv6);
+        const dialableDirectTargets = directTargets.filter((addr) => !isBareWebRTCPlaceholderAddr(addr));
+        const bareWebrtcTargets = directTargets.filter((addr) => isBareWebRTCPlaceholderAddr(addr));
+        if (dialableDirectTargets.length > 0) {
+          orderedTargets = [
+            ...orderDialTargets(dialableDirectTargets, preferIpv6),
+            ...(!hasRelayWebrtc ? relayWebrtcTargets : [])
+          ];
         } else if (relayWebrtcTargets.length > 0 && !hasRelayWebrtc) {
           // Keep attempting relay-webrtc upgrades while only plain relay is present.
           orderedTargets = relayWebrtcTargets;
         } else if (!hasRelay && relayTargets.length > 0) {
           orderedTargets = relayTargets;
+        } else if (bareWebrtcTargets.length > 0 && !hasRelayWebrtc) {
+          // Only fall back to bare /webrtc placeholders when no concrete
+          // IP/DNS or relay-signaled WebRTC multiaddr is available.
+          orderedTargets = orderDialTargets(bareWebrtcTargets, preferIpv6);
         }
       } else {
         orderedTargets = maybeDialTargets.length > 0 ? maybeDialTargets : relayTargets;
@@ -5657,7 +5675,9 @@ export class NetworkManager {
         this._scheduleRelayPrune(peerId, protectedMs);
         continue;
       }
-      this._retireIdleConnection(dup, 'duplicate-direct');
+      if (!this._retireIdleConnection(dup, 'duplicate-direct')) {
+        this._scheduleRelayPrune(peerId, 2000);
+      }
     }
   }
 

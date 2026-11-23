@@ -392,10 +392,22 @@ export function getPeerSubgroupDescriptor(peer, groupBy = 'room', edgeIndex = nu
     if (cats.includes('circuit-relay')) return { key: 'transport:circuit-relay', label: 'Circuit relayed' };
     return { key: 'transport:mixed', label: 'Mixed / relay-webrtc' };
   }
-  // Default: 'room' — group by (application, topologyId, roomId)
+  // Default: 'room' — group shared global model-network connections together
+  // (e.g. inference + cubechat model clients on default-game/default-room)
+  // so apps with separate world and model peers do not look like duplicate
+  // room copies; group world/app scopes by (application, topologyId, roomId).
   const app = peer.application || peer.gameId || (peer.inferred ? 'inferred' : 'unknown');
   const topoId = peer.topologyId || '';
   const roomId = peer.roomId || '';
+  const isSharedModelScope = peer.role === 'models'
+    && (!peer.gameId || peer.gameId === 'default-game' || peer.gameId === 'peercompute-models');
+  if (isSharedModelScope) {
+    const key = `room:models|${topoId}|${roomId}`;
+    const parts = ['models'];
+    if (roomId && roomId !== 'models') parts.push(roomId);
+    else if (topoId && topoId !== 'models') parts.push(topoId);
+    return { key, label: parts.join(' / ') };
+  }
   const key = `room:${app}|${topoId}|${roomId}`;
   const parts = [app];
   if (roomId && roomId !== app) parts.push(roomId);
@@ -453,11 +465,17 @@ export function buildSubgroupClusters(peers = [], edges = [], { groupBy = 'room'
       else if (inA || inB) crossEdges += 1;
     }
     const diag = computeGraphDiagnostics(group.peers, internalEdges, { relayIds: relaySet });
+    const appCounts = {};
+    for (const peer of group.peers) {
+      const appName = peer.application || peer.gameId || (peer.inferred ? 'inferred' : 'unknown');
+      appCounts[appName] = (appCounts[appName] || 0) + 1;
+    }
     clusters.push({
       id: group.id,
       key: group.key,
       label: group.label,
       colorHex: group.colorHex,
+      appCounts,
       peerIds: group.peerIds,
       peerCount: group.peers.length,
       activeCount: group.peers.filter((p) => !p.stale && !p.inferred).length,
@@ -556,11 +574,23 @@ export function buildAnalysisSnapshot({
   colorLens = 'role',
   focusSubgroup = '',
   observedView = null,
+  sessionPeers = null,
+  sessionEdges = null,
   diagnostics = null,
   subgroups = [],
+  relayHealth = [],
+  directUnicastPeers = [],
+  throughputProfile = null,
+  hostGroupId = null,
   history = [],
   now = Date.now()
 } = {}) {
+  const peers = viewMode === 'session' && Array.isArray(sessionPeers)
+    ? sessionPeers
+    : (Array.isArray(observedView?.peers) ? observedView.peers : []);
+  const edges = viewMode === 'session' && Array.isArray(sessionEdges)
+    ? sessionEdges
+    : (Array.isArray(observedView?.edges) ? observedView.edges : []);
   return {
     schema: NETVIZ_ANALYSIS_SCHEMA,
     exportedAt: new Date(now).toISOString(),
@@ -569,12 +599,16 @@ export function buildAnalysisSnapshot({
     groupBy,
     colorLens,
     focusSubgroup: focusSubgroup || null,
+    throughputProfile: throughputProfile || null,
+    hostGroupId: hostGroupId || null,
     summary: observedView?.summary || null,
     compute: observedView?.compute || null,
     diagnostics: diagnostics || null,
     subgroups: Array.isArray(subgroups) ? subgroups : [],
-    peers: Array.isArray(observedView?.peers) ? observedView.peers : [],
-    edges: Array.isArray(observedView?.edges) ? observedView.edges : [],
+    relayHealth: Array.isArray(relayHealth) ? relayHealth : [],
+    directUnicastPeers: Array.isArray(directUnicastPeers) ? directUnicastPeers : [],
+    peers,
+    edges,
     gossipEdges: Array.isArray(observedView?.gossipEdges) ? observedView.gossipEdges : [],
     workMeshEdges: Array.isArray(observedView?.workMeshEdges) ? observedView.workMeshEdges : [],
     models: Array.isArray(observedView?.models) ? observedView.models : [],

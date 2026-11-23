@@ -253,6 +253,23 @@ try {
   assert.ok(exported.gossipEdges.length >= 2);
   assert.ok(exported.workMeshEdges.length >= 2);
   assert.ok(exported.history.length >= 1);
+  assert.ok(Array.isArray(exported.relayHealth));
+  assert.ok(Array.isArray(exported.directUnicastPeers));
+
+  // Verify live Goal profile, Host group, Relay URL input, and Session-mode analysis panel visibility.
+  assert.ok(await page.locator('#relay-config-url').count() === 1);
+  assert.ok(await page.locator('#role-filter option[value="root"]').count() === 1);
+  await page.selectOption('#throughput-profile', 'lan-first');
+  await page.fill('#host-group-id', 'pi-lab');
+  await page.selectOption('#network-view', 'session');
+  await page.waitForTimeout(150);
+  const sessionAnalysisVisible = await page.locator('#analysis-panel').isVisible();
+  assert.equal(sessionAnalysisVisible, true, 'analysis panel should remain visible in Selected session view');
+  const sessionStatus = await page.evaluate(() => window.__NETVIZ__.getStatus());
+  assert.equal(sessionStatus.throughputProfile, 'lan-first');
+  assert.equal(sessionStatus.hostGroupId, 'pi-lab');
+  await page.selectOption('#network-view', 'all');
+  await page.waitForTimeout(100);
 
   // Verify mobile viewport has no horizontal overflow.
   await page.setViewportSize({ width: 390, height: 844 });

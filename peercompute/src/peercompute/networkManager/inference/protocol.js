@@ -24,7 +24,7 @@ export const isSpeechTask = (task) => ['automatic-speech-recognition', 'text-to-
 export const LEGACY_MAX_NEW_TOKENS = 256;
 export const PEER_INFERENCE_LIMITS = Object.freeze({ frameBytes: 128 * 1024, imageChunkBytes: 64 * 1024,
   maximumPeers: 32, maximumModels: 128, maximumInbound: 5, maximumPerPeer: 2,
-  maximumOutbound: 5, maximumHostedModels: 16, queryTimeoutMs: 5000, requestTimeoutMs: 120000, recordTtlMs: 15000 });
+  maximumOutbound: 5, maximumHostedModels: 16, queryTimeoutMs: 5000, requestTimeoutMs: 120000, recordTtlMs: 30000 });
 const encoder = new TextEncoder();
 const decoder = new TextDecoder('utf-8', { fatal: true });
 export const bytes = (text) => encoder.encode(text).length;

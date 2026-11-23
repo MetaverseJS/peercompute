@@ -1429,3 +1429,59 @@ test('NetworkManager reports logical peer counts separately from raw connection 
   assert.equal(stats.reservedDialPeerCount, 1);
   assert.equal(stats.connections, 4);
 });
+
+test('NetworkManager skips bare /webrtc placeholder dials when relay-webrtc is open or available', async () => {
+  const manager = new NetworkManager({ webrtc: { preferDirect: true } });
+  manager.bootstrapPeerIds = new Set();
+  const dialed = [];
+  const relayRtc = '/dns4/secretworkshop.net/tcp/443/wss/p2p/12D3KooWN8PoXAkYjbzTD3SKJGP97peWDE9jFeqqS3ipJsgwDozs/p2p-circuit/webrtc/p2p/peer-b';
+  let openConns = [];
+  manager.libp2p = {
+    getConnections: () => openConns,
+    dial: async (addr) => {
+      dialed.push(addr.toString());
+    }
+  };
+
+  // First dial: presence includes both bare /webrtc and /p2p-circuit/webrtc.
+  // Should dial /p2p-circuit/webrtc directly without failing on bare /webrtc.
+  await manager._maybeDialPeer('peer-b', 'presence', [
+    buildAddr('/webrtc/p2p/peer-b'),
+    buildAddr(relayRtc)
+  ]);
+  assert.deepEqual(dialed, [relayRtc]);
+  assert.equal(manager.dialFailureCount, 0);
+
+  // Second dial: peer already has an open relay-webrtc link. Presence with bare
+  // /webrtc must NOT trigger re-dialing or dialFailureCount churn.
+  openConns = [buildConnection('peer-b', relayRtc)];
+  manager.recentDialAttempts.clear();
+  await manager._maybeDialPeer('peer-b', 'presence', [
+    buildAddr('/webrtc/p2p/peer-b'),
+    buildAddr(relayRtc)
+  ]);
+  assert.equal(dialed.length, 1);
+  assert.equal(manager.dialFailureCount, 0);
+});
+
+test('NetworkManager clears stale dial backoff on relay-assist-ready and reschedules busy duplicate pruning', async () => {
+  const manager = new NetworkManager({ webrtc: { preferDirect: true, directUpgradeGraceMs: 0 } });
+  manager.bootstrapPeerIds = new Set();
+  manager.peerId = 'peer-a';
+  manager.peerDialBackoff.set('peer-b', { attempts: 3, until: Date.now() + 30_000, transient: true, reason: 'NO_RESERVATION' });
+  manager.recentDialAttempts.set('peer-b', Date.now());
+  let dialCalled = false;
+  manager._maybeDialPeer = async () => { dialCalled = true; };
+  await manager._handleRelayAssistReady('peer-b', { multiaddrs: [] });
+  assert.equal(manager.peerDialBackoff.has('peer-b'), false);
+  assert.equal(manager.recentDialAttempts.has('peer-b'), false);
+  assert.equal(dialCalled, true);
+
+  // Busy duplicate direct connection schedules a retry prune timer instead of giving up permanently.
+  const conn1 = { ...buildConnection('peer-b', '/webrtc/p2p/peer-b'), id: 'c1', timeline: { open: Date.now() - 30_000 }, streams: [{ protocol: '/custom/busy/1.0.0', status: 'open' }] };
+  const conn2 = { ...buildConnection('peer-b', '/webrtc/p2p/peer-b'), id: 'c2', timeline: { open: Date.now() - 20_000 }, streams: [{ protocol: '/custom/busy/1.0.0', status: 'open' }] };
+  manager.libp2p = { getConnections: () => [conn1, conn2] };
+  manager._maybePruneDuplicateConnections('peer-b');
+  assert.equal(manager.relayPruneTimers.has('peer-b'), true);
+  manager._clearRelayPruneTimer('peer-b');
+});

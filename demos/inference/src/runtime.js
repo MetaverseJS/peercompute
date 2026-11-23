@@ -341,6 +341,9 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
         const resolvedWebrtc = webrtc ?? inherited?.webrtc;
         return {
           bootstrapPeers: [relayAddress],
+          maxConnections: inherited?.maxConnections ?? 16,
+          targetConnections: inherited?.targetConnections ?? 8,
+          maxDialPeers: inherited?.maxDialPeers ?? 16,
           transportManager: { faultTolerance: 'no-fatal' },
           pubsubType: resolvedPubsubType,
           ...(resolvedGossipsub ? { gossipsub: resolvedGossipsub } : {}),

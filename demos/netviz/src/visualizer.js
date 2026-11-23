@@ -5,7 +5,7 @@ import { NURBSCurve } from 'three/examples/jsm/curves/NURBSCurve.js';
 const COLORS = {
   local: 0xfff2a6,
   remote: 0xffb13b,
-  models: 0x00ffd4,
+  models: 0x00d4ff,
   world: 0x00ff6a,
   stale: 0x89949a,
   session: 0x7c6c9c,
@@ -115,7 +115,9 @@ export class NetworkVisualizer {
     this.hullGroup = new THREE.Group();
     this.radiusGroup = new THREE.Group();
     this.nodeGeometry = new THREE.BoxGeometry(0.7, 0.7, 0.7);
+    this.modelsGeometry = new THREE.CylinderGeometry(0.42, 0.42, 0.72, 6);
     this.relayGeometry = new THREE.IcosahedronGeometry(0.65, 0);
+    this.rootGeometry = new THREE.OctahedronGeometry(0.68, 0);
     this.keeperHaloGeometry = new THREE.RingGeometry(0.62, 0.78, 24);
     this.keeperHaloMaterial = new THREE.MeshBasicMaterial({
       color: COLORS.relay,
@@ -1147,11 +1149,12 @@ export class NetworkVisualizer {
       if (!position) continue;
       const isRelay = Boolean(peer.isRelay);
       const isRoot = Boolean(peer.isRoot);
+      const isModels = !isRelay && !isRoot && peer.role === 'models';
       const isHost = Boolean(peer.isHost);
       const isLocal = peer.peerId === localPeerId;
       const isGhost = Boolean(peer.inferred);
       let mesh = this.nodeMeshes.get(peer.peerId);
-      if (mesh && mesh.userData.isRelay !== isRelay) {
+      if (mesh && (mesh.userData.isRelay !== isRelay || Boolean(mesh.userData.isRoot) !== isRoot || Boolean(mesh.userData.isModels) !== isModels)) {
         this.nodeGroup.remove(mesh);
         mesh.material.dispose();
         this.nodeMeshes.delete(peer.peerId);
@@ -1159,13 +1162,15 @@ export class NetworkVisualizer {
       }
       if (!mesh) {
         const material = new THREE.MeshStandardMaterial({
-          color: isRelay ? COLORS.relay : COLORS.remote,
-          emissive: isRelay ? 0x1a3240 : 0x2a1a00,
-          emissiveIntensity: isRelay ? 0.85 : 0.65
+          color: isRelay ? COLORS.relay : (isRoot ? COLORS.root : (isModels ? COLORS.models : COLORS.remote)),
+          emissive: isRelay ? 0x1a3240 : (isRoot ? 0x341627 : (isModels ? 0x002d42 : 0x2a1a00)),
+          emissiveIntensity: isRelay ? 0.85 : (isRoot ? 1.0 : 0.65)
         });
-        const geometry = isRelay ? this.relayGeometry : this.nodeGeometry;
+        const geometry = isRelay
+          ? this.relayGeometry
+          : (isRoot ? this.rootGeometry : (isModels ? this.modelsGeometry : this.nodeGeometry));
         mesh = new THREE.Mesh(geometry, material);
-        mesh.userData = { type: 'node', peerId: peer.peerId, isRelay, role: peer.role || null };
+        mesh.userData = { type: 'node', peerId: peer.peerId, isRelay, isRoot, isModels, role: peer.role || null };
         this.nodeGroup.add(mesh);
         this.nodeMeshes.set(peer.peerId, mesh);
       }
@@ -1176,9 +1181,13 @@ export class NetworkVisualizer {
         ? 0x1a3240
         : isRoot
           ? 0x341627
-          : isHost
-            ? 0x163038
-            : 0x2a1a00;
+          : isModels
+            ? 0x002d42
+            : peer.role === 'world'
+              ? 0x0a2e16
+              : isHost
+                ? 0x163038
+                : 0x2a1a00;
       let emissiveIntensity = peer.stale ? 0.15 : isRelay ? 0.85 : isRoot ? 1.0 : isHost ? 0.8 : 0.65;
       let scale = isRoot ? 1.35 : isHost ? 1.15 : 1;
       if (isLocal && !isRelay) {

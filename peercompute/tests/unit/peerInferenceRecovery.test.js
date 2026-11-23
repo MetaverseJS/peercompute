@@ -249,3 +249,40 @@ test('a committed remote failure is never replayed through transport recovery', 
   await assert.rejects(requestor.service.generate(cid, { prompt: 'Once' }), (error) => error.committed === true);
   assert.equal(host.generations, 1); assert.equal(recoveries, 0);
 });
+
+test('refresh paces disconnected peers to the recovery concurrency cap so all hosts are discovered', { timeout: 15000 }, async (t) => {
+  const { requestor, host, original } = await fixture(t);
+  await original.close();
+  await until(() => !requestor.node.getConnections(host.node.peerId).length);
+  requestor.manager.peerConnectionRecovery.maxConcurrent = 1;
+  // Add two extra known disconnected peers ahead of the real host so an
+  // unpaced Promise.allSettled would immediately hit "Connection recovery is busy".
+  const dummyA = '12D3KooWDummyPeerRefreshPace000000000000000000000001';
+  const dummyB = '12D3KooWDummyPeerRefreshPace000000000000000000000002';
+  const scope = { gameId: requestor.manager.config.gameId, roomId: requestor.manager.config.roomId, topologyId: requestor.manager.config.topologyId };
+  const hostId = host.node.peerId.toString();
+  requestor.manager.peers.clear();
+  requestor.manager.peers.set(dummyA, { ...scope });
+  requestor.manager.peers.set(dummyB, { ...scope });
+  requestor.manager.peers.set(hostId, { ...scope });
+  const originalRecover = requestor.manager.recoverPeerInferenceConnection.bind(requestor.manager);
+  let active = 0, maxObserved = 0;
+  requestor.manager.recoverPeerInferenceConnection = async (peerId, opts) => {
+    active += 1;
+    maxObserved = Math.max(maxObserved, active);
+    try {
+      if (peerId === dummyA || peerId === dummyB) {
+        await delay(25);
+        throw new Error('Dummy peer unreachable');
+      }
+      return await originalRecover(peerId, opts);
+    } finally {
+      active -= 1;
+    }
+  };
+  requestor.manager._maybeDialPeer = async () => {};
+  const directory = await requestor.service.refresh();
+  assert.equal(maxObserved, 1, 'disconnected recovery queries must respect maxConcurrent');
+  assert.equal(directory.hosts.length, 1, 'real host queued behind unreachable peers must still be discovered');
+  assert.equal(directory.hosts[0].hosts[0].peerId, hostId);
+});

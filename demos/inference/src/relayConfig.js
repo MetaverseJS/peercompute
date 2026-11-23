@@ -35,7 +35,17 @@ export async function loadInferenceRelayConfig({ fetchImpl = globalThis.fetch, s
     .filter((address) => typeof address === 'string' && address.length <= 2048 && address.startsWith('/')
       && address.includes('/wss/') && address.includes('/p2p/')))].slice(0, 16);
   if (!bootstrapPeers.length) throw new Error('Production relay configuration contains no secure bootstrap peers');
-  return { bootstrapPeers, transportManager: { faultTolerance: 'no-fatal' },
+  const maxConnections = Number.isFinite(config.maxConnections)
+    ? Math.max(4, Math.min(64, Math.trunc(config.maxConnections)))
+    : 16;
+  const targetConnections = Number.isFinite(config.targetConnections)
+    ? Math.max(1, Math.min(maxConnections, Math.trunc(config.targetConnections)))
+    : Math.min(maxConnections, 8);
+  const maxDialPeers = Number.isFinite(config.maxDialPeers)
+    ? Math.max(targetConnections, Math.min(64, Math.trunc(config.maxDialPeers)))
+    : Math.max(maxConnections, 16);
+  return { bootstrapPeers, maxConnections, targetConnections, maxDialPeers,
+    transportManager: { faultTolerance: 'no-fatal' },
     ...(config.webrtc && typeof config.webrtc === 'object' ? { webrtc: config.webrtc } : {}),
     pubsubType: config.pubsubType === 'gossipsub' ? 'gossipsub' : 'floodsub',
     ...(config.gossipsub && typeof config.gossipsub === 'object' ? { gossipsub: config.gossipsub } : {}) };

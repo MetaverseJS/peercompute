@@ -71,6 +71,7 @@ export function buildObservedNetwork(reports = [], {
   subgroup = '',
   includeGhosts = true,
   legacySessions = [],
+  rootNodes = [],
   relayIds = new Set(),
   now = Date.now()
 } = {}) {
@@ -89,6 +90,66 @@ export function buildObservedNetwork(reports = [], {
     }
     if (report.relayState?.relayPeerId) {
       relaySet.add(report.relayState.relayPeerId);
+    }
+  }
+  for (const root of Array.isArray(rootNodes) ? rootNodes : []) {
+    if (!root?.peerId) continue;
+    const rootRelayIds = Array.isArray(root.relayPeerIds) ? root.relayPeerIds.filter(Boolean) : [];
+    for (const rid of rootRelayIds) relaySet.add(rid);
+    const expired = Number.isFinite(root.expiresAt) ? root.expiresAt < now : false;
+    const existing = records.get(root.peerId);
+    const rootDirectory = {
+      schema: root.schema || 'peercompute.model-evidence-directory.v1',
+      protocol: root.protocol || '/peercompute/model-evidence/1.0.0',
+      expiresAt: Number.isFinite(root.expiresAt) ? root.expiresAt : null,
+      addresses: Array.isArray(root.addresses) ? root.addresses.slice(0, 8) : [],
+      sourceUrl: root.sourceUrl || null
+    };
+    if (existing) {
+      records.set(root.peerId, {
+        ...existing,
+        isRoot: true,
+        role: existing.role || 'root',
+        rootDirectory
+      });
+    } else {
+      records.set(root.peerId, {
+        peerId: root.peerId,
+        isRoot: true,
+        application: 'peercompute-root',
+        role: 'root',
+        gameId: 'peercompute-root',
+        roomId: 'root',
+        topologyId: 'root',
+        topology: 'root',
+        source: 'root-directory',
+        reported: true,
+        stale: expired,
+        receivedAt: Number.isFinite(root.fetchedAt) ? root.fetchedAt : now,
+        rootDirectory,
+        relayState: {
+          connected: rootRelayIds.length > 0 && !expired,
+          role: 'permanent',
+          keepReason: 'root-service',
+          relayPeerId: rootRelayIds[0] || null,
+          gossipMeshCount: 0,
+          directMeshPeerCount: 0,
+          minDirectMeshPeers: 0
+        },
+        peers: rootRelayIds.map((rid) => ({
+          peerId: rid,
+          via: 'direct',
+          signalingPath: 'direct',
+          mediaPath: 'direct',
+          icePath: 'direct-ws',
+          rxBps: 0,
+          txBps: 0,
+          rxCount: 0,
+          txCount: 0
+        })),
+        compute: { workerCount: 0, activeTasks: 0, queuedTasks: 0, totalTasksCompleted: 0, totalTasksFailed: 0 },
+        models: []
+      });
     }
   }
   const applications = new Set([...records.values()].map((r) => r.application || r.gameId || 'unknown'));
@@ -304,6 +365,7 @@ export function buildObservedNetwork(reports = [], {
       sessionOnly: filteredPeers.filter((p) => p.sessionOnly).length,
       modelsUnavailable: visibleSelected.filter((r) => !r.stale && r.modelsStatus === 'unavailable').length,
       inferred: filteredPeers.filter((p) => p.inferred).length,
+      rootNodes: filteredPeers.filter((p) => p.isRoot).length,
       models: grouped.length,
       subgroups: subgroups.length
     }
@@ -332,6 +394,24 @@ export function describeObservedPeer(peer, now = Date.now()) {
       ]
     };
   }
+  if (peer.isRoot && peer.source === 'root-directory') {
+    const dir = peer.rootDirectory || {};
+    const ttlSec = Number.isFinite(dir.expiresAt) ? Math.round((dir.expiresAt - now) / 1000) : null;
+    const relayPeers = (peer.peers || []).map((n) => n?.peerId).filter(Boolean);
+    return {
+      title: 'Root Node · peercompute-root',
+      lines: [
+        ...lines,
+        'Role: root (persistent model-evidence registry)',
+        `Protocol: ${dir.protocol || '/peercompute/model-evidence/1.0.0'}`,
+        `Directory status: ${peer.stale ? 'stale / expired' : 'live'}${ttlSec !== null ? ` (${ttlSec >= 0 ? `expires in ${ttlSec}s` : `expired ${Math.abs(ttlSec)}s ago`})` : ''}`,
+        `Attached relay(s): ${relayPeers.length ? relayPeers.join(', ') : 'none'}`,
+        `Announced circuit addrs: ${Array.isArray(dir.addresses) ? dir.addresses.length : 0}`,
+        ...(dir.sourceUrl ? [`Directory URL: ${dir.sourceUrl}`] : []),
+        'Discovered from the signed public root directory descriptor (root disables pubsub telemetry).'
+      ]
+    };
+  }
   if (peer.inferred) {
     return {
       title: peer.isRelay ? 'Relay server' : 'Reported endpoint',
@@ -343,9 +423,13 @@ export function describeObservedPeer(peer, now = Date.now()) {
       ]
     };
   }
+  const appName = peer.application || peer.gameId || 'unknown';
+  const roleDesc = peer.role === 'models' && appName !== 'inference'
+    ? `models (shared model-network client for ${appName}; separate from its world connection)`
+    : (peer.role || 'unknown');
   lines.push(
-    `Application: ${peer.application || peer.gameId || 'unknown'}`,
-    `Connection role: ${peer.role || 'unknown'}`,
+    `Application: ${appName}`,
+    `Connection role: ${roleDesc}`,
     `Report: ${peer.stale ? 'stale' : 'recent'} · received ${Math.max(0, Math.floor((now - peer.receivedAt) / 1000))}s ago`,
     `Topology: ${peer.topologyId || '--'} (${peer.topology || 'distributed'})`,
     `Room: ${peer.roomId || '--'}`
