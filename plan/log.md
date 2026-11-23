@@ -65497,3 +65497,26 @@ Commands run & test results (Node `v24.18.0`):
 - `npm --prefix peercompute run build` (`webpack 5.104.1 --mode production`): **PASS**.
 - `node --test demos/tests/demo-ports.test.js demos/tests/demo-release.test.js`: **49/49 PASS**.
 - External Vite production builds (`demos/netviz` & `demos/inference` to scratch dir): verified cleanly.
+
+
+## 2026-11-23 11:16:00 AKST — Full 17-Demo Regression & Live 2-Browser P2P Verification (`feat/ulg-scale-ladder-extensions`)
+Prompt time/date: `2026-11-23 11:08:16 AKST` (`2026-11-23T11:08:16-09:00`).
+Prompt: *"can you  make sure they don't break existing demos"*
+
+Concrete actions attempted, findings & results:
+- Built all 17 workspace demos with Vite into an isolated temp directory (`/tmp/ulg-ext-all-demos/`, leaving `docs/` untouched) and ran full per-demo unit suites, shared platform/agent/model-library/UI suites, headless Chromium runtime smoke across all 17 freshly built demos, and live 2-browser P2P multiplayer verification over Go relay (`floodsub` and `gossipsub`).
+- Zero regressions found in any demo or shared subsystem! (One transient `EMFILE: too many open files` Vite watcher error occurred inside `demos/tests/unified-chat.test.js` while 17 Vite builds and 8 parallel Vite test servers ran concurrently; re-running `unified-chat.test.js` standalone passed 15/15 immediately.)
+- Removed `/tmp/ulg-ext-all-demos` after verification.
+
+Commands run & verified results (Node `v24.18.0`, Chrome `/usr/bin/google-chrome`):
+- 17-demo isolated Vite production build loop: **17/17 PASS** (`hyperborea`, `cubechat`, `planetgen`, `wxglobe`, `earth`, `motorcycle`, `multiscale`, `universes`, `webgpuphys`, `sneakywoods`, `daddygo`, `fano-reactor`, `schrodinger`, `netviz`, `inference`, `vibeslopdb`, `eshkols-in-space`).
+- `RUNTIME_SMOKE_DOCS_ROOT=/tmp/ulg-ext-all-demos RUNTIME_SMOKE_DEMOS="hyperborea,sneakywoods,daddygo,planetgen,wxglobe,motorcycle,universes,fano-reactor" node demos/tests/runtime-smoke.mjs`: **8/8 PASS**.
+- Headless Chromium COOP/COEP + native Vulkan WebGPU check over HTTP `127.0.0.1` against `/tmp/ulg-ext-all-demos`: **7/7 PASS** (`earth`, `inference`, `vibeslopdb`, `eshkols-in-space` `Running` / `189` steps, `multiscale`, `schrodinger`, `webgpuphys` + `webgpuphys/demos/toychest.html` `1280×800`, `0` page/console errors).
+- `RUNTIME_P2P_DOCS_ROOT=/tmp/ulg-ext-all-demos node demos/tests/runtime-p2p.mjs` (`floodsub`): **5/5 PASS** (`cubechat`, `hyperborea`, `sneakywoods`, `daddygo`, `netviz`).
+- `RUNTIME_P2P_DOCS_ROOT=/tmp/ulg-ext-all-demos RELAY_PUBSUB=gossipsub node demos/tests/runtime-p2p.mjs`: **5/5 PASS** (`cubechat`, `hyperborea`, `sneakywoods`, `daddygo`, `netviz`).
+- `CHROME_BIN=/usr/bin/google-chrome node demos/netviz/tests/analysisBrowserCheck.mjs`: **PASS**.
+- `npm run lan:self-test`: **PASS**.
+- Per-demo & subsystem suites: `test:earth` (**55/55**), `test:eshkols-in-space` (**8/8**), `test:motorcycle` (**120/120**), `demos/multiscale` (**206/206**), `demos/planetgen` (**PASS**), `demos/schrodinger` (**20/20**), `test:vibeslopdb` (**10/10**), `test:wxglobe` (**28/28**), `demos/netviz` (**18/18**), `test:capabilities` (**41/41**), `test:artifacts` (**75/75**), `test:diffusion` (**160/160**), `test:gguf` (**49/49**), `test:root-host` (**45/45**), `test:agent-layer` (**85/85**), `test:model-library` (**187/187**), `test:geo-core` (**87/87**), `test:geodata` (**60/60**), `test:physics` (**54/54**), `test:traffic` (**12/12**), `test:xr` (**24/24**), `test:global-chat` (**28/28**), `world-agent-host.test.js` + `cubechat-native-ui.test.js` (**115/115**), `test:inference:ui` (**183/184** parallel `EMFILE`; standalone `unified-chat.test.js` **15/15 PASS**).
+
+Files touched:
+- `plan/tests.md`, `plan/log.md` (zero source changes required).

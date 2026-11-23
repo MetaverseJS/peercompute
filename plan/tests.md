@@ -15,6 +15,13 @@
   - `npm run test:peer-inference`: **205/205 PASS**.
   - `npm --prefix peercompute run build` (webpack 5 production build): **PASS**.
   - `node --test demos/tests/demo-ports.test.js demos/tests/demo-release.test.js`: **49/49 PASS**.
+- **Full 17-demo compatibility, headless Chromium & live 2-browser P2P verification (against freshly built isolated bundles in `/tmp/ulg-ext-all-demos`, keeping `docs/` untouched)**:
+  - All 17 demo production Vite builds (`hyperborea`, `cubechat`, `planetgen`, `wxglobe`, `earth`, `motorcycle`, `multiscale`, `universes`, `webgpuphys`, `sneakywoods`, `daddygo`, `fano-reactor`, `schrodinger`, `netviz`, `inference`, `vibeslopdb`, `eshkols-in-space`): **17/17 PASS**.
+  - Headless Chromium `demos/tests/runtime-smoke.mjs` (`hyperborea`, `sneakywoods`, `daddygo`, `planetgen`, `wxglobe`, `motorcycle`, `universes`, `fano-reactor`): **8/8 PASS**.
+  - Headless Chromium COOP/COEP + native Vulkan WebGPU verification (`earth`, `inference`, `vibeslopdb`, `eshkols-in-space` `Running` / `189` steps, `multiscale`, `schrodinger`, `webgpuphys` + `webgpuphys/demos/toychest.html` `1280×800`): **7/7 PASS** (`0` page/console errors).
+  - Live 2-browser P2P multiplayer (`demos/tests/runtime-p2p.mjs` across `cubechat`, `hyperborea`, `sneakywoods`, `daddygo`, `netviz`): **5/5 PASS** over Go relay `floodsub` AND **5/5 PASS** over Go relay `gossipsub`.
+  - Headless Chromium UI & analysis checks: `demos/netviz/tests/analysisBrowserCheck.mjs` (**PASS**), `world-agent-host.test.js` + `cubechat-native-ui.test.js` (**115/115 PASS**), `npm run lan:self-test` (**PASS**).
+  - All per-demo & shared-platform suites: `earth` (**55/55**), `eshkols-in-space` (**8/8**), `motorcycle` (**120/120**), `multiscale` (**206/206**), `planetgen` (**PASS**), `schrodinger` (**20/20**), `vibeslopdb` (**10/10**), `wxglobe` (**28/28**), `netviz` (**18/18**), `capabilities` (**41/41**), `artifacts` (**75/75**), `diffusion` (**160/160**), `gguf` (**49/49**), `root-host` (**45/45**), `agent-layer` (**85/85**), `model-library` (**187/187**), `geo-core` (**87/87**), `geodata` (**60/60**), `physics` (**54/54**), `traffic` (**12/12**), `xr` (**24/24**), `global-chat` (**28/28**), `inference:ui` (**183/184** under parallel inotify `EMFILE` load; standalone `unified-chat.test.js` **15/15 PASS**).
 
 ### NetViz root visibility, dual-role subgroup clarity & CubeChat model discovery / dial-churn fixes (`main` `62484e70`) — November 23
 
