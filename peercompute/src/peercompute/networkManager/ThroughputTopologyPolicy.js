@@ -170,9 +170,14 @@ export const THROUGHPUT_TOPOLOGY_DEFAULTS = Object.freeze({
   maxExploreIntervalMs: 300000,
   maxRepairIntervalMs: 15000, // a node short of links must keep trying: real connection attempts often fail
   retryCooldownMs: 20000,
+  maxCooldownMultiplier: 1,
   referralShare: 0.5,
   replaceMargin: 0.1,
   minGainShare: 0.05,
+  flowTauMs: 4000,
+  debiasNewcomerFlow: false,
+  candidateScoreBandRatio: 0.15,
+  candidateExploreShare: 0.15,
   // Multipliers applied to the wait between trials.
   failFactor: 2,
   successFactor: 0.5
@@ -182,29 +187,35 @@ export const THROUGHPUT_TOPOLOGY_DEFAULTS = Object.freeze({
 export function createThroughputTopologyState() {
   return { lastExploreAt: Number.NEGATIVE_INFINITY, exploreDelayMs: null, trialPeerId: null,
     lastRepairAt: Number.NEGATIVE_INFINITY, repairDelayMs: 0, established: new Set(), cooldown: new Map(),
-    baselines: new Map(), wasIdle: false };
+    failCounts: new Map(), baselines: new Map(), wasIdle: false };
 }
 
 function pick(list, random) {
   return list.length ? list[Math.min(list.length - 1, Math.floor(random() * list.length))] : null;
 }
 
-function pickCandidate(list, random, scoreCandidate) {
+function pickCandidate(list, random, scoreCandidate, { bandRatio = 0.15, exploreShare = 0.15 } = {}) {
   if (!list.length) return null;
   if (typeof scoreCandidate !== 'function') return pick(list, random);
-  let bestScore = Number.NEGATIVE_INFINITY;
-  let tied = [];
-  for (const peerId of list) {
-    const raw = Number(scoreCandidate(peerId));
-    const score = Number.isFinite(raw) ? raw : 0;
-    if (score > bestScore + 1e-9) {
-      bestScore = score;
-      tied = [peerId];
-    } else if (Math.abs(score - bestScore) <= 1e-9) {
-      tied.push(peerId);
-    }
+  // In larger networks (>= 6 candidates), reserve a small exploratory share so
+  // biased profiles (e.g. lan-first, capability-weighted) still discover bridges
+  // and never get trapped in a single local cluster or stampede one peer.
+  if (list.length >= 6 && exploreShare > 0 && random() < exploreShare) {
+    return pick(list, random);
   }
-  return pick(tied.length ? tied : list, random);
+  const scored = list.map((peerId) => {
+    const raw = Number(scoreCandidate(peerId));
+    return { peerId, score: Number.isFinite(raw) ? raw : 0 };
+  });
+  let bestScore = Number.NEGATIVE_INFINITY;
+  for (const item of scored) {
+    if (item.score > bestScore) bestScore = item.score;
+  }
+  const tolerance = Math.max(1e-9, Math.abs(bestScore) * Math.max(0, bandRatio));
+  const topBand = scored
+    .filter((item) => item.score >= bestScore - tolerance)
+    .map((item) => item.peerId);
+  return pick(topBand.length ? topBand : list, random);
 }
 
 /**
@@ -231,10 +242,30 @@ export function decideThroughputTopology({ now, links = [], candidates = [], ref
   const scaled = (factor) => Math.min(options.maxExploreIntervalMs, Math.max(base, factor * (state.exploreDelayMs ?? base)));
   const scoreLink = typeof options.scoreLink === 'function' ? options.scoreLink : null;
   const scoreCandidate = typeof options.scoreCandidate === 'function' ? options.scoreCandidate : null;
+  const flowTauMs = Number.isFinite(options.flowTauMs) && options.flowTauMs > 0 ? options.flowTauMs : 4000;
+  const debiasNewcomer = options.debiasNewcomerFlow === true;
+  if (!state.failCounts) state.failCounts = new Map();
   const metricFor = (link) => {
-    if (!scoreLink) return Number.isFinite(link.flow) ? link.flow : 0;
-    const scored = Number(scoreLink(link));
-    return Number.isFinite(scored) ? scored : (Number.isFinite(link.flow) ? link.flow : 0);
+    let baseFlow = Number.isFinite(link.flow) ? link.flow : 0;
+    // Correct zero-initialized EWMA cold-start bias for young trial links so a
+    // fast newcomer is not unfairly rejected before its EWMA warms up.
+    if (debiasNewcomer && baseFlow > 0 && !state.established.has(link.peerId) && Number.isFinite(link.since)) {
+      const age = Math.max(500, now - link.since);
+      if (age < 3 * flowTauMs) {
+        const bias = Math.max(0.4, 1 - Math.exp(-age / flowTauMs));
+        baseFlow = baseFlow / bias;
+      }
+    }
+    if (!scoreLink) return baseFlow;
+    const scored = Number(scoreLink({ ...link, flow: baseFlow }));
+    return Number.isFinite(scored) ? scored : baseFlow;
+  };
+  const setCooldown = (peerId) => {
+    const fails = (state.failCounts.get(peerId) || 0) + 1;
+    state.failCounts.set(peerId, fails);
+    const cap = Number.isFinite(options.maxCooldownMultiplier) ? Math.max(1, options.maxCooldownMultiplier) : 8;
+    const mult = Math.min(cap, 2 ** Math.min(fails - 1, 4));
+    state.cooldown.set(peerId, now + options.retryCooldownMs * mult);
   };
   const linked = new Set(links.map((link) => link.peerId));
   for (const peerId of state.established) if (!linked.has(peerId)) state.established.delete(peerId);
@@ -244,6 +275,7 @@ export function decideThroughputTopology({ now, links = [], candidates = [], ref
   const scoredLinks = links.map((link) => ({ ...link, effectiveFlow: metricFor(link) }));
   const total = scoredLinks.reduce((sum, link) => sum + link.effectiveFlow, 0);
   const rawTotal = links.reduce((sum, link) => sum + (Number.isFinite(link.flow) ? link.flow : 0), 0);
+  const baselineTotal = scoreLink ? total : rawTotal;
   // Wake out of idle exponential backoff immediately when a new workload begins
   // carrying non-zero flow, instead of sleeping up to maxExploreIntervalMs.
   if (rawTotal > 1e-9 && state.wasIdle) {
@@ -261,7 +293,8 @@ export function decideThroughputTopology({ now, links = [], candidates = [], ref
   for (const peerId of state.baselines.keys()) if (!linked.has(peerId)) state.baselines.delete(peerId);
   for (const link of scoredLinks) {
     if (!state.established.has(link.peerId) && !state.baselines.has(link.peerId)) {
-      state.baselines.set(link.peerId, total - link.effectiveFlow);
+      const linkBaseline = scoreLink ? link.effectiveFlow : (Number.isFinite(link.flow) ? link.flow : 0);
+      state.baselines.set(link.peerId, baselineTotal - linkBaseline);
     }
   }
 
@@ -269,9 +302,9 @@ export function decideThroughputTopology({ now, links = [], candidates = [], ref
   const trialing = scoredLinks.some((link) => now - link.since < options.trialMs);
   if (!trialing) {
     if (scoredLinks.length > target) {
-      const before = Math.min(total, ...scoredLinks.filter((link) => !state.established.has(link.peerId))
+      const before = Math.min(baselineTotal, ...scoredLinks.filter((link) => !state.established.has(link.peerId))
         .map((link) => state.baselines.get(link.peerId)));
-      const improved = total - before > Math.max(options.minGainShare * before, 1e-9);
+      const improved = baselineTotal - before > Math.max(options.minGainShare * before, 1e-9);
       // Without a gain every established link outranks every newcomer. With
       // one, a newcomer still has to beat an established link by the margin.
       const ranked = scoredLinks.map((link) => ({ ...link,
@@ -280,14 +313,15 @@ export function decideThroughputTopology({ now, links = [], candidates = [], ref
         .sort((a, b) => (b.score - a.score) || (a.since - b.since) || String(a.peerId).localeCompare(String(b.peerId)));
       for (const loser of ranked.slice(target)) {
         drop.push(loser.peerId);
-        state.cooldown.set(loser.peerId, now + options.retryCooldownMs);
+        setCooldown(loser.peerId);
       }
     }
     if (state.trialPeerId !== null) {
       // The trial failed if its link was refused, closed by the peer or dropped here.
       const kept = linked.has(state.trialPeerId) && !drop.includes(state.trialPeerId);
       state.exploreDelayMs = scaled(kept ? options.successFactor : options.failFactor);
-      if (!kept) state.cooldown.set(state.trialPeerId, now + options.retryCooldownMs);
+      if (kept) state.failCounts.delete(state.trialPeerId);
+      else setCooldown(state.trialPeerId);
       state.trialPeerId = null;
     }
     const dropped = new Set(drop);
@@ -307,9 +341,10 @@ export function decideThroughputTopology({ now, links = [], candidates = [], ref
     const open = (peerId) => !linked.has(peerId) && (repairing || !state.cooldown.has(peerId));
     const referred = referrals.filter(open);
     const known = candidates.filter(open);
-    connect = (repairing ? pickCandidate(available.filter(open), random, scoreCandidate) : null)
-      ?? (referred.length && random() < options.referralShare ? pickCandidate(referred, random, scoreCandidate) : null)
-      ?? pickCandidate(known, random, scoreCandidate) ?? pickCandidate(referred, random, scoreCandidate);
+    const candOpts = { bandRatio: options.candidateScoreBandRatio, exploreShare: options.candidateExploreShare };
+    connect = (repairing ? pickCandidate(available.filter(open), random, scoreCandidate, candOpts) : null)
+      ?? (referred.length && random() < options.referralShare ? pickCandidate(referred, random, scoreCandidate, candOpts) : null)
+      ?? pickCandidate(known, random, scoreCandidate, candOpts) ?? pickCandidate(referred, random, scoreCandidate, candOpts);
     if (connect && exploring) { state.lastExploreAt = now; state.trialPeerId = connect; }
     if (connect && repairing) {
       state.lastRepairAt = now;

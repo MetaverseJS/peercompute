@@ -220,8 +220,18 @@ async function startServer() {
     const gossipsubOptions = {
       emitSelf: false,
       allowPublishToZeroTopicPeers: true,
+      fallbackToFloodsub: true,
       canRelayMessage: true,
-      ...(relayGossipsubConfig || {})
+      D: 12,
+      Dlo: 6,
+      Dhi: 32,
+      Dout: 2,
+      ...(relayGossipsubConfig || {}),
+      scoreParams: {
+        IPColocationFactorWeight: 0,
+        behaviourPenaltyWeight: 0,
+        ...(relayGossipsubConfig?.scoreParams || {})
+      }
     };
     if (relayGossipsubConfig?.allowPublishToZeroPeers !== undefined
       && gossipsubOptions.allowPublishToZeroTopicPeers === undefined) {

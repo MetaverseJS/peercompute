@@ -374,6 +374,10 @@ export function getPeerSubgroupDescriptor(peer, groupBy = 'room', edgeIndex = nu
     const topo = peer.topology || 'distributed';
     return { key: `topology:${topo}`, label: `Topology: ${topo}` };
   }
+  if (groupBy === 'hostGroup') {
+    const hg = peer.hostGroupId || 'unassigned';
+    return { key: `hostGroup:${hg}`, label: hg === 'unassigned' ? 'Host Group: unassigned' : `Host Group: ${hg}` };
+  }
   if (groupBy === 'transport') {
     const peerEdges = edgeIndex?.get(peer.peerId) || [];
     if (peerEdges.length === 0) {
@@ -463,12 +467,14 @@ export function buildSubgroupClusters(peers = [], edges = [], { groupBy = 'room'
       componentCount: diag.componentCount,
       isPartitioned: diag.isPartitioned,
       directPct: diag.directPct,
+      lanPct: diag.lanPct,
       lanEdgeCount: diag.lanEdgeCount,
       relayConnectedCount: diag.relayAudit.connectedPeers,
       medianRttMs: diag.medianRttMs,
       totalRxBps: diag.totalRxBps,
       totalTxBps: diag.totalTxBps,
       totalWorkRate: diag.totalWorkRate,
+      totalRewiresPerMin: diag.totalRewiresPerMin,
       bridgeCount: diag.bridgeEdgeKeys.length
     });
   }

@@ -40,6 +40,10 @@ export const WORK_MESH_DEFAULTS = Object.freeze({
   resultBuffer: 16, // finished results a node may hold before it stops computing
   workBatch: 8,
   resultBatch: 16,
+  adaptiveHeadroom: true, // gently scale batches/transit buffer with measured rate when defaults are used
+  maxWorkBatch: 12,
+  maxResultBatch: 24,
+  maxResultBuffer: 48,
   defaultLinkCost: 0.05, // seconds per task assumed of a link that has not carried a batch
   costWindow: 8, // recent batches whose fastest crossing defines a link's cost
   distanceHold: 0.2, // a node keeps its distance until the measured value moves by this share
@@ -62,6 +66,9 @@ export class WorkMesh {
     this.onWork = typeof onWork === 'function' ? onWork : null;
     this.clock = typeof clock === 'function' ? clock : () => Date.now();
     this.config = { ...WORK_MESH_DEFAULTS, ...config };
+    this._explicitWorkBatch = config.workBatch !== undefined;
+    this._explicitResultBatch = config.resultBatch !== undefined;
+    this._explicitResultBuffer = config.resultBuffer !== undefined;
     this.queue = []; // { jobId, taskId, origin, payload }
     this.results = []; // { jobId, taskId, origin, value } waiting to travel home
     this.running = 0;
@@ -191,6 +198,27 @@ export class WorkMesh {
     }
   }
 
+  _effectiveWorkBatch() {
+    const base = this.config.workBatch;
+    if (!this.config.adaptiveHeadroom || this._explicitWorkBatch) return base;
+    const cap = Math.max(base, this.config.maxWorkBatch || base);
+    return Math.min(cap, Math.max(base, Math.ceil(this.rate * 0.25)));
+  }
+
+  _effectiveResultBatch() {
+    const base = this.config.resultBatch;
+    if (!this.config.adaptiveHeadroom || this._explicitResultBatch) return base;
+    const cap = Math.max(base, this.config.maxResultBatch || base);
+    return Math.min(cap, Math.max(base, Math.ceil(this.rate * 0.5)));
+  }
+
+  _effectiveResultBuffer() {
+    const base = this.config.resultBuffer;
+    if (!this.config.adaptiveHeadroom || this._explicitResultBuffer) return base;
+    const cap = Math.max(base, this.config.maxResultBuffer || base);
+    return Math.min(cap, Math.max(base, Math.ceil(this.rate * 0.8)));
+  }
+
   /** Put results and work on a link that has nothing in flight in that direction. */
   _serve(peerId, link) {
     if (!link.results && this.results.length) {
@@ -200,7 +228,12 @@ export class WorkMesh {
       // while other ways home stood idle.
       const batch = [];
       const rest = [];
-      const backedUp = link.held >= this.config.resultBuffer;
+      const peerBuffer = this._explicitResultBuffer
+        ? this.config.resultBuffer
+        : Math.min(Math.max(this.config.resultBuffer, this.config.maxResultBuffer || this.config.resultBuffer),
+          Math.max(this.config.resultBuffer, Math.ceil((link.rate || 0) * 0.8)));
+      const backedUp = link.held >= peerBuffer;
+      const maxResBatch = this._effectiveResultBatch();
       for (const result of this.results) {
         // Compare against this tick's own best path, not the steadier value
         // this node advertises: otherwise, as measurements drift, no neighbour
@@ -208,7 +241,7 @@ export class WorkMesh {
         const mine = this.liveDistances.get(result.jobId) ?? Number.POSITIVE_INFINITY;
         const theirs = link.distances.get(result.jobId) ?? Number.POSITIVE_INFINITY;
         const homeward = theirs < mine && (theirs === 0 || !backedUp);
-        (homeward && batch.length < this.config.resultBatch ? batch : rest).push(result);
+        (homeward && batch.length < maxResBatch ? batch : rest).push(result);
       }
       if (batch.length) {
         this.results = rest;
@@ -223,7 +256,7 @@ export class WorkMesh {
       const mine = this.queue.length / Math.max(this.rate, this.config.minRate);
       const peerRate = Math.max(link.rate, this.config.minRate);
       const gap = mine - link.queued / peerRate;
-      const share = Math.min(this.config.workBatch, this.queue.length,
+      const share = Math.min(this._effectiveWorkBatch(), this.queue.length,
         Math.max(Math.floor(gap * peerRate / 2), gap > 0 && link.queued === 0 && this.queue.length > 1 ? 1 : 0));
       if (share >= 1) {
         // Oldest first, for running and for handing on alike, so no task
@@ -270,8 +303,9 @@ export class WorkMesh {
 
   /** Start tasks until this node is busy or holding too many results. */
   _pump() {
+    const bufferLimit = this._effectiveResultBuffer();
     while (!this.destroyed && this.running < this.config.concurrency && this.queue.length
-        && this.results.length < this.config.resultBuffer) {
+        && this.results.length < bufferLimit) {
       const task = this.queue.shift();
       this.running += 1;
       let settled = false;

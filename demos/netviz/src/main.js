@@ -16,6 +16,8 @@ const statusEl = document.getElementById('status');
 const peerListEl = document.getElementById('peer-list');
 const connectBtn = document.getElementById('connect-btn');
 const topologySelect = document.getElementById('topology-select');
+const throughputProfileSelect = document.getElementById('throughput-profile');
+const hostGroupIdInput = document.getElementById('host-group-id');
 const topologyIdInput = document.getElementById('topology-id');
 const roomInput = document.getElementById('room-input');
 const gameIdInput = document.getElementById('game-id');
@@ -74,6 +76,8 @@ const METRIC_COLLISION_COOLDOWN_MS = 1500;
 const QUERY_PARAM_ROOM = 'room';
 const QUERY_PARAM_TOPOLOGY = 'topology';
 const QUERY_PARAM_TOPOLOGY_TYPE = 'topologyType';
+const QUERY_PARAM_THROUGHPUT_PROFILE = 'profile';
+const QUERY_PARAM_HOST_GROUP = 'hostGroupId';
 const QUERY_PARAM_RENDER = 'render';
 const QUERY_PARAM_RENDER_MODE = 'renderMode';
 const QUERY_PARAM_CONNECTION_RADIUS = 'connectionRadius';
@@ -877,6 +881,8 @@ const readQueryParams = () => {
     showIP,
     autoConnect,
     attachSession,
+    profile: params.get(QUERY_PARAM_THROUGHPUT_PROFILE)?.trim() || '',
+    hostGroupId: params.get(QUERY_PARAM_HOST_GROUP)?.trim() || '',
     gameId: params.get('gameId')?.trim() || '',
     view: params.get('view') || '',
     application: params.get('application') || '',
@@ -917,6 +923,12 @@ const applyQueryParams = () => {
   }
   if (query.room && roomInput) {
     roomInput.value = query.room;
+  }
+  if (query.profile && throughputProfileSelect) {
+    throughputProfileSelect.value = query.profile;
+  }
+  if (query.hostGroupId && hostGroupIdInput) {
+    hostGroupIdInput.value = query.hostGroupId;
   }
   const normalizedRender = normalizeRenderModeValue(query.renderMode) || renderMode;
   if (renderModeSelect && normalizedRender) {
@@ -986,6 +998,8 @@ const syncQueryParams = ({
   setParam(QUERY_PARAM_ROOM, room);
   setParam(QUERY_PARAM_TOPOLOGY, topologyId);
   setParam(QUERY_PARAM_TOPOLOGY_TYPE, nextType);
+  setParam(QUERY_PARAM_THROUGHPUT_PROFILE, throughputProfileSelect?.value && throughputProfileSelect.value !== 'batch-throughput' ? throughputProfileSelect.value : '');
+  setParam(QUERY_PARAM_HOST_GROUP, hostGroupIdInput?.value?.trim() || '');
   setParam(QUERY_PARAM_RENDER, nextRender);
   setParam(QUERY_PARAM_CONNECTION_RADIUS, connectionRadius);
   setParam(QUERY_PARAM_MAX_CONNECTIONS, maxConnections);
@@ -3481,6 +3495,16 @@ const connect = async () => {
     const topologySelection = readTopologyInputs();
     topologyType = topologySelection.topologyType;
     topologyId = topologySelection.topologyId;
+    const throughputProfile = (throughputProfileSelect?.value && throughputProfileSelect.value !== 'batch-throughput')
+      ? throughputProfileSelect.value
+      : (cfg.throughputTopology?.profile || throughputProfileSelect?.value || 'batch-throughput');
+    if (throughputProfileSelect && throughputProfile) {
+      throughputProfileSelect.value = throughputProfile;
+    }
+    const hostGroupId = hostGroupIdInput?.value?.trim() || cfg.hostGroupId || '';
+    if (hostGroupIdInput && !hostGroupIdInput.value.trim() && cfg.hostGroupId) {
+      hostGroupIdInput.value = cfg.hostGroupId;
+    }
     visualizer.setTopologyMode(topologyType);
     const roomId = roomInput.value.trim() || 'telemetry';
     const maxConnections = Number.isFinite(urlMaxConnections)
@@ -3514,6 +3538,8 @@ const connect = async () => {
     node = new NodeKernel({
       topology: topologyType,
       topologyId,
+      ...(throughputProfile ? { throughputTopology: { profile: throughputProfile } } : {}),
+      ...(hostGroupId ? { hostGroupId } : {}),
       topicPrefix: 'pc',
       useScopedTopics: true,
       enforceTopologyScope: true,
@@ -3690,6 +3716,22 @@ const attachDebugHandles = () => {
     setColorLens: (value) => {
       if (colorLensSelect) colorLensSelect.value = value;
       updateHud();
+    },
+    setThroughputProfile: (value) => {
+      if (throughputProfileSelect) throughputProfileSelect.value = value;
+      if (networkManager) {
+        networkManager.config.throughputTopology = {
+          ...(networkManager.config.throughputTopology || {}),
+          profile: value
+        };
+      }
+      syncQueryParams(readUrlInputState());
+    },
+    setHostGroupId: (value) => {
+      const next = String(value || '').trim();
+      if (hostGroupIdInput) hostGroupIdInput.value = next;
+      if (networkManager) networkManager.config.hostGroupId = next || null;
+      syncQueryParams(readUrlInputState());
     },
     connect: () => connect(),
     disconnect: () => disconnect(),

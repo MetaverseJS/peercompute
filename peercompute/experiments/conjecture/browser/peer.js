@@ -22,11 +22,20 @@ const status = document.getElementById('status');
 const say = (text) => { status.textContent = text; };
 
 const relay = await (await fetch('./relay-config.json', { cache: 'no-store' })).json();
+const profile = params.get('profile') || '';
+const hostGroupId = params.get('hostGroupId') || (profile === 'lan-first' && scenario.name !== 'decorrelated' && scenario.name !== 'uniform'
+  ? `site-${self.site}`
+  : null);
 const manager = new NetworkManager({
   topology, topologyId: `conjecture-${params.get('run') || 'run'}`,
   gameId: 'conjecture', roomId: params.get('run') || 'run',
   topicPrefix: 'pc', useScopedTopics: true, enforceTopologyScope: true,
   bootstrapPeers: relay.bootstrapPeers,
+  ...(relay.pubsubType ? { pubsubType: relay.pubsubType } : {}),
+  ...(relay.gossipsub ? { gossipsub: relay.gossipsub } : {}),
+  ...(relay.webrtc ? { webrtc: relay.webrtc } : {}),
+  ...(profile ? { throughputTopology: { profile } } : {}),
+  ...(hostGroupId ? { hostGroupId } : {}),
   topologyMetric: position, topologyMetricInitialized: true,
   // Every peer is within range, so the spatial mode picks its nearest peers.
   connectionRadius: 1e6, longRangeCount: 1,

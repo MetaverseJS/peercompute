@@ -24,7 +24,8 @@ const args = Object.fromEntries(process.argv.slice(2).reduce((pairs, value, i, a
 const options = {
   topology: args.topology ?? 'throughput', scenario: args.scenario ?? 'sites', nodes: Number(args.nodes ?? 16),
   seed: Number(args.seed ?? 1), regime: args.regime ?? 'balanced', source: args.source ?? 'typical',
-  durationS: Number(args.duration ?? 240), port: Number(args.port ?? 5391), metric: args.metric ?? 'scenario', graph: args.graph ?? null
+  durationS: Number(args.duration ?? 240), port: Number(args.port ?? 5391), metric: args.metric ?? 'scenario',
+  graph: args.graph ?? null, profile: args.profile ?? ''
 };
 const scenario = makeScenario({ name: options.scenario, seed: options.seed, nodes: options.nodes, regime: options.regime,
   provisionedSource: options.source === 'provisioned' });
@@ -74,7 +75,8 @@ try {
     const page = await context.newPage();
     page.on('pageerror', (error) => errors.push(`peer ${index}: ${error.message}`));
     const query = new URLSearchParams({ index, run, topology: options.topology, scenario: options.scenario, seed: options.seed,
-      nodes: options.nodes, regime: options.regime, source: options.source, metric: options.metric });
+      nodes: options.nodes, regime: options.regime, source: options.source, metric: options.metric,
+      ...(options.profile ? { profile: options.profile } : {}) });
     await page.goto(`${base}?${query}`);
     pages.push(page);
   }

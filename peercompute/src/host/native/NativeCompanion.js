@@ -121,6 +121,11 @@ export function createNativeCompanion(options = {}) {
                   emitSelf: false,
                   allowPublishToZeroTopicPeers: true,
                   fallbackToFloodsub: true,
+                  canRelayMessage: true,
+                  D: 12,
+                  Dlo: 6,
+                  Dhi: 32,
+                  Dout: 2,
                   ...gossipsubOverrides,
                   scoreParams: {
                     IPColocationFactorWeight: 0,

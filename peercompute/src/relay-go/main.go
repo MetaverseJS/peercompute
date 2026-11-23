@@ -300,6 +300,29 @@ func buildGossipSubOptions(raw json.RawMessage, tracer pubsub.EventTracer, initi
       }
     }
   }
+  if scoreParams == nil {
+    // Neutral IP-colocation scoring by default so peers sharing a home LAN NAT
+    // or localhost test harness are never graylisted even without custom JSON.
+    sp := &pubsub.PeerScoreParams{
+      SkipAtomicValidation:     true,
+      Topics:                   make(map[string]*pubsub.TopicScoreParams),
+      DecayInterval:            time.Second,
+      DecayToZero:              0.01,
+      RetainScore:              10 * time.Second,
+      IPColocationFactorWeight: 0,
+      BehaviourPenaltyWeight:   0,
+    }
+    thresholds := &pubsub.PeerScoreThresholds{
+      SkipAtomicValidation:        true,
+      GossipThreshold:             -4000,
+      PublishThreshold:            -8000,
+      GraylistThreshold:           -16000,
+      AcceptPXThreshold:           100,
+      OpportunisticGraftThreshold: 5,
+    }
+    scoreParams = sp
+    opts = append(opts, pubsub.WithPeerScore(sp, thresholds))
+  }
   opts = append(opts, pubsub.WithGossipSubParams(params))
   return opts, params, scoreParams
 }

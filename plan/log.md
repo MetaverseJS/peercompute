@@ -65239,3 +65239,51 @@ Files touched (Slice 3):
 - `demos/inference/src/runtime.js`
 - `demos/shared/agents/WorldAgentHost.js`
 - `plan/{plan.md,tests.md,log.md,branch/network-scaling-netviz.md}`
+
+
+## 2026-11-22 19:09:15 AKST — Slices 4 & 5: Conjecture Browser/GossipSub Breakthrough, Adaptive WorkMesh Headroom & Turnkey LAN/Pi Kit
+Prompt time/date: `2026-11-22 18:30:15 AKST` (`2026-11-22T18:30:15-09:00`).
+Goal: Continue making concrete, verified progress on the core conjecture, real-browser networking, NetViz analysis, and physical LAN/Pi deployment readiness without requiring real devices (and without running `net-chaos-lab`).
+
+Concrete actions attempted, problems discovered & solutions:
+1. **Controlled Conjecture Ablations (`BROWSER_REALISM`, `N=20..128`)**:
+   - Diagnosed why `N32 uniform data-bound provisioned` sat at `0.89×` random (`78.4` vs `88.8`): `randomTopology` leaves the source at `degree = 5` (`5 × 20 MB/s`) while `ThroughputTopologyPolicy` prunes back to `targetConnections = 4` (`4 × 20 MB/s = 80 tasks/s` ceiling) between trials.
+   - Tested 5 mechanisms (`M1` newcomer EWMA de-biasing, `M2` smoothed baseline, `M3` escalating cooldown + annealing, `M4` `WorkMesh` batch/buffer headroom, `M5` flow-ranked referrals) plus `lan-first` and `capability-weighted` profiles.
+   - **Caught and dropped harmful ideas empirically**: `M2_smoothBase` hurt `N20 sites data-bound` (`61.0 → 55.6`), `maxCooldownMultiplier: 8` hurt `N128 sites` (`334.5 → 238.8`) and `N64 decorrelated` (`281.9 → 249.3`) by locking out temporarily full gateways for 160s, and always-on `debiasNewcomerFlow` hurt `N64 decorrelated` and pushed `conjectureSimulation.test.js` post-loss recovery slightly over `1.0001×` ceiling (`103.83` vs `103.80`). Kept `debiasNewcomerFlow: false` (opt-in) and `maxCooldownMultiplier: 1` (configurable).
+   - **Caught and fixed profile thundering herd**: `pickCandidate` previously used deterministic single-peer argmax, causing `capability-weighted` on 64–128 nodes to stampede the same 1–3 high-GPU peers and `lan-first` to under-explore cross-site bridges (`N64 far-compute`). Replaced with top-band (`15%`) uniform sampling + `15%` exploratory share when `candidates.length >= 6` (zero flake on small sets).
+   - **Adopted rate-adaptive `WorkMesh` headroom** (`WorkMesh.js`: `adaptiveHeadroom: true`, `maxWorkBatch: 12`, `maxResultBatch: 24`, `maxResultBuffer: 48`, strictly respecting explicit caller `workBatch`/`resultBatch`/`resultBuffer` overrides).
+2. **Real 20-Peer Headless Chromium WebRTC Runs (`browserRun.mjs`) & Major GossipSub Root-Cause Fixes**:
+   - First Slice 3 live 20-peer Chrome run (`sites data-bound provisioned seed 1`, 180s) hit `53.5 tasks/s` (`20/20` linked, `0` reissued) and immediately surfaced 4 real-browser bugs behind `streamResetsPerNodeMinute = 2.23`:
+     1. `/peercompute/direct/1.0.0` was missing from `STANDARD_MAINTENANCE_PROTOCOLS` and wasn't closed before `_retireIdleConnection` in `_closeConnectionsToPeer`.
+     2. `connection:close` `direct-drop-recovery` was instantaneously re-dialing peers that just evicted us under `topology: 'throughput'`.
+     3. `WorkMeshService._flush()` counted clean remote connection closures as `streamResets` instead of calling `_drop(peerId)` when `!this._directConnection(peerId)`.
+     4. `WorkMeshService._directConnection()` didn't match `_maybePruneDuplicateConnections()`'s primary-connection sort order.
+   - Fixing all 4 + adaptive `WorkMesh` headroom jumped real 20-peer Chrome `sites data-bound provisioned seed 1` (180s) to **`81.7 tasks/s`** (`3.40×` fixed random `24.0`, `+80%` over Nov 20's `45.5` 360s mean; `20/20` linked, `0` reissued, `0` page errors).
+   - Testing 20 real Chrome peers over `--relay-pubsub gossipsub` exposed **two historic GossipSub blockers** behind `conjecture/README.md:360`'s 12-peer wall:
+     1. Without explicit `RELAY_GOSSIPSUB_CONFIG`, `@libp2p/gossipsub`'s default `IPColocationFactorWeight` graylisted peers sharing an IP (localhost or a home LAN NAT!) while `Dhi=12` pruned peers 13–20 out of the relay's initial star mesh. Fixed across `NetworkManager.js`, Node `relay/server.js`, `NativeCompanion.js`, and Go `relay-go/main.go` (`IPColocationFactorWeight: 0`, `behaviourPenaltyWeight: 0`, `fallbackToFloodsub: true`, relay `D=12, Dlo=6, Dhi=32, Dout=2`).
+     2. `NetworkManager.js` defaulted `enableRelayDirectPeers: true`, adding the relay as a **unilateral** `directPeer` on browser clients — violating GossipSub v1.1's symmetric `directPeers` requirement so browsers `PRUNE`d relay `GRAFT`s and froze signaling mid-run (`changes` froze at `t=120s`, `meanLinks: 3.4`, `33.3 tasks/s`). Defaulted `enableRelayDirectPeers` to `false` (opt-in only for symmetric static peers).
+   - Re-running 20 real Chrome peers over `--relay-pubsub gossipsub` (180s) then stayed active the entire run: `20/20` linked, `meanLinks: 4.0`, `0` reissued, `0` page errors, **`51.8 tasks/s`** steady (`64.7/s` in final 30s).
+3. **Turnkey LAN / Raspberry Pi Kit (`scripts/lan-relay.mjs`) & NetViz Profile/LAN Controls**:
+   - Added `scripts/lan-relay.mjs` (`npm run lan:relay`, `npm run lan:self-test`) with RFC1918 LAN + Tailscale interface auto-detection, `gossipsub` `NativeCompanion` relay, CORS `/relay-config.json` & `/health` HTTP server with optional `--wan-relay` failover, and an automated 2-peer `lan-first` loopback self-test.
+   - Upgraded `demos/netviz/` (`index.html`, `src/{main.js,networkAnalysis.js,observedNetworkUi.js}`, `README.md`) with `Host Group` subgroup clustering, **Goal profile** + **Host group** session controls (synced with URL params `?profile=&hostGroupId=` and auto-inherited from `relay-config.json`), and per-subgroup LAN % / churn / LAN readiness diagnostics.
+
+Commands run & verification results:
+- `node --test peercompute/tests/unit/networkManager.*.test.js peercompute/tests/unit/topologyController.test.js peercompute/tests/unit/throughputTopologyPolicy.test.js peercompute/tests/unit/workMesh*.test.js peercompute/tests/unit/networkTelemetry*.test.js peercompute/tests/unit/nodeKernelTelemetry.test.js peercompute/tests/unit/nativeCompanion.test.js peercompute/tests/unit/conjectureSimulation.test.js peercompute/tests/unit/lanRelayTooling.test.js demos/netviz/tests/observedNetwork.test.js demos/netviz/tests/networkAnalysis.test.js demos/netviz/tests/relayOverlay.test.js demos/tests/model-telemetry.test.js demos/tests/demo-ports.test.js demos/tests/demo-release.test.js` — **240/240 PASS**.
+- `npm run test:root-host` — **45/45 PASS**.
+- `npm run lan:self-test` — **PASS** (`ok: true`, `pubsubType: "gossipsub"`, `discovered: true`, `directMessagesReceived: 1`, `relayHealth.isLan: true`, `hostGroupId: "lan-self-test"`).
+- `cd peercompute/src/relay-go && go test -v ./... && go build` — **4/4 PASS** + clean build.
+- `(cd demos/netviz && npx vite build --outDir /tmp/slice45-netviz --emptyOutDir)` — **PASS** (`docs/` untouched).
+- `CHROME_BIN=/usr/bin/google-chrome node demos/netviz/tests/analysisBrowserCheck.mjs` — **PASS** (`passed: true`).
+- Real 20-peer Chrome WebRTC `browserRun.mjs` (`sites data-bound provisioned seed 1`, 180s): `81.7 tasks/s` (floodsub, `3.40×` random) and `51.8 tasks/s` climbing to `64.7/s` (gossipsub, `20/20` linked, `meanLinks: 4.0`, `0` reissued, `0` page errors).
+- Calibrated `BROWSER_REALISM` sweep: `N20 far-c` `134.2/135` (`99.4%` ceiling), `N64 sites` `275.1` (`+16.9%` over baseline), `N64 far-c` `155.7`, `N64 decor` `282.1/284`, `N128 sites` `322.0` (`2.07×` random, `chg=1.15`).
+
+Files touched (Slices 4 & 5):
+- `peercompute/src/peercompute/networkManager/{NetworkManager.js,ThroughputTopologyPolicy.js,WorkMeshService.js}`
+- `peercompute/src/peercompute/workMesh/WorkMesh.js`
+- `peercompute/src/host/native/NativeCompanion.js`
+- `peercompute/src/relay/server.js`, `peercompute/src/relay-go/main.go`
+- `peercompute/experiments/conjecture/{browserRun.mjs,browser/peer.js}`
+- `scripts/lan-relay.mjs`, `package.json`
+- `demos/netviz/{index.html,README.md,src/{main.js,networkAnalysis.js,observedNetworkUi.js}}`
+- `peercompute/tests/unit/{networkManager.slice4.test.js,lanRelayTooling.test.js}`
+- `plan/{plan.md,tests.md,log.md,branch/network-scaling-netviz.md}`

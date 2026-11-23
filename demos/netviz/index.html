@@ -418,7 +418,7 @@
           <div id="observed-controls">
             <div class="field"><label for="application-filter">Application</label><select id="application-filter"><option value="">All applications</option></select></div>
             <div class="field"><label for="role-filter">Connection</label><select id="role-filter"><option value="">All roles</option><option value="world">World</option><option value="models">Models</option><option value="compute">Compute</option><option value="observer">Observer</option></select></div>
-            <div class="field"><label for="subgroup-by">Group by</label><select id="subgroup-by"><option value="room" selected>App / Room</option><option value="relay">Relay</option><option value="topology">Topology</option><option value="transport">Transport / LAN</option><option value="none">Flat</option></select></div>
+            <div class="field"><label for="subgroup-by">Group by</label><select id="subgroup-by"><option value="room" selected>App / Room</option><option value="hostGroup">Host Group</option><option value="relay">Relay</option><option value="topology">Topology</option><option value="transport">Transport / LAN</option><option value="none">Flat</option></select></div>
             <div class="field"><label for="subgroup-filter">Subgroup</label><select id="subgroup-filter"><option value="">All subgroups (0)</option></select></div>
             <div class="field"><label for="color-lens">Color lens</label><select id="color-lens"><option value="role" selected>Role / App</option><option value="transport">Transport / ICE</option><option value="rtt">RTT Heatmap</option><option value="degree">Degree vs Target</option><option value="workmesh">WorkMesh Flow</option><option value="capabilities">Hardware Tier</option></select></div>
             <div id="observed-summary" class="status">Waiting for reports.</div>
@@ -445,6 +445,19 @@
               <option value="emergent">Emergent</option>
               <option value="static">Static</option>
             </select>
+          </div>
+          <div class="field">
+            <label for="throughput-profile">Goal profile</label>
+            <select id="throughput-profile">
+              <option value="batch-throughput" selected>Batch throughput</option>
+              <option value="lan-first">LAN-first</option>
+              <option value="low-latency">Low latency</option>
+              <option value="capability-weighted">Capability-weighted</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="host-group-id">Host group</label>
+            <input id="host-group-id" value="" placeholder="e.g. home-lan" spellcheck="false" />
           </div>
           <div class="field">
             <label for="topology-id">Topology ID</label>

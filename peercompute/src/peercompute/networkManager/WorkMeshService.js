@@ -144,13 +144,30 @@ export class WorkMeshService {
   /**
    * A connection through a relay circuit is not a link: its traffic goes via the
    * relay. Work uses only peer-to-peer connections (WebRTC, or a direct dial).
+   * Selects deterministically with the same priority order as NetworkManager's
+   * duplicate-connection pruner so both ends open streams on the primary link.
    */
   _directConnection(peerId) {
-    return this.manager._getConnectionsForPeer(peerId).find((connection) => {
+    const candidates = this.manager._getConnectionsForPeer(peerId).filter((connection) => {
       if (connection?.status !== 'open' || connection.limits) return false;
       const address = String(connection.remoteAddr ?? '');
       return !address.includes('/p2p-circuit') || address.includes('/webrtc');
-    }) || null;
+    });
+    if (candidates.length <= 1) return candidates[0] || null;
+    const selfId = this.manager.peerId;
+    const preferredDir = (selfId && String(selfId) < String(peerId)) ? 'outbound' : 'inbound';
+    candidates.sort((a, b) => {
+      const aDirect = !String(a.remoteAddr ?? '').includes('/p2p-circuit') ? 1 : 0;
+      const bDirect = !String(b.remoteAddr ?? '').includes('/p2p-circuit') ? 1 : 0;
+      if (aDirect !== bDirect) return bDirect - aDirect;
+      const aDir = String(a?.direction || a?.stat?.direction || '').toLowerCase() === preferredDir ? 1 : 0;
+      const bDir = String(b?.direction || b?.stat?.direction || '').toLowerCase() === preferredDir ? 1 : 0;
+      if (aDir !== bDir) return bDir - aDir;
+      const aOpen = Number(a?.timeline?.open ?? a?.stat?.timeline?.open ?? Number.MAX_SAFE_INTEGER);
+      const bOpen = Number(b?.timeline?.open ?? b?.stat?.timeline?.open ?? Number.MAX_SAFE_INTEGER);
+      return aOpen - bOpen;
+    });
+    return candidates[0] || null;
   }
 
   _link(peerId, connection) {
@@ -242,11 +259,15 @@ export class WorkMeshService {
       }
     } catch {
       // A frame may be lost, so the mesh takes back whatever was unacknowledged.
-      // The peer is usually still connected (the library closes duplicate
-      // connections, and streams with them), so keep the link and open a fresh
-      // stream on the next tick instead of tearing the link down.
+      // If the underlying direct connection itself closed (e.g., remote topology
+      // eviction), drop the link cleanly instead of counting a stream reset on a
+      // dead connection. If a direct connection is still open, keep the link and
+      // open a fresh stream on the next tick.
       peer.writing = false;
-      if (this.peers.get(peerId) === peer) this._reset(peerId, peer);
+      if (this.peers.get(peerId) === peer) {
+        if (!this._directConnection(peerId)) this._drop(peerId);
+        else this._reset(peerId, peer);
+      }
     } finally {
       peer.writing = false;
     }

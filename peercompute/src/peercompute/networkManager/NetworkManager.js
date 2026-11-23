@@ -77,6 +77,7 @@ const STANDARD_MAINTENANCE_PROTOCOLS = Object.freeze([
   '/ipfs/id/push/1.0.0',
   '/ipfs/ping/1.0.0',
   '/peercompute/keepalive/1.0.0',
+  '/peercompute/direct/1.0.0',
   '/meshsub/1.1.0',
   '/meshsub/1.0.0',
   '/floodsub/1.0.0'
@@ -709,7 +710,10 @@ export class NetworkManager {
       enableNetworkTelemetry: config.enableNetworkTelemetry !== false,
       networkTelemetryPublish: config.networkTelemetryPublish !== false,
       enableTopologyController: config.enableTopologyController !== false,
-      enableRelayDirectPeers: config.enableRelayDirectPeers !== false,
+      // GossipSub v1.1 directPeers MUST be configured symmetrically on both ends;
+      // unilateral client->relay directPeers causes clients to PRUNE relay GRAFTs
+      // and blackhole relay pubsub forwarding. Opt-in only for symmetric static peers.
+      enableRelayDirectPeers: config.enableRelayDirectPeers === true,
       topologyTickMs: Number.isFinite(config.topologyTickMs) ? Math.max(250, config.topologyTickMs) : 1500,
       // Used when topology is 'throughput': overrides for ThroughputTopologyPolicy
       // and the per-peer measurement it ranks links by ('work' or 'bytes').
@@ -2275,8 +2279,15 @@ export class NetworkManager {
       // If a direct-capable WebRTC link closed unexpectedly and no direct-capable
       // connections remain for this peer, clear dial throttle and schedule an
       // immediate redial. Skip peers that were intentionally closed by topology
-      // pruning so dropped neighbors do not immediately re-dial themselves.
-      if (!this.bootstrapPeerIds.has(peerId) && this._isDirectCapableConnection(conn) && !this._isIntentionallyClosed(peerId)) {
+      // pruning, and skip under 'throughput' topology (where remote peers routinely
+      // prune trial/weak links and our own repair loop selects an available peer
+      // on the next tick instead of immediately re-dialing the peer that evicted us).
+      if (
+        this.config.topology !== 'throughput'
+        && !this.bootstrapPeerIds.has(peerId)
+        && this._isDirectCapableConnection(conn)
+        && !this._isIntentionallyClosed(peerId)
+      ) {
         const stillHasDirect = this._hasDirectCapableConnectionForPeer(peerId);
         if (!stillHasDirect && this._shouldDialDiscoveredPeer(peerId)) {
           this.recentDialAttempts.delete(peerId);
@@ -2422,17 +2433,22 @@ export class NetworkManager {
       const options = {
         emitSelf: false,
         allowPublishToZeroTopicPeers: true,
-        ...configured
+        fallbackToFloodsub: true,
+        ...configured,
+        scoreParams: {
+          IPColocationFactorWeight: 0,
+          behaviourPenaltyWeight: 0,
+          ...(configured.scoreParams || {})
+        }
       };
       if (configured.allowPublishToZeroPeers !== undefined && options.allowPublishToZeroTopicPeers === undefined) {
         options.allowPublishToZeroTopicPeers = configured.allowPublishToZeroPeers;
       }
 
-      // Phase 1 Relay Scaling: Optionally add relay as directPeer to keep it in
-      // gossipsub mesh.  When dropRelayBootstrapOnDirect is enabled the relay's
-      // role is signaling-only — adding it as a directPeer would fight the drop
-      // logic because gossipsub re-dials directPeers unconditionally.
-      const wantRelayInMesh = this.config.enableRelayDirectPeers !== false
+      // GossipSub v1.1 directPeers requires symmetric configuration on both peers.
+      // Only enable when explicitly requested via enableRelayDirectPeers: true and
+      // dropRelayBootstrapOnDirect is off.
+      const wantRelayInMesh = this.config.enableRelayDirectPeers === true
         && !this.config.webrtc?.dropRelayBootstrapOnDirect;
       if (wantRelayInMesh && this.bootstrapPeerIds.size > 0) {
         const directPeers = options.directPeers || [];
@@ -4075,6 +4091,9 @@ export class NetworkManager {
     const throughputCfg = {
       targetConnections: this.config.targetConnections,
       maxConnections: this.config.maxConnections,
+      flowTauMs: Number.isFinite(this.config.throughputTopology?.flowTauMs)
+        ? Math.max(1, this.config.throughputTopology.flowTauMs)
+        : 4000,
       ...this.config.throughputTopology
     };
     const profileName = throughputCfg.profile;
@@ -4382,6 +4401,7 @@ export class NetworkManager {
         try { release(peerId); } catch { /* a service's cleanup must not block the topology */ }
       }
     }
+    this._closeDirectUnicastStream(peerId);
     let retired = 0;
     connections.forEach((conn) => {
       if (this._retireIdleConnection(conn, 'topology')) retired += 1;

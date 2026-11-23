@@ -117,11 +117,15 @@ export function renderObservedSummary({
     const rttText = Number.isFinite(diagnostics.medianRttMs)
       ? `med ${diagnostics.medianRttMs}ms / p95 ${diagnostics.p95RttMs ?? '--'}ms`
       : '--';
+    const lanReadinessLine = diagnostics.lanEdgeCount > 0 || diagnostics.turnEdgeCount > 0
+      ? `LAN readiness: ${diagnostics.lanEdgeCount} LAN-host · ${diagnostics.directEdgeCount} direct · ${diagnostics.turnEdgeCount} TURN/circuit`
+      : null;
     diagnosticsElement.textContent = [
       `Mesh: ${diagnostics.nodeCount} peers · ${diagnostics.p2pEdgeCount} P2P edges · avg deg ${diagnostics.avgDegree}`,
       `Relay-off check: ${resilience}`,
       `Bridges: ${diagnostics.bridgeEdgeKeys.length} · cuts: ${diagnostics.cutPeerIds.length} · isolated: ${diagnostics.isolatedPeers.length} · dupes: ${diagnostics.duplicateEdgeCount}`,
       `Paths (${diagnostics.directPct}% direct / ${diagnostics.lanPct}% LAN): ${pathLine}`,
+      ...(lanReadinessLine ? [lanReadinessLine] : []),
       `RTT: ${rttText} · Flow: ${formatBps(diagnostics.totalRxBps + diagnostics.totalTxBps)}`,
       `WorkMesh: ${diagnostics.totalWorkRate} tasks/s (${diagnostics.workMeshEdgeCount} links) · resets ${diagnostics.totalStreamResets}`,
       `Churn: ${diagnostics.totalRewiresPerMin} rewires/min · ${diagnostics.totalDialFailures} dial fails${diagnostics.avgGossipMeshDegree !== null ? ` · gossip deg ${diagnostics.avgGossipMeshDegree}` : ''}`
@@ -135,7 +139,9 @@ export function renderObservedSummary({
       ? groups.map((sg) => {
           const partFlag = sg.isPartitioned ? ` [SPLIT:${sg.componentCount}]` : '';
           const rtt = Number.isFinite(sg.medianRttMs) ? `${sg.medianRttMs}ms` : '--';
-          return `${sg.label}${partFlag}\n  ${sg.peerCount} peers · ${sg.internalEdges} int / ${sg.crossEdges} x-edges · ${sg.directPct}% direct · ${sg.relayConnectedCount} on-relay · RTT ${rtt}${sg.totalWorkRate > 0 ? ` · ${sg.totalWorkRate} t/s` : ''}`;
+          const lanPart = sg.lanEdgeCount > 0 ? ` · ${sg.lanPct ?? 0}% LAN` : '';
+          const churnPart = sg.totalRewiresPerMin > 0 ? ` · ${sg.totalRewiresPerMin} rw/m` : '';
+          return `${sg.label}${partFlag}\n  ${sg.peerCount} peers · ${sg.internalEdges} int / ${sg.crossEdges} x-edges · ${sg.directPct}% direct${lanPart} · ${sg.relayConnectedCount} on-relay · RTT ${rtt}${sg.totalWorkRate > 0 ? ` · ${sg.totalWorkRate} t/s` : ''}${churnPart}`;
         }).join('\n')
       : 'No subgroups detected yet.';
   }
