@@ -111,22 +111,32 @@ opens a specific scope.</p>
 </ul>
 <h2 id="ui-notes">UI Notes</h2>
 <ul>
-<li>Click a node or edge to open an inspector panel with RTT, throughput, and traffic counters.</li>
-<li>Topology selection sits above rooms; hierarchical view groups hosts/clients in the layout.</li>
+<li>Click a node or edge to open an inspector panel with RTT, throughput, traffic counters, true ICE path (<code>lan-host</code>, <code>nat-srflx</code>, <code>nat-prflx</code>, <code>turn-relay</code>, <code>circuit-relay</code>, <code>direct-ws</code>, <code>direct-tcp</code>), relay retention role/<code>keepReason</code>, capability summary, and WorkMesh flow/resets.</li>
+<li><strong>Whole-network &amp; Subgroup Analysis</strong> (<code>All demos</code> view):<ul>
+<li><strong>Subgroup Clustering (<code>Group by</code>)</strong>: organize peers into <code>Room / App</code>, <code>Host Group</code>, <code>Relay</code>, <code>Topology</code>, <code>Transport / LAN</code>, or <code>None</code> with translucent subgroup hulls, member/link/LAN%/churn badges, and non-disruptive subgroup focus (<code>Subgroup</code> selector or clicking a hull).</li>
+<li><strong>Multi-Layer Overlays</strong>: toggle <strong>Transport</strong> (colored by true ICE path), <strong>Gossipsub</strong> (control mesh edges), <strong>WorkMesh</strong> (active work-flow edges), <strong>Hulls</strong> (subgroup enclosures), and <strong>Bridges</strong> (Tarjan articulation/bridge cut edges highlighted in red).</li>
+<li><strong>Color-by-Lens</strong>: recolor nodes by <code>Role</code>, <code>Transport</code> (ICE path / direct vs relay), <code>RTT</code>, <code>Degree</code>, <code>WorkMesh</code> flow, or <code>Capabilities</code> (GPU/WASM/cores).</li>
+<li><strong>Graph Diagnostics, LAN Readiness &amp; Relay-Off Resilience</strong>: live connected-component counts with relays vs with relays removed (instant warning if dropping relays partitions the mesh), isolated peer count, bridge/cut-vertex counts, ICE path mix, LAN-host vs TURN/circuit readiness summary, median/p95 RTT, and per-relay fan-in &amp; <code>keepReason</code> breakdown in the <strong>Relay Audit</strong> card.</li>
+<li><strong>Goal Profile &amp; Host Group Session Controls</strong>: select <code>batch-throughput</code>, <code>lan-first</code>, <code>low-latency</code>, or <code>capability-weighted</code> goal profiles and set <code>Host group</code> (URL params <code>?profile=...&amp;hostGroupId=...</code>, also inherited automatically from <code>relay-config.json</code> served via <code>npm run lan:relay</code> + <code>?relayConfigUrl=...</code>).</li>
+<li><strong>Rolling 5-Minute Sparklines &amp; JSON Export</strong>: inline SVG sparklines tracking Peer count, Direct %, Relays, Median RTT, Rewires/min, and WorkMesh rate, plus <strong>Export JSON</strong> (<code>peercompute.netviz-analysis.v1</code>) for offline comparison.</li>
+<li><strong>Passive Observer Hygiene</strong>: NetViz sets <code>allowDiscoveryDialWhenIsolated: false</code> so observing an active mesh never mutates peer connectivity.</li>
+</ul>
+</li>
+<li>Topology selection sits above rooms and supports <code>distributed</code>, <code>hierarchical</code>, <code>throughput</code>, and <code>static</code> modes.</li>
 <li>Use &quot;Attach demo&quot; to target a running demo without manually typing topology/room values (connect NetViz first so it can discover session beacons).</li>
 <li>The Session Runtime panel follows the selected/latest attach session and shows runtime metadata without requiring console access.</li>
 <li>In selected-session distributed topology, drag your local cube to move its metric position and trigger neighbor recomputation.</li>
 <li>Use the &quot;Hide ghosts&quot; toggle to hide inferred nodes that have no telemetry yet.</li>
 <li>Orbit controls are enabled for pan/zoom; optional auto-rotate can be toggled on.</li>
-<li>NURBS links thicken with higher bandwidth and animate pulses when traffic is flowing.</li>
-<li>Local-node inspector now shows <code>RTC path evidence</code> (selected candidate-pair summary) so direct ICE success can be detected even when libp2p addresses remain relay-scoped.</li>
-<li>Edge transport rendering now also aggregates peer telemetry <code>via</code> from both edge directions, so remote direct links do not depend solely on the local browser&#39;s current connection table.</li>
-<li>Edge colors reflect transport truth per link (<code>webrtc</code> direct, <code>relay-webrtc</code>, <code>relay</code>, <code>unknown</code>) and avoid coercing unknown or relay-scoped states into direct.</li>
+<li>NURBS links thicken with higher bandwidth, cache tube geometries across snapshots to avoid per-tick disposal churn, and animate pulses when traffic is flowing.</li>
+<li>Local-node inspector shows <code>RTC path evidence</code> (selected candidate-pair summary) and per-edge ICE path classification so LAN-host, STUN, TURN, and circuit-relay links are never conflated.</li>
+<li>Edge aggregation merges telemetry from both endpoints (<code>observedNetwork.js</code>) so neither side&#39;s ICE path, RTT, WorkMesh stats, or connection counts are discarded.</li>
 <li>Add <code>?chaosApi=/chaos-api</code> (or <code>?chaosApi=http://127.0.0.1:8866</code>) to show live chaos-lab topology + scenario behavior in the NetViz console and 3D graph overlay.</li>
 <li>Add <code>&amp;autoConnect=0</code> to watch chaos-lab without immediately dialing relay bootstrap endpoints.</li>
 </ul>
 <h2 id="tests">Tests</h2>
-<pre><code class="language-bash">node --test demos/netviz/tests/observedNetwork.test.js demos/netviz/tests/relayOverlay.test.js
+<pre><code class="language-bash">node --test demos/netviz/tests/observedNetwork.test.js demos/netviz/tests/networkAnalysis.test.js demos/netviz/tests/relayOverlay.test.js
+CHROME_BIN=/usr/bin/google-chrome node demos/netviz/tests/analysisBrowserCheck.mjs
 npm --prefix demos/netviz run build
 env NETVIZ_SMOKE_URL=https://localhost:4173/netviz/?render=off npm --prefix demos/netviz run test:session
 </code></pre>

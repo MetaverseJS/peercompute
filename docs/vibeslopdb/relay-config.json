@@ -29,7 +29,7 @@
   "pubsubType": "gossipsub",
   "gossipsub": {
     "D": 8,
-    "Dhi": 16,
+    "Dhi": 32,
     "Dout": 1,
     "scoreParams": {
       "IPColocationFactorWeight": 0,
