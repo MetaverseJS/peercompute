@@ -9,9 +9,33 @@ import {
   benchmarkCapabilities as runHardwareBenchmark,
   sizeWorkload as computeWorkloadSizing
 } from '../capabilities/index.js';
+import {
+  getDefaultWorkerBootstrapURL,
+  getModelInferenceFactory
+} from '../runtime/extensionRegistry.js';
 
 function createDefaultComputeWorker() {
-  return new Worker(new URL('./computeWorker.js', import.meta.url), { type: 'module' });
+  const registeredUrl = getDefaultWorkerBootstrapURL();
+  return new Worker(registeredUrl || new URL('./computeWorker.js', import.meta.url), { type: 'module' });
+}
+
+const TASK_PRIORITY_VALUES = Object.freeze({
+  background: 10,
+  compute: 50,
+  interactive: 75,
+  render: 100,
+  critical: 1000
+});
+
+function normalizeTaskPriorityClass(value) {
+  const normalized = String(value || 'compute').trim().toLowerCase();
+  return Object.hasOwn(TASK_PRIORITY_VALUES, normalized) ? normalized : 'compute';
+}
+
+function normalizeTaskPriority(priorityClass, priority) {
+  const numeric = Number(priority);
+  if (Number.isFinite(numeric)) return numeric;
+  return TASK_PRIORITY_VALUES[priorityClass] ?? TASK_PRIORITY_VALUES.compute;
 }
 
 const WORKER_HARD_CAP = 128;
@@ -1015,6 +1039,20 @@ export class ComputeManager {
     this.taskGraphCacheArtifacts = new Map();
     this.workerAffinities = new Map();
     this.residentWorkerAffinities = new Set();
+    this.warmWorkerAffinities = new Map(); // affinityKey -> { worker, workerId, affinityKey, priorityClass, priority, lastUsedAt, warmTtlMs, warmExpiresAt, warmHits, resourceLeaseId }
+    this.config.maxWarmWorkerAffinities = normalizeInteger(
+      config.maxWarmWorkerAffinities,
+      Math.max(4, this.workerPolicy.maxWorkers * 2),
+      0,
+      1024
+    );
+    this.config.defaultWarmWorkerTtlMs = normalizeInteger(
+      config.defaultWarmWorkerTtlMs,
+      60000,
+      1,
+      3600000
+    );
+    this.nextTaskSequence = 1;
     this.workerTerminationFailures = new Map();
     this.modelServices = new Set();
     this.resourceBroker = config.resourceBroker || null;
@@ -1131,6 +1169,9 @@ export class ComputeManager {
       totalTasksFailed: 0,
       inlineTasksCompleted: 0,
       workerTasksCompleted: 0,
+      warmWorkerHits: 0,
+      warmWorkerMisses: 0,
+      warmWorkerEvictions: 0,
       remoteTasksCompleted: 0,
       remoteTasksFailed: 0,
       remoteTasksTimedOut: 0,
@@ -1335,6 +1376,10 @@ export class ComputeManager {
       // Retain sessions, affinities and leases so an explicit cleanup retry is possible.
       throw new AggregateError(failures, 'ComputeManager cleanup is incomplete');
     }
+    for (const key of [...this.warmWorkerAffinities.keys()]) {
+      this._releaseWarmWorkerAffinityRecord(key, { removeMapping: false });
+    }
+    this.warmWorkerAffinities.clear();
     this.workerAffinities.clear();
     this.residentWorkerAffinities.clear();
     this.activeTaskGraphs.clear();
@@ -1348,39 +1393,16 @@ export class ComputeManager {
   }
 
   /** Create a managed model lifecycle with one shared broker per ComputeManager. */
-  async createModelInferenceService({ artifactStore, resourceBroker, resourceBudgets,
-    runtime = 'transformers.js', admissionOptions = {}, ...options } = {}) {
+  async createModelInferenceService(options = {}) {
     if (this.destroying) throw new Error('ComputeManager is shutting down');
-    if (!['transformers.js', 'llama.cpp', 'onnx-diffusion', 'transformers-speech', 'onnx-mesh', 'webgpu-sf3d'].includes(runtime)) throw new Error('Unsupported model execution runtime');
-    const lifecycle = this.workerLifecycleRevision;
-    const [{ ModelInferenceService }, { ResourceLeaseBroker }, { ResidentModelAdmission }, runtimeDefinition] = await Promise.all([
-      import('../inference/ModelInferenceService.js'),
-      import('../serviceOrchestration/ResourceLeaseBroker.js'),
-      import('../serviceOrchestration/ResidentModelAdmission.js'),
-      runtime === 'llama.cpp' ? import('../inference/gguf/runtimeDefinition.js').then((module) => module.ggufRuntimeDefinition)
-        : runtime === 'onnx-diffusion' ? import('../inference/diffusion/runtimeDefinition.js').then((module) => module.diffusionRuntimeDefinition)
-          : runtime === 'onnx-mesh' ? import('../inference/mesh/runtimeDefinition.js').then((module) => module.meshRuntimeDefinition)
-          : runtime === 'webgpu-sf3d' ? import('../inference/sf3dRuntimeDefinition.js').then((module) => module.sf3dRuntimeDefinition)
-          : runtime === 'transformers-speech' ? import('../inference/speech/runtimeDefinition.js').then((module) => module.speechRuntimeDefinition) : null,
-    ]);
-    if (this.destroying || lifecycle !== this.workerLifecycleRevision) throw new Error('ComputeManager shutdown interrupted service creation');
-    if (resourceBroker && this.resourceBroker && resourceBroker !== this.resourceBroker) {
-      throw new Error('Model sessions must share the ComputeManager resource broker');
+    const factory = getModelInferenceFactory();
+    if (!factory) {
+      throw Object.assign(
+        new Error('Model inference runtime is not registered; load the full peercompute or optional inference entrypoint (or call registerModelInferenceFactory)'),
+        { code: 'ERR_MODEL_INFERENCE_NOT_REGISTERED' }
+      );
     }
-    if (!this.resourceBroker) {
-      if (!resourceBroker && !resourceBudgets) throw new Error('Configure inference CPU/GPU resource budgets');
-      this.resourceBroker = resourceBroker || new ResourceLeaseBroker({ capacities: resourceBudgets });
-    }
-    const service = new ModelInferenceService({ ...options, runtimeDefinition, artifactStore,
-      computeManager: this, admission: new ResidentModelAdmission({ ...admissionOptions, broker: this.resourceBroker }) });
-    this.modelServices.add(service);
-    const dispose = service.dispose.bind(service);
-    service.dispose = async () => {
-      const result = await dispose();
-      this.modelServices.delete(service);
-      return result;
-    };
-    return service;
+    return factory(this, options);
   }
 
   async probeCapabilities(options = {}) {
@@ -1548,6 +1570,12 @@ export class ComputeManager {
     const placement = this._normalizeTaskPlacement(task, { runtime, taskFamily });
     const gpuFence = normalizeGpuFenceRequirements(task);
     const gpuResidentLane = normalizeGpuResidentLaneLeaseSpec(task, gpuFence);
+    const priorityClass = normalizeTaskPriorityClass(task.priorityClass ?? task.resources?.priorityClass);
+    const priority = normalizeTaskPriority(priorityClass, task.priority ?? task.resources?.priority);
+    const affinityKey = task.affinityKey || task.warmKey || task.workerKey || task.data?.affinityKey || task.data?.stateKey;
+    const warmAffinity = task.warmAffinity === true || Boolean(task.warmKey) || Boolean(task.warmTtlMs);
+    const warmTtlMs = normalizeInteger(task.warmTtlMs, this.config.defaultWarmWorkerTtlMs, 1, 3600000);
+    const taskResources = task.resources && typeof task.resources === 'object' ? { ...task.resources } : null;
     this._recordPlacementSubmitted(placement);
     const payload = {
       id,
@@ -1557,6 +1585,10 @@ export class ComputeManager {
       placement,
       gpuFence,
       gpuResidentLane,
+      priorityClass,
+      priority,
+      warmAffinity,
+      warmTtlMs,
       data: task.data ?? null,
       fn: task.fn ? task.fn.toString() : undefined,
       module: task.module,
@@ -1571,7 +1603,7 @@ export class ComputeManager {
       suppressCommitDelta: task.suppressCommitDelta === true || task.commitDelta === false,
       returnEnvelope: task.returnEnvelope === true || task.returnRawResult === true,
       requireWorker: task.requireWorker === true,
-      affinityKey: task.affinityKey || task.workerKey || task.data?.affinityKey || task.data?.stateKey
+      affinityKey
     };
     if (payload.requireWorker && (gpuResidentLane?.localExecution === 'inline' || placement.requestedPlacement !== 'local' && !placement.advisory)) {
       throw this._createRequiredWorkerError('required local worker conflicts with requested placement');
@@ -1600,8 +1632,11 @@ export class ComputeManager {
         callback(value);
         complete();
       };
+      const sequence = this.nextTaskSequence;
+      this.nextTaskSequence += 1;
       const wrapped = {
         id,
+        sequence,
         payload,
         control,
         completion,
@@ -1612,7 +1647,14 @@ export class ComputeManager {
         submittedAt: nowMs(),
         runtime,
         taskFamily,
-        placement
+        placement,
+        priorityClass,
+        priority,
+        warmAffinity,
+        warmTtlMs,
+        taskResources,
+        taskResourceLeaseId: null,
+        warmAffinityHit: false
       };
       if (payload.requireWorker && !this.workers.some((worker) => this.workerBootstrap.get(worker)?.status === 'ready')) {
         control.bootstrapTimer = setTimeout(() => {
@@ -1628,9 +1670,34 @@ export class ComputeManager {
         wrapped.reject(task.signal.reason || new DOMException('Compute task cancelled', 'AbortError'));
         return;
       }
+      const acquireAndSchedule = async () => {
+        if (this.resourceBroker && taskResources) {
+          try {
+            const lease = await this._acquireBoundedTaskResourceLease(wrapped);
+            wrapped.taskResourceLeaseId = lease?.leaseId || null;
+          } catch (error) {
+            this._recordTaskCompletion(wrapped, { ok: false, mode: 'queued' });
+            wrapped.reject(error);
+            return;
+          }
+        }
+        if (control.settled || task.signal?.aborted) {
+          this._releaseTaskResourceLease(wrapped);
+          return;
+        }
+        if (this._dispatchToPlacementExecutor(wrapped)) return;
+        if (this._dispatchToWorker(wrapped)) return;
+        this._enqueueTask(wrapped);
+        this._maybeScaleForQueue();
+        this._scheduleNext();
+      };
+      if (this.resourceBroker && taskResources) {
+        void acquireAndSchedule();
+        return;
+      }
       if (this._dispatchToPlacementExecutor(wrapped)) return;
       if (this._dispatchToWorker(wrapped)) return;
-      this.taskQueue.push(wrapped);
+      this._enqueueTask(wrapped);
       this._maybeScaleForQueue();
       this._scheduleNext();
     });
@@ -2966,6 +3033,10 @@ export class ComputeManager {
       totalTasksFailed: this.stats.totalTasksFailed,
       inlineTasksCompleted: this.stats.inlineTasksCompleted,
       workerTasksCompleted: this.stats.workerTasksCompleted,
+      warmWorkerHits: this.stats.warmWorkerHits,
+      warmWorkerMisses: this.stats.warmWorkerMisses,
+      warmWorkerEvictions: this.stats.warmWorkerEvictions,
+      warmWorkerPool: this.getWarmWorkerPoolStats(),
       remoteTasksCompleted: this.stats.remoteTasksCompleted,
       remoteTasksFailed: this.stats.remoteTasksFailed,
       remoteTasksTimedOut: this.stats.remoteTasksTimedOut,
@@ -4569,6 +4640,9 @@ export class ComputeManager {
     for (const [key, assigned] of this.workerAffinities.entries()) {
       if (assigned === worker) {
         this.workerAffinities.delete(key);
+        if (this.warmWorkerAffinities.has(key)) {
+          this._releaseWarmWorkerAffinityRecord(key, { removeMapping: false });
+        }
       }
     }
     return true;
@@ -4768,10 +4842,182 @@ export class ComputeManager {
     throw err;
   }
 
+  _enqueueTask(task) {
+    const incomingPriority = Number.isFinite(task.priority) ? task.priority : TASK_PRIORITY_VALUES.compute;
+    const incomingSeq = task.sequence ?? 0;
+    let insertAt = this.taskQueue.length;
+    for (let i = 0; i < this.taskQueue.length; i += 1) {
+      const existing = this.taskQueue[i];
+      const existingPriority = Number.isFinite(existing.priority) ? existing.priority : TASK_PRIORITY_VALUES.compute;
+      if (incomingPriority > existingPriority || (incomingPriority === existingPriority && incomingSeq < (existing.sequence ?? 0))) {
+        insertAt = i;
+        break;
+      }
+    }
+    this.taskQueue.splice(insertAt, 0, task);
+  }
+
+  _releaseTaskResourceLease(task) {
+    if (!task?.taskResourceLeaseId || !this.resourceBroker?.releaseLease) return;
+    const leaseId = task.taskResourceLeaseId;
+    task.taskResourceLeaseId = null;
+    try {
+      void Promise.resolve(this.resourceBroker.releaseLease(leaseId)).catch(() => {});
+    } catch {}
+  }
+
+  _releaseWarmWorkerAffinityRecord(affinityKey, { removeMapping = true } = {}) {
+    const record = this.warmWorkerAffinities.get(affinityKey);
+    if (!record) return false;
+    this.warmWorkerAffinities.delete(affinityKey);
+    if (removeMapping && !this.residentWorkerAffinities.has(affinityKey)) {
+      this.workerAffinities.delete(affinityKey);
+    }
+    if (record.resourceLeaseId && this.resourceBroker?.releaseLease) {
+      const leaseId = record.resourceLeaseId;
+      record.resourceLeaseId = null;
+      try {
+        void Promise.resolve(this.resourceBroker.releaseLease(leaseId)).catch(() => {});
+      } catch {}
+    }
+    return true;
+  }
+
+  expireWarmWorkerAffinities(now = Date.now()) {
+    const expired = [];
+    const busyWorkers = new Set(Array.from(this.activeTasks.values()).map((entry) => entry.worker));
+    for (const [key, record] of [...this.warmWorkerAffinities.entries()]) {
+      if (this.residentWorkerAffinities.has(key)) continue;
+      if (busyWorkers.has(record.worker)) continue;
+      if (Number.isFinite(record.warmExpiresAt) && record.warmExpiresAt <= now) {
+        this._releaseWarmWorkerAffinityRecord(key, { removeMapping: true });
+        expired.push(key);
+      }
+    }
+    return expired;
+  }
+
+  releaseWarmWorkerAffinity(affinityKey) {
+    return this._releaseWarmWorkerAffinityRecord(String(affinityKey || '').trim(), { removeMapping: true });
+  }
+
+  getWarmWorkerPoolStats(now = Date.now()) {
+    this.expireWarmWorkerAffinities(now);
+    const entries = [...this.warmWorkerAffinities.values()].map((entry) => ({
+      affinityKey: entry.affinityKey,
+      workerId: entry.workerId,
+      priorityClass: entry.priorityClass,
+      priority: entry.priority,
+      warmHits: entry.warmHits,
+      lastUsedAt: entry.lastUsedAt,
+      warmExpiresAt: entry.warmExpiresAt
+    }));
+    const attempts = this.stats.warmWorkerHits + this.stats.warmWorkerMisses;
+    return {
+      warmCount: entries.length,
+      maxWarmWorkerAffinities: this.config.maxWarmWorkerAffinities,
+      warmHits: this.stats.warmWorkerHits,
+      warmMisses: this.stats.warmWorkerMisses,
+      warmEvictions: this.stats.warmWorkerEvictions,
+      hitRate: attempts > 0 ? Number((this.stats.warmWorkerHits / attempts).toFixed(4)) : 0,
+      entries
+    };
+  }
+
+  async _acquireBoundedTaskResourceLease(task) {
+    const spec = {
+      ...task.taskResources,
+      rootTaskId: task.id,
+      priorityClass: task.priorityClass,
+      priority: task.priority
+    };
+    try {
+      return await this.resourceBroker.requestLease(spec);
+    } catch (error) {
+      const busyWorkers = new Set(Array.from(this.activeTasks.values()).map((entry) => entry.worker));
+      const evictable = [...this.warmWorkerAffinities.values()]
+        .filter((entry) => (
+          entry.resourceLeaseId
+          && !this.residentWorkerAffinities.has(entry.affinityKey)
+          && !busyWorkers.has(entry.worker)
+          && entry.priority < task.priority
+        ))
+        .sort((a, b) => a.priority - b.priority || a.lastUsedAt - b.lastUsedAt);
+      for (const candidate of evictable) {
+        this.stats.warmWorkerEvictions += 1;
+        this._releaseWarmWorkerAffinityRecord(candidate.affinityKey, { removeMapping: true });
+        try {
+          return await this.resourceBroker.requestLease(spec);
+        } catch {
+          // Continue evicting strictly lower-priority idle warm entries.
+        }
+      }
+      throw error;
+    }
+  }
+
+  _evictWarmAffinityForWorker(worker, { incomingPriority = TASK_PRIORITY_VALUES.compute, incomingKey = null } = {}) {
+    const candidates = [...this.warmWorkerAffinities.values()]
+      .filter((entry) => entry.worker === worker && entry.affinityKey !== incomingKey && !this.residentWorkerAffinities.has(entry.affinityKey))
+      .sort((a, b) => a.priority - b.priority || a.lastUsedAt - b.lastUsedAt);
+    if (candidates.length === 0) return;
+    for (const victim of candidates) {
+      if (victim.priority <= incomingPriority || this.warmWorkerAffinities.size >= this.config.maxWarmWorkerAffinities) {
+        this.stats.warmWorkerEvictions += 1;
+        this._releaseWarmWorkerAffinityRecord(victim.affinityKey, { removeMapping: true });
+      }
+    }
+  }
+
+  _recordWarmWorkerAffinity(affinityKey, worker, task, { isHit = false } = {}) {
+    if (!affinityKey || this.residentWorkerAffinities.has(affinityKey) || this.config.maxWarmWorkerAffinities <= 0) {
+      return;
+    }
+    const now = Date.now();
+    const workerId = this._workerId(worker) || 'worker-unknown';
+    const existing = this.warmWorkerAffinities.get(affinityKey);
+    const ttlMs = normalizeInteger(task.warmTtlMs, this.config.defaultWarmWorkerTtlMs, 1, 3600000);
+    if (existing && existing.worker === worker) {
+      existing.priorityClass = task.priorityClass || existing.priorityClass;
+      existing.priority = Math.max(existing.priority, task.priority ?? TASK_PRIORITY_VALUES.compute);
+      existing.lastUsedAt = now;
+      existing.warmTtlMs = ttlMs;
+      existing.warmExpiresAt = now + ttlMs;
+      if (isHit) existing.warmHits += 1;
+      return;
+    }
+
+    // Bound total tracked warm affinities by evicting lowest-priority idle entries.
+    const busyWorkers = new Set(Array.from(this.activeTasks.values()).map((entry) => entry.worker));
+    while (this.warmWorkerAffinities.size >= this.config.maxWarmWorkerAffinities) {
+      const victim = [...this.warmWorkerAffinities.values()]
+        .filter((entry) => !this.residentWorkerAffinities.has(entry.affinityKey) && !busyWorkers.has(entry.worker))
+        .sort((a, b) => a.priority - b.priority || a.lastUsedAt - b.lastUsedAt)[0];
+      if (!victim) break;
+      this.stats.warmWorkerEvictions += 1;
+      this._releaseWarmWorkerAffinityRecord(victim.affinityKey, { removeMapping: true });
+    }
+
+    this.warmWorkerAffinities.set(affinityKey, {
+      worker,
+      workerId,
+      affinityKey,
+      priorityClass: task.priorityClass || 'compute',
+      priority: task.priority ?? TASK_PRIORITY_VALUES.compute,
+      lastUsedAt: now,
+      warmTtlMs: ttlMs,
+      warmExpiresAt: now + ttlMs,
+      warmHits: isHit ? 1 : 0,
+      resourceLeaseId: null
+    });
+  }
+
   _dispatchToWorker(task) {
     if (this._requiresInlineExecution(task)) return false;
+    this.expireWarmWorkerAffinities();
     const affinityKey = task.payload?.affinityKey;
     if (affinityKey && this.residentWorkerAffinities.has(affinityKey) && !this.workerAffinities.has(affinityKey)) {
+      this._releaseTaskResourceLease(task);
       this._recordTaskCompletion(task, { ok: false, mode: 'queued' });
       task.reject(Object.assign(new Error('Resident worker was terminated'), {
         code: 'ERR_COMPUTE_WORKER_TERMINATED', workerTerminated: true
@@ -4782,17 +5028,22 @@ export class ComputeManager {
     const dispatchableWorkers = this.workers.filter((entry) => !this.workerTerminationFailures.has(entry)
       && (!(this.config.requireWorkers || task.payload?.requireWorker) || this.workerBootstrap.get(entry)?.status === 'ready'));
     let worker = null;
+    let warmAffinityHit = false;
 
     if (affinityKey && this.workerAffinities.has(affinityKey)) {
       const assigned = this.workerAffinities.get(affinityKey);
       if (!this.workers.includes(assigned)) {
         this.workerAffinities.delete(affinityKey);
+        this._releaseWarmWorkerAffinityRecord(affinityKey, { removeMapping: false });
       } else if (!dispatchableWorkers.includes(assigned)) {
         return false;
       } else if (busyWorkers.has(assigned)) {
         return false;
       } else {
         worker = assigned;
+        if (!this.residentWorkerAffinities.has(affinityKey)) {
+          warmAffinityHit = true;
+        }
       }
     }
 
@@ -4800,19 +5051,57 @@ export class ComputeManager {
       const assignedWorkers = new Set(this.workerAffinities.values());
       const reservedWorkers = new Set([...this.residentWorkerAffinities].map((key) => this.workerAffinities.get(key)));
       const eligible = dispatchableWorkers.filter((entry) => !busyWorkers.has(entry) && !reservedWorkers.has(entry));
-      worker = eligible.find((entry) => !assignedWorkers.has(entry)) || eligible[0];
+      const unassignedWorker = eligible.find((entry) => !assignedWorkers.has(entry));
+      if (unassignedWorker) {
+        worker = unassignedWorker;
+      } else if (eligible.length > 0) {
+        // Priority-aware selection: pick the idle worker holding the lowest-priority
+        // (and oldest-idle) non-resident warm affinity so high-priority warm workers stay hot.
+        const workerPriority = (candidate) => {
+          let maxPrio = -Infinity;
+          let latestUse = 0;
+          for (const entry of this.warmWorkerAffinities.values()) {
+            if (entry.worker === candidate) {
+              if (entry.priority > maxPrio) maxPrio = entry.priority;
+              if (entry.lastUsedAt > latestUse) latestUse = entry.lastUsedAt;
+            }
+          }
+          return { maxPrio, latestUse };
+        };
+        const sortedEligible = [...eligible].sort((left, right) => {
+          const a = workerPriority(left);
+          const b = workerPriority(right);
+          return a.maxPrio - b.maxPrio || a.latestUse - b.latestUse;
+        });
+        worker = sortedEligible[0];
+        if (worker && affinityKey) {
+          this._evictWarmAffinityForWorker(worker, {
+            incomingPriority: task.priority ?? TASK_PRIORITY_VALUES.compute,
+            incomingKey: affinityKey
+          });
+        }
+      }
       if (worker && affinityKey) {
         this.workerAffinities.set(affinityKey, worker);
       }
     }
 
     if (!worker) return false;
+    if (affinityKey && !this.residentWorkerAffinities.has(affinityKey)) {
+      if (warmAffinityHit) {
+        this.stats.warmWorkerHits += 1;
+      } else {
+        this.stats.warmWorkerMisses += 1;
+      }
+      this._recordWarmWorkerAffinity(affinityKey, worker, task, { isHit: warmAffinityHit });
+    }
     clearTimeout(task.control?.bootstrapTimer);
     const workerId = this._workerId(worker) || 'worker-unknown';
     const startedTask = {
       ...task,
       worker,
       workerId,
+      warmAffinityHit,
       startedAt: nowMs(),
       executionMode: 'worker'
     };
@@ -4852,6 +5141,10 @@ export class ComputeManager {
       executionMode,
       executorId,
       workerId,
+      affinityKey: task.payload?.affinityKey || null,
+      warmAffinityHit: task.warmAffinityHit === true,
+      priorityClass: task.priorityClass || task.payload?.priorityClass || 'compute',
+      priority: Number.isFinite(task.priority) ? task.priority : (task.payload?.priority ?? TASK_PRIORITY_VALUES.compute),
       gpuFenceRequirement: task.payload?.gpuFence || null,
       gpuFence,
       gpuFenceStatus: gpuFence?.status ?? null,
@@ -4899,18 +5192,21 @@ export class ComputeManager {
         }
         const finalResult = Object.prototype.hasOwnProperty.call(result, 'value') ? result.value : result.result;
         this._recordTaskCompletion(task, { ok: true, mode: task.executionMode || 'inline' });
+        this._releaseTaskResourceLease(task);
         task.resolve(task.payload?.returnEnvelope === true
           ? this._attachTaskExecutionReport(result, task, { mode: task.executionMode || 'inline' })
           : finalResult);
         return;
       }
       this._recordTaskCompletion(task, { ok: true, mode: task.executionMode || 'inline' });
+      this._releaseTaskResourceLease(task);
       task.resolve(task.payload?.returnEnvelope === true
         ? this._attachTaskExecutionReport(result, task, { mode: task.executionMode || 'inline' })
         : result);
     } catch (err) {
       this._rejectTaskGpuResidentLaneLease(task, err?.code || 'inline-task-error');
       this._recordTaskCompletion(task, { ok: false, mode: task.executionMode || 'inline' });
+      this._releaseTaskResourceLease(task);
       task.reject(err);
     }
   }
@@ -4944,6 +5240,7 @@ export class ComputeManager {
       && ['ERR_MODEL_GPU', 'ERR_MODEL_GPU_OUT_OF_MEMORY', 'ERR_MODEL_RUNTIME', 'MODEL_DISPOSE_FAILED'].includes(message.code);
     if (task.control?.cancelRequested && !fatalResidentError) {
       this._recordTaskCompletion(task, { ok: false, mode: 'worker' });
+      this._releaseTaskResourceLease(task);
       task.reject(Object.assign(new Error('Compute task cancelled'), { name: 'AbortError', code: 'ERR_COMPUTE_TASK_CANCELLED' }));
       this.activeTasks.delete(id);
       this._retireIdleWorkers();
@@ -4969,6 +5266,7 @@ export class ComputeManager {
         name: message.name || 'Error', ...(message.code ? { code: message.code } : {})
       }));
     }
+    this._releaseTaskResourceLease(task);
     this.activeTasks.delete(id);
     this._retireIdleWorkers();
     this._scheduleIdleScaleDown();

@@ -7,6 +7,7 @@ import { noise } from 'peercompute-artifact-noise';
 import { yamux } from '@libp2p/yamux';
 import { identify } from '@libp2p/identify';
 import { gossipsub } from '@libp2p/gossipsub';
+import '../../src/peercompute/inference/registerInference.js';
 import { NetworkManager } from '../../src/peercompute/networkManager/NetworkManager.js';
 import { NETWORK_TELEMETRY_TOPIC as TOPIC, NETWORK_TELEMETRY_TYPE as TYPE,
   NETWORK_TELEMETRY_SCHEMA as SCHEMA } from '../../src/peercompute/networkManager/NetworkTelemetryService.js';

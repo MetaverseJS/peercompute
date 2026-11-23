@@ -1,3 +1,4 @@
+import '../../../src/peercompute/inference/registerInference.js';
 import { ComputeManager } from '../../../src/peercompute/computeManager/ComputeManager.js';
 import { StateManager } from '../../../src/peercompute/stateManager/StateManager.js';
 import { validateGgufCapabilities } from '../../../src/peercompute/inference/gguf/runtimeDefinition.js';

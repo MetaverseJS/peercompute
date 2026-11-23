@@ -8,6 +8,7 @@ import { plaintext } from '@libp2p/plaintext';
 import { yamux } from '@libp2p/yamux';
 import { identify } from '@libp2p/identify';
 import { multiaddr } from '@multiformats/multiaddr';
+import '../../src/peercompute/inference/registerInference.js';
 import { NetworkManager } from '../../src/peercompute/networkManager/NetworkManager.js';
 import { PEER_INFERENCE_PROTOCOL, PEER_INFERENCE_PROTOCOL_V5, PEER_INFERENCE_PROTOCOL_V4, PEER_INFERENCE_PROTOCOL_V3, PEER_INFERENCE_PROTOCOL_V2, PEER_INFERENCE_LIMITS, LEGACY_MAX_NEW_TOKENS, encryptedConnection, channel, descriptor, localState, generation, resultData } from '../../src/peercompute/networkManager/inference/protocol.js';
 import { imageDigest } from '../../src/peercompute/networkManager/inference/imageResult.js';

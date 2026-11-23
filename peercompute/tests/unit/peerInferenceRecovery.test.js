@@ -7,6 +7,7 @@ import { circuitRelayServer, circuitRelayTransport } from '@libp2p/circuit-relay
 import { noise } from 'peercompute-artifact-noise';
 import { yamux } from '@libp2p/yamux';
 import { identify } from '@libp2p/identify';
+import '../../src/peercompute/inference/registerInference.js';
 import { NetworkManager } from '../../src/peercompute/networkManager/NetworkManager.js';
 import { PeerConnectionRecovery } from '../../src/peercompute/networkManager/inference/PeerConnectionRecovery.js';
 import { PEER_INFERENCE_PROTOCOL } from '../../src/peercompute/networkManager/inference/protocol.js';

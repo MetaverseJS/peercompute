@@ -4,7 +4,7 @@
  * Acts as the central orchestrator for all node operations
  */
 
-import { NetworkManager } from '../networkManager/NetworkManager.js';
+import { NetworkManager, normalizeIceTransportPolicy } from '../networkManager/NetworkManager.js';
 import { StateManager } from '../stateManager/StateManager.js';
 import { ComputeManager } from '../computeManager/ComputeManager.js';
 import { GPUHubManager } from '../gpu/GPUHubManager.js';
@@ -491,6 +491,22 @@ export class NodeKernel {
       typeof config.netVizDebugTelemetryTaskPrefix === 'string' && config.netVizDebugTelemetryTaskPrefix.trim()
         ? config.netVizDebugTelemetryTaskPrefix.trim()
         : NETVIZ_DEBUG_TELEMETRY_PREFIX;
+    const networkConfig = config && typeof config.network === 'object' && config.network
+      ? { ...config.network }
+      : {};
+    const resolvedIceTransportPolicy = normalizeIceTransportPolicy(
+      networkConfig.iceTransportPolicy
+        ?? config.webrtc?.rtcConfiguration?.iceTransportPolicy
+        ?? config.webrtc?.iceTransportPolicy
+        ?? config.rtcConfiguration?.iceTransportPolicy
+        ?? config.iceTransportPolicy
+    );
+    const resolvedIceServers = networkConfig.iceServers
+      ?? config.webrtc?.rtcConfiguration?.iceServers
+      ?? config.webrtc?.iceServers
+      ?? config.rtcConfiguration?.iceServers
+      ?? config.iceServers
+      ?? config.webrtcIceServers;
     this.config = {
       topology: topologyType,
       topologyId,
@@ -546,7 +562,14 @@ export class NodeKernel {
       topologyTickMs: config.topologyTickMs,
       gpuHubFrameBudgetMs: config.gpuHubFrameBudgetMs,
       clockPolicy,
-      ...config
+      ...config,
+      network: {
+        ...networkConfig,
+        ...(resolvedIceServers !== undefined ? { iceServers: resolvedIceServers } : {}),
+        ...(resolvedIceTransportPolicy ? { iceTransportPolicy: resolvedIceTransportPolicy } : {})
+      },
+      ...(resolvedIceServers !== undefined ? { iceServers: resolvedIceServers } : {}),
+      ...(resolvedIceTransportPolicy ? { iceTransportPolicy: resolvedIceTransportPolicy } : {})
     };
     const normalizedSessionTopic = String(this.config.netVizSessionTopic || '').trim() || NETVIZ_SESSION_TOPIC;
     this.config.netVizSessionTopic = normalizedSessionTopic;
@@ -583,6 +606,11 @@ export class NodeKernel {
     this.pendingRemoteComputeRequests = new Map();
     this.pendingRemoteTaskGraphRequests = new Map();
     this.gpuResidentStagePlacementExecutors = new Map();
+    this.peerAvailability = new Map();
+    this.peerDisconnectListeners = new Set();
+    this.peerReconnectListeners = new Set();
+    this.peerConnectionListeners = new Set();
+    this.attachedSpatialTileBrokers = new Set();
     this.kernelTickMs = Math.round(1000 / (this.config.clockPolicy.tickHz || 30));
   }
 
@@ -635,7 +663,9 @@ export class NodeKernel {
         allowDiscoveryDialWhenIsolated: this.config.allowDiscoveryDialWhenIsolated,
         allowLocalDial: this.config.allowLocalDial,
         webrtc: this.config.webrtc,
+        network: this.config.network,
         iceServers: this.config.iceServers,
+        iceTransportPolicy: this.config.iceTransportPolicy,
         rtcConfiguration: this.config.rtcConfiguration,
         preferDirect: this.config.preferDirect,
         dropRelayOnDirect: this.config.dropRelayOnDirect,
@@ -2977,6 +3007,9 @@ export class NodeKernel {
         connections: networkStats.connections,
         targetConnections: networkStats.targetConnections,
         maxConnections: networkStats.maxConnections,
+        ice: networkStats.ice || this.networkManager?.getIceConfig?.() || null,
+        connectionPaths: networkStats.connectionPaths || this.networkManager?.getConnectionPathSummary?.() || null,
+        unavailablePeerIds: this.getUnavailablePeers(),
         connectionManager: networkStats.connectionManager || null
       },
       connectedPeerIds,
@@ -4056,6 +4089,99 @@ export class NodeKernel {
     }
   }
 
+  onPeerDisconnect(listener) {
+    if (typeof listener !== 'function') {
+      throw new TypeError('NodeKernel.onPeerDisconnect requires a function');
+    }
+    this.peerDisconnectListeners.add(listener);
+    return () => {
+      this.peerDisconnectListeners.delete(listener);
+    };
+  }
+
+  onPeerReconnect(listener) {
+    if (typeof listener !== 'function') {
+      throw new TypeError('NodeKernel.onPeerReconnect requires a function');
+    }
+    this.peerReconnectListeners.add(listener);
+    return () => {
+      this.peerReconnectListeners.delete(listener);
+    };
+  }
+
+  onPeerConnectionChange(listener) {
+    if (typeof listener !== 'function') {
+      throw new TypeError('NodeKernel.onPeerConnectionChange requires a function');
+    }
+    this.peerConnectionListeners.add(listener);
+    return () => {
+      this.peerConnectionListeners.delete(listener);
+    };
+  }
+
+  isPeerAvailable(peerId) {
+    const id = String(peerId || '').trim();
+    if (!id) return false;
+    const entry = this.peerAvailability.get(id);
+    if (!entry) return true;
+    return entry.available !== false;
+  }
+
+  getPeerAvailability(peerId) {
+    const id = String(peerId || '').trim();
+    const entry = this.peerAvailability.get(id);
+    return entry ? { ...entry } : null;
+  }
+
+  getUnavailablePeers() {
+    const unavailable = [];
+    for (const entry of this.peerAvailability.values()) {
+      if (entry.available === false) unavailable.push(entry.peerId);
+    }
+    return unavailable;
+  }
+
+  getConnectionDiagnostics() {
+    if (typeof this.networkManager?.getConnectionDiagnostics === 'function') {
+      return {
+        ...this.networkManager.getConnectionDiagnostics(),
+        unavailablePeerIds: this.getUnavailablePeers()
+      };
+    }
+    return {
+      peerId: this.networkManager?.peerId || null,
+      isConnected: false,
+      ice: null,
+      connectionPaths: null,
+      unavailablePeerIds: this.getUnavailablePeers(),
+      peers: []
+    };
+  }
+
+  attachSpatialTileLeaseBroker(broker) {
+    if (!broker || typeof broker.evictPeer !== 'function') {
+      throw new TypeError('attachSpatialTileLeaseBroker requires a SpatialTileLeaseBroker');
+    }
+    this.attachedSpatialTileBrokers.add(broker);
+    return () => {
+      this.attachedSpatialTileBrokers.delete(broker);
+    };
+  }
+
+  createSpatialTileLeaseBroker(options = {}) {
+    if (!this.stateManager?.createSpatialTileLeaseBroker) {
+      throw new Error('StateManager not initialized');
+    }
+    const broker = this.stateManager.createSpatialTileLeaseBroker(options);
+    const detach = this.attachSpatialTileLeaseBroker(broker);
+    const originalDestroy = broker.destroy.bind(broker);
+    broker.destroy = () => {
+      detach();
+      return originalDestroy();
+    };
+    return broker;
+  }
+
   /**
    * Handle peer connection event
    * @private
@@ -4065,29 +4191,124 @@ export class NodeKernel {
     if (this.debugOutputEnabled) {
       console.log(`[NodeKernel] Peer connected: ${peerId}`);
     }
-    
+    const now = Date.now();
+    const existing = this.peerAvailability.get(peerId);
+    const isReconnect = existing?.state === 'disconnected';
+    const nextEntry = {
+      peerId,
+      available: true,
+      state: 'connected',
+      connectedAt: now,
+      disconnectedAt: existing?.disconnectedAt || null,
+      reconnectCount: (existing?.reconnectCount || 0) + (isReconnect ? 1 : 0),
+      lastReason: null
+    };
+    this.peerAvailability.set(peerId, nextEntry);
+
     // Update state with connected peer
-    const peers = this.stateManager.read('connectedPeers') || [];
-    if (!peers.includes(peerId)) {
-      peers.push(peerId);
-      this.stateManager.write('connectedPeers', peers);
+    if (this.stateManager) {
+      const peers = this.stateManager.read('connectedPeers') || [];
+      if (!peers.includes(peerId)) {
+        peers.push(peerId);
+        this.stateManager.write('connectedPeers', peers);
+      }
+    }
+
+    const event = Object.freeze({
+      type: isReconnect ? 'reconnect' : 'connect',
+      peerId,
+      timestamp: now,
+      reconnectCount: nextEntry.reconnectCount
+    });
+    if (isReconnect) {
+      for (const listener of [...this.peerReconnectListeners]) {
+        try { listener(event); } catch {}
+      }
+    }
+    for (const listener of [...this.peerConnectionListeners]) {
+      try { listener(event); } catch {}
     }
   }
 
   /**
-   * Handle peer disconnection event
+   * Handle peer disconnection event (fail-closed)
    * @private
    * @param {string} peerId - Disconnected peer ID
    */
-  _handlePeerDisconnect(peerId) {
+  _handlePeerDisconnect(peerId, { reason = 'peer-disconnected' } = {}) {
     if (this.debugOutputEnabled) {
       console.log(`[NodeKernel] Peer disconnected: ${peerId}`);
     }
-    
+    const now = Date.now();
+    const existing = this.peerAvailability.get(peerId);
+    this.peerAvailability.set(peerId, {
+      peerId,
+      available: false,
+      state: 'disconnected',
+      connectedAt: existing?.connectedAt || null,
+      disconnectedAt: now,
+      reconnectCount: existing?.reconnectCount || 0,
+      lastReason: String(reason || 'peer-disconnected')
+    });
+
+    // Fail-closed: immediately reject in-flight remote compute & task-graph
+    // requests targeting the disconnected responder instead of waiting on timeout.
+    const cancelledRequestIds = [];
+    for (const [requestId, pending] of [...this.pendingRemoteComputeRequests.entries()]) {
+      if (pending.peerId !== peerId) continue;
+      this.pendingRemoteComputeRequests.delete(requestId);
+      clearTimeout(pending.timeoutId);
+      cancelledRequestIds.push(requestId);
+      const err = new Error(`Remote compute peer disconnected: ${peerId}`);
+      err.code = 'ERR_REMOTE_PEER_DISCONNECTED';
+      err.peerId = peerId;
+      err.requestId = requestId;
+      pending.reject(err);
+    }
+    for (const [requestId, pending] of [...this.pendingRemoteTaskGraphRequests.entries()]) {
+      if (pending.peerId !== peerId) continue;
+      this.pendingRemoteTaskGraphRequests.delete(requestId);
+      clearTimeout(pending.timeoutId);
+      cancelledRequestIds.push(requestId);
+      const err = new Error(`Remote task graph peer disconnected: ${peerId}`);
+      err.code = 'ERR_REMOTE_PEER_DISCONNECTED';
+      err.peerId = peerId;
+      err.requestId = requestId;
+      pending.reject(err);
+    }
+
+    // Immediately evict and fence any spatial tile leases held by the dropped peer.
+    const evictedTiles = [];
+    for (const broker of [...this.attachedSpatialTileBrokers]) {
+      try {
+        const evicted = broker.evictPeer(peerId, { reason, now });
+        if (evicted?.tiles?.length) {
+          evictedTiles.push(...evicted.tiles);
+        }
+      } catch {}
+    }
+
     // Update state
-    const peers = this.stateManager.read('connectedPeers') || [];
-    const filtered = peers.filter(p => p !== peerId);
-    this.stateManager.write('connectedPeers', filtered);
+    if (this.stateManager) {
+      const peers = this.stateManager.read('connectedPeers') || [];
+      const filtered = peers.filter(p => p !== peerId);
+      this.stateManager.write('connectedPeers', filtered);
+    }
+
+    const event = Object.freeze({
+      type: 'disconnect',
+      peerId,
+      timestamp: now,
+      reason: String(reason || 'peer-disconnected'),
+      cancelledRequestIds,
+      evictedTiles
+    });
+    for (const listener of [...this.peerDisconnectListeners]) {
+      try { listener(event); } catch {}
+    }
+    for (const listener of [...this.peerConnectionListeners]) {
+      try { listener(event); } catch {}
+    }
   }
 
   /**

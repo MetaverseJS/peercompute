@@ -1,3 +1,4 @@
+import '../../../src/peercompute/inference/registerInference.js';
 import { NetworkManager } from '../../../src/peercompute/networkManager/NetworkManager.js';
 import { multiaddr } from '@multiformats/multiaddr';
 

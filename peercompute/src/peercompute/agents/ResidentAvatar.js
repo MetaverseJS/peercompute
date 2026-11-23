@@ -1,5 +1,5 @@
 import { artifactCID } from '../artifacts/ArtifactManifest.js';
-import { normalizeGeneratedMeshDescriptor } from '../inference/GeneratedMeshArtifact.js';
+import { normalizeGeneratedMeshDescriptor } from '../artifacts/GeneratedMeshDescriptor.js';
 
 export const RESIDENT_AVATAR_SCHEMA = 'peercompute.resident-avatar.v1';
 const only = (value, fields) => {

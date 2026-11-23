@@ -1,5 +1,21 @@
 ## PeerCompute Test Strategy
 
+### ULG Scale-Ladder Core Extensions (`feat/ulg-scale-ladder-extensions`) — November 23
+
+- **New unit & isolation suites (13/13 PASS)**:
+  - `peercompute/tests/unit/coreEntrypoint.test.js` (4/4): verifies `peercompute/package.json` `exports` (`"."`, `"./core"`, `"./inference"`), walks every static, dynamic, and `new URL(..., import.meta.url)` edge recursively from `peercompute/src/peercompute/core.js` asserting **zero** edges into `src/peercompute/inference/`, `networkManager/inference/`, `peercompute-diffusion-ort`, `onnxruntime-web`, `@huggingface/transformers`, `@wllama/wllama`, or `@kaminos/webgpu-inference-kit`, verifies all requested slim exports and fail-closed `ERR_MODEL_INFERENCE_NOT_REGISTERED` / `ERR_PEER_INFERENCE_NOT_REGISTERED` when unregistered, and verifies `peercompute/src/peercompute/inference.js` auto-registration.
+  - `peercompute/tests/unit/spatialTileLeaseBroker.test.js` (3/3): single-winner CAS tile acquisition (`tileId + epoch`), renewal, release epoch advancement, opaque binary (`Float32Array`/`Uint8Array`/`ArrayBuffer`) boundary summary admission with defensive byte copy + SHA-256 provenance, fail-closed rejection on stale epoch / non-owner / invalid token / oversized / empty / non-binary payload / expired lease / destroyed broker, TTL expiry + reassignment, `evictPeer`, and `StateManager` integration (`createSpatialTileLeaseBroker`, scoped audit/summary mirror, `destroy()` cleanup).
+  - `peercompute/tests/unit/webrtcIceSurfacing.test.js` (3/3): `network.iceServers` & `network.iceTransportPolicy` (`'all' | 'relay'`, fail-closed `TypeError` on invalid policy) propagation and credential redaction across `NetworkManager` & `NodeKernel`, honest `classifyConnectionPath` (`direct-webrtc` vs `turn-relay` vs `ws-relay`) in telemetry & diagnostics, fail-closed `NodeKernel._handlePeerDisconnect` immediately cancelling in-flight remote compute requests (`ERR_REMOTE_PEER_DISCONNECTED`), evicting attached `SpatialTileLeaseBroker` tiles, rejecting unavailable primary/replica responders in `RemoteResultQuorumValidator` bound via `bindToKernel`, and restoring availability on reconnect.
+  - `peercompute/tests/unit/warmWorkerAffinity.test.js` (3/3): `ChildWorkerLeaseManager` warm-pool reuse (`reusedWarm: true`, stable `workerHandleId`) for Eshkol/MoonLab affinity keys, priority-aware warm eviction under `ResourceLeaseBroker` memory & unit caps + fail-closed quota rejection + TTL expiry broker release, `ComputeManager` priority queue ordering + warm `affinityKey` steering (`warmAffinityHit: true` in `computeExecution`), `WorkerSupervisor` warm lease forwarding + `warmPool` telemetry, and provenance-bound `RemoteResultQuorumValidator` + `StateManager` admission.
+- **Real production Vite bundle proof (`peercompute/core`)**: **PASS** (`fileCount: 3`, `wasmCount: 0`, `totalBytes: 2,907,936` = `2.77 MiB`, `hits: []` for `\bort-wasm\b`, `onnxruntime-web`, `@huggingface/transformers`, `@wllama/wllama`, `@kaminos/webgpu-inference-kit`, `peercompute-diffusion-ort`, compared to `82.2 MiB` of `.wasm` assets in full `index.js`).
+- **Full regression suites**:
+  - `npm --prefix peercompute run test:unit`: **1,399/1,400 PASS** (zero regressions; sole failure is the pre-existing unrelated external staged-ULG fixture at `serviceOrchestration.test.js:4095`, matching prior baseline `1,383/1,384` + 16 new passing tests/subtests).
+  - `npm run test:network-telemetry`: **23/23 PASS**.
+  - `npm run test:inference`: **109/109 PASS**.
+  - `npm run test:peer-inference`: **205/205 PASS**.
+  - `npm --prefix peercompute run build` (webpack 5 production build): **PASS**.
+  - `node --test demos/tests/demo-ports.test.js demos/tests/demo-release.test.js`: **49/49 PASS**.
+
 ### NetViz root visibility, dual-role subgroup clarity & CubeChat model discovery / dial-churn fixes (`main` `62484e70`) — November 23
 
 - **Focused unit & integration suites**:

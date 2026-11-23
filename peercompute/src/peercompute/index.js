@@ -8,6 +8,10 @@
  * for distributed computing, multiplayer gaming, and metaverse applications.
  */
 
+// Register optional inference runtime plugins for full-package consumers.
+// Slim consumers should import `peercompute/core` instead.
+import './inference/registerInference.js';
+
 // Core components
 import {
   NODE_KERNEL_REDUNDANT_PLACEMENT_SCHEMA,
@@ -63,6 +67,13 @@ export {
   StateManager
 } from './stateManager/StateManager.js';
 export { ReservationLedger, RESERVATION_LEDGER_SCHEMA } from './stateManager/ReservationLedger.js';
+export {
+  SPATIAL_TILE_BOUNDARY_SCHEMA,
+  SPATIAL_TILE_EVENT_SCHEMA,
+  SPATIAL_TILE_LEASE_SCHEMA,
+  SPATIAL_TILE_STATES,
+  SpatialTileLeaseBroker
+} from './stateManager/SpatialTileLeaseBroker.js';
 export { DataState } from './stateManager/DataState.js';
 export { ArtifactStore, ARTIFACT_IMPORT_PROFILE, ARTIFACT_MANIFEST_SCHEMA } from './artifacts/ArtifactStore.js';
 export { MODEL_ARTIFACT_CATALOG, modelArtifactFileUrl } from './artifacts/modelArtifactCatalog.js';
@@ -95,7 +106,14 @@ export {
   LOCAL_ARTIFACT_CACHE_STORE,
   LocalArtifactCache
 } from './stateManager/LocalArtifactCache.js';
-export { NetworkManager, DIRECT_UNICAST_PROTOCOL } from './networkManager/NetworkManager.js';
+export {
+  CONNECTION_PATHS,
+  DIRECT_UNICAST_PROTOCOL,
+  ICE_TRANSPORT_POLICIES,
+  NetworkManager,
+  classifyConnectionPath,
+  normalizeIceTransportPolicy
+} from './networkManager/NetworkManager.js';
 export {
   THROUGHPUT_TOPOLOGY_PROFILES,
   createThroughputProfileScorers
@@ -120,6 +138,7 @@ export {
   SOLVER_TASK_SCHEMA
 } from './computeManager/SolverRegistry.js';
 export {
+  PlacementAdmissionPolicy,
   createPlacementAdmissionPolicy,
   evaluatePlacementAdmission,
   normalizePlacementAdmissionPolicyOptions,
@@ -127,12 +146,23 @@ export {
   PLACEMENT_ADMISSION_RESULT_SCHEMA
 } from './computeManager/PlacementAdmissionPolicy.js';
 export {
+  RemoteResultQuorumValidator,
   createRemoteResultQuorumValidator,
   evaluateRemoteResultQuorum,
   normalizeRemoteResultQuorumOptions,
   REMOTE_RESULT_QUORUM_POLICY_SCHEMA,
   REMOTE_RESULT_QUORUM_REPORT_SCHEMA
 } from './computeManager/RemoteResultQuorumValidator.js';
+export * as serviceOrchestration from './serviceOrchestration/index.js';
+export {
+  registerInferenceRuntime
+} from './inference/registerInference.js';
+export {
+  registerBuiltinTaskModule,
+  registerDefaultWorkerBootstrapURL,
+  registerModelInferenceFactory,
+  registerPeerInferenceServiceFactory
+} from './runtime/extensionRegistry.js';
 export {
   CHILD_WORKER_LEASE_SCHEMA,
   COMPUTE_MANAGER_SERVICE_ADAPTER_SCHEMA,

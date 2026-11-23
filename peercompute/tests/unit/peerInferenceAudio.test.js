@@ -8,6 +8,7 @@ import { yamux } from '@libp2p/yamux';
 import { identify } from '@libp2p/identify';
 import { CID } from 'multiformats/cid';
 import { sha256 } from 'multiformats/hashes/sha2';
+import '../../src/peercompute/inference/registerInference.js';
 import { NetworkManager } from '../../src/peercompute/networkManager/NetworkManager.js';
 import { PEER_INFERENCE_PROTOCOL as CURRENT, PEER_INFERENCE_PROTOCOL_V5 as V5, PEER_INFERENCE_PROTOCOL_V4 as V4, PEER_INFERENCE_PROTOCOL_V3 as LEGACY_V3, PEER_INFERENCE_PROTOCOL_V2 as V2, channel, descriptor, generation,
   localState } from '../../src/peercompute/networkManager/inference/protocol.js';

@@ -1,32 +1,26 @@
 import { executeWasmTask, executeWasmWebGPUTask } from './runtime/wasmRuntime.js';
+import { getBuiltinTaskModule } from '../runtime/extensionRegistry.js';
 
 async function importTaskModule(modulePath) {
   if (typeof modulePath !== 'string' || !modulePath.trim()) {
     throw new Error('module path must be a non-empty string');
   }
 
-  // Fixed lazy import lets Vite bundle the trusted runtime and its dependencies.
-  // Artifact manifests supply model data, never executable module locations.
-  if (modulePath === 'peercompute:model-inference') {
-    return import('../inference/modelTask.js');
-  }
-  if (modulePath === 'peercompute:gguf-inference') {
-    return import('../inference/gguf/modelTask.js');
-  }
-  if (modulePath === 'peercompute:diffusion-inference') {
-    return import('../inference/diffusion/modelTask.js');
-  }
-  if (modulePath === 'peercompute:speech-inference') {
-    return import('../inference/speech/modelTask.js');
-  }
-  if (modulePath === 'peercompute:mesh-inference') {
-    return import('../inference/mesh/modelTask.js');
-  }
-  if (modulePath === 'peercompute:sf3d-inference') {
-    return import('../inference/sf3dModelTask.js');
+  // Optional built-in modules (such as inference task handlers) register via
+  // `extensionRegistry` so `peercompute/core` stays strictly free of inference
+  // and heavy WASM import edges.
+  const registeredLoader = getBuiltinTaskModule(modulePath);
+  if (registeredLoader) {
+    return registeredLoader();
   }
   if (modulePath === 'peercompute:capability-benchmark') {
     return import('../capabilities/benchmarkTask.js');
+  }
+  if (modulePath.startsWith('peercompute:')) {
+    throw Object.assign(
+      new Error(`Built-in compute task module "${modulePath}" is not registered; load the optional peercompute inference entrypoint or register it via registerBuiltinTaskModule()`),
+      { code: 'ERR_COMPUTE_BUILTIN_MODULE_NOT_REGISTERED', modulePath }
+    );
   }
 
   return import(

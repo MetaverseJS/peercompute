@@ -21,6 +21,7 @@ import { WorldMemoryStore } from '../agents/WorldMemoryStore.js';
 import { WorldGoalStore } from '../agents/WorldGoalStore.js';
 import { WorldStandingGoalStore } from '../agents/WorldStandingGoalStore.js';
 import { ReservationLedger } from './ReservationLedger.js';
+import { SpatialTileLeaseBroker } from './SpatialTileLeaseBroker.js';
 
 export const STATE_TASK_GRAPH_CACHE_ARTIFACT_ADMISSION_SCHEMA = 'peercompute.state.task-graph-cache-artifact-admission.v0';
 export const STATE_TASK_GRAPH_CACHE_ARTIFACT_INVALIDATION_SCHEMA = 'peercompute.state.task-graph-cache-artifact-invalidation.v0';
@@ -106,6 +107,7 @@ export class StateManager {
     this.worldObjectStores = new Map();
     this.residentDiagnosticsStores = new Map();
     this.reservationLedgers = new Map();
+    this.spatialTileLeaseBrokers = new Map();
     this.worldGoalStores = new Map();
     this.worldStandingGoalStores = new Map();
   }
@@ -354,6 +356,37 @@ export class StateManager {
     // Detach first: cleanup may create a replacement with the same name.
     this.reservationLedgers.delete(name);
     ledger.destroy();
+    return true;
+  }
+
+  /**
+   * Epoch-fenced spatial tile lease coordinator and opaque binary boundary
+   * summary exchange primitive built on ReservationLedger + StateManager.
+   */
+  createSpatialTileLeaseBroker(options = {}) {
+    if (this.destroyed) throw new Error('StateManager is destroyed');
+    const name = options.name || 'default';
+    if (this.spatialTileLeaseBrokers.has(name)) {
+      throw new Error(`Spatial tile lease broker ${name} is already registered`);
+    }
+    const broker = new SpatialTileLeaseBroker({
+      ...options,
+      name,
+      stateManager: this
+    });
+    this.spatialTileLeaseBrokers.set(name, broker);
+    return broker;
+  }
+
+  getSpatialTileLeaseBroker(name = 'default') {
+    return this.spatialTileLeaseBrokers.get(name) || null;
+  }
+
+  destroySpatialTileLeaseBroker(name = 'default') {
+    const broker = this.spatialTileLeaseBrokers.get(name);
+    if (!broker) return false;
+    this.spatialTileLeaseBrokers.delete(name);
+    broker.destroy();
     return true;
   }
 
@@ -1125,6 +1158,8 @@ export class StateManager {
       for (const store of [...this.worldGoalStores.values()]) await cleanup(() => store.destroy());
       for (const store of [...this.worldStandingGoalStores.values()]) await cleanup(() => store.destroy());
       // Reservation resources are released exactly once by their ledger.
+      for (const broker of [...this.spatialTileLeaseBrokers.values()]) await cleanup(() => broker.destroy());
+      this.spatialTileLeaseBrokers.clear();
       for (const ledger of [...this.reservationLedgers.values()]) await cleanup(() => ledger.destroy());
       this.reservationLedgers.clear();
       // Local artifact bytes live outside Yjs but remain owned by this manager.

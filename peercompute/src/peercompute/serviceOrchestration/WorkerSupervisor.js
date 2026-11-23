@@ -104,7 +104,7 @@ function taskRootId(task = {}) {
 export class WorkerSupervisor {
   constructor({
     registry = new ComputeServiceRegistry(),
-    leaseManager = new ChildWorkerLeaseManager(),
+    leaseManager = null,
     workerFactory = defaultWorkerFactory,
     serviceFactory = null,
     resourceBroker = null,
@@ -112,9 +112,9 @@ export class WorkerSupervisor {
     now = () => Date.now()
   } = {}) {
     this.registry = registry;
-    this.leaseManager = leaseManager;
-    this.workerFactory = serviceFactory || workerFactory;
     this.resourceBroker = resourceBroker;
+    this.leaseManager = leaseManager || new ChildWorkerLeaseManager({ resourceBroker, now });
+    this.workerFactory = serviceFactory || workerFactory;
     this.artifactCache = artifactCache;
     this.now = now;
     this.handles = new Map();
@@ -253,6 +253,7 @@ export class WorkerSupervisor {
       services: [...this.handles.values()].map((handle) => this.#handleSummary(handle)),
       tasks: [...this.tasks.values()].map((task) => this.#taskSummary(task)),
       leases: this.leaseManager.list(),
+      warmPool: this.leaseManager.getWarmPoolStats?.() || null,
       resources: this.resourceBroker?.reportPressure?.() || null,
       artifacts: this.artifactCache?.list?.() || []
     };
@@ -277,7 +278,10 @@ export class WorkerSupervisor {
     } else if (message.type === 'lease-request') {
       await this.#handleLeaseRequest(handle, message);
     } else if (message.type === 'lease-release') {
-      await this.leaseManager.release(message.leaseId);
+      await this.leaseManager.release(message.leaseId, {
+        keepWarm: message.keepWarm === true,
+        warmTtlMs: message.warmTtlMs
+      });
     } else if (message.type === 'task-result') {
       await this.#completeTask(message.rootTaskId, message.result, 'complete');
     } else if (message.type === 'task-cancelled') {
@@ -302,8 +306,14 @@ export class WorkerSupervisor {
         count: message.count,
         resources: message.resources,
         ttlMs: message.ttlMs,
+        affinityKey: message.affinityKey ?? message.warmKey ?? null,
+        priority: message.priority,
+        priorityClass: message.priorityClass,
+        reuseWarm: message.reuseWarm,
+        warmTtlMs: message.warmTtlMs,
         allowed: policy.allowed,
         maxChildren: policy.maxChildren,
+        maxWarmPerParent: policy.maxWarmPerParent,
         allowedModules: policy.allowedModules,
         sameOriginOnly: policy.sameOriginOnly,
         baseUrl: policy.baseUrl || handle.manifest.entry.workerModule || null

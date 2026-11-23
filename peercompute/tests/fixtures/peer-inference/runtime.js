@@ -1,3 +1,4 @@
+import '../../../src/peercompute/inference/registerInference.js';
 import { StateManager } from '../../../src/peercompute/stateManager/StateManager.js';
 import { ComputeManager } from '../../../src/peercompute/computeManager/ComputeManager.js';
 import { NetworkManager } from '../../../src/peercompute/networkManager/NetworkManager.js';

@@ -10,6 +10,7 @@ import { SPEECH_MODEL_CATALOG } from '../../src/peercompute/inference/speech/spe
 import { ResourceLeaseBroker } from '../../src/peercompute/serviceOrchestration/ResourceLeaseBroker.js';
 import { ResidentModelAdmission } from '../../src/peercompute/serviceOrchestration/ResidentModelAdmission.js';
 import { ModelInferenceService } from '../../src/peercompute/inference/ModelInferenceService.js';
+import '../../src/peercompute/inference/registerInference.js';
 import { ComputeManager } from '../../src/peercompute/computeManager/ComputeManager.js';
 
 const GiB = 1024 ** 3;

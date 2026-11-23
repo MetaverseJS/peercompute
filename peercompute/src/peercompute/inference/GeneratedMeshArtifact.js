@@ -1,12 +1,13 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { ARTIFACT_MANIFEST_SCHEMA } from '../artifacts/ArtifactManifest.js';
+import { GENERATED_MESH_LIMITS, normalizeGeneratedMeshDescriptor } from '../artifacts/GeneratedMeshDescriptor.js';
 import { GENERATED_MESH_TEXTURE_LIMITS, inspectGeneratedMeshTexture } from './GeneratedMeshTexture.js';
+
+export { GENERATED_MESH_LIMITS, normalizeGeneratedMeshDescriptor };
 
 /** Deliberately small, self-contained static geometry profile. Validate before
  * handing remote bytes to a renderer; a GLB container alone is not a trust boundary. */
-export const GENERATED_MESH_LIMITS = Object.freeze({ byteLength: 16 * 1024 ** 2,
-  jsonBytes: 256 * 1024, vertices: 100000, triangles: 150000, coordinate: 1000000 });
 const MIME = 'model/gltf-binary';
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder('utf-8', { fatal: true });
@@ -27,18 +28,6 @@ function vector(value, size, minimum = -GENERATED_MESH_LIMITS.coordinate, maximu
 }
 function one(value) { if (!Array.isArray(value) || value.length !== 1) fail('expected one static mesh'); return value[0]; }
 const same = (left, right) => JSON.stringify(left) === JSON.stringify(right);
-
-/** Validate transfer metadata before allocating the binary buffer. */
-export function normalizeGeneratedMeshDescriptor(value) {
-  if (!value || value.format !== 'glb' || value.mimeType !== MIME
-      || !/^[a-f0-9]{64}$/u.test(value.sha256 ?? '')) fail('format or SHA-256');
-  const bounds = { min: vector(value.bounds?.min, 3), max: vector(value.bounds?.max, 3) };
-  if (bounds.min.some((n, i) => n > bounds.max[i])) fail('inverted bounds');
-  return { format: 'glb', mimeType: MIME,
-    byteLength: integer(value.byteLength, 32, GENERATED_MESH_LIMITS.byteLength), sha256: value.sha256,
-    vertexCount: integer(value.vertexCount, 3, GENERATED_MESH_LIMITS.vertices),
-    triangleCount: integer(value.triangleCount, 1, GENERATED_MESH_LIMITS.triangles), bounds };
-}
 
 function parseGeometry(data, textureSources = [], { allowTextures = true } = {}) {
   const view = new DataView(data.buffer, data.byteOffset, data.byteLength);

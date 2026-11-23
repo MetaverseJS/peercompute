@@ -23,11 +23,19 @@ import { multiaddr } from '@multiformats/multiaddr';
 import { NetworkScheduler, DEFAULT_SCHEDULER_PROFILE } from './NetworkScheduler.js';
 import { TopologyController } from './TopologyController.js';
 import { createThroughputTopologyState, createThroughputProfileScorers, decideThroughputTopology } from './ThroughputTopologyPolicy.js';
-import { PeerConnectionRecovery } from './inference/PeerConnectionRecovery.js';
+import { PeerConnectionRecovery } from './PeerConnectionRecovery.js';
 import { NetworkTelemetryService, NETWORK_TELEMETRY_TOPIC } from './NetworkTelemetryService.js';
 import { isDebugOutputEnabled } from '../utils/debugOutput.js';
+import { getPeerInferenceServiceFactory } from '../runtime/extensionRegistry.js';
 
 export const DIRECT_UNICAST_PROTOCOL = '/peercompute/direct/1.0.0';
+export const ICE_TRANSPORT_POLICIES = Object.freeze(['all', 'relay']);
+export const CONNECTION_PATHS = Object.freeze({
+  DIRECT_WEBRTC: 'direct-webrtc',
+  TURN_RELAY: 'turn-relay',
+  WS_RELAY: 'ws-relay',
+  UNKNOWN: 'unknown'
+});
 const DEFAULT_DIRECT_STREAM_MAX_BYTES = 4 * 1024 * 1024;
 const DIRECT_STREAM_UNSUPPORTED_COOLDOWN_MS = 60000;
 const RELAY_HEALTH_FAILURE_COOLDOWN_MS = 30000;
@@ -358,6 +366,78 @@ const expandScoreParamTopics = (options, topics) => {
   };
 };
 
+export const classifyConnectionPath = (peer = {}) => {
+  if (!peer || typeof peer !== 'object') return CONNECTION_PATHS.UNKNOWN;
+  const icePath = normalizeIcePath(peer.icePath);
+  const mediaPath = normalizeMediaPath(peer.mediaPath);
+  const via = normalizePeerVia(peer.via);
+
+  // Explicit ICE / transport path classification takes precedence over legacy
+  // coarse `mediaPath` labels (where non-WebRTC circuit relay previously shared `'relay'`).
+  if (icePath === 'turn-relay') {
+    return CONNECTION_PATHS.TURN_RELAY;
+  }
+  if (icePath === 'lan-host' || icePath === 'nat-srflx' || icePath === 'nat-prflx') {
+    return CONNECTION_PATHS.DIRECT_WEBRTC;
+  }
+  if (icePath === 'circuit-relay' || icePath === 'direct-ws') {
+    return CONNECTION_PATHS.WS_RELAY;
+  }
+  if (via === 'relay' || via === 'ws' || via === 'wss') {
+    return CONNECTION_PATHS.WS_RELAY;
+  }
+  if (mediaPath === 'turn-relay') {
+    return CONNECTION_PATHS.TURN_RELAY;
+  }
+  if (via === 'webrtc' || via === 'webrtc-direct') {
+    return CONNECTION_PATHS.DIRECT_WEBRTC;
+  }
+  if (via === 'relay-webrtc' || via === 'webrtc-relay') {
+    return mediaPath === 'direct' ? CONNECTION_PATHS.DIRECT_WEBRTC : CONNECTION_PATHS.WS_RELAY;
+  }
+  if (via === 'direct' && mediaPath === 'direct') {
+    return CONNECTION_PATHS.DIRECT_WEBRTC;
+  }
+  return CONNECTION_PATHS.UNKNOWN;
+};
+
+export const normalizeIceTransportPolicy = (value) => {
+  if (value === undefined || value === null || value === '') return null;
+  const normalized = String(value).trim().toLowerCase();
+  if (!ICE_TRANSPORT_POLICIES.includes(normalized)) {
+    throw new TypeError(`Unsupported iceTransportPolicy "${value}": expected one of ${ICE_TRANSPORT_POLICIES.join(', ')}`);
+  }
+  return normalized;
+};
+
+const summarizeIceServers = (iceServers = [], iceTransportPolicy = 'all') => {
+  const configuredUrls = [];
+  let stunServerCount = 0;
+  let turnServerCount = 0;
+  for (const entry of Array.isArray(iceServers) ? iceServers : []) {
+    const urls = Array.isArray(entry?.urls) ? entry.urls : (entry?.urls ? [entry.urls] : []);
+    for (const rawUrl of urls) {
+      const url = String(rawUrl || '').trim();
+      if (!url) continue;
+      configuredUrls.push(url);
+      const lower = url.toLowerCase();
+      if (lower.startsWith('turn:') || lower.startsWith('turns:')) {
+        turnServerCount += 1;
+      } else if (lower.startsWith('stun:') || lower.startsWith('stuns:')) {
+        stunServerCount += 1;
+      }
+    }
+  }
+  return {
+    iceTransportPolicy: iceTransportPolicy || 'all',
+    iceServerCount: Array.isArray(iceServers) ? iceServers.length : 0,
+    stunServerCount,
+    turnServerCount,
+    hasTurnServer: turnServerCount > 0,
+    configuredUrls
+  };
+};
+
 const normalizeIceServers = (input) => {
   if (!input) return [];
   const list = Array.isArray(input) ? input : [input];
@@ -469,14 +549,32 @@ const normalizeWebRTCConfig = (config = {}) => {
     : (Number.isFinite(config.dialGlareTieBreakMs)
       ? Math.max(0, config.dialGlareTieBreakMs)
       : DEFAULT_DIAL_GLARE_TIE_BREAK_MS);
+  const networkSection = config && typeof config.network === 'object' && config.network ? config.network : {};
   const iceServers = normalizeIceServers(
-    raw.iceServers ?? config.iceServers ?? config.webrtcIceServers
+    networkSection.iceServers
+      ?? raw.rtcConfiguration?.iceServers
+      ?? raw.iceServers
+      ?? config.rtcConfiguration?.iceServers
+      ?? config.iceServers
+      ?? config.webrtcIceServers
   );
-  const baseRtc = raw.rtcConfiguration ?? config.rtcConfiguration ?? {};
+  const explicitIceTransportPolicy = normalizeIceTransportPolicy(
+    networkSection.iceTransportPolicy
+      ?? raw.rtcConfiguration?.iceTransportPolicy
+      ?? raw.iceTransportPolicy
+      ?? config.rtcConfiguration?.iceTransportPolicy
+      ?? config.iceTransportPolicy
+  );
+  const effectiveIceTransportPolicy = explicitIceTransportPolicy || 'all';
+  const baseRtc = raw.rtcConfiguration ?? config.rtcConfiguration ?? networkSection.rtcConfiguration ?? {};
   const rtcConfiguration = (baseRtc && typeof baseRtc === 'object') ? { ...baseRtc } : {};
   if (iceServers.length > 0) {
     rtcConfiguration.iceServers = iceServers;
   }
+  if (explicitIceTransportPolicy) {
+    rtcConfiguration.iceTransportPolicy = explicitIceTransportPolicy;
+  }
+  const iceDiagnostics = summarizeIceServers(iceServers, effectiveIceTransportPolicy);
   return {
     ...raw,
     preferDirect,
@@ -499,6 +597,8 @@ const normalizeWebRTCConfig = (config = {}) => {
     dialFailureBackoffMaxMs,
     dialGlareTieBreakMs,
     iceServers,
+    iceTransportPolicy: effectiveIceTransportPolicy,
+    iceDiagnostics,
     rtcConfiguration
   };
 };
@@ -895,6 +995,8 @@ export class NetworkManager {
     this.onMessage = config.onMessage || (() => {});
     this.onPeerConnect = config.onPeerConnect || (() => {});
     this.onPeerDisconnect = config.onPeerDisconnect || (() => {});
+    this.peerConnectionListeners = new Set();
+    this.disconnectedPeerIds = new Set();
     this.onConnectionFailure = typeof config.onConnectionFailure === 'function'
       ? config.onConnectionFailure
       : null;
@@ -1469,8 +1571,15 @@ export class NetworkManager {
     if (!this.libp2p || !this.isConnected) throw new Error('Connect NetworkManager before enabling peer inference');
     this.peerInferenceOwner = owner;
     this.peerInferenceStarting = (async () => {
-      const { PeerInferenceService } = await import('./inference/PeerInferenceService.js');
-      const service = new PeerInferenceService(this, { ...options, owner });
+      const factory = getPeerInferenceServiceFactory();
+      if (!factory) {
+        this.peerInferenceOwner = null;
+        throw Object.assign(
+          new Error('Peer inference runtime is not registered; load the full peercompute or optional inference entrypoint (or call registerPeerInferenceServiceFactory)'),
+          { code: 'ERR_PEER_INFERENCE_NOT_REGISTERED' }
+        );
+      }
+      const service = await factory(this, { ...options, owner });
       try { await service.start(); this.peerInferenceService = service; return service; }
       catch (error) {
         try { await service.stop(); }
@@ -1948,6 +2057,77 @@ export class NetworkManager {
     };
   }
 
+  getIceConfig() {
+    const diag = this.config.webrtc?.iceDiagnostics
+      || summarizeIceServers(this.config.webrtc?.iceServers, this.config.webrtc?.iceTransportPolicy || 'all');
+    return {
+      ...diag,
+      configuredUrls: [...(diag.configuredUrls || [])]
+    };
+  }
+
+  getConnectionPathSummary(peers = null) {
+    const peerList = Array.isArray(peers) ? peers : this.getConnectedPeers();
+    const counts = {
+      [CONNECTION_PATHS.DIRECT_WEBRTC]: 0,
+      [CONNECTION_PATHS.TURN_RELAY]: 0,
+      [CONNECTION_PATHS.WS_RELAY]: 0,
+      [CONNECTION_PATHS.UNKNOWN]: 0
+    };
+    for (const peer of peerList) {
+      const path = classifyConnectionPath(peer);
+      counts[path] = (counts[path] || 0) + 1;
+    }
+    return counts;
+  }
+
+  getConnectionDiagnostics() {
+    const peers = this.getConnectedPeers().map((peer) => ({
+      peerId: peer.peerId,
+      connectionPath: classifyConnectionPath(peer),
+      via: peer.via || null,
+      signalingPath: normalizeSignalingPath(peer.signalingPath) || null,
+      mediaPath: normalizeMediaPath(peer.mediaPath) || null,
+      icePath: normalizeIcePath(peer.icePath) || null,
+      iceProtocol: peer.iceProtocol || null,
+      candidatePairRttMs: Number.isFinite(peer.candidatePairRttMs) ? peer.candidatePairRttMs : null,
+      rttMs: Number.isFinite(peer.rttMs) ? peer.rttMs : null
+    }));
+    return {
+      peerId: this.peerId,
+      isConnected: this.isConnected,
+      ice: this.getIceConfig(),
+      connectionPaths: this.getConnectionPathSummary(peers),
+      peers
+    };
+  }
+
+  subscribePeerConnection(listener) {
+    if (typeof listener !== 'function') {
+      throw new TypeError('subscribePeerConnection requires a function');
+    }
+    this.peerConnectionListeners.add(listener);
+    return () => {
+      this.peerConnectionListeners.delete(listener);
+    };
+  }
+
+  onPeerConnectionChange(listener) {
+    return this.subscribePeerConnection(listener);
+  }
+
+  _emitPeerConnectionEvent(type, peerId, extra = {}) {
+    const event = Object.freeze({
+      type,
+      peerId,
+      timestamp: Date.now(),
+      ...extra
+    });
+    for (const listener of [...this.peerConnectionListeners]) {
+      try { listener(event); } catch {}
+    }
+  }
+
   getNetworkStats() {
     const connectionPeers = this._getConnectionPeers();
     const logicalDialedPeerCount = this._getLogicalDialedPeerCount();
@@ -1975,6 +2155,8 @@ export class NetworkManager {
       targetConnections: this.config.targetConnections,
       maxConnections: this.config.maxConnections,
       transportMaxConnections: this._getTransportMaxConnections(this.config.maxConnections),
+      ice: this.getIceConfig(),
+      connectionPaths: this.getConnectionPathSummary(connectionPeers),
       connectionManager: this._getConnectionManagerStats()
     };
   }
@@ -2003,6 +2185,7 @@ export class NetworkManager {
           })()
         : {}),
       via: peer.via || null,
+      connectionPath: classifyConnectionPath(peer),
       signalingPath: normalizeSignalingPath(peer.signalingPath) || null,
       mediaPath: normalizeMediaPath(peer.mediaPath) || null,
       icePath: normalizeIcePath(peer.icePath) || null,
@@ -2076,6 +2259,8 @@ export class NetworkManager {
       },
       rewiresPerMin: this._getRewiresPerMin(now),
       dialFailures: this.dialFailureCount || 0,
+      ice: this.getIceConfig(),
+      connectionPaths: this.getConnectionPathSummary(peers),
       joinedAt: this.joinedAt,
       peers
     };
@@ -2337,6 +2522,10 @@ export class NetworkManager {
       }
       this._touchPeer(peerId, peerUpdates);
       if (isNewPeer) {
+        const reconnected = this.disconnectedPeerIds.delete(peerId);
+        this._emitPeerConnectionEvent(reconnected ? 'reconnect' : 'connect', peerId, {
+          connectionPath: classifyConnectionPath(this.peers.get(peerId))
+        });
         this.onPeerConnect(peerId);
       }
     });
@@ -2344,6 +2533,7 @@ export class NetworkManager {
     this.libp2p.addEventListener('peer:disconnect', (evt) => {
       const peerId = evt.detail?.remotePeer?.toString?.() || evt.detail?.toString?.();
       if (!peerId) return;
+      const previousPeer = this.peers.get(peerId) || null;
       this._dropPubsubPeer(peerId);
       this.peers.delete(peerId);
       this.peerDialBackoff.delete(peerId);
@@ -2354,6 +2544,11 @@ export class NetworkManager {
       if (this.bootstrapPeerIds.has(peerId) && !this._hasBootstrapRelayConnections()) {
         this.relayBootstrapConnectedAt = null;
       }
+      this.disconnectedPeerIds.add(peerId);
+      this._emitPeerConnectionEvent('disconnect', peerId, {
+        reason: 'peer-disconnected',
+        lastConnectionPath: previousPeer ? classifyConnectionPath(previousPeer) : CONNECTION_PATHS.UNKNOWN
+      });
       this.onPeerDisconnect(peerId);
       this._maybeUpdateBootstrapRelayConnections();
     });

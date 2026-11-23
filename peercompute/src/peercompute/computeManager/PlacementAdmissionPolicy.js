@@ -305,3 +305,16 @@ export function createPlacementAdmissionPolicy(options = {}) {
   policy.policy = normalized;
   return policy;
 }
+
+export class PlacementAdmissionPolicy {
+  constructor(options = {}) {
+    const fn = createPlacementAdmissionPolicy(options);
+    this._evaluator = fn;
+    this.placementAdmissionId = fn.placementAdmissionId;
+    this.policy = fn.policy;
+  }
+
+  evaluate(payload, context) {
+    return this._evaluator(payload, context);
+  }
+}
