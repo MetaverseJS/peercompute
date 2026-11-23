@@ -21,11 +21,13 @@ function wait(promise, signal) {
 /** Manager-owned repair of a transport, never a retry of an application request. */
 export class PeerConnectionRecovery {
   constructor(manager, { now = Date.now, dialTimeoutMs = 5000, cooldownMs = 15000,
-    freshGraceMs = 10000, idleGraceMs = 15000, maxConcurrent = 2 } = {}) {
+    freshGraceMs = 10000, directFreshGraceMs = null, idleGraceMs = 15000, maxConcurrent = 2 } = {}) {
     this.manager = manager; this.now = now;
     this.dialTimeoutMs = bounded(dialTimeoutMs, 10, 15000);
     this.cooldownMs = bounded(cooldownMs, 1, 60000);
     this.freshGraceMs = bounded(freshGraceMs, 0, 30000);
+    const defaultDirectGrace = Math.min(this.freshGraceMs, 3000);
+    this.directFreshGraceMs = bounded(directFreshGraceMs === null ? defaultDirectGrace : directFreshGraceMs, 0, 30000);
     this.idleGraceMs = bounded(idleGraceMs, 0, 30000);
     this.maxConcurrent = bounded(maxConcurrent, 1, 4);
     this.pending = new Map(); this.cooldowns = new Map();
@@ -36,8 +38,12 @@ export class PeerConnectionRecovery {
     if (!connection || this.protections.has(connection)) return;
     const timestamp = connection.timeline?.open ?? connection.stat?.timeline?.open;
     const opened = timestamp instanceof Date ? timestamp.getTime() : Number(timestamp?.timestamp ?? timestamp);
-    this.protections.set(connection, { freshUntil: Number.isFinite(opened) ? opened + this.freshGraceMs
-      : openedNow ? this.now() + this.freshGraceMs : 0,
+    // Relay recovery circuits keep the full freshGraceMs to negotiate inference
+    // protocols; direct WebRTC links use a shorter grace so topology trials
+    // (default 6000 ms) are never deadlocked against freshGraceMs (10000 ms).
+    const graceMs = relay(connection) ? this.freshGraceMs : this.directFreshGraceMs;
+    this.protections.set(connection, { freshUntil: Number.isFinite(opened) ? opened + graceMs
+      : openedNow ? this.now() + graceMs : 0,
       idleUntil: 0, leases: new Map() });
   }
 

@@ -1,5 +1,11 @@
 ## PeerCompute Test Strategy
 
+### Network scaling reliability & Go/Node relay parity (`feature/network-scaling-netviz` Slice 1) — November 22
+
+- JS unit & integration suite (`node --test peercompute/tests/unit/networkManager.*.test.js peercompute/tests/unit/topologyController.test.js peercompute/tests/unit/throughputTopologyPolicy.test.js peercompute/tests/unit/workMesh*.test.js peercompute/tests/unit/networkTelemetry*.test.js peercompute/tests/unit/nativeCompanion.test.js peercompute/tests/unit/conjectureSimulation.test.js demos/netviz/tests/observedNetwork.test.js demos/netviz/tests/relayOverlay.test.js`): **167/167 PASS** in `10.1 s` (down from `35.7 s` after removing the doomed +5,000 ms `queryPeerDirectory` stall).
+- New regression coverage in `peercompute/tests/unit/networkManager.scalingFixes.test.js` (11 tests): single-encoded directory query/register + 0-subscriber fast-fail, non-blocking WebRTC dials with ready `relay-webrtc` targets, `RTCPeerConnection.getStats()` classification (`lan-host`, `nat-srflx`, `turn-relay` overriding recipient `/webrtc` false direct), `_handlePresence` preserving live `via`/`mediaPath`, initiator `relay-webrtc` pruning plain circuit connections, bilateral dial glare tie-breaker + asymmetric fallback, `N <= 3` small-room effective `minDirectMeshPeers` cap, `PeerConnectionRecovery.directFreshGraceMs` resolving the 6s trial vs 10s fresh-grace deadlock, maintenance-protocol whitelist keeping `/hop` circuits protected, `TopologyController` hysteresis + bounded zero-conn boost + radius-compatible long-range bridging, `ThroughputTopologyPolicy` idle-backoff wake-up, and `_handleTopologyConnectRequest` refusing when eviction target is protected.
+- Production Go relay unit & build suite (`cd peercompute/src/relay-go && go test -v ./... && go build`): **4/4 PASS** (`0.032 s`) verifying real `pubsub.NewGossipSub` construction from `config/relay.json`'s `D/Dhi/Dout` and `IPColocationFactorWeight = 0`, invalid `Dout` clamping, `RELAY_CONTROL_ONLY_MODE` filtering + idle dynamic topic GC, and bounded circuit relay limits. (Chaos lab intentionally NOT run per user instruction.)
+
 ### Gallery mouse pointer
 
 The VibeSlopDB scenario in `demos/tests/gallery-browser.mjs` moves a real mouse from the cell surface into the SQL

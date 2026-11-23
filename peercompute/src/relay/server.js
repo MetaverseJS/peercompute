@@ -101,6 +101,11 @@ const relayControlOnlyMode = (() => {
   const raw = (process.env.RELAY_CONTROL_ONLY_MODE || '').trim().toLowerCase();
   return raw === 'true' || raw === '1';
 })();
+const relayTopicIdleTtlMs = (() => {
+  const raw = Number(process.env.RELAY_TOPIC_IDLE_TTL_MS);
+  if (Number.isFinite(raw) && raw >= 0) return raw;
+  return 10 * 60 * 1000; // 10 min default
+})();
 
 // Phase 5: Peer directory configuration
 const relayEnableDirectory = (() => {
@@ -339,7 +344,9 @@ async function startServer() {
       'peercompute-state-sync'
     ];
     const relayTopics = relayControlOnlyMode ? controlTopics : [...controlTopics, ...dataTopics];
+    const pinnedRelayTopics = new Set(relayTopics);
     const relayTopicSet = new Set(relayTopics);
+    const dynamicTopicLastActive = new Map();
     relayTopics.forEach((topic) => {
       server.services.pubsub.subscribe(topic);
     });
@@ -351,6 +358,7 @@ async function startServer() {
     // Phase 5: Subscribe to directory topic and start cleanup interval
     if (relayEnableDirectory) {
       server.services.pubsub.subscribe(DIRECTORY_TOPIC);
+      pinnedRelayTopics.add(DIRECTORY_TOPIC);
       relayTopicSet.add(DIRECTORY_TOPIC);
       console.log(`[Relay] Peer directory enabled (TTL: ${relayDirectoryTtlMs}ms)`);
 
@@ -380,10 +388,17 @@ async function startServer() {
 
     server.services.pubsub.addEventListener('subscription-change', (evt) => {
       const subscriptions = evt?.detail?.subscriptions || [];
+      const now = Date.now();
       subscriptions.forEach((sub) => {
         if (!sub?.subscribe) return;
         const topic = sub?.topic;
-        if (!topic || relayTopicSet.has(topic)) return;
+        if (!topic) return;
+        if (relayTopicSet.has(topic)) {
+          if (!pinnedRelayTopics.has(topic)) {
+            dynamicTopicLastActive.set(topic, now);
+          }
+          return;
+        }
         if (!shouldRelayTopic(topic)) return;
         // In control-only mode, skip data topics (state, shard)
         if (relayControlOnlyMode && isDataTopic(topic)) {
@@ -391,10 +406,42 @@ async function startServer() {
           return;
         }
         relayTopicSet.add(topic);
+        dynamicTopicLastActive.set(topic, now);
         server.services.pubsub.subscribe(topic);
         console.log(`[Relay] Auto-subscribed to topic: ${topic}`);
       });
     });
+
+    if (relayTopicIdleTtlMs > 0) {
+      setInterval(() => {
+        const now = Date.now();
+        let pruned = 0;
+        for (const [topic, lastActive] of Array.from(dynamicTopicLastActive.entries())) {
+          if (pinnedRelayTopics.has(topic)) {
+            dynamicTopicLastActive.delete(topic);
+            continue;
+          }
+          const subscribers = typeof server.services.pubsub.getSubscribers === 'function'
+            ? server.services.pubsub.getSubscribers(topic)
+            : [];
+          if (Array.isArray(subscribers) && subscribers.length > 0) {
+            dynamicTopicLastActive.set(topic, now);
+            continue;
+          }
+          if (now - lastActive >= relayTopicIdleTtlMs) {
+            try {
+              server.services.pubsub.unsubscribe?.(topic);
+            } catch (_) {}
+            relayTopicSet.delete(topic);
+            dynamicTopicLastActive.delete(topic);
+            pruned += 1;
+          }
+        }
+        if (pruned > 0) {
+          console.log(`[Relay] Unsubscribed ${pruned} idle dynamic topic(s)`);
+        }
+      }, 60 * 1000);
+    }
     
     // Log peer discovery events
     const decoder = new TextDecoder();

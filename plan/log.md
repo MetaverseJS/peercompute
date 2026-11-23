@@ -65118,3 +65118,46 @@ Files touched in this slice:
 - `plan/plan.md`, `plan/tests.md`, `plan/log.md`
 
 Public verification, `2026-11-22 14:57 AKST`: Pushed `0cfdfe71` to `origin/feature/capabilities-detection` and `origin/main` as a fast-forward from `9ef5f1de`. GitHub Actions `pages-build-deployment` run `45085896082` succeeded. Verified `https://metaversejs.github.io/peercompute/` serves exact local SHA-256 matches for `index.html` (`939764ad6d1c`), `assets/exowebtui.js` (`c6dfbf4cad63`), `release-manifest.json` (`54161dec347e`), `vibeslopdb/host.js` (`94c07aacd45f`), and `eshkols-in-space/index.html` (`feb2c2ef2570`), and passed live headless Chromium verification on `https://metaversejs.github.io/peercompute/` confirming top order (`Local Model Console`, `CubeChat`, `Eshkols in Space`, `VibeSlopDB`, `Universes`), Eshkols in Space running through the fused PeerCompute shader stack (`presentation: "shader"`) with live WebGPU stepping + `← Atlas` return, and VibeSlopDB opening 4 native PeerCompute ExoWebTUI windows (`vibeslopdb-carnage`, `vibeslopdb-chat`, `vibeslopdb-query-1`, `vibeslopdb-schema`) with 0 page/HTTP errors. Shut down temporary preview `peercompute-local-overview-preview.service` and Tailscale port `4174` (preserving `5176`, `5190`, `5193`). Restored stashed pre-existing `peercompute/experiments/conjecture/` WIP and `scripts/gallery-pointer.patch` in working tree.
+
+
+## 2026-11-22 15:14:55 AKST — Relay Scaling Campaign Postmortem, Network Architecture Audit & NetViz Analysis Design
+Prompt time/date: `2026-11-22 15:14:55 AKST` (`2026-11-22T15:14:55-09:00`).
+Goal: Read-only historical review of the relay scaling campaign across `plan/log.md`, `plan/branch/`, `plan/reports/`, and `net-chaos-lab/` (without running chaos lab), audit the current networking stack (`NetworkManager.js`, `TopologyController.js`, `ThroughputTopologyPolicy.js`, `WorkMeshService.js`, `relay/server.js`, `relay-go/main.go`, `NativeCompanion.js`, `NetworkTelemetryService.js`, demo configs) and `demos/netviz/`, and synthesize concrete non-breaking network improvements + NetViz analysis upgrades for both existing demos and a physical laptop+Pi subnet testbed.
+
+Actions taken:
+- Delegated two parallel read-only research subagents (`7d5fdcd2-1fe3-4388-8406-04e20e207903` for relay scaling campaign history & collisions with the Nov 19–20 conjecture runs; `051a71e9-6af1-435f-b784-6ce73199e79e` for live code audit of `networkManager/`, relays, `WorkMesh`, demo configs, and `demos/netviz/`).
+- Directly inspected `plan/branch/relay-scaling.md`, `peercompute/src/peercompute/networkManager/TopologyController.js`, `NetworkTelemetryService.js`, and `demos/netviz/plan.md`.
+- Identified high-impact root causes across the live stack (5,000 ms doomed `queryPeerDirectory` dial stall, Go relay ignoring `RELAY_GOSSIPSUB_CONFIG` & missing control-only/directory parity, `_handlePresence` clobbering `peer.via` to `'presence'`, `@libp2p/webrtc` initiator/recipient asymmetry + uninspected `conn.maConn.peerConnection.getStats()`, `freshGraceMs` 10s vs `trialMs` 6s deadlock, missing bilateral dial tie-breaker & maintenance-stream whitelist gaps, `sendToPeer` O(N²) pubsub flooding, `TopologyController` flapping/radius islanding, multi-`NodeKernel` tab multiplication, and NetViz's missing ICE-path/gossipsub-mesh/WorkMesh/subgroup-cluster/partition diagnostics).
+- No source code or chaos-lab runs executed; presented prioritized phased improvement plan and NetViz upgrade blueprint to user.
+
+Files touched:
+- `plan/log.md`
+
+
+## 2026-11-22 15:28:44 AKST — Feature Branch Setup & Slice 1: Core Network Reliability, Speed & Go/Node Relay Parity
+Prompt time/date: `2026-11-22 15:28:44 AKST` (`2026-11-22T15:28:44-09:00`).
+Goal: Create branch `feature/network-scaling-netviz` off `main` (`74c01aa3`), engage ICC control plane, and execute the 3-slice network scaling + NetViz analysis upgrade cleanly without running `net-chaos-lab` and without breaking demos.
+
+Slice 1 actions taken:
+1. Created branch `feature/network-scaling-netviz` from `main` (`74c01aa3`, preserving the 4 pre-existing conjecture/patch working-tree files unstaged), ran `bin/icc reindex --repo peercompute --full` (`fresh: true`), registered the durable ICC plan via `codebase_work`, and created `plan/branch/network-scaling-netviz.md`.
+2. Fixed `NetworkManager.js`:
+   - Eliminated doomed +5,000 ms `queryPeerDirectory` dial stall & double-JSON encoding (`connect()` subscribes `directoryTopic`; `queryPeerDirectory` / `registerWithDirectory` pass raw objects to `_publish`; fast-fail when disconnected or 0 directory subscribers; local `peerStore`/remembered targets checked before directory fallback; `disconnect()` clears pending directory timers).
+   - Added per-connection `RTCPeerConnection.getStats()` sampling (`conn.maConn?.peerConnection`) classifying true `icePath` (`lan-host` | `nat-srflx` | `nat-prflx` | `turn-relay` | `circuit-relay` | `direct-ws` | `direct-tcp`), `iceProtocol`, `candidatePairRttMs`, and truthful `mediaPath` (preventing recipient TURN connections from being misreported as direct); stopped `_handlePresence` from clobbering `peer.via` to `'presence'` and reversed `getConnectedPeers` merge precedence so live open connection metadata wins; unified initiator/recipient `dropRelayOnDirect` (initiator `relay-webrtc` prunes plain `/p2p-circuit`) and `connection:close` fast drop-recovery (with `intentionalCloseUntil` guard so topology prunes don't immediately re-dial themselves).
+   - Added deterministic bilateral dial glare yield window (`dialGlareTieBreakMs`, default `2500 ms` for higher peerId on unsolicited presence/discovery dials) + deterministic duplicate direct-connection pruning (`_maybePruneDuplicateConnections`); added standard libp2p maintenance protocol defaults (`/ipfs/id/1.0.0`, `/ipfs/id/push/1.0.0`, `/ipfs/ping/1.0.0`, `/peercompute/keepalive/1.0.0`, meshsub/floodsub) while keeping active `/libp2p/circuit/relay/0.2.0/hop` circuits protected; returned close status from `_closeConnectionsToPeer` (plus `rewiresPerMin` & `dialFailures` tracking) and verified eviction succeeded before accepting in `_handleTopologyConnectRequest`; added distance hysteresis (`swapHysteresisRatio = 0.15`) on topology swaps/evictions; capped effective `minDirectMeshPeers` by `knownDialablePeers` for small rooms (`N <= 3`); added `relayKeeper` to presence + `keepReason`/`role` to `getRelayRetentionDebug()` and `getTelemetrySnapshot()`.
+3. Fixed `PeerConnectionRecovery.js` (`directFreshGraceMs = Math.min(freshGraceMs, 3000)` so 6s throughput trials never deadlock against 10s relay recovery grace while relay recovery circuits keep full 10s), `TopologyController.js` (`swapHysteresisRatio = 0.15`, bounded `maxZeroConnBoost = 1`, enabled `_pickLongRange()` even when `connectionRadius` is set), and `ThroughputTopologyPolicy.js` (immediate wake-up from idle exponential backoff when flow transitions from `0` to `> 0`, plus optional `scoreLink`/`scoreCandidate` hooks for Slice 3). (Caught and fixed a subtle first-run failure where `networkManager.throughputTopology.test.js:84` failed because idle wake-up fired even when `exploreDelayMs` had not backed off past `base`; gated wake-up on `state.exploreDelayMs > base`.)
+4. Updated `peercompute/src/relay-go/main.go` + added `peercompute/src/relay-go/main_test.go` and updated `peercompute/src/relay/server.js`:
+   - Go relay now parses and applies `RELAY_GOSSIPSUB_CONFIG` (`D`, `Dlo`, `Dhi`, `Dout`, `Dlazy`, `heartbeatInterval`, and `scoreParams` including `IPColocationFactorWeight = 0` so LAN/NAT peers are not penalized!), supports `RELAY_CONTROL_ONLY_MODE`, `RELAY_ENABLE_DIRECTORY` + TTL, bounded circuit limits (`RELAY_CIRCUIT_DURATION_SEC=3600`, `RELAY_CIRCUIT_DATA_MB=64`, opt-in `RELAY_INFINITE_LIMITS=1`), and periodic idle dynamic topic unsubscribe GC (`RELAY_TOPIC_IDLE_TTL_MS=600000`). Node `server.js` gained matching idle dynamic topic GC.
+
+Commands run & test results (Slice 1):
+- `node --test peercompute/tests/unit/networkManager.*.test.js peercompute/tests/unit/topologyController.test.js peercompute/tests/unit/throughputTopologyPolicy.test.js peercompute/tests/unit/workMesh*.test.js peercompute/tests/unit/networkTelemetry*.test.js peercompute/tests/unit/nativeCompanion.test.js peercompute/tests/unit/conjectureSimulation.test.js demos/netviz/tests/observedNetwork.test.js demos/netviz/tests/relayOverlay.test.js` — **167/167 PASS** (`10.1 s`, down from `35.7 s` baseline).
+- `cd peercompute/src/relay-go && go test -v ./... && go build` — **4/4 PASS** (`0.032 s`), clean binary build.
+
+Files touched (Slice 1):
+- `peercompute/src/peercompute/networkManager/NetworkManager.js`
+- `peercompute/src/peercompute/networkManager/inference/PeerConnectionRecovery.js`
+- `peercompute/src/peercompute/networkManager/TopologyController.js`
+- `peercompute/src/peercompute/networkManager/ThroughputTopologyPolicy.js`
+- `peercompute/src/relay-go/main.go`, `peercompute/src/relay-go/main_test.go`
+- `peercompute/src/relay/server.js`
+- `peercompute/tests/unit/networkManager.scalingFixes.test.js`
+- `plan/branch/network-scaling-netviz.md`, `plan/plan.md`, `plan/tests.md`, `plan/log.md`

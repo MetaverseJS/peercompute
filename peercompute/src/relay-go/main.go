@@ -14,6 +14,7 @@ import (
   "os"
   "os/signal"
   "path/filepath"
+  "strconv"
   "strings"
   "sync"
   "syscall"
@@ -36,21 +37,288 @@ import (
   ma "github.com/multiformats/go-multiaddr"
 )
 
-const keepaliveProtocol = "/peercompute/keepalive/1.0.0"
+const (
+  keepaliveProtocol         = "/peercompute/keepalive/1.0.0"
+  directoryTopic            = "peercompute-directory"
+  defaultDirectoryTTLMs     = 5 * 60 * 1000
+  defaultTopicIdleTTLMs     = 10 * 60 * 1000
+  defaultCircuitDurationSec = 3600
+  defaultCircuitDataMB      = 64
+)
 
-var defaultRelayTopics = []string{
+var defaultControlTopics = []string{
   "peercompute._peer-discovery._p2p._pubsub",
   "peercompute-presence",
   "peercompute-direct",
+}
+
+var defaultDataTopics = []string{
   "peercompute-state",
   "peercompute-state-sync",
 }
+
+var defaultRelayTopics = append(append([]string{}, defaultControlTopics...), defaultDataTopics...)
 
 type relayConfig struct {
   BootstrapPeers []string        `json:"bootstrapPeers"`
   PubsubType     string          `json:"pubsubType,omitempty"`
   WebRTC         json.RawMessage `json:"webrtc,omitempty"`
   Gossipsub      json.RawMessage `json:"gossipsub,omitempty"`
+}
+
+type gossipsubTopicScoreJSON struct {
+  TopicWeight                     *float64 `json:"topicWeight"`
+  MeshMessageDeliveriesWeight     *float64 `json:"meshMessageDeliveriesWeight"`
+  MeshMessageDeliveriesThreshold  *float64 `json:"meshMessageDeliveriesThreshold"`
+  MeshMessageDeliveriesCap        *float64 `json:"meshMessageDeliveriesCap"`
+  MeshMessageDeliveriesDecay      *float64 `json:"meshMessageDeliveriesDecay"`
+  MeshFailurePenaltyWeight        *float64 `json:"meshFailurePenaltyWeight"`
+  MeshFailurePenaltyDecay         *float64 `json:"meshFailurePenaltyDecay"`
+  InvalidMessageDeliveriesWeight  *float64 `json:"invalidMessageDeliveriesWeight"`
+  InvalidMessageDeliveriesDecay   *float64 `json:"invalidMessageDeliveriesDecay"`
+  FirstMessageDeliveriesWeight    *float64 `json:"firstMessageDeliveriesWeight"`
+  FirstMessageDeliveriesCap       *float64 `json:"firstMessageDeliveriesCap"`
+  FirstMessageDeliveriesDecay     *float64 `json:"firstMessageDeliveriesDecay"`
+  TimeInMeshWeight                *float64 `json:"timeInMeshWeight"`
+  TimeInMeshCap                   *float64 `json:"timeInMeshCap"`
+}
+
+type gossipsubScoreParamsJSON struct {
+  TopicScoreCap               *float64                            `json:"topicScoreCap"`
+  IPColocationFactorWeight    *float64                            `json:"IPColocationFactorWeight"`
+  IPColocationFactorThreshold *int                                `json:"IPColocationFactorThreshold"`
+  BehaviourPenaltyWeight      *float64                            `json:"behaviourPenaltyWeight"`
+  BehaviourPenaltyWeightCap   *float64                            `json:"BehaviourPenaltyWeight"`
+  BehaviourPenaltyThreshold   *float64                            `json:"behaviourPenaltyThreshold"`
+  BehaviourPenaltyDecay       *float64                            `json:"behaviourPenaltyDecay"`
+  Topics                      map[string]*gossipsubTopicScoreJSON `json:"topics"`
+}
+
+type gossipsubConfigJSON struct {
+  D                   *int                      `json:"D"`
+  Dlo                 *int                      `json:"Dlo"`
+  Dhi                 *int                      `json:"Dhi"`
+  Dout                *int                      `json:"Dout"`
+  Dlazy               *int                      `json:"Dlazy"`
+  Dscore              *int                      `json:"Dscore"`
+  HeartbeatIntervalMs *int                      `json:"heartbeatInterval"`
+  ScoreParams         *gossipsubScoreParamsJSON `json:"scoreParams"`
+}
+
+func isDataTopic(topic string) bool {
+  return strings.Contains(topic, ".state") ||
+    strings.Contains(topic, "-state") ||
+    strings.Contains(topic, ".shard.") ||
+    strings.Contains(topic, "-shard-")
+}
+
+func parseBoolEnv(key string, fallback bool) bool {
+  raw := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+  if raw == "" {
+    return fallback
+  }
+  if raw == "true" || raw == "1" || raw == "yes" {
+    return true
+  }
+  if raw == "false" || raw == "0" || raw == "no" {
+    return false
+  }
+  return fallback
+}
+
+func parseIntEnv(key string, fallback int) int {
+  raw := strings.TrimSpace(os.Getenv(key))
+  if raw == "" {
+    return fallback
+  }
+  val, err := strconv.Atoi(raw)
+  if err != nil {
+    return fallback
+  }
+  return val
+}
+
+func buildTopicScoreParams(cfg *gossipsubTopicScoreJSON) *pubsub.TopicScoreParams {
+  if cfg == nil {
+    return nil
+  }
+  params := &pubsub.TopicScoreParams{
+    SkipAtomicValidation: true,
+    TopicWeight:          1.0,
+    TimeInMeshQuantum:    time.Second,
+  }
+  if cfg.TopicWeight != nil {
+    params.TopicWeight = *cfg.TopicWeight
+  }
+  if cfg.TimeInMeshWeight != nil {
+    params.TimeInMeshWeight = *cfg.TimeInMeshWeight
+  }
+  if cfg.TimeInMeshCap != nil {
+    params.TimeInMeshCap = *cfg.TimeInMeshCap
+  }
+  if cfg.FirstMessageDeliveriesWeight != nil {
+    params.FirstMessageDeliveriesWeight = *cfg.FirstMessageDeliveriesWeight
+  }
+  if cfg.FirstMessageDeliveriesCap != nil {
+    params.FirstMessageDeliveriesCap = *cfg.FirstMessageDeliveriesCap
+  }
+  if cfg.FirstMessageDeliveriesDecay != nil {
+    params.FirstMessageDeliveriesDecay = *cfg.FirstMessageDeliveriesDecay
+  }
+  if cfg.MeshMessageDeliveriesWeight != nil {
+    params.MeshMessageDeliveriesWeight = *cfg.MeshMessageDeliveriesWeight
+  }
+  if cfg.MeshMessageDeliveriesThreshold != nil {
+    params.MeshMessageDeliveriesThreshold = *cfg.MeshMessageDeliveriesThreshold
+  }
+  if cfg.MeshMessageDeliveriesCap != nil {
+    params.MeshMessageDeliveriesCap = *cfg.MeshMessageDeliveriesCap
+  }
+  if cfg.MeshMessageDeliveriesDecay != nil {
+    params.MeshMessageDeliveriesDecay = *cfg.MeshMessageDeliveriesDecay
+  }
+  if cfg.MeshFailurePenaltyWeight != nil {
+    params.MeshFailurePenaltyWeight = *cfg.MeshFailurePenaltyWeight
+  }
+  if cfg.MeshFailurePenaltyDecay != nil {
+    params.MeshFailurePenaltyDecay = *cfg.MeshFailurePenaltyDecay
+  }
+  if cfg.InvalidMessageDeliveriesWeight != nil {
+    params.InvalidMessageDeliveriesWeight = *cfg.InvalidMessageDeliveriesWeight
+  }
+  if cfg.InvalidMessageDeliveriesDecay != nil {
+    params.InvalidMessageDeliveriesDecay = *cfg.InvalidMessageDeliveriesDecay
+  }
+  return params
+}
+
+func buildGossipSubOptions(raw json.RawMessage, tracer pubsub.EventTracer, initialTopics []string) ([]pubsub.Option, pubsub.GossipSubParams, *pubsub.PeerScoreParams) {
+  params := pubsub.DefaultGossipSubParams()
+  var opts []pubsub.Option
+  if tracer != nil {
+    opts = append(opts, pubsub.WithEventTracer(tracer))
+  }
+  var scoreParams *pubsub.PeerScoreParams
+  if len(raw) > 0 {
+    var cfg gossipsubConfigJSON
+    if err := json.Unmarshal(raw, &cfg); err != nil {
+      log.Printf("[Relay] Failed to decode RELAY_GOSSIPSUB_CONFIG fields: %v", err)
+    } else {
+      if cfg.D != nil && *cfg.D > 0 {
+        params.D = *cfg.D
+      }
+      if cfg.Dlo != nil && *cfg.Dlo >= 0 {
+        params.Dlo = *cfg.Dlo
+      }
+      if cfg.Dhi != nil && *cfg.Dhi > 0 {
+        params.Dhi = *cfg.Dhi
+      }
+      if cfg.Dout != nil && *cfg.Dout >= 0 {
+        params.Dout = *cfg.Dout
+      }
+      if cfg.Dlazy != nil && *cfg.Dlazy > 0 {
+        params.Dlazy = *cfg.Dlazy
+      }
+      if cfg.Dscore != nil && *cfg.Dscore >= 0 {
+        params.Dscore = *cfg.Dscore
+      }
+      if cfg.HeartbeatIntervalMs != nil && *cfg.HeartbeatIntervalMs > 0 {
+        params.HeartbeatInterval = time.Duration(*cfg.HeartbeatIntervalMs) * time.Millisecond
+      }
+      // Enforce go-libp2p-pubsub invariants so partial overrides stay valid.
+      if params.Dlo > params.D {
+        params.Dlo = params.D
+      }
+      if params.Dhi < params.D {
+        params.Dhi = params.D
+      }
+      maxDout := params.D / 2
+      if params.Dlo > 0 && params.Dlo-1 < maxDout {
+        maxDout = params.Dlo - 1
+      }
+      if maxDout < 0 {
+        maxDout = 0
+      }
+      if params.Dout > maxDout {
+        params.Dout = maxDout
+      }
+
+      if cfg.ScoreParams != nil {
+        sp := &pubsub.PeerScoreParams{
+          SkipAtomicValidation: true,
+          Topics:               make(map[string]*pubsub.TopicScoreParams),
+          DecayInterval:        time.Second,
+          DecayToZero:          0.01,
+          RetainScore:          10 * time.Second,
+        }
+        if cfg.ScoreParams.TopicScoreCap != nil {
+          sp.TopicScoreCap = *cfg.ScoreParams.TopicScoreCap
+        }
+        if cfg.ScoreParams.IPColocationFactorWeight != nil {
+          sp.IPColocationFactorWeight = *cfg.ScoreParams.IPColocationFactorWeight
+        }
+        if cfg.ScoreParams.IPColocationFactorThreshold != nil {
+          sp.IPColocationFactorThreshold = *cfg.ScoreParams.IPColocationFactorThreshold
+        }
+        if cfg.ScoreParams.BehaviourPenaltyWeight != nil {
+          sp.BehaviourPenaltyWeight = *cfg.ScoreParams.BehaviourPenaltyWeight
+        } else if cfg.ScoreParams.BehaviourPenaltyWeightCap != nil {
+          sp.BehaviourPenaltyWeight = *cfg.ScoreParams.BehaviourPenaltyWeightCap
+        }
+        if cfg.ScoreParams.BehaviourPenaltyThreshold != nil {
+          sp.BehaviourPenaltyThreshold = *cfg.ScoreParams.BehaviourPenaltyThreshold
+        }
+        if cfg.ScoreParams.BehaviourPenaltyDecay != nil {
+          sp.BehaviourPenaltyDecay = *cfg.ScoreParams.BehaviourPenaltyDecay
+        }
+        if len(cfg.ScoreParams.Topics) > 0 {
+          defaultTopicCfg := cfg.ScoreParams.Topics["__default"]
+          for name, topicCfg := range cfg.ScoreParams.Topics {
+            if name == "__default" || topicCfg == nil {
+              continue
+            }
+            sp.Topics[name] = buildTopicScoreParams(topicCfg)
+          }
+          if defaultTopicCfg != nil {
+            for _, topic := range initialTopics {
+              if _, exists := sp.Topics[topic]; !exists {
+                sp.Topics[topic] = buildTopicScoreParams(defaultTopicCfg)
+              }
+            }
+          }
+        }
+        thresholds := &pubsub.PeerScoreThresholds{
+          SkipAtomicValidation:        true,
+          GossipThreshold:             -4000,
+          PublishThreshold:            -8000,
+          GraylistThreshold:           -16000,
+          AcceptPXThreshold:           100,
+          OpportunisticGraftThreshold: 5,
+        }
+        scoreParams = sp
+        opts = append(opts, pubsub.WithPeerScore(sp, thresholds))
+      }
+    }
+  }
+  opts = append(opts, pubsub.WithGossipSubParams(params))
+  return opts, params, scoreParams
+}
+
+func buildCircuitRelayOptions(resources relay.Resources, infinite bool, durationSec int, dataMB int) []relay.Option {
+  opts := []relay.Option{relay.WithResources(resources)}
+  if infinite {
+    return append(opts, relay.WithInfiniteLimits())
+  }
+  if durationSec <= 0 {
+    durationSec = defaultCircuitDurationSec
+  }
+  if dataMB <= 0 {
+    dataMB = defaultCircuitDataMB
+  }
+  return append(opts, relay.WithLimit(&relay.RelayLimit{
+    Duration: time.Duration(durationSec) * time.Second,
+    Data:     int64(dataMB) * 1024 * 1024,
+  }))
 }
 
 type autoSubTracer struct {
@@ -83,24 +351,36 @@ func (t *autoSubTracer) Trace(evt *pubsubpb.TraceEvent) {
   }
 }
 
-type topicRegistry struct {
-  pubsub   *pubsub.PubSub
-  prefixes []string
-  allow    map[string]struct{}
-  mu       sync.Mutex
-  topics   map[string]*pubsub.Topic
+type topicEntry struct {
+  topic      *pubsub.Topic
+  cancel     pubsub.RelayCancelFunc
+  lastActive time.Time
+  pinned     bool
 }
 
-func newTopicRegistry(ps *pubsub.PubSub, prefixes []string, allow map[string]struct{}) *topicRegistry {
+type topicRegistry struct {
+  pubsub          *pubsub.PubSub
+  prefixes        []string
+  allow           map[string]struct{}
+  controlOnlyMode bool
+  mu              sync.Mutex
+  topics          map[string]*topicEntry
+}
+
+func newTopicRegistry(ps *pubsub.PubSub, prefixes []string, allow map[string]struct{}, controlOnlyMode bool) *topicRegistry {
   return &topicRegistry{
-    pubsub:   ps,
-    prefixes: prefixes,
-    allow:    allow,
-    topics:   make(map[string]*pubsub.Topic),
+    pubsub:          ps,
+    prefixes:        prefixes,
+    allow:           allow,
+    controlOnlyMode: controlOnlyMode,
+    topics:          make(map[string]*topicEntry),
   }
 }
 
 func (r *topicRegistry) allowed(topic string) bool {
+  if r.controlOnlyMode && isDataTopic(topic) {
+    return false
+  }
   if _, ok := r.allow[topic]; ok {
     return true
   }
@@ -112,11 +392,17 @@ func (r *topicRegistry) allowed(topic string) bool {
   return false
 }
 
-func (r *topicRegistry) ensure(topic string) {
+func (r *topicRegistry) ensureWithPin(topic string, pinned bool) *pubsub.Topic {
+  now := time.Now()
   r.mu.Lock()
-  if _, ok := r.topics[topic]; ok {
+  if existing, ok := r.topics[topic]; ok {
+    existing.lastActive = now
+    if pinned {
+      existing.pinned = true
+    }
+    t := existing.topic
     r.mu.Unlock()
-    return
+    return t
   }
   r.mu.Unlock()
 
@@ -124,28 +410,122 @@ func (r *topicRegistry) ensure(topic string) {
   if err != nil {
     if strings.Contains(err.Error(), "topic already exists") {
       r.mu.Lock()
-      r.topics[topic] = nil
+      r.topics[topic] = &topicEntry{topic: nil, lastActive: now, pinned: pinned}
       r.mu.Unlock()
-      return
+      return nil
     }
     log.Printf("[Relay] Failed to join topic %s: %v", topic, err)
-    return
+    return nil
   }
 
-  if _, err := t.Relay(); err != nil {
+  cancelFn, err := t.Relay()
+  if err != nil {
     log.Printf("[Relay] Failed to enable relay for topic %s: %v", topic, err)
   }
 
   r.mu.Lock()
-  r.topics[topic] = t
+  r.topics[topic] = &topicEntry{
+    topic:      t,
+    cancel:     cancelFn,
+    lastActive: now,
+    pinned:     pinned,
+  }
   r.mu.Unlock()
+  return t
 }
 
-func (r *topicRegistry) ensureIfAllowed(topic string) {
+func (r *topicRegistry) ensure(topic string) *pubsub.Topic {
+  return r.ensureWithPin(topic, false)
+}
+
+func (r *topicRegistry) ensureIfAllowed(topic string) *pubsub.Topic {
   if !r.allowed(topic) {
+    return nil
+  }
+  return r.ensureWithPin(topic, false)
+}
+
+func (r *topicRegistry) pruneIdle(idleTTL time.Duration, now time.Time) int {
+  if idleTTL <= 0 {
+    return 0
+  }
+  type toClose struct {
+    name   string
+    entry  *topicEntry
+  }
+  var expired []toClose
+  r.mu.Lock()
+  for name, entry := range r.topics {
+    if entry == nil || entry.pinned || entry.topic == nil {
+      continue
+    }
+    if len(entry.topic.ListPeers()) > 0 {
+      entry.lastActive = now
+      continue
+    }
+    if now.Sub(entry.lastActive) >= idleTTL {
+      expired = append(expired, toClose{name: name, entry: entry})
+      delete(r.topics, name)
+    }
+  }
+  r.mu.Unlock()
+
+  for _, item := range expired {
+    if item.entry.cancel != nil {
+      item.entry.cancel()
+    }
+    _ = item.entry.topic.Close()
+  }
+  return len(expired)
+}
+
+type peerDirectoryEntry struct {
+  Multiaddrs []string
+  LastSeen   int64
+  RoomID     string
+  TopologyID string
+  ShardID    string
+}
+
+type peerDirectoryStore struct {
+  mu      sync.Mutex
+  entries map[string]peerDirectoryEntry
+}
+
+func newPeerDirectoryStore() *peerDirectoryStore {
+  return &peerDirectoryStore{entries: make(map[string]peerDirectoryEntry)}
+}
+
+func (d *peerDirectoryStore) upsert(peerID string, entry peerDirectoryEntry) {
+  if peerID == "" {
     return
   }
-  r.ensure(topic)
+  d.mu.Lock()
+  d.entries[peerID] = entry
+  d.mu.Unlock()
+}
+
+func (d *peerDirectoryStore) get(peerID string) (peerDirectoryEntry, bool) {
+  d.mu.Lock()
+  entry, ok := d.entries[peerID]
+  d.mu.Unlock()
+  return entry, ok
+}
+
+func (d *peerDirectoryStore) pruneExpired(ttlMs int64, nowMs int64) int {
+  if ttlMs <= 0 {
+    return 0
+  }
+  d.mu.Lock()
+  removed := 0
+  for id, entry := range d.entries {
+    if nowMs-entry.LastSeen > ttlMs {
+      delete(d.entries, id)
+      removed++
+    }
+  }
+  d.mu.Unlock()
+  return removed
 }
 
 func envOrDefault(key, fallback string) string {
@@ -403,6 +783,16 @@ func main() {
   relayConfigDirs := splitList(envString("RELAY_CONFIG_DIRS"))
   relayConfigFile := envString("RELAY_CONFIG_FILE")
   relayTopicPrefixes := splitList(envOrDefault("RELAY_TOPIC_PREFIXES", "pc.,peercompute-"))
+  relayControlOnlyMode := parseBoolEnv("RELAY_CONTROL_ONLY_MODE", false)
+  relayEnableDirectory := parseBoolEnv("RELAY_ENABLE_DIRECTORY", true)
+  relayDirectoryTTLMs := int64(parseIntEnv("RELAY_DIRECTORY_TTL_MS", defaultDirectoryTTLMs))
+  if relayDirectoryTTLMs <= 0 {
+    relayDirectoryTTLMs = defaultDirectoryTTLMs
+  }
+  relayTopicIdleTTLMs := parseIntEnv("RELAY_TOPIC_IDLE_TTL_MS", defaultTopicIdleTTLMs)
+  relayInfiniteLimits := parseBoolEnv("RELAY_INFINITE_LIMITS", false)
+  relayCircuitDurationSec := parseIntEnv("RELAY_CIRCUIT_DURATION_SEC", defaultCircuitDurationSec)
+  relayCircuitDataMB := parseIntEnv("RELAY_CIRCUIT_DATA_MB", defaultCircuitDataMB)
 
   relayPubsubType := strings.ToLower(envString("RELAY_PUBSUB_TYPE"))
   if relayPubsubType == "" {
@@ -523,11 +913,28 @@ func main() {
   resources.MaxReservationsPerIP = 1000
   resources.MaxReservationsPerASN = 1000
   resources.MaxReservationsPerPeer = 1
-  relayService, err := relay.New(host, relay.WithResources(resources), relay.WithInfiniteLimits())
+  circuitOpts := buildCircuitRelayOptions(resources, relayInfiniteLimits, relayCircuitDurationSec, relayCircuitDataMB)
+  relayService, err := relay.New(host, circuitOpts...)
   if err != nil {
     log.Fatalf("[Relay] Failed to start relay service: %v", err)
   }
   defer relayService.Close()
+  if relayInfiniteLimits {
+    log.Printf("[Relay] Circuit limits: infinite (RELAY_INFINITE_LIMITS=1)")
+  } else {
+    log.Printf("[Relay] Circuit limits: duration=%ds data=%dMB/dir", relayCircuitDurationSec, relayCircuitDataMB)
+  }
+
+  initialTopics := make([]string, 0, len(defaultRelayTopics)+1)
+  initialTopics = append(initialTopics, defaultControlTopics...)
+  if !relayControlOnlyMode {
+    initialTopics = append(initialTopics, defaultDataTopics...)
+  } else {
+    log.Printf("[Relay] Control-only mode enabled - skipping state topic subscriptions")
+  }
+  if relayEnableDirectory {
+    initialTopics = append(initialTopics, directoryTopic)
+  }
 
   tracer := &autoSubTracer{topics: make(chan string, 256)}
   ctx, cancel := context.WithCancel(context.Background())
@@ -535,7 +942,10 @@ func main() {
 
   var ps *pubsub.PubSub
   if useGossipsub {
-    ps, err = pubsub.NewGossipSub(ctx, host, pubsub.WithEventTracer(tracer))
+    gsOpts, gsParams, scoreParams := buildGossipSubOptions(gossipsubConfig, tracer, initialTopics)
+    log.Printf("[Relay] Gossipsub params: D=%d Dlo=%d Dhi=%d Dout=%d Dlazy=%d scoring=%v",
+      gsParams.D, gsParams.Dlo, gsParams.Dhi, gsParams.Dout, gsParams.Dlazy, scoreParams != nil)
+    ps, err = pubsub.NewGossipSub(ctx, host, gsOpts...)
   } else {
     ps, err = pubsub.NewFloodSub(ctx, host, pubsub.WithEventTracer(tracer))
   }
@@ -544,14 +954,168 @@ func main() {
   }
 
   allow := make(map[string]struct{})
-  for _, topic := range defaultRelayTopics {
+  for _, topic := range initialTopics {
     allow[topic] = struct{}{}
   }
-  registry := newTopicRegistry(ps, relayTopicPrefixes, allow)
-  for _, topic := range defaultRelayTopics {
-    registry.ensure(topic)
+  registry := newTopicRegistry(ps, relayTopicPrefixes, allow, relayControlOnlyMode)
+  joinedTopics := make(map[string]*pubsub.Topic, len(initialTopics))
+  for _, topic := range initialTopics {
+    if t := registry.ensureWithPin(topic, true); t != nil {
+      joinedTopics[topic] = t
+    }
   }
-  log.Printf("Relay subscribed to topics: %s", strings.Join(defaultRelayTopics, ", "))
+  log.Printf("Relay subscribed to topics: %s", strings.Join(initialTopics, ", "))
+
+  if relayEnableDirectory {
+    dirStore := newPeerDirectoryStore()
+    log.Printf("[Relay] Peer directory enabled (TTL: %dms)", relayDirectoryTTLMs)
+    if dirTopic, ok := joinedTopics[directoryTopic]; ok && dirTopic != nil {
+      if dirSub, err := dirTopic.Subscribe(); err == nil {
+        go func() {
+          defer dirSub.Cancel()
+          for {
+            msg, err := dirSub.Next(ctx)
+            if err != nil {
+              return
+            }
+            if msg.ReceivedFrom == host.ID() {
+              continue
+            }
+            var req map[string]any
+            if err := json.Unmarshal(msg.Data, &req); err != nil {
+              continue
+            }
+            reqType, _ := req["type"].(string)
+            switch reqType {
+            case "directory-register":
+              fromID, _ := req["from"].(string)
+              var addrs []string
+              if rawAddrs, ok := req["multiaddrs"].([]any); ok {
+                for _, item := range rawAddrs {
+                  if s, ok := item.(string); ok && s != "" {
+                    addrs = append(addrs, s)
+                  }
+                }
+              }
+              roomID, _ := req["roomId"].(string)
+              topologyID, _ := req["topologyId"].(string)
+              shardID, _ := req["shardId"].(string)
+              dirStore.upsert(fromID, peerDirectoryEntry{
+                Multiaddrs: addrs,
+                LastSeen:   time.Now().UnixMilli(),
+                RoomID:     roomID,
+                TopologyID: topologyID,
+                ShardID:    shardID,
+              })
+            case "directory-query":
+              targetPeerID, _ := req["targetPeerId"].(string)
+              requestID, _ := req["requestId"].(string)
+              if targetPeerID == "" {
+                continue
+              }
+              entry, found := dirStore.get(targetPeerID)
+              resp := map[string]any{
+                "type":         "directory-response",
+                "requestId":    requestID,
+                "targetPeerId": targetPeerID,
+                "found":        found,
+                "multiaddrs":   []string{},
+                "lastSeen":     nil,
+                "metadata":     nil,
+              }
+              if found {
+                resp["multiaddrs"] = entry.Multiaddrs
+                resp["lastSeen"] = entry.LastSeen
+                resp["metadata"] = map[string]any{
+                  "roomId":     entry.RoomID,
+                  "topologyId": entry.TopologyID,
+                  "shardId":    entry.ShardID,
+                }
+              }
+              if encoded, err := json.Marshal(resp); err == nil {
+                if err := dirTopic.Publish(ctx, encoded); err != nil {
+                  log.Printf("[Directory] Failed to respond: %v", err)
+                }
+              }
+            }
+          }
+        }()
+      }
+    }
+    if presenceTopic, ok := joinedTopics["peercompute-presence"]; ok && presenceTopic != nil {
+      if presSub, err := presenceTopic.Subscribe(); err == nil {
+        go func() {
+          defer presSub.Cancel()
+          for {
+            msg, err := presSub.Next(ctx)
+            if err != nil {
+              return
+            }
+            if msg.ReceivedFrom == host.ID() {
+              continue
+            }
+            var payload map[string]any
+            if err := json.Unmarshal(msg.Data, &payload); err != nil {
+              continue
+            }
+            fromID, _ := payload["from"].(string)
+            rawAddrs, ok := payload["multiaddrs"].([]any)
+            if fromID == "" || !ok {
+              continue
+            }
+            addrs := make([]string, 0, len(rawAddrs))
+            for _, item := range rawAddrs {
+              if s, ok := item.(string); ok && s != "" {
+                addrs = append(addrs, s)
+              }
+            }
+            roomID, _ := payload["roomId"].(string)
+            topologyID, _ := payload["topologyId"].(string)
+            shardID, _ := payload["shardId"].(string)
+            dirStore.upsert(fromID, peerDirectoryEntry{
+              Multiaddrs: addrs,
+              LastSeen:   time.Now().UnixMilli(),
+              RoomID:     roomID,
+              TopologyID: topologyID,
+              ShardID:    shardID,
+            })
+          }
+        }()
+      }
+    }
+    go func() {
+      ticker := time.NewTicker(time.Minute)
+      defer ticker.Stop()
+      for {
+        select {
+        case <-ticker.C:
+          if expired := dirStore.pruneExpired(relayDirectoryTTLMs, time.Now().UnixMilli()); expired > 0 {
+            log.Printf("[Directory] Expired %d entries", expired)
+          }
+        case <-ctx.Done():
+          return
+        }
+      }
+    }()
+  }
+
+  if relayTopicIdleTTLMs > 0 {
+    idleTTL := time.Duration(relayTopicIdleTTLMs) * time.Millisecond
+    go func() {
+      ticker := time.NewTicker(time.Minute)
+      defer ticker.Stop()
+      for {
+        select {
+        case <-ticker.C:
+          if pruned := registry.pruneIdle(idleTTL, time.Now()); pruned > 0 {
+            log.Printf("[Relay] Unsubscribed %d idle dynamic topic(s)", pruned)
+          }
+        case <-ctx.Done():
+          return
+        }
+      }
+    }()
+  }
 
   go func() {
     for {
