@@ -1416,9 +1416,14 @@ class CubeChat {
   }
 
   async initRoomDirectory() {
-    if (this.roomDirectory) return;
+    if (this.roomDirectory) {
+      this.roomDirectory.attachNetworkManager?.(this.network?.networkManager || null);
+      this.roomDirectory.announceRoom(this.currentRoom);
+      return;
+    }
     this.roomDirectory = new RoomDirectory({
       gameId: 'cubechat',
+      networkManager: this.network?.networkManager || null,
       bootstrapPeers: this.network.bootstrapPeers,
       webrtc: this.network.webrtc,
       pubsubType: this.network.pubsubType,
@@ -1482,6 +1487,7 @@ class CubeChat {
     this.network.broadcastPlayerState();
     this.currentRoom = { name, visibility, roomId };
     this.currentRoomPassword = visibility === 'private' ? String(password || '') : '';
+    this.roomDirectory?.attachNetworkManager?.(this.network?.networkManager || null);
     this.roomDirectory?.announceRoom(this.currentRoom);
     this._syncRoomInputs();
     this._updateLinkQueryParams();

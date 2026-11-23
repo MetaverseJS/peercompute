@@ -65190,3 +65190,52 @@ Files touched (Slice 2):
 - `demos/netviz/index.html`, `demos/netviz/README.md`, `demos/netviz/src/{main.js,observedNetwork.js,observedNetworkUi.js,visualizer.js,networkAnalysis.js}`
 - `demos/netviz/tests/{networkAnalysis.test.js,analysisBrowserCheck.mjs}`
 - `plan/plan.md`, `plan/tests.md`, `plan/log.md`
+
+
+## 2026-11-22 16:21:32 AKST — Slice 3: Transport Scaling, LAN/Pi Support & Non-Breaking Demo Consolidation
+Prompt time/date: `2026-11-22 15:28:44 AKST` (completed `2026-11-22 16:21:32 AKST`).
+Goal: Implement Slice 3 of `plan/branch/network-scaling-netviz.md` — direct unicast `/peercompute/direct/1.0.0` stream + WorkMesh byte accounting, goal-conditioned `ThroughputTopologyPolicy` profiles, multi-relay ordered failover + `NativeCompanion` gossipsub LAN support, `WorkMesh` idle heartbeat calming + bounded outbox, and non-breaking demo consolidation (without running `net-chaos-lab`).
+
+Concrete actions attempted & completed:
+1. **`NetworkManager.js` + `peercompute/src/peercompute/index.js`**:
+   - Added `DIRECT_UNICAST_PROTOCOL = '/peercompute/direct/1.0.0'` with pure-ESM 4-byte length-prefixed framing (initially used `lpStream` from `@libp2p/utils`, then replaced with zero-dependency pure-ESM framing to keep Vite dev-server browser imports free of CJS transitive modules). `sendToPeer()` writes directly over an open direct-capable connection when available (recording per-peer `txBytes`/`rxBytes`), falling back seamlessly to `directTopic` pubsub if no direct connection exists, the peer doesn't support the protocol (cached 60 s cooldown), or stream write fails.
+   - Added `subscribeTopic(topic, handler)`, `unsubscribeTopic(topic, handler)`, `publishTopic(topic, payload)` for shared dynamic pubsub topics without polluting main game/state handlers, and `recordPeerBytes(peerId, { rxBytes, txBytes })`.
+   - Wired `createThroughputProfileScorers` into `_tickThroughputTopology()` whenever `config.throughputTopology.profile` is set (merging live peer ICE path, RTT, `hostGroupId`, capabilities, and multiaddrs).
+   - Added `bootstrapRelayHealth` (`rttMs`, `ok`, `failures`, `isLan`, `lastOkAt`, `lastFailAt`), `getBootstrapRelayHealth()`, and multi-relay ranking in `_buildCircuitAddr(peerId)` (preferring target-announced relay, connected relay, healthy relay, LAN/local relay when `preferLocalRelay !== false`, IPv4/IPv6 family match, and lowest RTT).
+2. **`ThroughputTopologyPolicy.js`**:
+   - Exported `THROUGHPUT_TOPOLOGY_PROFILES` (`batch-throughput`, `low-latency`, `lan-first`, `capability-weighted`) and `createThroughputProfileScorers(profile, getPeerInfo, options)`, preserving `flow <= 0 -> 0` so idle detection and `minGainShare` thresholds remain exact.
+3. **`WorkMesh.js` & `WorkMeshService.js`**:
+   - Added `idleStateIntervalMs: 2000` in `WorkMesh.js` so idle peer links emit `'state'` every 2 s instead of every 100 ms (~20× less idle traffic), while immediately resuming 100 ms cadence whenever either end has active work/results/origins.
+   - Wired `recordPeerBytes` in `WorkMeshService.js` (`txBytes` on write, `rxBytes` on read), coalesced `'state'` frames anywhere in `peer.outbox`, and enforced `maxOutbox` (default `128`), cleanly resetting stalled streams instead of growing unboundedly.
+4. **`NativeCompanion.js`**:
+   - Upgraded default `pubsubType` from `floodsub` to `gossipsub` (with `IPColocationFactorWeight: 0`, `behaviourPenaltyWeight: 0`, `allowPublishToZeroTopicPeers: true`, `fallbackToFloodsub: true` for LAN laptop+Pi subnets and backward compatibility), keeping `pubsubType: 'floodsub'` opt-in and reporting `pubsubType` in `getStatus()`.
+5. **Non-breaking Demo Consolidation**:
+   - Consolidated `__rooms__` directory onto the existing `NodeKernel`/`NetworkManager` topic (`pc.<gameId>.__rooms__.announcements`) in CubeChat (`demos/cubechat/src/{main.js,p2p/network.js,p2p/roomDirectory.js}`), Hyperborea (`demos/hyperborea/src/game/{Game.js,roomDirectory.js}`), and SneakyWoods (`demos/sneakywoods/main.js`), with lazy `import('@peercompute')` fallback if standalone mode is ever invoked.
+   - Updated Hyperborea's `ensureRelayConnection()` / `startNetworkWatchdog()` to respect `dropRelayBootstrapOnDirect` instead of fighting relay retirement on every `connection:close`.
+   - Added `transportManager: { faultTolerance: 'no-fatal' }` to SneakyWoods.
+   - Updated `demos/inference/src/runtime.js` manual `connect(relayAddress)` to inherit `relay-config.json` / `gossipsub` + `no-fatal` defaults instead of silently falling back to `floodsub`, and fixed `demos/shared/agents/WorldAgentHost.js` so EarthGrid reports `telemetryApplication: 'earthgrid'` in NetViz without partitioning its global model discovery scope (`default-topology`/`default-room`).
+6. Added `peercompute/tests/unit/networkManager.slice3.test.js` (6 unit + real libp2p integration tests).
+
+Commands run & test results (Slice 3):
+- `node --test peercompute/tests/unit/networkManager.*.test.js peercompute/tests/unit/topologyController.test.js peercompute/tests/unit/throughputTopologyPolicy.test.js peercompute/tests/unit/workMesh*.test.js peercompute/tests/unit/networkTelemetry*.test.js peercompute/tests/unit/nodeKernelTelemetry.test.js peercompute/tests/unit/nativeCompanion.test.js peercompute/tests/unit/conjectureSimulation.test.js demos/netviz/tests/observedNetwork.test.js demos/netviz/tests/networkAnalysis.test.js demos/netviz/tests/relayOverlay.test.js demos/tests/model-telemetry.test.js demos/tests/demo-ports.test.js demos/tests/demo-release.test.js` — **233/233 PASS** (including real libp2p `/peercompute/direct/1.0.0` unicast and real `NativeCompanion` gossipsub).
+- `npm run test:root-host` — **45/45 PASS**.
+- `npm run test:inference` — **109/109 PASS**.
+- `npm run test:peer-inference` — **204/204 PASS**.
+- `npm run test:network-telemetry` — **22/22 PASS**.
+- `npm run test:world-agents` — **239/248 PASS** (9 pre-existing browser-harness errors in `demos/tests/world-agent-voice-controls.test.js` where transitive `@helia/unixfs` -> `sparse-array` CJS fails under Vite `optimizeDeps: { noDiscovery: true }`; unrelated to Slice 3 edits).
+- `cd peercompute/src/relay-go && go test -v ./... && go build` — **4/4 PASS** + clean binary build.
+- External Vite production builds (`--outDir /tmp/slice3-builds/<demo>`) for `netviz`, `cubechat`, `hyperborea`, `sneakywoods`, `inference`, `earth` — **6/6 PASS** (`docs/` kept clean).
+- `CHROME_BIN=/usr/bin/google-chrome node demos/netviz/tests/analysisBrowserCheck.mjs` — **PASS** (`passed: true`, 0 page errors).
+
+Files touched (Slice 3):
+- `peercompute/src/peercompute/networkManager/{NetworkManager.js,ThroughputTopologyPolicy.js,WorkMeshService.js}`
+- `peercompute/src/peercompute/workMesh/WorkMesh.js`
+- `peercompute/src/peercompute/index.js`
+- `peercompute/src/host/native/NativeCompanion.js`
+- `peercompute/tests/unit/networkManager.slice3.test.js`
+- `demos/cubechat/src/{main.js,p2p/network.js,p2p/roomDirectory.js}`
+- `demos/hyperborea/src/game/{Game.js,roomDirectory.js}`
+- `demos/sneakywoods/main.js`
+- `demos/inference/src/runtime.js`
+- `demos/shared/agents/WorldAgentHost.js`
+- `plan/{plan.md,tests.md,log.md,branch/network-scaling-netviz.md}`

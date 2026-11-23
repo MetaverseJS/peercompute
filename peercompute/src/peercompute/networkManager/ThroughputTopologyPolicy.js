@@ -28,6 +28,140 @@
  * measurements and applies the returned actions.
  */
 
+export const THROUGHPUT_TOPOLOGY_PROFILES = Object.freeze([
+  'batch-throughput',
+  'low-latency',
+  'lan-first',
+  'capability-weighted'
+]);
+
+const LAN_ICE_PATHS = new Set(['lan-host', 'direct-ws', 'direct-tcp']);
+const RELAY_ICE_PATHS = new Set(['turn-relay', 'circuit-relay']);
+
+function isLanAddressString(addr) {
+  if (typeof addr !== 'string' || !addr) return false;
+  if (addr.includes('/p2p-circuit')) return false;
+  return (
+    /\/ip4\/(?:10\.|127\.|169\.254\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)/.test(addr)
+    || /\/ip6\/(?:fe80:|fc|fd|::1\b)/i.test(addr)
+    || /\/dns[46]?\/[^/]+(?:\.local|\.lan|\.ts\.net)\b/i.test(addr)
+  );
+}
+
+function capabilityTierScore(capabilities) {
+  if (!capabilities || typeof capabilities !== 'object') return 0;
+  let score = 0;
+  const gpuTier = String(capabilities.gpuTier || capabilities.gpu?.tier || '').toLowerCase();
+  if (gpuTier === 'high' || gpuTier === 'discrete') score += 1.2;
+  else if (gpuTier === 'mid' || gpuTier === 'medium' || gpuTier === 'integrated') score += 0.7;
+  else if (gpuTier === 'low') score += 0.3;
+  if (capabilities.webgpu === true || capabilities.gpu?.available === true) score += 0.35;
+  const cores = Number(capabilities.cores ?? capabilities.cpu?.cores);
+  if (Number.isFinite(cores) && cores > 0) {
+    score += Math.min(0.6, Math.log2(cores + 1) * 0.15);
+  }
+  const gpuGflops = Number(capabilities.bench?.gpuGflops ?? capabilities.gpuGflops);
+  if (Number.isFinite(gpuGflops) && gpuGflops > 0) {
+    score += Math.min(1.0, Math.log10(gpuGflops + 1) * 0.25);
+  }
+  return Math.min(2.5, score);
+}
+
+/**
+ * Build goal-conditioned link and candidate scorers for decideThroughputTopology.
+ * Invariant: scoreLink(link) always returns 0 when link.flow <= 0 so idle
+ * detection and minGainShare checks never mistake an idle link for progress.
+ */
+export function createThroughputProfileScorers(profile = 'batch-throughput', getPeerInfo = null, options = {}) {
+  const normalized = String(profile || 'batch-throughput').trim().toLowerCase();
+  if (normalized === 'batch-throughput' || !THROUGHPUT_TOPOLOGY_PROFILES.includes(normalized)) {
+    return { profile: 'batch-throughput', scoreLink: null, scoreCandidate: null };
+  }
+  const infoOf = typeof getPeerInfo === 'function' ? getPeerInfo : () => null;
+  const rttScaleMs = Number.isFinite(options.rttScaleMs) && options.rttScaleMs > 0 ? options.rttScaleMs : 50;
+  const lanWeight = Number.isFinite(options.lanWeight) && options.lanWeight > 0 ? options.lanWeight : 1.6;
+  const relayPenalty = Number.isFinite(options.relayPenalty) && options.relayPenalty > 0 ? options.relayPenalty : 0.55;
+  const localHostGroupId = typeof options.localHostGroupId === 'string' && options.localHostGroupId
+    ? options.localHostGroupId
+    : null;
+
+  const rttOf = (info) => {
+    const raw = info?.candidatePairRttMs ?? info?.rttMs;
+    return Number.isFinite(raw) && raw >= 0 ? raw : null;
+  };
+  const isLanPeer = (info) => {
+    if (!info) return false;
+    if (LAN_ICE_PATHS.has(info.icePath)) return true;
+    if (localHostGroupId && info.hostGroupId && info.hostGroupId === localHostGroupId) return true;
+    if (Array.isArray(info.multiaddrs) && info.multiaddrs.some(isLanAddressString)) return true;
+    return false;
+  };
+
+  if (normalized === 'low-latency') {
+    return {
+      profile: normalized,
+      scoreLink: (link) => {
+        const flow = Number.isFinite(link?.flow) ? link.flow : 0;
+        if (flow <= 0) return 0;
+        const rtt = rttOf(infoOf(link.peerId));
+        const factor = rtt !== null ? 1 / (1 + rtt / rttScaleMs) : 0.5;
+        return flow * factor;
+      },
+      scoreCandidate: (peerId) => {
+        const info = infoOf(peerId);
+        const rtt = rttOf(info);
+        const rttScore = rtt !== null ? 1 / (1 + rtt / rttScaleMs) : 0.25;
+        return rttScore + (isLanPeer(info) ? 0.2 : 0);
+      }
+    };
+  }
+
+  if (normalized === 'lan-first') {
+    return {
+      profile: normalized,
+      scoreLink: (link) => {
+        const flow = Number.isFinite(link?.flow) ? link.flow : 0;
+        if (flow <= 0) return 0;
+        const info = infoOf(link.peerId);
+        let multiplier = 1.0;
+        if (isLanPeer(info)) multiplier = lanWeight;
+        else if (RELAY_ICE_PATHS.has(info?.icePath)) multiplier = relayPenalty;
+        const rtt = rttOf(info);
+        const rttFactor = rtt !== null ? 1 / (1 + rtt / (rttScaleMs * 4)) : 0.9;
+        return flow * multiplier * rttFactor;
+      },
+      scoreCandidate: (peerId) => {
+        const info = infoOf(peerId);
+        let score = 0;
+        if (isLanPeer(info)) score += 2.0;
+        else if (RELAY_ICE_PATHS.has(info?.icePath)) score -= 0.5;
+        const rtt = rttOf(info);
+        if (rtt !== null) score += 1 / (1 + rtt / rttScaleMs);
+        return score;
+      }
+    };
+  }
+
+  // capability-weighted
+  return {
+    profile: 'capability-weighted',
+    scoreLink: (link) => {
+      const flow = Number.isFinite(link?.flow) ? link.flow : 0;
+      if (flow <= 0) return 0;
+      const info = infoOf(link.peerId);
+      const cap = capabilityTierScore(info?.capabilities);
+      return flow * (1 + 0.15 * cap);
+    },
+    scoreCandidate: (peerId) => {
+      const info = infoOf(peerId);
+      const cap = capabilityTierScore(info?.capabilities);
+      const rtt = rttOf(info);
+      const rttBonus = rtt !== null ? 0.2 / (1 + rtt / rttScaleMs) : 0;
+      return cap + rttBonus;
+    }
+  };
+}
+
 export const THROUGHPUT_TOPOLOGY_DEFAULTS = Object.freeze({
   targetConnections: 4,
   maxConnections: 5,

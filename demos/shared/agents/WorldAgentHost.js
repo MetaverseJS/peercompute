@@ -1231,8 +1231,11 @@ export function installWorldAgents({ worldId, worldLabel, adapter, getRuntimeOpt
     const options = await getRuntimeOptions(); worldManager = options.networkManager;
     // World conversations use the room's identity; model discovery uses the
     // global model network so hosts in the standalone console remain eligible.
+    const inferredApp = typeof worldId === 'string' && worldId.includes(':')
+      ? worldId.split(':')[0]
+      : 'world';
     runtime = await runtimeFactory({ ...options, networkManager: undefined, residentModelSlots: 3,
-      telemetryApplication: worldManager?.config?.gameId ?? 'world',
+      telemetryApplication: worldManager?.config?.gameId ?? inferredApp,
       auxiliaryWorkerSlots: adapter.setMotor ? 1 : 0 });
     lifetime.signal.throwIfAborted(); agents = await runtime.getAgentController();
     if (runtime.stateManager?.createResidentDiagnosticsStore) {

@@ -1,5 +1,3 @@
-import { NodeKernel } from '@peercompute';
-
 const DIRECTORY_ROOM_ID = '__rooms__';
 const DIRECTORY_NAMESPACE = 'rooms';
 const ROOM_ENTRY_PREFIX = 'room-';
@@ -36,13 +34,18 @@ export const buildRoomId = ({ name, visibility, password }) => {
 
 export const normalizeRoomName = (value) => slugify(value);
 
+export const buildRoomDirectoryTopic = (gameId) => `pc.${gameId || 'default'}.${DIRECTORY_ROOM_ID}.announcements`;
+
 export class RoomDirectory {
-  constructor({ gameId, bootstrapPeers, webrtc, pubsubType, gossipsub }) {
+  constructor({ gameId, bootstrapPeers, webrtc, pubsubType, gossipsub, networkManager = null }) {
     this.gameId = gameId;
     this.bootstrapPeers = bootstrapPeers || [];
     this.webrtc = webrtc || null;
     this.pubsubType = pubsubType || null;
     this.gossipsub = gossipsub || null;
+    this.networkManager = networkManager || null;
+    this.topic = buildRoomDirectoryTopic(gameId);
+    this.unsubscribeTopic = null;
     this.node = null;
     this.stateManager = null;
     this.rooms = new Map();
@@ -51,8 +54,43 @@ export class RoomDirectory {
     this.currentRoom = null;
   }
 
+  _handleAnnouncement(_from, payload) {
+    if (!payload || typeof payload !== 'object' || payload.type !== 'room-announce') return;
+    const key = typeof payload.key === 'string' ? payload.key : null;
+    if (!key || !key.startsWith(ROOM_ENTRY_PREFIX)) return;
+    if (!payload.room) {
+      this.rooms.delete(key);
+      return;
+    }
+    this.rooms.set(key, payload.room);
+  }
+
+  attachNetworkManager(networkManager) {
+    if (this.unsubscribeTopic) {
+      try { this.unsubscribeTopic(); } catch (_) {}
+      this.unsubscribeTopic = null;
+    }
+    this.networkManager = networkManager || null;
+    if (this.networkManager?.subscribeTopic) {
+      this.unsubscribeTopic = this.networkManager.subscribeTopic(
+        this.topic,
+        (from, payload) => this._handleAnnouncement(from, payload)
+      );
+    }
+  }
+
   async init() {
+    if (this.networkManager?.subscribeTopic) {
+      if (!this.unsubscribeTopic) {
+        this.attachNetworkManager(this.networkManager);
+      }
+      if (!this.pruneTimer) {
+        this.pruneTimer = setInterval(() => this.pruneStaleRooms(), ROOM_HEARTBEAT_MS);
+      }
+      return;
+    }
     if (this.node) return;
+    const { NodeKernel } = await import('@peercompute');
     this.node = new NodeKernel({
       bootstrapPeers: this.bootstrapPeers,
       enablePersistence: false,
@@ -93,7 +131,7 @@ export class RoomDirectory {
   }
 
   writeRoomEntry() {
-    if (!this.stateManager || !this.currentRoom) return;
+    if (!this.currentRoom) return;
     const slug = normalizeRoomName(this.currentRoom.name);
     const roomKey = `${ROOM_ENTRY_PREFIX}${slug}`;
     const payload = {
@@ -103,6 +141,16 @@ export class RoomDirectory {
       updatedAt: Date.now(),
       roomId: this.currentRoom.visibility === 'public' ? this.currentRoom.roomId : null
     };
+    if (this.networkManager?.publishTopic) {
+      this.rooms.set(roomKey, payload);
+      this.networkManager.publishTopic(this.topic, {
+        type: 'room-announce',
+        key: roomKey,
+        room: payload
+      }).catch(() => {});
+      return;
+    }
+    if (!this.stateManager) return;
     this.stateManager.writeScoped(DIRECTORY_NAMESPACE, roomKey, payload);
   }
 
@@ -128,6 +176,11 @@ export class RoomDirectory {
       clearInterval(this.pruneTimer);
       this.pruneTimer = null;
     }
+    if (this.unsubscribeTopic) {
+      try { this.unsubscribeTopic(); } catch (_) {}
+      this.unsubscribeTopic = null;
+    }
+    this.networkManager = null;
     if (this.node) {
       await this.node.stop();
       this.node = null;

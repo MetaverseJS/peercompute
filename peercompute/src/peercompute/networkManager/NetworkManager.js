@@ -22,10 +22,33 @@ import { generateKeyPair, privateKeyFromProtobuf, privateKeyToProtobuf, publicKe
 import { multiaddr } from '@multiformats/multiaddr';
 import { NetworkScheduler, DEFAULT_SCHEDULER_PROFILE } from './NetworkScheduler.js';
 import { TopologyController } from './TopologyController.js';
-import { createThroughputTopologyState, decideThroughputTopology } from './ThroughputTopologyPolicy.js';
+import { createThroughputTopologyState, createThroughputProfileScorers, decideThroughputTopology } from './ThroughputTopologyPolicy.js';
 import { PeerConnectionRecovery } from './inference/PeerConnectionRecovery.js';
 import { NetworkTelemetryService, NETWORK_TELEMETRY_TOPIC } from './NetworkTelemetryService.js';
 import { isDebugOutputEnabled } from '../utils/debugOutput.js';
+
+export const DIRECT_UNICAST_PROTOCOL = '/peercompute/direct/1.0.0';
+const DEFAULT_DIRECT_STREAM_MAX_BYTES = 4 * 1024 * 1024;
+const DIRECT_STREAM_UNSUPPORTED_COOLDOWN_MS = 60000;
+const RELAY_HEALTH_FAILURE_COOLDOWN_MS = 30000;
+
+function encodeDirectUnicastFrame(payloadBytes) {
+  const frame = new Uint8Array(4 + payloadBytes.byteLength);
+  new DataView(frame.buffer).setUint32(0, payloadBytes.byteLength, false);
+  frame.set(payloadBytes, 4);
+  return frame;
+}
+
+async function writeDirectUnicastFrame(stream, frame) {
+  if (typeof stream?.send === 'function') {
+    const ok = stream.send(frame);
+    if (ok === false && typeof stream.onDrain === 'function') {
+      await stream.onDrain();
+    }
+    return;
+  }
+  throw new Error('Direct unicast stream does not support send()');
+}
 
 const DEFAULT_PUBSUB_TOPIC = 'peercompute-state-sync';
 const DEFAULT_DIRECT_TOPIC = 'peercompute-direct';
@@ -743,6 +766,11 @@ export class NetworkManager {
       iceStatsIntervalMs: Number.isFinite(config.iceStatsIntervalMs)
         ? Math.max(1000, config.iceStatsIntervalMs)
         : DEFAULT_ICE_STATS_INTERVAL_MS,
+      enableDirectUnicastStream: config.enableDirectUnicastStream !== false,
+      directStreamMaxBytes: Number.isFinite(config.directStreamMaxBytes)
+        ? Math.max(65536, Math.trunc(config.directStreamMaxBytes))
+        : DEFAULT_DIRECT_STREAM_MAX_BYTES,
+      preferLocalRelay: config.preferLocalRelay !== false,
       presenceCapabilitiesProvider: typeof config.presenceCapabilitiesProvider === 'function'
         ? config.presenceCapabilitiesProvider
         : null,
@@ -815,6 +843,10 @@ export class NetworkManager {
     this.topologyRewireTimestamps = [];
     this.dialFailureCount = 0;
     this.lastDialFailureAt = null;
+    this.directUnicastStreams = new Map(); // peerId -> { connId, stream, rpc, queue }
+    this.directStreamUnsupportedPeers = new Map(); // peerId -> untilMs
+    this.bootstrapRelayHealth = new Map(); // addrStr -> { addr, peerId, ok, rttMs, lastOkAt, lastFailAt, failures, isLan }
+    this.topicHandlers = new Map(); // topic -> Set<fn>
 
     this.peers = new Map();
     this.recentDialAttempts = new Map();
@@ -1234,6 +1266,7 @@ export class NetworkManager {
     this.additionalPubsubTopics.forEach((topic) => subscribeTopic(topic));
     this._syncShardSubscriptions(this.topologyController?.getNeighborShardIds?.() || []);
     this._recordPubsubTx(0);
+    await this._registerDirectUnicastHandler();
 
     await this._dialBootstrapPeers();
     await this._reserveBootstrapRelayAddrs();
@@ -1337,6 +1370,15 @@ export class NetworkManager {
     }
     this.intentionalCloseUntil.clear();
     this.topologyRewireTimestamps = [];
+    this._closeAllDirectUnicastStreams();
+    this.directStreamUnsupportedPeers.clear();
+    if (this.libp2p?.unhandle) {
+      try {
+        await this.libp2p.unhandle(DIRECT_UNICAST_PROTOCOL);
+      } catch (_) {
+        // node may already be stopping or handler never registered
+      }
+    }
 
     if (this.libp2p) {
       await this.libp2p.stop();
@@ -1487,6 +1529,12 @@ export class NetworkManager {
 
   async sendToPeer(peerId, message) {
     const payload = this._wrapPayload(message, { target: peerId });
+    if (this.config.enableDirectUnicastStream && peerId && peerId !== this.peerId && this.libp2p) {
+      const sentDirectly = await this._trySendDirectUnicast(peerId, payload);
+      if (sentDirectly) {
+        return;
+      }
+    }
     await this._publish(this.config.directTopic, payload);
   }
 
@@ -1494,6 +1542,267 @@ export class NetworkManager {
     const topic = options.topic || this.config.pubsubTopic;
     const payload = this._wrapPayload(message);
     await this._publish(topic, payload);
+  }
+
+  subscribeTopic(topic, handler = null) {
+    if (typeof topic !== 'string' || !topic.trim()) {
+      throw new TypeError('subscribeTopic requires a non-empty topic string');
+    }
+    const normalized = topic.trim();
+    this.additionalPubsubTopics.add(normalized);
+    this.allowedTopics.add(normalized);
+    if (typeof handler === 'function') {
+      let set = this.topicHandlers.get(normalized);
+      if (!set) {
+        set = new Set();
+        this.topicHandlers.set(normalized, set);
+      }
+      set.add(handler);
+    }
+    if (this.libp2p?.services?.pubsub?.subscribe) {
+      try {
+        this.libp2p.services.pubsub.subscribe(normalized);
+      } catch (err) {
+        debugWarn('[NetworkManager] Dynamic topic subscribe failed', normalized, err?.message || err);
+      }
+    }
+    return () => this.unsubscribeTopic(normalized, handler);
+  }
+
+  unsubscribeTopic(topic, handler = null) {
+    if (typeof topic !== 'string' || !topic.trim()) return;
+    const normalized = topic.trim();
+    const set = this.topicHandlers.get(normalized);
+    if (set) {
+      if (typeof handler === 'function') {
+        set.delete(handler);
+      } else {
+        set.clear();
+      }
+      if (set.size === 0) {
+        this.topicHandlers.delete(normalized);
+      }
+    }
+  }
+
+  async publishTopic(topic, message) {
+    if (typeof topic !== 'string' || !topic.trim()) {
+      throw new TypeError('publishTopic requires a non-empty topic string');
+    }
+    const normalized = topic.trim();
+    this.additionalPubsubTopics.add(normalized);
+    this.allowedTopics.add(normalized);
+    const payload = this._wrapPayload(message);
+    await this._publish(normalized, payload);
+  }
+
+  recordPeerBytes(peerId, { rxBytes = 0, txBytes = 0 } = {}) {
+    if (!peerId) return;
+    if (Number.isFinite(rxBytes) && rxBytes > 0) {
+      this._recordRx(peerId, rxBytes);
+    }
+    if (Number.isFinite(txBytes) && txBytes > 0) {
+      this._recordTx(peerId, txBytes);
+    }
+  }
+
+  getBootstrapRelayHealth() {
+    const out = {};
+    for (const [addr, info] of this.bootstrapRelayHealth.entries()) {
+      out[addr] = { ...info };
+    }
+    return out;
+  }
+
+  async _registerDirectUnicastHandler() {
+    if (!this.config.enableDirectUnicastStream || typeof this.libp2p?.handle !== 'function') return;
+    try {
+      await this.libp2p.handle(
+        DIRECT_UNICAST_PROTOCOL,
+        (arg1, arg2) => {
+          const stream = arg1?.stream ?? arg1;
+          const connection = arg1?.connection ?? arg2;
+          this._handleDirectUnicastStream(stream, connection).catch(() => {});
+        },
+        { maxInboundStreams: 64, maxOutboundStreams: 64, runOnLimitedConnection: false }
+      );
+    } catch (err) {
+      debugWarn('[NetworkManager] Failed to register direct unicast handler', err?.message || err);
+    }
+  }
+
+  _findDirectUnicastConnection(peerId) {
+    if (!peerId || !this.libp2p) return null;
+    const now = Date.now();
+    const unsupportedUntil = this.directStreamUnsupportedPeers.get(peerId) || 0;
+    if (unsupportedUntil > now) return null;
+    const connections = this._getConnectionsForPeer(peerId);
+    let fallback = null;
+    for (const conn of connections) {
+      if (!isConnectionOpen(conn) || conn.limits || typeof conn.newStream !== 'function') continue;
+      if (!this._isDirectCapableConnection(conn)) continue;
+      if (isTrulyDirectAddr(conn.remoteAddr)) return conn;
+      if (!fallback) fallback = conn;
+    }
+    return fallback;
+  }
+
+  _closeDirectUnicastStream(peerId, connId = null) {
+    const entry = this.directUnicastStreams.get(peerId);
+    if (!entry) return;
+    if (connId !== null && entry.connId && entry.connId !== connId) return;
+    this.directUnicastStreams.delete(peerId);
+    try {
+      entry.stream?.abort?.(new Error('Direct unicast stream closed'));
+    } catch (_) {
+      try {
+        entry.stream?.close?.();
+      } catch (_) {
+        // ignore
+      }
+    }
+  }
+
+  _closeAllDirectUnicastStreams() {
+    for (const peerId of Array.from(this.directUnicastStreams.keys())) {
+      this._closeDirectUnicastStream(peerId);
+    }
+  }
+
+  async _trySendDirectUnicast(peerId, payload) {
+    const conn = this._findDirectUnicastConnection(peerId);
+    if (!conn) return false;
+    let encoded;
+    try {
+      encoded = encoder.encode(JSON.stringify(payload));
+    } catch (_) {
+      return false;
+    }
+    const maxBytes = this.config.directStreamMaxBytes || DEFAULT_DIRECT_STREAM_MAX_BYTES;
+    if (encoded.byteLength > maxBytes) return false;
+
+    const connId = conn.id || null;
+    let entry = this.directUnicastStreams.get(peerId);
+    if (entry && connId && entry.connId !== connId) {
+      this._closeDirectUnicastStream(peerId);
+      entry = null;
+    }
+    if (!entry) {
+      try {
+        const stream = await conn.newStream(DIRECT_UNICAST_PROTOCOL);
+        entry = { connId, stream, queue: Promise.resolve() };
+        this.directUnicastStreams.set(peerId, entry);
+      } catch (err) {
+        const msg = String(err?.message || err || '');
+        if (/unsupported|protocol|select/i.test(msg)) {
+          this.directStreamUnsupportedPeers.set(peerId, Date.now() + DIRECT_STREAM_UNSUPPORTED_COOLDOWN_MS);
+        }
+        return false;
+      }
+    }
+
+    const frame = encodeDirectUnicastFrame(encoded);
+    const writeOp = entry.queue.then(async () => {
+      if (this.directUnicastStreams.get(peerId) !== entry) {
+        throw new Error('Direct unicast stream replaced');
+      }
+      await writeDirectUnicastFrame(entry.stream, frame);
+      this.lastTxAt = Date.now();
+      this._recordTx(peerId, encoded.byteLength);
+    });
+    entry.queue = writeOp.catch(() => {});
+    try {
+      await writeOp;
+      return true;
+    } catch (err) {
+      if (this.directUnicastStreams.get(peerId) === entry) {
+        this._closeDirectUnicastStream(peerId);
+      }
+      debugWarn('[NetworkManager] Direct unicast write failed, falling back to pubsub', peerId, err?.message || err);
+      return false;
+    }
+  }
+
+  async _handleDirectUnicastStream(stream, connection) {
+    if (!stream || typeof stream[Symbol.asyncIterator] !== 'function') return;
+    const remotePeerId = connection?.remotePeer?.toString?.() || null;
+    const maxBytes = this.config.directStreamMaxBytes || DEFAULT_DIRECT_STREAM_MAX_BYTES;
+    let buffer = new Uint8Array(0);
+    const appendBytes = (chunk) => {
+      const incoming = chunk instanceof Uint8Array
+        ? chunk
+        : (typeof chunk?.subarray === 'function' ? chunk.subarray() : new Uint8Array(chunk));
+      if (!incoming.byteLength) return;
+      if (buffer.byteLength + incoming.byteLength > maxBytes + 64) {
+        throw new Error('Direct unicast receive buffer exceeded limit');
+      }
+      if (buffer.byteLength === 0) {
+        buffer = incoming.slice();
+        return;
+      }
+      const next = new Uint8Array(buffer.byteLength + incoming.byteLength);
+      next.set(buffer, 0);
+      next.set(incoming, buffer.byteLength);
+      buffer = next;
+    };
+    try {
+      for await (const chunk of stream) {
+        appendBytes(chunk);
+        while (buffer.byteLength >= 4) {
+          const frameLen = new DataView(buffer.buffer, buffer.byteOffset, 4).getUint32(0, false);
+          if (frameLen === 0 || frameLen > maxBytes) {
+            throw new Error(`Invalid direct unicast frame length: ${frameLen}`);
+          }
+          if (buffer.byteLength < 4 + frameLen) break;
+          const raw = buffer.subarray(4, 4 + frameLen);
+          buffer = buffer.subarray(4 + frameLen);
+          const byteLength = raw.byteLength;
+          let parsed = null;
+          try {
+            parsed = JSON.parse(decoder.decode(raw));
+          } catch (err) {
+            debugWarn('[NetworkManager] Failed to parse direct unicast payload', err?.message || err);
+            continue;
+          }
+          const now = Date.now();
+          this.lastRxAt = now;
+          this.scheduler?.recordRx(now);
+          const sender = parsed?.header?.peerId || parsed?.from || remotePeerId || null;
+          if (sender && sender !== this.peerId) {
+            this._recordRx(sender, byteLength);
+          }
+          if (this.scheduler?.handleMessage(parsed, sender)) {
+            continue;
+          }
+          if (parsed?.target && parsed.target !== this.peerId) {
+            continue;
+          }
+          if (!this._matchesScope(parsed)) {
+            continue;
+          }
+          const payload = parsed?.payload ?? parsed;
+          if (this._handleRelayAssistMessage(payload, parsed)) {
+            continue;
+          }
+          if (this._handleTopologyMessage(payload, parsed)) {
+            continue;
+          }
+          const from = parsed?.from || remotePeerId;
+          if (from && from !== this.peerId) {
+            this._touchPeer(from, { lastMessageTime: now });
+          }
+          this._dispatchMessage(from || 'unknown', payload);
+        }
+      }
+    } catch (_) {
+      // Stream closed, reset, or exceeded frame limits
+    } finally {
+      try {
+        await stream.close?.();
+      } catch (_) {
+        // ignore
+      }
+    }
   }
 
   setTopologyMetric(metric) {
@@ -1946,6 +2255,15 @@ export class NetworkManager {
       }
       const remaining = this._getConnectionsForPeer(peerId).filter(isConnectionOpen).length;
       this._infoLog('[NetworkManager] Connection closed', peerId, kind, remoteAddr, 'reason:', formatCloseReason(closeError), 'remaining:', remaining);
+      this._closeDirectUnicastStream(peerId, conn?.id || null);
+      if (this.bootstrapPeerIds.has(peerId)) {
+        for (const entry of this.bootstrapRelayHealth.values()) {
+          if (entry.peerId === peerId && remaining === 0) {
+            entry.ok = false;
+            entry.lastFailAt = Date.now();
+          }
+        }
+      }
       const active = this._getConnectionsForPeer(peerId).filter((entry) => entry?.status === 'open');
       if (this.bootstrapPeerIds.has(peerId) && active.length === 0 && !this._hasBootstrapRelayConnections()) {
         this.relayBootstrapConnectedAt = null;
@@ -2071,6 +2389,18 @@ export class NetworkManager {
       if (!bypassScope && !this._matchesScope(parsed)) return;
 
       const payload = parsed?.payload ?? parsed;
+      const customHandlers = this.topicHandlers.get(topic);
+      if (customHandlers && customHandlers.size > 0) {
+        const from = parsed?.from || sender || 'unknown';
+        for (const handler of customHandlers) {
+          try {
+            handler(from, payload, parsed, topic);
+          } catch (err) {
+            debugWarn('[NetworkManager] Topic handler error', topic, err?.message || err);
+          }
+        }
+        return;
+      }
       if (this._handleRelayAssistMessage(payload, parsed)) {
         return;
       }
@@ -2973,21 +3303,90 @@ export class NetworkManager {
     await this._maybeDialPeer(from, 'relay-assist-ready', payload.multiaddrs || null, { force: true });
   }
 
+  _isLocalOrLanMultiaddr(addrStr) {
+    if (typeof addrStr !== 'string' || !addrStr) return false;
+    return (
+      /\/ip4\/(?:10\.|127\.|169\.254\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)/.test(addrStr)
+      || /\/ip6\/(?:fe80:|fc|fd|::1\b)/i.test(addrStr)
+      || /\/dns[46]?\/(?:localhost\b|[^/]+(?:\.local|\.lan|\.ts\.net)\b)/i.test(addrStr)
+    );
+  }
+
+  _isBootstrapRelayConnected(relayPeerId) {
+    if (!relayPeerId || !this.libp2p?.getConnections) return false;
+    return this._getConnectionsForPeer(relayPeerId).some(isConnectionOpen);
+  }
+
+  _getTargetAnnouncedRelayIds(peerId) {
+    const relayIds = new Set();
+    if (!peerId) return relayIds;
+    const addrs = [];
+    const peerMeta = this.peers.get(peerId);
+    if (Array.isArray(peerMeta?.multiaddrs)) addrs.push(...peerMeta.multiaddrs);
+    const cached = this.peerDialAddrCache?.get?.(peerId);
+    if (cached && Array.isArray(cached.addrs)) addrs.push(...cached.addrs);
+    for (const raw of addrs) {
+      const str = typeof raw === 'string' ? raw : raw?.toString?.();
+      if (!str || !str.includes('/p2p-circuit')) continue;
+      const beforeCircuit = str.split('/p2p-circuit')[0];
+      const relayId = getPeerIdFromAddr(beforeCircuit);
+      if (relayId) relayIds.add(relayId);
+    }
+    return relayIds;
+  }
+
+  _rankBootstrapAddrs(targetPeerId = null) {
+    const raw = (this.config.bootstrapPeers || [])
+      .filter((addr) => typeof addr === 'string' && addr.includes('/p2p/'))
+      .map((addr, index) => ({
+        addr: normalizeBootstrapAddr(addr),
+        index
+      }));
+    if (raw.length <= 1) return raw.map((item) => item.addr);
+
+    const now = Date.now();
+    const preferIpv6 = this._hasLocalIpv6Addrs();
+    const preferLocal = this.config.preferLocalRelay !== false;
+    const targetRelays = targetPeerId ? this._getTargetAnnouncedRelayIds(targetPeerId) : new Set();
+
+    const scored = raw.map(({ addr, index }) => {
+      const relayPeerId = getPeerIdFromAddr(addr);
+      const connected = this._isBootstrapRelayConnected(relayPeerId);
+      const health = this.bootstrapRelayHealth.get(addr) || null;
+      const recentlyFailed = Boolean(
+        health
+        && health.ok === false
+        && Number.isFinite(health.lastFailAt)
+        && (!Number.isFinite(health.lastOkAt) || health.lastFailAt > health.lastOkAt)
+        && (now - health.lastFailAt) < RELAY_HEALTH_FAILURE_COOLDOWN_MS
+      );
+      const isLan = this._isLocalOrLanMultiaddr(addr);
+      const matchesFamily = preferIpv6
+        ? (addr.includes('/ip6/') || addr.includes('/dns6/'))
+        : (addr.includes('/ip4/') || addr.includes('/dns4/'));
+      const targetMatch = targetRelays.size > 0 && relayPeerId && targetRelays.has(relayPeerId);
+      const rttMs = Number.isFinite(health?.rttMs) ? health.rttMs : Number.POSITIVE_INFINITY;
+      return { addr, index, connected, recentlyFailed, isLan, matchesFamily, targetMatch, rttMs };
+    });
+
+    scored.sort((a, b) => {
+      if (a.targetMatch !== b.targetMatch) return a.targetMatch ? -1 : 1;
+      if (a.connected !== b.connected) return a.connected ? -1 : 1;
+      if (a.recentlyFailed !== b.recentlyFailed) return a.recentlyFailed ? 1 : -1;
+      if (preferLocal && a.isLan !== b.isLan) return a.isLan ? -1 : 1;
+      if (a.matchesFamily !== b.matchesFamily) return a.matchesFamily ? -1 : 1;
+      if (a.rttMs !== b.rttMs) return a.rttMs - b.rttMs;
+      return a.index - b.index;
+    });
+    return scored.map((item) => item.addr);
+  }
+
   _buildCircuitAddr(peerId) {
     if (!peerId || !this.config.bootstrapPeers?.length) return null;
     try {
-      const bootstrapAddrs = this.config.bootstrapPeers
-        .filter((addr) => typeof addr === 'string' && addr.includes('/p2p/'))
-        .map((addr) => normalizeBootstrapAddr(addr));
-      if (bootstrapAddrs.length === 0) return null;
-      const preferIpv6 = this._hasLocalIpv6Addrs();
-      const preferredRelayAddr = bootstrapAddrs.find((addr) => {
-        if (preferIpv6) {
-          return addr.includes('/ip6/') || addr.includes('/dns6/');
-        }
-        return addr.includes('/ip4/') || addr.includes('/dns4/');
-      });
-      const relayAddr = preferredRelayAddr || bootstrapAddrs[0];
+      const ranked = this._rankBootstrapAddrs(peerId);
+      if (ranked.length === 0) return null;
+      const relayAddr = ranked[0];
       const normalized = normalizeBootstrapAddr(relayAddr);
       return multiaddr(`${normalized}/p2p-circuit/p2p/${peerId}`);
     } catch (err) {
@@ -3673,10 +4072,47 @@ export class NetworkManager {
       ...candidates.filter((peerId) => rate(peerId) > 0).sort((a, b) => rate(b) - rate(a)),
       ...candidates.filter((peerId) => this.topologyController?.referralPeers?.has(peerId))
     ])];
+    const throughputCfg = {
+      targetConnections: this.config.targetConnections,
+      maxConnections: this.config.maxConnections,
+      ...this.config.throughputTopology
+    };
+    const profileName = throughputCfg.profile;
+    if (profileName && profileName !== 'batch-throughput'
+      && typeof throughputCfg.scoreLink !== 'function'
+      && typeof throughputCfg.scoreCandidate !== 'function') {
+      const peerById = new Map();
+      for (const peer of (Array.isArray(peers) ? peers : [])) {
+        if (peer?.peerId) peerById.set(peer.peerId, peer);
+      }
+      for (const peer of connected) {
+        if (peer?.peerId) peerById.set(peer.peerId, { ...(peerById.get(peer.peerId) || {}), ...peer });
+      }
+      const scorers = createThroughputProfileScorers(
+        profileName,
+        (peerId) => {
+          const meta = this.peers.get(peerId) || {};
+          const live = peerById.get(peerId) || {};
+          const preferred = this._getPreferredConnectionMeta(peerId);
+          return {
+            ...meta,
+            ...live,
+            icePath: preferred?.icePath ?? live.icePath ?? meta.icePath ?? null,
+            candidatePairRttMs: preferred?.candidatePairRttMs ?? live.candidatePairRttMs ?? meta.candidatePairRttMs ?? null,
+            rttMs: live.rttMs ?? meta.rttMs ?? null,
+            capabilities: live.capabilities ?? meta.capabilities ?? null,
+            hostGroupId: live.hostGroupId ?? meta.hostGroupId ?? null,
+            multiaddrs: live.multiaddrs ?? meta.multiaddrs ?? this.peerDialAddrCache?.get?.(peerId)?.addrs ?? []
+          };
+        },
+        { ...throughputCfg, localHostGroupId: this.config.hostGroupId || null }
+      );
+      if (scorers.scoreLink) throughputCfg.scoreLink = scorers.scoreLink;
+      if (scorers.scoreCandidate) throughputCfg.scoreCandidate = scorers.scoreCandidate;
+    }
     const decision = decideThroughputTopology({
       now, links, candidates, referrals, available, state: this.throughputTopologyState,
-      config: { targetConnections: this.config.targetConnections, maxConnections: this.config.maxConnections,
-        ...this.config.throughputTopology }
+      config: throughputCfg
     });
     for (const peerId of decision.drop) {
       linked.delete(peerId);
@@ -4523,13 +4959,26 @@ export class NetworkManager {
   }
 
   async _dialBootstrapPeers() {
-    const dialAddrs = (this.config.bootstrapPeers || [])
+    const orderedAddrs = this._rankBootstrapAddrs();
+    const dialAddrs = (orderedAddrs.length ? orderedAddrs : (this.config.bootstrapPeers || []))
       .map(toMultiaddr)
       .filter(Boolean);
     await Promise.all(
       dialAddrs.map(async (addr) => {
         const addrStr = addr.toString();
+        const normalizedAddr = normalizeBootstrapAddr(addrStr);
         const peerIdStr = getPeerIdFromAddr(addrStr);
+        const isLan = this._isLocalOrLanMultiaddr(normalizedAddr);
+        const prevHealth = this.bootstrapRelayHealth.get(normalizedAddr) || {
+          addr: normalizedAddr,
+          peerId: peerIdStr,
+          ok: false,
+          rttMs: null,
+          lastOkAt: null,
+          lastFailAt: null,
+          failures: 0,
+          isLan
+        };
         try {
           if (peerIdStr) {
             try {
@@ -4537,16 +4986,43 @@ export class NetworkManager {
               const existing = this.libp2p?.getConnections?.(peerId) || [];
               const hasOpen = existing.some(isConnectionOpen);
               if (hasOpen) {
+                this.bootstrapRelayHealth.set(normalizedAddr, {
+                  ...prevHealth,
+                  peerId: peerIdStr,
+                  ok: true,
+                  lastOkAt: Date.now(),
+                  failures: 0,
+                  isLan
+                });
                 return;
               }
             } catch (_) {
               // Fall through and attempt dial if peer ID parsing fails.
             }
           }
+          const startedAt = Date.now();
           await this.libp2p.dial(addr);
-          debugLog('[NetworkManager] Dialed bootstrap peer', addrStr);
+          const dialRttMs = Math.max(1, Date.now() - startedAt);
+          this.bootstrapRelayHealth.set(normalizedAddr, {
+            ...prevHealth,
+            peerId: peerIdStr,
+            ok: true,
+            rttMs: dialRttMs,
+            lastOkAt: Date.now(),
+            failures: 0,
+            isLan
+          });
+          debugLog('[NetworkManager] Dialed bootstrap peer', addrStr, `${dialRttMs}ms`);
           await this._reserveRelayForPeer(peerIdStr, 'bootstrap-dial');
         } catch (err) {
+          this.bootstrapRelayHealth.set(normalizedAddr, {
+            ...prevHealth,
+            peerId: peerIdStr,
+            ok: false,
+            lastFailAt: Date.now(),
+            failures: (prevHealth.failures || 0) + 1,
+            isLan
+          });
           debugWarn('[NetworkManager] Failed to dial bootstrap peer', addrStr, err?.message || err);
           this._emitConnectionFailure({
             peerId: peerIdStr,

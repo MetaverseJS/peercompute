@@ -95,7 +95,11 @@ export {
   LOCAL_ARTIFACT_CACHE_STORE,
   LocalArtifactCache
 } from './stateManager/LocalArtifactCache.js';
-export { NetworkManager } from './networkManager/NetworkManager.js';
+export { NetworkManager, DIRECT_UNICAST_PROTOCOL } from './networkManager/NetworkManager.js';
+export {
+  THROUGHPUT_TOPOLOGY_PROFILES,
+  createThroughputProfileScorers
+} from './networkManager/ThroughputTopologyPolicy.js';
 export {
   ComputeManager,
   COMPUTE_REMOTE_PLACEMENT_PROVENANCE_SCHEMA,

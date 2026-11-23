@@ -6,6 +6,7 @@ import { yamux } from '@libp2p/yamux';
 import { identify } from '@libp2p/identify';
 import { ping } from '@libp2p/ping';
 import { floodsub } from '@libp2p/floodsub';
+import { gossipsub } from '@libp2p/gossipsub';
 import { circuitRelayServer } from '@libp2p/circuit-relay-v2';
 import { peerIdFromString } from '@libp2p/peer-id';
 import { multiaddr } from '@multiformats/multiaddr';
@@ -36,6 +37,12 @@ export function createNativeCompanion(options = {}) {
   if (!isIP(host)) throw new TypeError('listenHost must be an IP address or localhost.');
   const port = integer(options.listenPort ?? 0, 'listenPort', 0, 65535);
   const maxConnections = integer(options.maxConnections ?? 64, 'maxConnections', 1, 4096);
+  const rawPubsubType = options.pubsubType === undefined ? 'gossipsub' : String(options.pubsubType).trim().toLowerCase();
+  if (rawPubsubType !== 'gossipsub' && rawPubsubType !== 'floodsub') {
+    throw new TypeError('pubsubType must be "gossipsub" or "floodsub".');
+  }
+  const pubsubType = rawPubsubType;
+  const gossipsubOverrides = options.gossipsub && typeof options.gossipsub === 'object' ? { ...options.gossipsub } : {};
   const relay = { ...NATIVE_RELAY_DEFAULTS, ...options.relay };
   if (typeof relay.enabled !== 'boolean') throw new TypeError('relay.enabled must be a boolean.');
   for (const name of ['maxReservations', 'reservationTtlMs', 'maxCircuitDurationMs', 'maxCircuitBytes', 'maxStreamsPerPeer']) integer(relay[name], `relay.${name}`);
@@ -64,7 +71,7 @@ export function createNativeCompanion(options = {}) {
     return { state, peerId, localMultiaddrs, listenMultiaddrs: bound.map(withPeer),
       advertisedMultiaddrs: listenMultiaddrs, connections: node?.getConnections().length ?? 0,
       reservations: node?.services.relay.reservations.size ?? 0, hostedPeerIds: [...hosted],
-      maxConnections, relay: { ...relay, mode: relay.enabled ? 'public' : 'hosted-only' },
+      maxConnections, pubsubType, relay: { ...relay, mode: relay.enabled ? 'public' : 'hosted-only' },
       pubsubTopics: [...topics], lastError };
   }
 
@@ -106,7 +113,22 @@ export function createNativeCompanion(options = {}) {
             denyInboundRelayReservation: (id) => !allows(id),
             denyOutboundRelayedConnection: (_source, destination) => !allows(destination),
           },
-          services: { identify: identify(), ping: ping(), pubsub: floodsub({ emitSelf: false }),
+          services: {
+            identify: identify(),
+            ping: ping(),
+            pubsub: pubsubType === 'gossipsub'
+              ? gossipsub({
+                  emitSelf: false,
+                  allowPublishToZeroTopicPeers: true,
+                  fallbackToFloodsub: true,
+                  ...gossipsubOverrides,
+                  scoreParams: {
+                    IPColocationFactorWeight: 0,
+                    behaviourPenaltyWeight: 0,
+                    ...(gossipsubOverrides.scoreParams || {})
+                  }
+                })
+              : floodsub({ emitSelf: false }),
             hostAddresses: (components) => ({ getListenMultiaddrs: () => components.transportManager.getListeners()
               .flatMap((listener) => listener.getAddrs()) }),
             relay: circuitRelayServer({

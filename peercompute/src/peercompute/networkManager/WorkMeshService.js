@@ -7,10 +7,14 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
 /** Length-prefixed JSON frames over one libp2p stream. */
-function jsonChannel(stream, maxFrameBytes) {
+function jsonChannel(stream, maxFrameBytes, onReadBytes = null) {
   const rpc = lpStream(stream, { maxDataLength: maxFrameBytes, maxBufferSize: maxFrameBytes * 2 + 32 });
   return {
-    async read() { return JSON.parse(decoder.decode((await rpc.read()).subarray())); },
+    async read() {
+      const raw = (await rpc.read()).subarray();
+      onReadBytes?.(raw.byteLength);
+      return JSON.parse(decoder.decode(raw));
+    },
     async write(value) {
       const data = encoder.encode(JSON.stringify(value));
       if (data.length > maxFrameBytes) throw new Error('Work mesh frame exceeds its byte limit');
@@ -41,12 +45,13 @@ export class WorkMeshService {
    *   milliseconds to hold a payload message before sending it (experiments only)
    * @param {(stream: object, maxFrameBytes: number) => object} [options.channel]
    */
-  constructor(manager, { execute, config = {}, tickMs = 100, maxFrameBytes = 16 * 1024 * 1024, shape = null,
+  constructor(manager, { execute, config = {}, tickMs = 100, maxFrameBytes = 16 * 1024 * 1024, maxOutbox = 128, shape = null,
     channel = jsonChannel } = {}) {
     if (!manager || typeof execute !== 'function') throw new TypeError('WorkMeshService requires a manager and execute');
     this.manager = manager;
     this.tickMs = tickMs;
     this.maxFrameBytes = maxFrameBytes;
+    this.maxOutbox = Number.isInteger(maxOutbox) && maxOutbox > 0 ? maxOutbox : 128;
     this.shape = typeof shape === 'function' ? shape : null;
     this.channel = channel;
     this.peers = new Map(); // peerId -> { outbox, out, opening, writing }
@@ -56,6 +61,7 @@ export class WorkMeshService {
     this.timer = null;
     this.closed = false;
     this.bytesSent = 0;
+    this.bytesReceived = 0;
     this.streamResets = 0;
     this.peerStreamResets = new Map();
     this.mesh = new WorkMesh({
@@ -85,7 +91,15 @@ export class WorkMeshService {
     await this.manager.libp2p.handle(WORK_MESH_PROTOCOL, (stream, connection) => {
       const peerId = connection?.remotePeer?.toString?.();
       if (this.closed || !peerId) { try { stream.abort(new Error('Work mesh is closed')); } catch { /* closed */ } return; }
-      this._readFrom(peerId, this.channel(stream, this.maxFrameBytes));
+      let lastReadBytes = 0;
+      const channel = this.channel(stream, this.maxFrameBytes, (byteLength) => {
+        lastReadBytes = byteLength || 0;
+      });
+      this._readFrom(peerId, channel, () => {
+        const bytes = lastReadBytes;
+        lastReadBytes = 0;
+        return bytes;
+      });
     }, { maxInboundStreams: 64, maxOutboundStreams: 64 });
     // The topology closes a link by asking for it here first.
     this.manager.topologyLinkReleasers?.add(this.releaseLink);
@@ -111,7 +125,7 @@ export class WorkMeshService {
     this.mesh.tick(now);
   }
 
-  snapshot() { return { ...this.mesh.snapshot(), bytesSent: this.bytesSent, streamResets: this.streamResets, peers: [...this.peers.keys()] }; }
+  snapshot() { return { ...this.mesh.snapshot(), bytesSent: this.bytesSent, bytesReceived: this.bytesReceived, streamResets: this.streamResets, peers: [...this.peers.keys()] }; }
 
   async stop() {
     if (this.closed) return;
@@ -185,10 +199,27 @@ export class WorkMeshService {
   _send(peerId, message) {
     const peer = this.peers.get(peerId);
     if (!peer) return;
-    // Only the latest queue report matters; do not let them pile up behind a payload.
-    const last = peer.outbox[peer.outbox.length - 1];
-    if (message.type === 'state' && last?.type === 'state') peer.outbox[peer.outbox.length - 1] = message;
-    else peer.outbox.push(message);
+    // Only the latest queue report matters; coalesce any queued 'state' frame
+    // so heartbeats never pile up behind payloads or bloat the outbox.
+    if (message.type === 'state') {
+      const existingIdx = peer.outbox.findIndex((entry) => entry?.type === 'state');
+      if (existingIdx !== -1) {
+        peer.outbox[existingIdx] = message;
+        this._flush(peerId, peer);
+        return;
+      }
+    }
+    if (peer.outbox.length >= this.maxOutbox) {
+      // Drop stale 'state' frames first to make room; if still saturated,
+      // reset the stalled stream cleanly so unacknowledged work is recovered
+      // without unbounded memory growth.
+      peer.outbox = peer.outbox.filter((entry) => entry?.type !== 'state');
+      if (peer.outbox.length >= this.maxOutbox) {
+        this._reset(peerId, peer);
+        return;
+      }
+    }
+    peer.outbox.push(message);
     this._flush(peerId, peer);
   }
 
@@ -202,7 +233,12 @@ export class WorkMeshService {
           const wait = this.shape(peerId, message);
           if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
         }
-        this.bytesSent += await peer.out.write(message);
+        const written = await peer.out.write(message);
+        const txBytes = Number.isFinite(written) && written > 0 ? written : 0;
+        this.bytesSent += txBytes;
+        if (txBytes > 0) {
+          this.manager.recordPeerBytes?.(peerId, { txBytes });
+        }
       }
     } catch {
       // A frame may be lost, so the mesh takes back whatever was unacknowledged.
@@ -216,12 +252,18 @@ export class WorkMeshService {
     }
   }
 
-  async _readFrom(peerId, channel) {
+  async _readFrom(peerId, channel, takeReadBytes = null) {
     this.inbound.set(channel, peerId);
     try {
       for (;;) {
         const message = await channel.read();
         if (this.closed) break;
+        const measured = typeof takeReadBytes === 'function' ? takeReadBytes() : 0;
+        const rxBytes = measured > 0 ? measured : (message ? encoder.encode(JSON.stringify(message)).byteLength : 0);
+        if (rxBytes > 0) {
+          this.bytesReceived += rxBytes;
+          this.manager.recordPeerBytes?.(peerId, { rxBytes });
+        }
         if (message?.schema !== WORK_MESH_SCHEMA) continue;
         // The peer may open its stream before this node has noticed the connection.
         if (this.released.has(peerId)) break;

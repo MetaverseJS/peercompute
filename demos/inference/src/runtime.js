@@ -314,14 +314,38 @@ export async function createInferenceRuntime({ stateManager, computeManager, net
       // starting, in which case the return value is null. Transfers await it.
       return networkConnection.connect(({ signal }) => loadInferenceRelayConfig({ ...options, signal }), options);
     },
-    async connect(relayAddress, { signal } = {}) {
+    async connect(relayAddress, { signal, pubsubType, gossipsub, webrtc } = {}) {
       signal?.throwIfAborted();
-      return networkConnection.connect(() => {
+      return networkConnection.connect(async ({ signal: connectSignal }) => {
         if (typeof relayAddress !== 'string' || relayAddress.length > 1024
             || !/^\/(?:dns4|dns6|ip4|ip6)\//.test(relayAddress) || !relayAddress.includes('/p2p/')) {
           throw new Error('Enter a relay multiaddress including its peer ID');
         }
-        return { bootstrapPeers: [relayAddress] };
+        // Inherit pubsub/WebRTC defaults from relay-config when reachable so manual
+        // connections (e.g., to a LAN Pi relay) do not silently revert to floodsub.
+        let inherited = null;
+        if (!pubsubType && !gossipsub && !webrtc) {
+          try {
+            inherited = await loadInferenceRelayConfig({ signal: connectSignal });
+          } catch (_) {
+            inherited = null;
+          }
+        }
+        const resolvedPubsubType = pubsubType ?? inherited?.pubsubType ?? 'gossipsub';
+        const resolvedGossipsub = gossipsub ?? inherited?.gossipsub ?? (resolvedPubsubType === 'gossipsub'
+          ? {
+              fallbackToFloodsub: true,
+              scoreParams: { IPColocationFactorWeight: 0, behaviourPenaltyWeight: 0 }
+            }
+          : undefined);
+        const resolvedWebrtc = webrtc ?? inherited?.webrtc;
+        return {
+          bootstrapPeers: [relayAddress],
+          transportManager: { faultTolerance: 'no-fatal' },
+          pubsubType: resolvedPubsubType,
+          ...(resolvedGossipsub ? { gossipsub: resolvedGossipsub } : {}),
+          ...(resolvedWebrtc ? { webrtc: resolvedWebrtc } : {})
+        };
       }, { signal });
     },
     async importCatalog(modelId, options = {}) {

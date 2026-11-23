@@ -6,7 +6,7 @@ Improve PeerCompute's real-world networking reliability, scaling efficiency, dir
 
 ## Phased Slices
 
-### Slice 1 — Core Network Reliability, Speed & Go/Node Relay Parity (Zero Breaking Demo Changes)
+### Slice 1 — Core Network Reliability, Speed & Go/Node Relay Parity (Zero Breaking Demo Changes) [DONE — `037d5d5c`]
 1. **Eliminate doomed +5,000 ms `queryPeerDirectory` dial stall & double-JSON bug (`NetworkManager.js`)**:
    - Subscribe `directoryTopic` in `connect()`, fix double `JSON.stringify` in `queryPeerDirectory`/`registerWithDirectory`, fast-fail when disconnected or when `directoryTopic` has zero subscribers, clear pending directory timers on `disconnect()`, and check local `peerStore`/remembered targets before ever falling back to a directory query (never blocking ready `direct` or `relay-webrtc` dials, and never re-entering for already-open `relay-webrtc`).
 2. **True per-connection ICE path inspection (`RTCPeerConnection.getStats()`), preserve live `via`, and unify `@libp2p/webrtc` initiator/recipient handling (`NetworkManager.js`)**:
@@ -27,18 +27,18 @@ Improve PeerCompute's real-world networking reliability, scaling efficiency, dir
    - Apply `RELAY_GOSSIPSUB_CONFIG` (`D`, `Dlo`, `Dhi`, `Dout`, `Dlazy`, `heartbeatInterval`, `scoreParams` including `IPColocationFactorWeight = 0` so LAN/NAT siblings aren't penalized!) directly to Go's `pubsub.NewGossipSub(...)`.
    - Port `RELAY_CONTROL_ONLY_MODE`, `RELAY_ENABLE_DIRECTORY` + `RELAY_DIRECTORY_TTL_MS`, bounded circuit limits (`RELAY_CIRCUIT_DURATION_SEC` / `RELAY_CIRCUIT_DATA_MB`, opt-in `RELAY_INFINITE_LIMITS=1`), and idle-topic unsubscribe GC (`RELAY_TOPIC_IDLE_TTL_MS`) to `relay-go/main.go`, plus idle-topic unsubscribe GC and closed-stream guards to `relay/server.js`.
 
-### Slice 2 — Upgrade NetViz (`demos/netviz/`) Into a Whole-Network & Subgroup Analysis Tool
+### Slice 2 — Upgrade NetViz (`demos/netviz/`) Into a Whole-Network & Subgroup Analysis Tool [DONE — `9b7b2d46`]
 1. Extend `NetworkTelemetryService.js` (backward-compatible v1 optional fields): per-edge `icePath`, `iceProtocol`, `candidatePairRttMs`, `direction`, `duplicateConnections`, `workMesh`; per-node `relayState` (`connected`, `role`, `keepReason`, `relayPeerId`, `gossipMeshCount`), `gossipMeshPeers`, `rewiresPerMin`, `dialFailures`, `capabilities` summary, `hostGroupId`.
 2. Upgrade `demos/netviz/`:
    - Fix `observedNetwork.js` edge-merge bug discarding second endpoint telemetry; set `allowDiscoveryDialWhenIsolated: false` in `demos/netviz/src/main.js`.
    - Add subgroup-clustered layout in `All demos` (`Application/Room`, `Relay`, `Topology Mode`, `Transport/LAN`) with translucent hulls, group badges, and non-disruptive drill-down.
    - Add toggleable graph layers (Transport by true ICE path, Gossipsub Mesh, WorkMesh flow, Models/Artifacts), Color-by-Lens selector, `throughput`/`static` topology support, partition & "Relay-Off Resilience" analyzer (connected components with/without relay, isolated peers, bridge edges, per-relay fan-in & `keepReason` breakdown), 5-minute rolling sparklines, JSON snapshot export, and pooled/instanced edge rendering.
 
-### Slice 3 — Transport Scaling, Physical Laptop+Pi LAN Support & Non-Breaking Demo Updates
-1. Direct unicast stream `/peercompute/direct/1.0.0` for `NetworkManager.sendToPeer()` with pubsub fallback + direct stream byte accounting (`WorkMeshService`, unicast direct) so `throughputSignal: 'bytes'` measures real P2P data.
-2. Goal-conditioned `ThroughputTopologyPolicy` profiles (`batch-throughput`, `low-latency`, `lan-first`, `capability-weighted`) leveraging `lan-host` ICE path, RTT, and capabilities.
-3. Multi-relay ordered failover (`bootstrapPeers` RTT/health selection) + upgrade `NativeCompanion.js` from `floodsub` to `gossipsub` (with LAN subnet multi-relay support for physical laptop + Raspberry Pi deployments).
-4. Non-breaking demo updates: consolidate `__rooms__` directory onto existing `NodeKernel` in CubeChat/Hyperborea/SneakyWoods, remove Hyperborea's conflicting relay-redial watchdog, add `faultTolerance: 'no-fatal'` to SneakyWoods, give `inference`/`earth` explicit `gameId`/`roomId`/`topologyId` and `relay-config.json` inheritance, and calm `WorkMesh` idle state heartbeat (`100ms` → `2000ms` when idle) + bound outbox.
+### Slice 3 — Transport Scaling, Physical Laptop+Pi LAN Support & Non-Breaking Demo Updates [DONE]
+1. Direct unicast stream `/peercompute/direct/1.0.0` for `NetworkManager.sendToPeer()` (pure-ESM 4-byte length-prefixed framing with automatic pubsub fallback & unsupported-protocol cooldown) + direct stream byte accounting (`NetworkManager.recordPeerBytes`, `WorkMeshService`) so `throughputSignal: 'bytes'` measures real P2P data.
+2. Goal-conditioned `ThroughputTopologyPolicy` profiles (`batch-throughput`, `low-latency`, `lan-first`, `capability-weighted`) leveraging `lan-host` ICE path, RTT, `hostGroupId`, and capabilities.
+3. Multi-relay ordered failover (`bootstrapRelayHealth` RTT/health/LAN/target-relay selection in `_buildCircuitAddr`) + upgraded `NativeCompanion.js` from `floodsub` to LAN-friendly `gossipsub` (`IPColocationFactorWeight: 0`, `fallbackToFloodsub: true`, opt-in `floodsub`) for physical laptop + Raspberry Pi deployments.
+4. Non-breaking demo updates: consolidated `__rooms__` directory onto existing `NodeKernel`/`NetworkManager` (`subscribeTopic`/`publishTopic` on `pc.<gameId>.__rooms__.announcements`) in CubeChat/Hyperborea/SneakyWoods, updated Hyperborea's `ensureRelayConnection` watchdog to respect `dropRelayBootstrapOnDirect`, added `faultTolerance: 'no-fatal'` to SneakyWoods, updated `demos/inference/src/runtime.js` manual `connect(relayAddress)` to inherit `relay-config.json` / `gossipsub` + `no-fatal` defaults, fixed EarthGrid's `telemetryApplication` in `WorldAgentHost.js` (keeping global model discovery scope intact), and calmed `WorkMesh` idle state heartbeat (`100ms` → `2000ms` when idle) + bounded `WorkMeshService` outbox (`maxOutbox: 128`).
 
 ## Validation Strategy (No Chaos Lab)
 - Node unit & loopback integration suites: `peercompute/tests/unit/networkManager.*.test.js`, `topologyController.test.js`, `throughputTopologyPolicy.test.js`, `workMesh*.test.js`, `networkTelemetry*.test.js`, `nativeCompanion.test.js`, plus new targeted tests for every Slice 1–3 behavior.

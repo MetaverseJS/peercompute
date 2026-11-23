@@ -47,7 +47,8 @@ export const WORK_MESH_DEFAULTS = Object.freeze({
   handBackGapSeconds: 2, // waiting-time gap at which stranded work goes back toward the origin
   maxDistance: 30, // seconds; beyond this an origin counts as unreachable
   taskTimeoutMs: 60000, // the origin offers a task again if no result has come back
-  forgetMs: 60000 // drop a job's leftovers once no neighbour has known a way to its origin for this long
+  forgetMs: 60000, // drop a job's leftovers once no neighbour has known a way to its origin for this long
+  idleStateIntervalMs: 2000 // calm state heartbeat interval when both sides are completely idle
 });
 
 export class WorkMesh {
@@ -100,7 +101,7 @@ export class WorkMesh {
 
   linkUp(peerId) {
     if (!this.links.has(peerId)) this.links.set(peerId, { queued: Number.POSITIVE_INFINITY, rate: 0, cost: this.config.defaultLinkCost, measured: false,
-      held: 0, distances: new Map(), work: null, results: null });
+      held: 0, distances: new Map(), work: null, results: null, lastStateSentAt: Number.NEGATIVE_INFINITY, lastStateIdle: false });
   }
 
   /** Anything in flight on a lost link may not have arrived: keep it here. */
@@ -171,9 +172,22 @@ export class WorkMesh {
     this._pump();
     const held = this.queue.length + this.running;
     const jobs = [...this.distances].map(([jobId, distance]) => [jobId, this.origins.get(jobId), distance]);
+    const isIdle = held === 0 && this.results.length === 0 && jobs.length === 0 && this.jobs.size === 0 && this.origins.size === 0;
+    const idleIntervalMs = Number.isFinite(this.config.idleStateIntervalMs) ? Math.max(0, this.config.idleStateIntervalMs) : 2000;
     for (const [peerId, link] of this.links) {
       this._serve(peerId, link);
-      this.send(peerId, { schema: WORK_MESH_SCHEMA, type: 'state', queued: held, rate: this.rate, held: this.results.length, jobs });
+      const peerIdle = link.queued === 0 && link.held === 0 && link.distances.size === 0 && !link.work && !link.results;
+      const shouldSendState = !isIdle
+        || !peerIdle
+        || !link.lastStateIdle
+        || !Number.isFinite(link.lastStateSentAt)
+        || idleIntervalMs === 0
+        || (now - link.lastStateSentAt >= idleIntervalMs);
+      if (shouldSendState) {
+        link.lastStateSentAt = now;
+        link.lastStateIdle = isIdle;
+        this.send(peerId, { schema: WORK_MESH_SCHEMA, type: 'state', queued: held, rate: this.rate, held: this.results.length, jobs });
+      }
     }
   }
 

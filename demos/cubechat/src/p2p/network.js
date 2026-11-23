@@ -186,6 +186,7 @@ export class P2PNetwork {
       roomId: this.roomId,
       maxConnections: 10,
       transportManager: NO_FATAL_TRANSPORT_MANAGER,
+      additionalPubsubTopics: ['pc.cubechat.__rooms__.announcements'],
       ...(this.pubsubType ? { pubsubType: this.pubsubType } : {}),
       ...(this.gossipsub ? { gossipsub: this.gossipsub } : {}),
       ...(this.webrtc ? { webrtc: this.webrtc } : {})

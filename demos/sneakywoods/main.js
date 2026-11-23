@@ -276,9 +276,13 @@ import {
 
         const ROOM_DIRECTORY_ID = '__rooms__';
         const ROOM_DIRECTORY_NAMESPACE = 'rooms';
+        const ROOM_DIRECTORY_TOPIC = `pc.sneakywoods.${ROOM_DIRECTORY_ID}.announcements`;
         const ROOM_ENTRY_PREFIX = 'room-';
         const ROOM_HEARTBEAT_MS = 10000;
         const ROOM_TTL_MS = 45000;
+        const NO_FATAL_TRANSPORT_MANAGER = { faultTolerance: 'no-fatal' };
+        let roomDirectoryUnsubscribe = null;
+        let roomDirectoryNetwork = null;
 
         const slugifyRoomName = (value) => {
             const slug = String(value || '')
@@ -346,12 +350,35 @@ import {
         };
 
         async function initRoomDirectory(bootstrapPeers, webrtc, pubsubType, gossipsub) {
+            const activeNetwork = node?.getNetworkManager?.() || null;
+            if (activeNetwork?.subscribeTopic) {
+                if (roomDirectoryUnsubscribe) {
+                    try { roomDirectoryUnsubscribe(); } catch (_) {}
+                    roomDirectoryUnsubscribe = null;
+                }
+                roomDirectoryNetwork = activeNetwork;
+                roomDirectoryUnsubscribe = activeNetwork.subscribeTopic(ROOM_DIRECTORY_TOPIC, (_from, payload) => {
+                    if (!payload || typeof payload !== 'object' || payload.type !== 'room-announce') return;
+                    const key = typeof payload.key === 'string' ? payload.key : null;
+                    if (!key || !key.startsWith(ROOM_ENTRY_PREFIX)) return;
+                    if (!payload.room) {
+                        roomDirectoryRooms.delete(key);
+                        return;
+                    }
+                    roomDirectoryRooms.set(key, payload.room);
+                });
+                if (!roomPruneTimer) {
+                    roomPruneTimer = setInterval(pruneRoomList, ROOM_HEARTBEAT_MS);
+                }
+                return;
+            }
             if (roomDirectoryNode) return;
             roomDirectoryNode = new NodeKernel({
                 bootstrapPeers,
                 enablePersistence: false,
                 gameId: 'sneakywoods',
                 roomId: ROOM_DIRECTORY_ID,
+                transportManager: NO_FATAL_TRANSPORT_MANAGER,
                 ...(pubsubType ? { pubsubType } : {}),
                 ...(gossipsub ? { gossipsub } : {}),
                 ...(webrtc ? { webrtc } : {})
@@ -367,12 +394,15 @@ import {
                 }
                 roomDirectoryRooms.set(key, value);
             });
-            roomPruneTimer = setInterval(pruneRoomList, ROOM_HEARTBEAT_MS);
+            if (!roomPruneTimer) {
+                roomPruneTimer = setInterval(pruneRoomList, ROOM_HEARTBEAT_MS);
+            }
         }
 
         const announceRoom = () => {
-            if (!roomDirectoryState || !currentRoom) return;
+            if (!currentRoom) return;
             const slug = slugifyRoomName(currentRoom.name);
+            const roomKey = `${ROOM_ENTRY_PREFIX}${slug}`;
             const payload = {
                 name: currentRoom.name,
                 slug,
@@ -380,7 +410,17 @@ import {
                 updatedAt: Date.now(),
                 roomId: currentRoom.visibility === 'public' ? currentRoom.roomId : null
             };
-            roomDirectoryState.writeScoped(ROOM_DIRECTORY_NAMESPACE, `${ROOM_ENTRY_PREFIX}${slug}`, payload);
+            if (roomDirectoryNetwork?.publishTopic) {
+                roomDirectoryRooms.set(roomKey, payload);
+                roomDirectoryNetwork.publishTopic(ROOM_DIRECTORY_TOPIC, {
+                    type: 'room-announce',
+                    key: roomKey,
+                    room: payload
+                }).catch(() => {});
+                return;
+            }
+            if (!roomDirectoryState) return;
+            roomDirectoryState.writeScoped(ROOM_DIRECTORY_NAMESPACE, roomKey, payload);
         };
 
         const startRoomAnnouncements = () => {
@@ -1462,6 +1502,8 @@ import {
                     gameId: 'sneakywoods',
                     roomId: roomId || 'global',
                     maxConnections: 10,
+                    transportManager: NO_FATAL_TRANSPORT_MANAGER,
+                    additionalPubsubTopics: [ROOM_DIRECTORY_TOPIC],
                     ...(pubsubType ? { pubsubType } : {}),
                     ...(gossipsubConfig ? { gossipsub: gossipsubConfig } : {}),
                     ...(webrtcConfig ? { webrtc: webrtcConfig } : {})
@@ -1520,6 +1562,11 @@ import {
 
         async function stopP2P() {
             stopRoomAnnouncements();
+            if (roomDirectoryUnsubscribe) {
+                try { roomDirectoryUnsubscribe(); } catch (_) {}
+                roomDirectoryUnsubscribe = null;
+            }
+            roomDirectoryNetwork = null;
             stopPositionBroadcast();
             stopBackgroundHeartbeat();
             if (peerCleanupInterval) {

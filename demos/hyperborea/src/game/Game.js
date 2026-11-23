@@ -549,6 +549,17 @@ export class Game {
         }
         this.relayConnected = hasRelayConnection;
         if (!force && hasRelayConnection) return;
+        // Respect NetworkManager's dropRelayBootstrapOnDirect policy: do not
+        // fight relay retirement when this peer already has direct mesh links
+        // and is not elected/retained as a relay keeper.
+        const dropRelayOnDirect = this.networkManager.config?.webrtc?.dropRelayBootstrapOnDirect === true;
+        if (dropRelayOnDirect && connectionList.length > 0) {
+            const retention = this.networkManager.getRelayRetentionDebug?.();
+            if (retention && !retention.shouldKeepRelay) {
+                this.networkManager._maybeUpdateBootstrapRelayConnections?.();
+                return;
+            }
+        }
         const now = Date.now();
         if (!force && (now - this.lastReconnectAttempt) < RECONNECT_MIN_GAP_MS) return;
         this.lastReconnectAttempt = now;
@@ -567,7 +578,9 @@ export class Game {
         if (!this.connectionListenersBound) {
             this.connectionListenersBound = true;
             this.libp2p.addEventListener('connection:close', () => {
-                this.ensureRelayConnection(true).catch(() => {});
+                // Avoid force-redialing relay on every peer/relay drop when
+                // NetworkManager manages relay drop/retention.
+                this.ensureRelayConnection(false).catch(() => {});
             });
         }
     }
@@ -599,6 +612,7 @@ export class Game {
                 gameId: 'hyperborea',
                 roomId: this.currentRoom?.roomId || 'global',
                 transportManager: NO_FATAL_TRANSPORT_MANAGER,
+                additionalPubsubTopics: ['pc.hyperborea.__rooms__.announcements'],
                 ...(this.pubsubType ? { pubsubType: this.pubsubType } : {}),
                 ...(this.gossipsub ? { gossipsub: this.gossipsub } : {}),
                 ...(this.webrtc ? { webrtc: this.webrtc } : {})
@@ -678,6 +692,7 @@ export class Game {
         if (!this.roomDirectory) {
             this.roomDirectory = new RoomDirectory({
                 gameId: 'hyperborea',
+                networkManager: this.networkManager || null,
                 bootstrapPeers: this.bootstrapPeers,
                 webrtc: this.webrtc,
                 pubsubType: this.pubsubType,
@@ -689,6 +704,8 @@ export class Game {
                 console.warn('Room directory init failed', err);
                 return;
             }
+        } else {
+            this.roomDirectory.attachNetworkManager?.(this.networkManager || null);
         }
         this.roomDirectory.announceRoom(this.currentRoom);
     }
