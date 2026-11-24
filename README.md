@@ -99,11 +99,11 @@ physics experiments. Each demo owns its setup, controls and implementation notes
 
 | | | |
 | --- | --- | --- |
-| [![Hyperborea](docs/assets/hyperborea.png)](demos/hyperborea/README.md) | [![CubeChat](docs/assets/cubechat.png)](demos/cubechat/README.md) | [![SneakyWoods](docs/assets/sneakywoods.png)](demos/sneakywoods/README.md) |
-| [![Daddy Go](docs/assets/daddygo.png)](demos/daddygo/README.md) | [![PlanetGen](docs/assets/planetgen.png)](demos/planetgen/README.md) | [![WXGlobe](docs/assets/wxglobe.png)](demos/wxglobe/README.md) |
-| [![EarthGrid](docs/assets/earth.png)](demos/earth/README.md) | [![RoadVector](docs/assets/motorcycle.png)](demos/motorcycle/README.md) | [![Universes](docs/assets/universes.png)](demos/universes/README.md) |
-| [![Multiscale Ladder](docs/assets/multiscale.svg)](demos/multiscale/README.md) | [![NetViz](docs/assets/netviz.png)](demos/netviz/README.md) | [![WebGPUPhys](docs/assets/webgpuphys.png)](demos/webgpuphys/README.md) |
-| [![Schrodinger](docs/assets/schrodinger.svg)](demos/schrodinger/README.md) | [![Eshkols in Space](docs/assets/eshkols-in-space.png)](demos/eshkols-in-space/README.md) | [![VibeSlopDB](docs/assets/vibeslopdb.png)](demos/vibeslopdb/README.md) |
+| [![Hyperborea](demos/gallery/static/assets/hyperborea.png)](demos/hyperborea/README.md) | [![CubeChat](demos/gallery/static/assets/cubechat.png)](demos/cubechat/README.md) | [![SneakyWoods](demos/gallery/static/assets/sneakywoods.png)](demos/sneakywoods/README.md) |
+| [![Daddy Go](demos/gallery/static/assets/daddygo.png)](demos/daddygo/README.md) | [![PlanetGen](demos/gallery/static/assets/planetgen.png)](demos/planetgen/README.md) | [![WXGlobe](demos/gallery/static/assets/wxglobe.png)](demos/wxglobe/README.md) |
+| [![EarthGrid](demos/gallery/static/assets/earth.png)](demos/earth/README.md) | [![RoadVector](demos/gallery/static/assets/motorcycle.png)](demos/motorcycle/README.md) | [![Universes](demos/gallery/static/assets/universes.png)](demos/universes/README.md) |
+| [![Multiscale Ladder](demos/gallery/static/assets/multiscale.svg)](demos/multiscale/README.md) | [![NetViz](demos/gallery/static/assets/netviz.png)](demos/netviz/README.md) | [![WebGPUPhys](demos/gallery/static/assets/webgpuphys.png)](demos/webgpuphys/README.md) |
+| [![Schrodinger](demos/gallery/static/assets/schrodinger.svg)](demos/schrodinger/README.md) | [![Eshkols in Space](demos/gallery/static/assets/eshkols-in-space.png)](demos/eshkols-in-space/README.md) | [![VibeSlopDB](demos/gallery/static/assets/vibeslopdb.png)](demos/vibeslopdb/README.md) |
 
 ## Development
 

@@ -1,3 +1,6 @@
+# Generated Pages build output (deployed via .github/workflows/pages.yml)
+/docs/
+
 # Dependencies
 node_modules/
 **/node_modules/

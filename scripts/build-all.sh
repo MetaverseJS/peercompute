@@ -4,6 +4,9 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
+# Ensure docs/ exists on fresh checkouts (e.g., CI builds where docs/ is untracked).
+mkdir -p "$repo_root/docs"
+
 # Preserve one previous active release, not an ever-growing chain of old bundles.
 release_snapshot="$(mktemp -d "${TMPDIR:-/tmp}/peercompute-pages-release.XXXXXXXX")"
 trap 'rm -rf -- "$release_snapshot"' EXIT

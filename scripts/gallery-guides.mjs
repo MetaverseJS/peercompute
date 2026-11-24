@@ -1,4 +1,4 @@
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Marked } from 'marked';
@@ -7,6 +7,7 @@ import { renderMermaidSVG } from 'beautiful-mermaid';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const pages = path.join(root, 'docs');
+const galleryStatic = path.join(root, 'demos/gallery/static');
 const catalog = JSON.parse(await readFile(path.join(root, 'demos/gallery/catalog.json'), 'utf8'));
 const guides = catalog.map(entry => {
   const slug = [entry.dir, entry.guide].filter(Boolean).join('-');
@@ -137,8 +138,23 @@ for (const entry of guides) {
     throw new Error(entry.readme + ': ' + error.message, { cause: error });
   }
 }
+const staticAssetsDir = path.join(galleryStatic, 'assets');
+for (const entry of await readdir(staticAssetsDir, { withFileTypes: true })) {
+  if (!entry.isFile()) continue;
+  outputs.set(
+    path.join(pages, 'assets', entry.name),
+    await readFile(path.join(staticAssetsDir, entry.name))
+  );
+}
 const indexPath = path.join(pages, 'index.html');
-const html = await readFile(indexPath, 'utf8');
+const templateIndexPath = path.join(galleryStatic, 'index.html');
+let html;
+try {
+  html = await readFile(indexPath, 'utf8');
+} catch (error) {
+  if (error?.code !== 'ENOENT') throw error;
+  html = await readFile(templateIndexPath, 'utf8');
+}
 const slot = /(<!-- gallery cards -->)\n[\s\S]*?(\n *<!-- end gallery cards -->)/;
 if (!slot.test(html)) throw new Error('Gallery card markers are missing');
 outputs.set(indexPath, html.replace(slot, (_, start, end) => start + '\n' + cards.join('\n') + end));

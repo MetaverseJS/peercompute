@@ -56,3 +56,20 @@ Worktree: `/home/cos/projects/peercompute-demo-consolidation` (branched from `ma
   - `demos/tests/world-agent-host.test.js` & `demos/tests/cubechat-native-ui.test.js`: 115/115 PASS.
   - `test:global-chat` (including `inference-global-integration.test.js`): 28/28 PASS; `test:root-host`: 45/45 PASS.
   - `demos/tests/runtime-smoke.mjs`: `hyperborea`, `sneakywoods`, `daddygo`, `planetgen`, `wxglobe`, `motorcycle`, `universes`, `fano-reactor` all PASS with zero errors; `cubechat` & `earth` passed all runtime & 65+ real-data geometry/cache assertions (only expected self-signed HTTPS ServiceWorker console message); `webgpuphys` rejected fallback SwiftShader adapter as documented in `plan/test/test.md`.
+- Local commit: `6698cd08` ("Consolidate demos into single-port unified Vite workspace (Phase 2)").
+
+### Phase 3 Completed — GitHub Actions Pages Deploy & Untrack `docs/` from Git
+- Copied all hand-authored gallery sources (`index.html`, `assets/{gallery.css,gallery.js,gallery-guide.css,gallery-guide-theme.js,gallery-diagram.js}`, plus all 20 original `.png`/`.svg`/`.gif` screenshots and diagrams) out of `docs/` into `demos/gallery/static/` so `docs/` is 100% pure generated output.
+- Updated `README.md` (15 screenshot/diagram links → `demos/gallery/static/assets/*`, preserving every original diagram and screenshot with 0 broken paths and 0 leftover `docs/assets/*` references), `demos/gallery/desktop.js` (imports → `./static/assets/*`), `demos/gallery/README.md`, `scripts/gallery-guides.mjs` (copies `demos/gallery/static/assets/*` into `docs/assets/` and bootstraps `docs/index.html` from `demos/gallery/static/index.html` when absent, preserving deterministic `--check`), and `scripts/build-all.sh` (`mkdir -p "$repo_root/docs"` before `capturePagesRelease`).
+- Added `/docs/` to `.gitignore` and created `.github/workflows/pages.yml` (Node 24 LTS, pinned checkout of public `ubernaut/exotui` `e89d2136a96dba9479ecbc984fb28e0927dfd8aa` into `.ci-exotui`, `npm ci`, `EXOTUI_DIR=${{ github.workspace }}/.ci-exotui npm run build:all`, 5-suite boundary/release/guide verification gate, `actions/configure-pages@v5`, `actions/upload-pages-artifact@v3`, `actions/deploy-pages@v4`).
+- Untracked generated `docs/` from Git (`git rm -r --cached -q docs`; verified `git ls-files docs | wc -l` = `0`, removing 3,333 generated files from Git tracking).
+- Verified `package-lock.json` workspace sync matches all 5 workspaces (`peercompute`, `packages/exopute`, `packages/geo-core`, `services/geodata`, `demos`) with 0 stale `demos/*` entries for CI `npm ci`.
+- Clean from-scratch CI build & validation (`rm -rf docs && npm run build:all` + tests):
+  - `git -C /home/cos/projects/exotui branch -r --contains e89d2136a96dba9479ecbc984fb28e0927dfd8aa`: confirmed present on `origin/main`.
+  - `.github/workflows/pages.yml` YAML validation: `YAML OK: ['build', 'deploy']`.
+  - `rm -rf docs && npm run build:all`: succeeded cleanly from empty `docs/` (`{"captured":0,"bytes":0,"source":"empty"}`, 19 demo guides + all 17 demos + ExoWebTUI gallery + `docs/release-manifest.json`).
+  - Fresh `docs/` footprint: **229 MB on disk / 221.6 MiB exact file bytes** across 2,632 active files (0 retained), vs `684.4 MB` baseline (**455 MB / 66.5% reduction**); 0 `ort-wasm` files inside any non-inference demo; single 90 MB shared WASM pool (`ort-wasm-simd-threaded.asyncify` ×2, `ort-wasm-simd-threaded.jsep`, `wllama`) in `docs/assets/runtime/`.
+  - `node --test peercompute/tests/unit/workspaceBoundary.test.js peercompute/tests/unit/coreEntrypoint.test.js demos/tests/demo-ports.test.js demos/tests/demo-release.test.js demos/tests/gallery-guides.test.mjs`: **57/57 PASS**.
+  - `CHROME_BIN=/usr/bin/google-chrome node --test demos/tests/gallery-browser.mjs`: **6/6 PASS** against fresh `docs/`.
+- Updated `vibe-plan` docs (`plan/todo/done/unified-demos-threejs-layout.md`, `plan/todo/priority.md`, `plan/arch/stack.md`, `plan/test/test.md`, `plan/log/log-summary.md`, and this branch log).
+- Confirmed `/home/cos/projects/peercompute` remained completely untouched at `396308a5` throughout all 3 phases.

@@ -13,8 +13,8 @@ import { browserAudioSource } from 'exowebtui-audio';
 import { copyBrowserText } from 'exowebtui-clipboard';
 import { createButterchurnPresenter } from './butterchurn-presenter.js';
 import { createGuideMedia } from './guide-media.js';
-import { syncGuideTheme } from '../../docs/assets/gallery-guide-theme.js';
-import { openDiagram } from '../../docs/assets/gallery-diagram.js';
+import { syncGuideTheme } from './static/assets/gallery-guide-theme.js';
+import { openDiagram } from './static/assets/gallery-diagram.js';
 import { createCatalogWindow } from './catalog-window.js';
 import { createFrameWindows, returnFromFramedAtlas } from './frame-windows.js';
 

@@ -1,0 +1,72 @@
+name: Deploy PeerCompute Demos to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PeerCompute
+        uses: actions/checkout@v4
+
+      - name: Checkout pinned ExoWebTUI revision
+        uses: actions/checkout@v4
+        with:
+          repository: ubernaut/exotui
+          ref: e89d2136a96dba9479ecbc984fb28e0927dfd8aa
+          path: .ci-exotui
+
+      - name: Setup Node.js 24 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build library, unified demos, and ExoWebTUI gallery
+        env:
+          EXOTUI_DIR: ${{ github.workspace }}/.ci-exotui
+        run: npm run build:all
+
+      - name: Verify boundary and Pages release contracts
+        run: >
+          node --test
+          peercompute/tests/unit/workspaceBoundary.test.js
+          peercompute/tests/unit/coreEntrypoint.test.js
+          demos/tests/demo-ports.test.js
+          demos/tests/demo-release.test.js
+          demos/tests/gallery-guides.test.mjs
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
