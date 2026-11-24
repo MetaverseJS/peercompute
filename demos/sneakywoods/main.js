@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { NodeKernel } from '@peercompute';
+import { NodeKernel } from '@peercompute/core';
 import { registerPeercomputeBotBridge } from '../shared/peercomputeBotBridge.js';
 import {
     bindPeercomputeBotSettingsControls,

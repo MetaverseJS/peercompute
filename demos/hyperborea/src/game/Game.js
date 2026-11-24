@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { NodeKernel } from '@peercompute';
+import { NodeKernel } from '@peercompute/core';
 import { VRButton } from '../graphics/vrButton.js';
 import { createNurbsCurve } from '../graphics/nurbs.js';
 import {

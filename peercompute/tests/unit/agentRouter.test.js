@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeAgentTask, packAgentContext, routeAgentTask } from '../../src/peercompute/agents/AgentRouter.js';
-import { createAgentModelAdapter } from '../../../demos/inference/src/agentModelAdapter.js';
+import { createAgentModelAdapter } from '../../src/peercompute/inference/library/agentModelAdapter.js';
 
 const local = { key: 'local', manifestCid: 'local-cid', sessionId: 'session-1', local: true, available: true,
   runtime: 'transformers.js', name: 'Local', task: 'text-generation', modalities: ['text'], outputModalities: ['text'] };

@@ -1,4 +1,4 @@
-import { GPUHubManager, probeCapabilities, readCapabilityOverrides } from '@peercompute';
+import { GPUHubManager, probeCapabilities, readCapabilityOverrides } from '@peercompute/core';
 import { initWebGPU } from '../../src/index.js';
 
 let cachedDevice = null;

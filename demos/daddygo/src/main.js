@@ -1,6 +1,6 @@
 import './style.css';
 import * as THREE from 'three';
-import { NodeKernel } from '@peercompute';
+import { NodeKernel } from '@peercompute/core';
 
         const videoElement = document.getElementById('video');
         const canvas2d = document.getElementById('canvas2d');

@@ -29,7 +29,7 @@ export const loadRelayConfig = async () => {
 };
 
 export const attachPeerComputeSession = async ({ onStatus } = {}) => {
-  const { NodeKernel } = await import('@peercompute');
+  const { NodeKernel } = await import('@peercompute/core');
   const relayConfig = await loadRelayConfig();
   const node = new NodeKernel({
     bootstrapPeers: Array.isArray(relayConfig.bootstrapPeers) ? relayConfig.bootstrapPeers : [],

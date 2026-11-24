@@ -1,5 +1,5 @@
 import './styles.css';
-import { readCapabilityOverrides, sizeWorkload } from '@peercompute';
+import { readCapabilityOverrides, sizeWorkload } from '@peercompute/core';
 import { ELEMENTS, getElementBySymbol, maxOrbitalLForN } from './data/elements.js';
 import { MATERIALS } from './data/materials.js';
 import { BOND_CLASS_STYLE, summarizeBondEvents } from './data/molecularStructures.js';

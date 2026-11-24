@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setImmediate as nextTurn } from 'node:timers/promises';
-import { createModelNetworkConnection } from '../../../demos/inference/src/modelNetworkConnection.js';
+import { createModelNetworkConnection } from '../../src/peercompute/inference/library/modelNetworkConnection.js';
 
 function fixture({ connected = false, existing = null, hooks = {} } = {}) {
   const store = {}, calls = [];

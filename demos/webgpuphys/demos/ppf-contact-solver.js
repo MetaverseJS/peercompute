@@ -1,4 +1,4 @@
-import { probeCapabilities, readCapabilityOverrides, recommendPixelRatio, sizeWorkload } from "@peercompute";
+import { probeCapabilities, readCapabilityOverrides, recommendPixelRatio, sizeWorkload } from "@peercompute/core";
 import { initWebGPU } from "../src/index.js";
 import { ParticleRenderer } from "./shared/particleRenderer.js";
 import { OrbitCamera } from "./shared/orbitControls.js";

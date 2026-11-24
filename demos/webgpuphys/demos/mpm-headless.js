@@ -1,5 +1,5 @@
 import { mpm } from "../src/index.js";
-import { ComputeManager } from "@peercompute";
+import { ComputeManager } from "@peercompute/core";
 import { getSharedDevice } from "./shared/peercomputeDevice.js";
 import COMPUTE_MODULE_URL from "virtual:peercompute-mpm-task-url";
 

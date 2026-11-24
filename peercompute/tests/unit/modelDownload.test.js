@@ -4,8 +4,8 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { sha1 } from '@noble/hashes/legacy.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { ArtifactStore } from '../../src/peercompute/artifacts/ArtifactStore.js';
-import { downloadModelFile } from '../../../demos/inference/src/modelDownload.js';
-import { importModelPackage, listStoredModelRecords } from '../../../demos/inference/src/modelLibrary.js';
+import { downloadModelFile } from '../../src/peercompute/inference/library/modelDownload.js';
+import { importModelPackage, listStoredModelRecords } from '../../src/peercompute/inference/library/modelLibrary.js';
 
 const bytes = Uint8Array.from({ length: 1024 * 1024 + 23 }, (_, index) => index % 251);
 const file = { path: 'model_q4.onnx_data', size: bytes.length, sha256: bytesToHex(sha256(bytes)) };

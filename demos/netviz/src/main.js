@@ -1,4 +1,4 @@
-import { NodeKernel, probeCapabilities, readCapabilityOverrides } from '@peercompute';
+import { NodeKernel, probeCapabilities, readCapabilityOverrides } from '@peercompute/core';
 import {
   loadRelayConfig,
   normalizeBootstrapPeers,

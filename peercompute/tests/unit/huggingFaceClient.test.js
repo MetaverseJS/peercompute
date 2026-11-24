@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHuggingFaceClient, huggingFaceFileUrl, parseHuggingFaceRepository } from '../../../demos/inference/src/huggingface/hubClient.js';
+import { createHuggingFaceClient, huggingFaceFileUrl, parseHuggingFaceRepository } from '../../src/peercompute/inference/hub/hubClient.js';
 
 const revision = 'a'.repeat(40);
 const response = (body, status = 200, headers = {}) => new Response(JSON.stringify(body), { status, headers });

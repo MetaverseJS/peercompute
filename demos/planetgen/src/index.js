@@ -13,7 +13,7 @@ import { decodeWindFieldFromAuxTexture } from './oceanWindField.js';
 import { createOceanCurrentState } from './holistic/oceanCurrents.js';
 import { BASE_RADIUS_UNITS, DEFAULT_DIAMETER_KM, DEFAULT_RADIUS_M, PERSON_HEIGHT_M, MAX_DELTA_TIME, PRESETS, DEFAULT_WEATHER_OCEAN_WIND_COUPLING, DEFAULT_WEATHER_OCEAN_WIND_UPDATE_HZ } from './constants.js';
 import { UIManager } from './UIManager.js';
-import { createRuntimeBudgetGovernor, readCapabilityOverrides, sizeWorkload } from '@peercompute';
+import { createRuntimeBudgetGovernor, readCapabilityOverrides, sizeWorkload } from '@peercompute/core';
 import { WindSystem } from './WindSystem.js';
 import { getHardwareCapabilities, getSharedDevice } from './peercomputeDevice.js';
 

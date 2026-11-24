@@ -5,9 +5,9 @@ import { meshModelFileUrl } from '../../src/peercompute/artifacts/meshModelCatal
 import { validateSf3dManifest, normalizeSf3dInput, sf3dRuntimeDefinition } from '../../src/peercompute/inference/sf3dRuntimeDefinition.js';
 import { validateMeshManifest } from '../../src/peercompute/inference/mesh/runtimeDefinition.js';
 import { createMeshTaskHandler } from '../../src/peercompute/inference/mesh/modelTask.js';
-import { evaluateModelCompatibility } from '../../../demos/inference/src/modelDeviceCompatibility.js';
-import { validateHubPackage } from '../../../demos/inference/src/modelHubPackage.js';
-import { trustedCatalogSource } from '../../../demos/inference/src/modelCatalogSources.js';
+import { evaluateModelCompatibility } from '../../src/peercompute/inference/library/modelDeviceCompatibility.js';
+import { validateHubPackage } from '../../src/peercompute/inference/library/modelHubPackage.js';
+import { trustedCatalogSource } from '../../src/peercompute/inference/library/modelCatalogSources.js';
 
 const entry = SF3D_MODEL_CATALOG['stable-fast-3d-webgpu'];
 const cid = 'bafkreia44oqmad5qe6j2dxe2gamyk5567hthj7lefwuwivfgm6u4o2oh3q';

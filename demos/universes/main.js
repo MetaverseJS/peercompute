@@ -8,7 +8,7 @@ import { Line2 } from 'three/addons/lines/Line2.js';
 import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import html2canvas from 'html2canvas';
-import { ComputeManager, probeCapabilities, readCapabilityOverrides, sizeWorkload } from '@peercompute';
+import { ComputeManager, probeCapabilities, readCapabilityOverrides, sizeWorkload } from '@peercompute/core';
 import { generateUniverseData, generateUniverseDensity, generateGalaxyData } from './compute/universeTasks.js';
 import { TinyPlanetControls } from '../planetgen/src/TinyPlanetControls.js';
 

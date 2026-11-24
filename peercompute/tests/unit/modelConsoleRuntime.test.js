@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setImmediate as nextTurn } from 'node:timers/promises';
-import { attachModelRuntimeController } from '../../../demos/inference/src/modelRuntimeController.js';
+import { attachModelRuntimeController } from '../../src/peercompute/inference/library/modelRuntimeController.js';
 import { GGUF_MODEL_CATALOG } from '../../src/peercompute/artifacts/ggufModelCatalog.js';
-import { evaluateModelCompatibility } from '../../../demos/inference/src/modelDeviceCompatibility.js';
-import { createModelPreferences, DEFAULT_MODEL_ID } from '../../../demos/inference/src/modelPreferences.js';
+import { evaluateModelCompatibility } from '../../src/peercompute/inference/library/modelDeviceCompatibility.js';
+import { createModelPreferences, DEFAULT_MODEL_ID } from '../../src/peercompute/inference/library/modelPreferences.js';
 import { SPEECH_MODEL_CATALOG } from '../../src/peercompute/inference/speech/speechCatalog.js';
 import { PEER_INFERENCE_LIMITS } from '../../src/peercompute/networkManager/inference/protocol.js';
 import { MODEL_POLICY } from '../../src/peercompute/inference/modelManifest.js';

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHuggingFaceClient } from '../../../demos/inference/src/huggingface/hubClient.js';
-import { findHuggingFaceConversions } from '../../../demos/inference/src/huggingface/conversionFinder.js';
+import { createHuggingFaceClient } from '../../src/peercompute/inference/hub/hubClient.js';
+import { findHuggingFaceConversions } from '../../src/peercompute/inference/hub/conversionFinder.js';
 
 const source = 'publisher/Original', sourceRevision = 'a'.repeat(40), revision = 'b'.repeat(40);
 const candidate = (id, options = {}) => ({ id, sha: revision, cardData: { base_model: source, base_model_relation: 'quantized', license: 'mit' },

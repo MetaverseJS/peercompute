@@ -3,7 +3,7 @@ import { StateManager } from '../../../src/peercompute/stateManager/StateManager
 import { ComputeManager } from '../../../src/peercompute/computeManager/ComputeManager.js';
 import { NetworkManager } from '../../../src/peercompute/networkManager/NetworkManager.js';
 import { DIFFUSION_MODEL_CATALOG } from '../../../src/peercompute/artifacts/diffusionModelCatalog.js';
-import { importModelPackage } from '../../../../demos/inference/src/modelLibrary.js';
+import { importModelPackage } from '../../../src/peercompute/inference/library/modelLibrary.js';
 import wasmUrl from 'peercompute-diffusion-ort/ort-wasm-simd-threaded.jsep.wasm?url';
 import factoryUrl from 'peercompute-diffusion-ort/ort-wasm-simd-threaded.jsep.mjs?url';
 let state, store, compute, service, network, peerService, hostedDescriptor;

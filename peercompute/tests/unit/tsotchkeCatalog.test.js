@@ -3,7 +3,7 @@ import test from 'node:test';
 import { TSOTCHKE_MODEL_CATALOG, TSOTCHKE_SOURCE_INVENTORY } from '../../src/peercompute/artifacts/tsotchkeModelCatalog.js';
 import { GGUF_MODEL_CATALOG, ggufModelFileUrl } from '../../src/peercompute/artifacts/ggufModelCatalog.js';
 import { validateGgufManifest } from '../../src/peercompute/inference/gguf/runtimeDefinition.js';
-import { evaluateModelCompatibility, findModelCatalogEntry } from '../../../demos/inference/src/modelDeviceCompatibility.js';
+import { evaluateModelCompatibility, findModelCatalogEntry } from '../../src/peercompute/inference/library/modelDeviceCompatibility.js';
 
 const cid = 'bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku';
 const manifestFor = (entry) => ({ schema: 'peercompute.artifact.manifest.v1', name: entry.name,

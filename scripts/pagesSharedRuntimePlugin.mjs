@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const defaultDocsRoot = fileURLToPath(new URL('../docs/', import.meta.url));
-const asyncify = /^ort-wasm-simd-threaded\.asyncify(?:-[A-Za-z0-9_-]+)?\.wasm$/;
+const sharedRuntimeWasm = /^(?:ort-wasm-simd-threaded\.(?:asyncify|jsep)|wllama)(?:-[A-Za-z0-9_-]+)?\.wasm$/;
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const inside = (root, file) => {
   const relative = path.relative(root, file);
@@ -27,16 +27,17 @@ async function publishImmutable(file, bytes) {
   } finally { await rm(temporary, { force: true }); }
 }
 
-/** Full Pages builds share the two native ORT asyncify versions. Other assets
- * stay demo-local, including previous-release URLs retained by the release
- * process. Individual builds and preview builds are unchanged by default.
- * Vite's URL hook runs before chunk hashes are finalized, including workers;
- * this plugin never rewrites an emitted JavaScript file after hashing. */
+/** Full Pages builds share the heavy native inference WASM runtimes (ORT
+ * asyncify, ORT JSEP, and wllama). Other assets stay demo-local, including
+ * previous-release URLs retained by the release process. Individual builds and
+ * preview builds are unchanged by default. Vite's URL hook runs before chunk
+ * hashes are finalized, including workers; this plugin never rewrites an
+ * emitted JavaScript file after hashing. */
 export function pagesSharedRuntimePlugin({
   enabled = process.env.PEERCOMPUTE_PAGES_SHARED_RUNTIME === '1',
   docsRoot = defaultDocsRoot,
   publicBase = '/peercompute/',
-  include = filename => asyncify.test(path.posix.basename(filename)),
+  include = filename => sharedRuntimeWasm.test(path.posix.basename(filename)),
 } = {}) {
   if (!enabled) return null;
   if (!/^\/(?:[A-Za-z0-9_-]+\/)*$/.test(publicBase) || typeof include !== 'function') {

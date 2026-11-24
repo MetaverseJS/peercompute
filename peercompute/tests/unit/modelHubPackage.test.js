@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { validateHubPackage, matchesHubPackage, verifyStoredHubPackage, reuseVerifiedHubFiles } from '../../../demos/inference/src/modelHubPackage.js';
+import { validateHubPackage, matchesHubPackage, verifyStoredHubPackage, reuseVerifiedHubFiles } from '../../src/peercompute/inference/library/modelHubPackage.js';
 
 function entry() {
   return { id: 'new-q4', name: 'New Qwen', repository: 'some-owner/New-Qwen', revision: 'b'.repeat(40),

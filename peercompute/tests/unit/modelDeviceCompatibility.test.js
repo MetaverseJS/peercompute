@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { findModelCatalogEntry, modelMemoryEstimate, normalizeModelMemoryBudgets, collectModelDeviceCapabilities, evaluateModelCompatibility } from '../../../demos/inference/src/modelDeviceCompatibility.js';
+import { findModelCatalogEntry, modelMemoryEstimate, normalizeModelMemoryBudgets, collectModelDeviceCapabilities, evaluateModelCompatibility } from '../../src/peercompute/inference/library/modelDeviceCompatibility.js';
 import { MODEL_CATALOG } from '../../src/peercompute/inference/modelCatalog.js';
 import { GGUF_MODEL_CATALOG } from '../../src/peercompute/artifacts/ggufModelCatalog.js';
 import { DIFFUSION_MODEL_CATALOG } from '../../src/peercompute/artifacts/diffusionModelCatalog.js';

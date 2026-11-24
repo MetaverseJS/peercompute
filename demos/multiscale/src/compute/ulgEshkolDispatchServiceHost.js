@@ -1,4 +1,4 @@
-import { UlgDispatchServiceHost } from '@peercompute';
+import { UlgDispatchServiceHost } from '@peercompute/core';
 
 let host = null;
 

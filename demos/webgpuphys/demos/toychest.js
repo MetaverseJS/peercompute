@@ -1,4 +1,4 @@
-import { probeCapabilities, readCapabilityOverrides, recommendPixelRatio, sizeWorkload } from "@peercompute";
+import { probeCapabilities, readCapabilityOverrides, recommendPixelRatio, sizeWorkload } from "@peercompute/core";
 import { World, Vec3 } from "../src/index.js";
 import { calculateBoxInertia, calculateCloudInertia, calculateSphereInertia } from "../src/math.js";
 import { ShapeRenderer } from "./shared/shapeRenderer.js";

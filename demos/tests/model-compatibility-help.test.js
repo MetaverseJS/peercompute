@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { detectModelHelpEnvironment, buildModelCompatibilityHelp } from '../../../demos/inference/src/ui/modelCompatibilityHelp.js';
+import { detectModelHelpEnvironment, buildModelCompatibilityHelp } from '../inference/src/ui/modelCompatibilityHelp.js';
 
 const source = (code, reason = 'Compatibility reason', status = 'unavailable') => ({ name: 'Example model', localAvailability: { status, code, reason } });
 const f16 = source('gpu_feature_unavailable', 'Required FP16 GPU math (shader-f16) is unavailable in this browser');

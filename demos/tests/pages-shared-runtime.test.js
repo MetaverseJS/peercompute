@@ -103,3 +103,18 @@ test('Pages activation is explicit and unsafe output destinations are rejected',
   assert.equal(hook('assets/entry.js', { type: 'asset' }), '/existing/assets/entry.js');
   assert.throws(() => hook(`../${wasmName}`, { type: 'asset' }), /Invalid shared/);
 });
+
+test('ORT JSEP and wllama WASM runtimes are also pooled into docs/assets/runtime', async t => {
+  const f = await fixture(t);
+  const plugin = pagesSharedRuntimePlugin({ enabled: true, docsRoot: f.docsRoot });
+  const hook = plugin.config({}).experimental.renderBuiltUrl;
+  assert.equal(
+    hook('assets/ort-wasm-simd-threaded.jsep-Ab12Cd34.wasm', { type: 'asset' }),
+    '/peercompute/assets/runtime/ort-wasm-simd-threaded.jsep-Ab12Cd34.wasm'
+  );
+  assert.equal(
+    hook('assets/wllama-Xy90Za12.wasm', { type: 'asset' }),
+    '/peercompute/assets/runtime/wllama-Xy90Za12.wasm'
+  );
+  assert.equal(hook('assets/keep-12345678.wasm', { type: 'asset' }), undefined);
+});

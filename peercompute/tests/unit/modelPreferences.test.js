@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createModelPreferences } from '../../../demos/inference/src/modelPreferences.js';
+import { createModelPreferences } from '../../src/peercompute/inference/library/modelPreferences.js';
 
 const manifestCid = 'bafkreihbwk7mfabwdamnmxyntvhqc6oc6xyzhz42tjkkx4uh4syxcwp5ou';
 const record = { version: 1, manifestCid, modelId: 'fixture-model' };

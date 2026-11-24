@@ -3,7 +3,7 @@ import {
   probeCapabilities,
   readCapabilityOverrides,
   requestManagedGpuDevice
-} from '@peercompute';
+} from '@peercompute/core';
 
 let cachedDevice = null;
 let gpuHub = null;

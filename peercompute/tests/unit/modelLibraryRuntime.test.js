@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'vite';
 import { chromium } from 'playwright';
 import { ArtifactStore } from '../../src/peercompute/artifacts/ArtifactStore.js';
-import { importModelPackage, modelStorageError, listStoredModelRecords } from '../../../demos/inference/src/modelLibrary.js';
+import { importModelPackage, modelStorageError, listStoredModelRecords } from '../../src/peercompute/inference/library/modelLibrary.js';
 import { sha1 } from '@noble/hashes/legacy.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';

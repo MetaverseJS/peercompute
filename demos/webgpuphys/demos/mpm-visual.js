@@ -1,4 +1,4 @@
-import { readCapabilityOverrides, recommendPixelRatio, sizeWorkload } from "@peercompute";
+import { readCapabilityOverrides, recommendPixelRatio, sizeWorkload } from "@peercompute/core";
 import { mpm } from "../src/index.js";
 import { getHardwareCapabilities, getSharedDevice } from "./shared/peercomputeDevice.js";
 import { OrbitCamera } from "./shared/orbitControls.js";

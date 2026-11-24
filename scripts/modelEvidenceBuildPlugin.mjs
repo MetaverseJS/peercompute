@@ -16,8 +16,8 @@ function digest(paths) {
 /** Fingerprints code/admission and locked runtime build inputs, not UI-only changes. */
 export function modelEvidenceBuildPlugin() {
   const runtime = digest([...files(join(root, 'peercompute/src/peercompute/inference')), join(root, 'package-lock.json'), join(root, 'scripts/prepare-gguf-runtime.mjs')]);
-  const inspector = digest(files(join(root, 'demos/inference/src/huggingface')));
-  const policy = digest([join(root, 'demos/inference/src/modelDeviceCompatibility.js'), join(root, 'demos/inference/src/modelHubPackage.js'), join(root, 'peercompute/src/peercompute/serviceOrchestration/ResidentModelAdmission.js'), join(root, 'peercompute/src/peercompute/serviceOrchestration/ResourceLeaseBroker.js')]);
+  const inspector = digest(files(join(root, 'peercompute/src/peercompute/inference/hub')));
+  const policy = digest([join(root, 'peercompute/src/peercompute/inference/library/modelDeviceCompatibility.js'), join(root, 'peercompute/src/peercompute/inference/library/modelHubPackage.js'), join(root, 'peercompute/src/peercompute/serviceOrchestration/ResidentModelAdmission.js'), join(root, 'peercompute/src/peercompute/serviceOrchestration/ResourceLeaseBroker.js')]);
   let clientBuild = 'uncommitted';
   try {
     clientBuild = execFileSync('git', ['rev-parse', '--short=12', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();

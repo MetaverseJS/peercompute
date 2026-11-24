@@ -15,7 +15,7 @@ import {
   createUlgHandoffSupervisorServiceExecutor as createPeerComputeUlgHandoffSupervisorServiceExecutor,
   normalizeUlgDemoHandoff as normalizePeerComputeUlgDemoHandoff,
   summarizeUlgArtifact as summarizePeerComputeUlgArtifact
-} from '@peercompute';
+} from '@peercompute/core';
 import {
   MULTISCALE_SCENARIO_PRESETS,
   MultiscaleModel,
@@ -36,7 +36,7 @@ const ULG_DISPATCH_SERVICE_IDS = Object.freeze({
 function resolveUlgDispatchWorkerModuleUrl(assetName, sourcePath) {
   const baseURI = globalThis.document?.baseURI || '';
   try {
-    if (baseURI && new URL(baseURI).pathname.includes('/multiscale/')) {
+    if (!import.meta.env?.DEV && baseURI && new URL(baseURI).pathname.includes('/multiscale/')) {
       return new URL(`./assets/${assetName}`, baseURI).href;
     }
   } catch (_) {

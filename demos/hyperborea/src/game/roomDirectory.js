@@ -153,7 +153,7 @@ export class RoomDirectory {
       return;
     }
     if (this.node) return;
-    const { NodeKernel } = await import('@peercompute');
+    const { NodeKernel } = await import('@peercompute/core');
     this.node = new NodeKernel({
       bootstrapPeers: this.bootstrapPeers,
       enablePersistence: false,

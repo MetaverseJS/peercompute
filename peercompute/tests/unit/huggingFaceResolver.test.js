@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { inspectHuggingFaceModel, normalizeHubFile, resolveOnnxVariants } from '../../../demos/inference/src/huggingface/packageResolver.js';
+import { inspectHuggingFaceModel, normalizeHubFile, resolveOnnxVariants } from '../../src/peercompute/inference/hub/packageResolver.js';
 
 const revision = 'a'.repeat(40), repository = 'org/small-model';
 const digest = '1'.repeat(64), git = '2'.repeat(40);

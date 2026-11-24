@@ -5,7 +5,7 @@ import { validateMeshManifest, normalizeMeshInput, validateMeshRuntimeAssets, me
   MESH_RESOURCE_POLICY } from '../../src/peercompute/inference/mesh/runtimeDefinition.js';
 import { createMeshTaskHandler } from '../../src/peercompute/inference/mesh/modelTask.js';
 import { ModelInferenceService } from '../../src/peercompute/inference/ModelInferenceService.js';
-import { evaluateModelCompatibility } from '../../../demos/inference/src/modelDeviceCompatibility.js';
+import { evaluateModelCompatibility } from '../../src/peercompute/inference/library/modelDeviceCompatibility.js';
 
 const cid = 'bafkreia44oqmad5qe6j2dxe2gamyk5567hthj7lefwuwivfgm6u4o2oh3q';
 const origin = 'https://peercompute.test/worker.js';

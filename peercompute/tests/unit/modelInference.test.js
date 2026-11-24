@@ -12,7 +12,7 @@ import { createModelTaskRuntime, validateImageInput } from '../../src/peercomput
 import { MODEL_POLICY, validateModelManifest } from '../../src/peercompute/inference/modelManifest.js';
 import { onnxMemoryProfile } from '../../src/peercompute/inference/modelCapabilities.js';
 import { MODEL_CATALOG, modelFileUrl } from '../../src/peercompute/inference/modelCatalog.js';
-import { loadInferenceRelayConfig } from '../../../demos/inference/src/relayConfig.js';
+import { loadInferenceRelayConfig } from '../../src/peercompute/inference/library/relayConfig.js';
 
 const origin = 'https://peercompute.test/';
 const assets = { mjs: `${origin}nested/assets/ort.mjs`, wasm: `${origin}nested/assets/ort.wasm` };

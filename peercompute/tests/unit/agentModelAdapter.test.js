@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createAgentModelAdapter } from '../../../demos/inference/src/agentModelAdapter.js';
+import { createAgentModelAdapter } from '../../src/peercompute/inference/library/agentModelAdapter.js';
 
 test('agents bind distinct resident sessions and mixed local execution does not need discovery', async () => {
   const calls = [], statuses = new Map(['a', 'b'].map((cid) => [cid, { status: 'ready', manifestCid: cid, sessionId: `session-${cid}` }]));

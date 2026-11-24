@@ -154,6 +154,7 @@ export {
 
 export * as serviceOrchestration from './serviceOrchestration/index.js';
 export * from './serviceOrchestration/index.js';
+export * from './capabilities/index.js';
 
 export {
   getBuiltinTaskModule,

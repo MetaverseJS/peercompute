@@ -5,7 +5,7 @@ import { sha256 } from 'multiformats/hashes/sha2';
 import { modelResourcePolicy, validateModelManifest } from '../../src/peercompute/inference/modelManifest.js';
 import { onnxMemoryProfile, onnxCacheBytes } from '../../src/peercompute/inference/modelCapabilities.js';
 import { ModelInferenceService } from '../../src/peercompute/inference/ModelInferenceService.js';
-import { modelMemoryEstimate, evaluateModelCompatibility } from '../../../demos/inference/src/modelDeviceCompatibility.js';
+import { modelMemoryEstimate, evaluateModelCompatibility } from '../../src/peercompute/inference/library/modelDeviceCompatibility.js';
 const GiB = 1024 ** 3;
 const config = { model_type: 'phi3', hidden_size: 1536, num_attention_heads: 12,
   num_key_value_heads: 2, num_hidden_layers: 28, vocab_size: 151936 };
