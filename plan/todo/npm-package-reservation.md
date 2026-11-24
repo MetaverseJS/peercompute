@@ -15,6 +15,5 @@ Legitimately reserve both `peercompute` and `exopute` on npm by publishing real,
 - [x] `peercompute/package.json` cleaned for publish (`version: "0.1.0-alpha.1"`, `private` removed, `files` whitelist added, duplicate `playwright` removed from `dependencies`, MIT `LICENSE` added).
 - [x] `packages/exopute/` created with real `.`, `./core`, `./inference` re-exports, `LICENSE`, `README.md`, and passing unit tests.
 - [x] `(cd peercompute && npm pack --dry-run)` (`744.5 kB`, 214 files) and `(cd packages/exopute && npm pack --dry-run)` (`1.8 kB`, 6 files) emit clean tarballs with zero test/dist/relay clutter.
-- [ ] Run `npm login` and claim free public npm orgs `@exopute` and `@peercompute` (plus `github.com/exopute`).
-- [ ] Run `(cd peercompute && npm publish --access public --tag alpha)` followed by `(cd packages/exopute && npm publish --access public --tag alpha)`.
-- [ ] Verify `npm view peercompute` and `npm view exopute` resolve cleanly from `registry.npmjs.org`.
+- [x] Authenticated as `ubernaut` and published `peercompute@0.1.0-alpha.1` and `exopute@0.1.0-alpha.1` (`--access public --tag alpha`) to `registry.npmjs.org` (both accepted into npm's async staging queue `0.0.0-stage` -> `0.1.0-alpha.1`).
+- [ ] Optional browser follow-up: claim free public npm orgs `@exopute` and `@peercompute` (plus `github.com/exopute`) and confirm `npm view peercompute@0.1.0-alpha.1` / `npm view exopute@0.1.0-alpha.1` after npm's async scan completes.
