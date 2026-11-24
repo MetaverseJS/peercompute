@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { NodeKernel } from '../../src/peercompute/nodeKernel/NodeKernel.js';
 
-test('NodeKernel enables NetViz debug telemetry + warm delta provider by default', () => {
+test('NodeKernel keeps NetViz debug telemetry + warm delta provider opt-in by default', () => {
   const node = new NodeKernel();
-  assert.equal(node.config.enableNetVizDebugTelemetry, true);
-  assert.equal(node.config.enableWarmDeltaProvider, true);
+  assert.equal(node.config.enableNetVizDebugTelemetry, false);
+  assert.equal(node.config.enableWarmDeltaProvider, false);
   assert.equal(node.config.netVizDebugTelemetryTaskPrefix, 'telemetry:');
   assert.equal(node.config.enableNetVizSessionDiscovery, false);
 });

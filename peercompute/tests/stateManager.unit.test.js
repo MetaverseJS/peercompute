@@ -97,12 +97,17 @@ test('clearNamespace removes entries and broadcasts delete intent', async () => 
   assert.equal(sm.readScoped('ns', 'a'), undefined);
 });
 
-test('observeNamespace follows the winning concurrent namespace map', async (t) => {
+test('observeNamespace merges concurrent namespace creation conflict-free via root Y.Maps', async (t) => {
   const left = await makeStateManager();
   const right = await makeStateManager();
   const namespace = 'concurrent-observer-test';
   const leftEvents = [];
   const rightEvents = [];
+  let leftDocUpdates = 0;
+  let rightDocUpdates = 0;
+  left.getYDoc().on('update', () => { leftDocUpdates += 1; });
+  right.getYDoc().on('update', () => { rightDocUpdates += 1; });
+
   const unsubscribeLeft = left.observeNamespace(namespace, (value, key) => {
     leftEvents.push({ key, value });
   });
@@ -116,8 +121,10 @@ test('observeNamespace follows the winning concurrent namespace map', async (t) 
     await right.destroy();
   });
 
-  const leftInitialMap = left.getYMap().get(namespace);
-  const rightInitialMap = right.getYMap().get(namespace);
+  // Observing a namespace must be 100% read-only (zero CRDT mutations).
+  assert.equal(leftDocUpdates, 0);
+  assert.equal(rightDocUpdates, 0);
+
   left.writeScoped(namespace, 'left-only', 'left-value');
   right.writeScoped(namespace, 'right-only', 'right-value');
   leftEvents.length = 0;
@@ -125,44 +132,29 @@ test('observeNamespace follows the winning concurrent namespace map', async (t) 
 
   exchangeYjsUpdates(left, right);
 
-  const leftLost = left.getYMap().get(namespace) !== leftInitialMap;
-  const rightLost = right.getYMap().get(namespace) !== rightInitialMap;
-  assert.notEqual(leftLost, rightLost, 'exactly one locally-created namespace map should lose');
+  // Both concurrent writes survive cleanly without LWW nested-Y.Map data loss!
+  assert.equal(left.readScoped(namespace, 'left-only'), 'left-value');
+  assert.equal(left.readScoped(namespace, 'right-only'), 'right-value');
+  assert.equal(right.readScoped(namespace, 'left-only'), 'left-value');
+  assert.equal(right.readScoped(namespace, 'right-only'), 'right-value');
+  assert.deepEqual(leftEvents, [{ key: 'right-only', value: 'right-value' }]);
+  assert.deepEqual(rightEvents, [{ key: 'left-only', value: 'left-value' }]);
 
-  const loser = leftLost ? left : right;
-  const winner = leftLost ? right : left;
-  const losingEvents = leftLost ? leftEvents : rightEvents;
-  const losingKey = leftLost ? 'left-only' : 'right-only';
-  const winningKey = leftLost ? 'right-only' : 'left-only';
-  const winningValue = leftLost ? 'right-value' : 'left-value';
-  const unsubscribeLoser = leftLost ? unsubscribeLeft : unsubscribeRight;
+  leftEvents.length = 0;
+  right.writeScoped(namespace, 'after-merge', 'visible-to-left');
+  syncYjsUpdate(right, left);
+  assert.deepEqual(leftEvents, [
+    { key: 'after-merge', value: 'visible-to-left' }
+  ]);
 
-  assert.deepEqual(losingEvents, [
-    { key: losingKey, value: undefined },
-    { key: winningKey, value: winningValue }
-  ], 'replacement notification should remove stale keys and replay the winning snapshot');
-
-  losingEvents.length = 0;
-  winner.writeScoped(namespace, 'after-merge', 'visible-to-loser');
-  syncYjsUpdate(winner, loser);
-  assert.deepEqual(losingEvents, [
-    { key: 'after-merge', value: 'visible-to-loser' }
-  ], 'the observer formerly attached to the losing map should follow later writes');
-
-  unsubscribeLoser();
-  losingEvents.length = 0;
-  winner.writeScoped(namespace, 'after-unsubscribe', 'must-not-notify');
-  syncYjsUpdate(winner, loser);
-  assert.deepEqual(losingEvents, [], 'unsubscribe should detach the rebound child observer');
-
-  const finalNamespaceMap = new Y.Map();
-  winner.getYMap().set(namespace, finalNamespaceMap);
-  finalNamespaceMap.set('replacement-after-unsubscribe', 'must-not-replay');
-  syncYjsUpdate(winner, loser);
-  assert.deepEqual(losingEvents, [], 'unsubscribe should detach the root replacement observer');
+  unsubscribeLeft();
+  leftEvents.length = 0;
+  right.writeScoped(namespace, 'after-unsubscribe', 'must-not-notify');
+  syncYjsUpdate(right, left);
+  assert.deepEqual(leftEvents, [], 'unsubscribe should detach the namespace observer');
 });
 
-test('observeNamespace replays a recreated namespace before following callback writes', async (t) => {
+test('observeNamespace propagates clearNamespace deletes and subsequent writes', async (t) => {
   const source = await makeStateManager();
   const replica = await makeStateManager();
   const namespace = 'recreated-observer-test';
@@ -182,18 +174,14 @@ test('observeNamespace replays a recreated namespace before following callback w
     await replica.destroy();
   });
 
-  source.delete(namespace);
+  source.clearNamespace(namespace);
   syncYjsUpdate(source, replica);
   assert.deepEqual(events, [
     { key: 'stale', value: undefined }
-  ], 'deleting the root namespace should remove keys from the observed snapshot');
+  ], 'clearing a namespace should notify deletion of existing keys');
 
   events.length = 0;
-  const recreatedMap = new Y.Map();
-  source.getYDoc().transact(() => {
-    source.getYMap().set(namespace, recreatedMap);
-    recreatedMap.set('recreated', 'new-value');
-  });
+  source.writeScoped(namespace, 'recreated', 'new-value');
   syncYjsUpdate(source, replica);
 
   assert.deepEqual(events, [

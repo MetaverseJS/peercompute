@@ -7,6 +7,8 @@
 
 import * as Y from 'yjs';
 
+const NAMESPACE_MAP_PREFIX = 'ns:';
+
 export class DataState {
   /**
    * @param {Object} options
@@ -30,12 +32,15 @@ export class DataState {
   }
 
   _getNamespaceMap(namespace) {
-    let nsMap = this.state.get(namespace);
-    if (!nsMap) {
-      nsMap = new Y.Map();
-      this.state.set(namespace, nsMap);
-    }
-    return nsMap;
+    // Use deterministic top-level Yjs root maps so concurrent peers creating
+    // the same namespace merge cleanly at the key level instead of clobbering
+    // nested Y.Map instances under `this.state`.
+    return this.ydoc.getMap(`${NAMESPACE_MAP_PREFIX}${namespace}`);
+  }
+
+  _getLegacyNamespaceMap(namespace) {
+    const legacy = this.state.get(namespace);
+    return legacy instanceof Y.Map ? legacy : null;
   }
 
   /**
@@ -67,8 +72,10 @@ export class DataState {
 
   readWarm(key, namespace) {
     if (namespace) {
-      const nsMap = this.state.get(namespace);
-      return nsMap ? nsMap.get(key) : undefined;
+      const nsMap = this._getNamespaceMap(namespace);
+      if (nsMap.has(key)) return nsMap.get(key);
+      const legacy = this._getLegacyNamespaceMap(namespace);
+      return legacy ? legacy.get(key) : undefined;
     }
     return this.state.get(key);
   }
@@ -85,12 +92,16 @@ export class DataState {
   }
 
   getWarmDeltas(namespace = this.deltaNamespace) {
-    const nsMap = this.state.get(namespace);
-    if (!nsMap) return {};
-    if (typeof nsMap.entries === 'function') {
-      return Object.fromEntries(nsMap.entries());
+    const merged = {};
+    const legacy = this._getLegacyNamespaceMap(namespace);
+    if (legacy && typeof legacy.entries === 'function') {
+      for (const [k, v] of legacy.entries()) merged[k] = v;
     }
-    return {};
+    const nsMap = this._getNamespaceMap(namespace);
+    if (nsMap && typeof nsMap.entries === 'function') {
+      for (const [k, v] of nsMap.entries()) merged[k] = v;
+    }
+    return merged;
   }
 
   setHotBuffer(key, buffer) {

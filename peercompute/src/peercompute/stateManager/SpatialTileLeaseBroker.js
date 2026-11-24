@@ -27,6 +27,7 @@ export const SPATIAL_TILE_STATES = Object.freeze({
 
 const DEFAULT_TTL_MS = 15_000;
 const DEFAULT_MAX_PAYLOAD_BYTES = 4 * 1024 * 1024;
+const DEFAULT_MAX_TOTAL_BOUNDARY_BYTES = 64 * 1024 * 1024;
 const DEFAULT_MAX_TILES = 65_536;
 
 function normalizePositiveInteger(value, fallback, min = 1, max = Number.MAX_SAFE_INTEGER) {
@@ -79,17 +80,22 @@ export class SpatialTileLeaseBroker {
     ledger = null,
     defaultTtlMs = DEFAULT_TTL_MS,
     maxPayloadBytes = DEFAULT_MAX_PAYLOAD_BYTES,
+    maxTotalBoundaryBytes = DEFAULT_MAX_TOTAL_BOUNDARY_BYTES,
     maxTiles = DEFAULT_MAX_TILES,
     now = () => Date.now(),
     audit = null,
     onEvent = null,
     onBoundaryAdmitted = null,
+    onDestroy = null,
     stateManager = null,
     auditNamespace = null,
     summaryNamespace = null
   } = {}) {
     if (!Number.isSafeInteger(maxPayloadBytes) || maxPayloadBytes < 1) {
       throw new RangeError('maxPayloadBytes must be a positive safe integer');
+    }
+    if (!Number.isSafeInteger(maxTotalBoundaryBytes) || maxTotalBoundaryBytes < maxPayloadBytes) {
+      throw new RangeError('maxTotalBoundaryBytes must be a safe integer >= maxPayloadBytes');
     }
     if (!Number.isSafeInteger(maxTiles) || maxTiles < 1) {
       throw new RangeError('maxTiles must be a positive safe integer');
@@ -101,11 +107,13 @@ export class SpatialTileLeaseBroker {
     this.name = String(name || 'default');
     this.defaultTtlMs = defaultTtlMs;
     this.maxPayloadBytes = maxPayloadBytes;
+    this.maxTotalBoundaryBytes = maxTotalBoundaryBytes;
     this.maxTiles = maxTiles;
     this.now = typeof now === 'function' ? now : () => Date.now();
     this.audit = typeof audit === 'function' ? audit : null;
     this.onEvent = typeof onEvent === 'function' ? onEvent : null;
     this.onBoundaryAdmitted = typeof onBoundaryAdmitted === 'function' ? onBoundaryAdmitted : null;
+    this.onDestroy = typeof onDestroy === 'function' ? onDestroy : null;
     this.stateManager = stateManager || null;
     this.auditNamespace = auditNamespace ? String(auditNamespace) : null;
     this.summaryNamespace = summaryNamespace ? String(summaryNamespace) : null;
@@ -118,6 +126,7 @@ export class SpatialTileLeaseBroker {
     });
 
     this.tiles = new Map(); // tileId -> internal tile record
+    this.totalBoundaryBytes = 0;
     this.listeners = new Set();
     this._kernelUnsubscribes = new Set();
     this.destroyed = false;
@@ -213,6 +222,34 @@ export class SpatialTileLeaseBroker {
       return tokenOrRef;
     }
     return null;
+  }
+
+  _tokensMatch(expected, candidate) {
+    if (!expected || !candidate) return false;
+    return expected.ledgerId === candidate.ledgerId
+      && expected.key === candidate.key
+      && expected.epoch === candidate.epoch
+      && expected.reservationId === candidate.reservationId
+      && expected.owner === candidate.owner;
+  }
+
+  _clearBoundary(record) {
+    if (!record?.lastBoundary) return;
+    this.totalBoundaryBytes = Math.max(0, this.totalBoundaryBytes - (record.lastBoundary.byteLength || 0));
+    record.lastBoundary = null;
+  }
+
+  _tileSnapshot(record) {
+    if (!record) return null;
+    const fence = this.ledger.fence(record.tileId);
+    return Object.freeze({
+      tileId: record.tileId,
+      epoch: fence.epoch,
+      state: record.activeLease ? SPATIAL_TILE_STATES.LEASED : record.lastState,
+      lease: this._leaseSnapshot(record),
+      lastOwnerPeerId: record.lastOwnerPeerId,
+      lastBoundary: this._summarySnapshot(record.lastBoundary, { includePayload: false })
+    });
   }
 
   _ensureTileRecord(tileId) {
@@ -357,7 +394,7 @@ export class SpatialTileLeaseBroker {
     if (active.epoch !== token.epoch) {
       return this._reject(null, 'stale-epoch', { tileId: token.key, activeEpoch: active.epoch });
     }
-    if (active.token !== token || active.token.reservationId !== token.reservationId) {
+    if (!this._tokensMatch(active.token, token)) {
       return this._reject(null, 'invalid-token', { tileId: token.key, activeEpoch: active.epoch });
     }
 
@@ -399,8 +436,14 @@ export class SpatialTileLeaseBroker {
         activeEpoch: fence.epoch
       });
     }
-    if (active.epoch !== token.epoch || active.token !== token) {
-      return this._reject(null, active.epoch !== token.epoch ? 'stale-epoch' : 'invalid-token', {
+    if (active.epoch !== token.epoch) {
+      return this._reject(null, 'stale-epoch', {
+        tileId: token.key,
+        activeEpoch: active.epoch
+      });
+    }
+    if (!this._tokensMatch(active.token, token)) {
+      return this._reject(null, 'invalid-token', {
         tileId: token.key,
         activeEpoch: active.epoch
       });
@@ -410,6 +453,7 @@ export class SpatialTileLeaseBroker {
     const fencedEpoch = active.epoch;
     record.activeLease = null;
     record.lastState = SPATIAL_TILE_STATES.RETIRED;
+    this._clearBoundary(record);
     const retired = this.ledger.retire(record.tileId, { expectedEpoch: fencedEpoch });
     const nextEpoch = retired.ok ? retired.epoch : this.ledger.fence(record.tileId).epoch;
     this.counters.released += 1;
@@ -438,27 +482,30 @@ export class SpatialTileLeaseBroker {
     if (this.destroyed) return [];
     const timestamp = Number.isFinite(Number(now)) ? Number(now) : this.now();
     const expired = [];
-    for (const record of this.tiles.values()) {
+    for (const record of [...this.tiles.values()]) {
       const active = record.activeLease;
       if (!active || active.expiresAt > timestamp) continue;
       const previousPeerId = active.peerId;
       const fencedEpoch = active.epoch;
       record.activeLease = null;
       record.lastState = SPATIAL_TILE_STATES.EXPIRED;
+      this._clearBoundary(record);
       const retired = this.ledger.retire(record.tileId, { expectedEpoch: fencedEpoch });
       const nextEpoch = retired.ok ? retired.epoch : this.ledger.fence(record.tileId).epoch;
       this.counters.expired += 1;
       this.counters.reassignmentsNeeded += 1;
 
-      const entry = Object.freeze({
+      expired.push(Object.freeze({
         tileId: record.tileId,
         previousPeerId,
         fencedEpoch,
         nextEpoch,
         expiredAt: timestamp,
         reason: 'ttl-expired'
-      });
-      expired.push(entry);
+      }));
+    }
+    // Emit after all state mutations complete so reentrant listeners see coherent state.
+    for (const entry of expired) {
       this._emit('tile-expired', entry);
       this._emit('tile-reassignment-needed', entry);
     }
@@ -479,28 +526,32 @@ export class SpatialTileLeaseBroker {
       return Object.freeze({ peerId: '', evictedCount: 0, tiles: [] });
     }
     const timestamp = Number.isFinite(Number(now)) ? Number(now) : this.now();
+    this.expireLeases(timestamp);
     const evictedTiles = [];
 
-    for (const record of this.tiles.values()) {
+    for (const record of [...this.tiles.values()]) {
       const active = record.activeLease;
       if (!active || active.peerId !== targetPeerId) continue;
       const fencedEpoch = active.epoch;
       record.activeLease = null;
       record.lastState = SPATIAL_TILE_STATES.EVICTED;
+      this._clearBoundary(record);
       const retired = this.ledger.retire(record.tileId, { expectedEpoch: fencedEpoch });
       const nextEpoch = retired.ok ? retired.epoch : this.ledger.fence(record.tileId).epoch;
       this.counters.evicted += 1;
       this.counters.reassignmentsNeeded += 1;
 
-      const detail = Object.freeze({
+      evictedTiles.push(Object.freeze({
         tileId: record.tileId,
         previousPeerId: targetPeerId,
         fencedEpoch,
         nextEpoch,
         evictedAt: timestamp,
         reason: String(reason || 'peer-disconnected')
-      });
-      evictedTiles.push(detail);
+      }));
+    }
+
+    for (const detail of evictedTiles) {
       this._emit('tile-reassignment-needed', detail);
     }
 
@@ -591,7 +642,7 @@ export class SpatialTileLeaseBroker {
 
     if (token !== undefined) {
       const resolvedToken = this._resolveTokenOrRef(token);
-      if (!resolvedToken || resolvedToken !== active.token || resolvedToken.reservationId !== active.token.reservationId) {
+      if (!resolvedToken || !this._tokensMatch(active.token, resolvedToken)) {
         return this._reject('boundariesRejected', 'invalid-token', {
           tileId: id,
           activeEpoch: active.epoch
@@ -620,6 +671,17 @@ export class SpatialTileLeaseBroker {
         maxPayloadBytes: this.maxPayloadBytes
       });
     }
+    const previousBoundaryBytes = record.lastBoundary?.byteLength || 0;
+    const projectedTotalBoundaryBytes = this.totalBoundaryBytes - previousBoundaryBytes + copiedBytes.byteLength;
+    if (projectedTotalBoundaryBytes > this.maxTotalBoundaryBytes) {
+      return this._reject('boundariesRejected', 'boundary-budget-exceeded', {
+        tileId: id,
+        activeEpoch: active.epoch,
+        byteLength: copiedBytes.byteLength,
+        totalBoundaryBytes: this.totalBoundaryBytes,
+        maxTotalBoundaryBytes: this.maxTotalBoundaryBytes
+      });
+    }
 
     record.boundarySequence += 1;
     const digest = bytesToHex(sha256(copiedBytes));
@@ -636,6 +698,7 @@ export class SpatialTileLeaseBroker {
       payloadBytes: copiedBytes
     };
     record.lastBoundary = stored;
+    this.totalBoundaryBytes = projectedTotalBoundaryBytes;
     this.counters.boundariesAdmitted += 1;
 
     const summaryMeta = this._summarySnapshot(stored, { includePayload: false });
@@ -687,16 +750,8 @@ export class SpatialTileLeaseBroker {
     if (!id) return null;
     this.expireLeases(now);
     const record = this.tiles.get(id);
-    const fence = this.ledger.fence(id);
     if (!record) return null;
-    return Object.freeze({
-      tileId: id,
-      epoch: fence.epoch,
-      state: record.activeLease ? SPATIAL_TILE_STATES.LEASED : record.lastState,
-      lease: this._leaseSnapshot(record),
-      lastOwnerPeerId: record.lastOwnerPeerId,
-      lastBoundary: this._summarySnapshot(record.lastBoundary, { includePayload: false })
-    });
+    return this._tileSnapshot(record);
   }
 
   listTiles({ peerId = null, activeOnly = false, now = this.now() } = {}) {
@@ -706,7 +761,7 @@ export class SpatialTileLeaseBroker {
     for (const record of this.tiles.values()) {
       if (activeOnly && !record.activeLease) continue;
       if (filterPeer && record.activeLease?.peerId !== filterPeer) continue;
-      out.push(this.getTile(record.tileId, { now }));
+      out.push(this._tileSnapshot(record));
     }
     return out;
   }
@@ -757,6 +812,8 @@ export class SpatialTileLeaseBroker {
       trackedTileCount: this.tiles.size,
       activeTileCount,
       boundaryCount,
+      totalBoundaryBytes: this.totalBoundaryBytes,
+      maxTotalBoundaryBytes: this.maxTotalBoundaryBytes,
       maxTiles: this.maxTiles,
       maxPayloadBytes: this.maxPayloadBytes,
       defaultTtlMs: this.defaultTtlMs,
@@ -776,12 +833,22 @@ export class SpatialTileLeaseBroker {
   destroy() {
     if (this.destroyed) return false;
     this.destroyed = true;
+    const onDestroy = this.onDestroy;
+    this.onDestroy = null;
+    try { onDestroy?.(this); } catch {}
     for (const unsub of [...this._kernelUnsubscribes]) {
       try { unsub(); } catch {}
     }
     this._kernelUnsubscribes.clear();
     for (const record of this.tiles.values()) {
+      const active = record.activeLease;
       record.activeLease = null;
+      this._clearBoundary(record);
+      if (!this._ownsLedger && active && !this.ledger.destroyed) {
+        try {
+          this.ledger.retire(record.tileId, { expectedEpoch: active.epoch });
+        } catch {}
+      }
     }
     if (this._ownsLedger) {
       this.ledger.destroy();

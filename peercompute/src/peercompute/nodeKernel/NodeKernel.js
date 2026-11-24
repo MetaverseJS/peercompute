@@ -41,12 +41,14 @@ export const NODE_KERNEL_REMOTE_GPU_RESIDENT_STAGE_RESULT_ADMISSION_SCHEMA = 'pe
 export const NODE_KERNEL_REMOTE_GPU_RESIDENT_STAGE_HOT_BUFFER_REFRESH_SCHEMA = 'peercompute.nodekernel.remote-gpu-resident-stage-hot-buffer-refresh.v0';
 
 function normalizeInteger(value, fallback, min = 0, max = Number.MAX_SAFE_INTEGER) {
+  if (value === null || value === undefined || value === '') return fallback;
   const number = Math.floor(Number(value));
   if (!Number.isFinite(number)) return fallback;
   return Math.min(max, Math.max(min, number));
 }
 
 function normalizeFiniteNumber(value, fallback = null, min = 0, max = Number.MAX_SAFE_INTEGER) {
+  if (value === null || value === undefined || value === '') return fallback;
   const number = Number(value);
   if (!Number.isFinite(number)) return fallback;
   return Math.min(max, Math.max(min, number));
@@ -449,7 +451,8 @@ export class NodeKernel {
     const topicPrefix = config.topicPrefix || config.topicBase || 'pc';
     const useScopedTopics = config.useScopedTopics !== false;
     const scopedStateTopic = `${topicPrefix}.${topologyId}.${roomId}.state`;
-    const enableNetVizDebugTelemetry = config.enableNetVizDebugTelemetry !== false;
+    // Opt-in by default so room Yjs CRDT + IndexedDB are not flooded with 2s debug telemetry.
+    const enableNetVizDebugTelemetry = config.enableNetVizDebugTelemetry === true;
     const enableWarmDeltaProvider =
       typeof config.enableWarmDeltaProvider === 'boolean'
         ? config.enableWarmDeltaProvider
@@ -593,6 +596,12 @@ export class NodeKernel {
 
     this.isInitialized = false;
     this.isStarted = false;
+    this.initPromise = null;
+    this.startPromise = null;
+    this.localStatus = 'idle';
+    this.createdAt = null;
+    this.startedAt = null;
+    this.localConnectedPeers = new Set();
     this.nodeId = null;
     this.debugOutputEnabled = this.config.debugOutput === true;
     this.kernelClockTimer = null;
@@ -623,161 +632,193 @@ export class NodeKernel {
       console.warn('[NodeKernel] Already initialized');
       return;
     }
+    if (this.initPromise) {
+      return this.initPromise;
+    }
 
-    try {
-      console.log('[NodeKernel] Initializing...');
-      
-      // Generate unique node ID
-      this.nodeId = generateId();
-      this.netVizDebugSessionId = `session-${this.nodeId}`;
-      this._registerBrowserKernelHandle();
-      console.log(`[NodeKernel] Node ID: ${this.nodeId}`);
-      
-      // 1. Initialize NetworkManager first
-      this.networkManager = new NetworkManager({
-        topology: this.config.topology,
-        topologyId: this.config.topologyId,
-        topicPrefix: this.config.topicPrefix,
-        useScopedTopics: this.config.useScopedTopics,
-        enforceTopologyScope: this.config.enforceTopologyScope,
-        enableTopologyController: this.config.enableTopologyController,
-        topologyTickMs: this.config.topologyTickMs,
-        topologyMetric: this.config.topologyMetric,
-        targetConnections: this.config.targetConnections,
-        connectionRadius: this.config.connectionRadius,
-        isolationMinConnections: this.config.isolationMinConnections,
-        longRangeCount: this.config.longRangeCount,
-        longRangeRefreshMs: this.config.longRangeRefreshMs,
-        enableSharding: this.config.enableSharding,
-        shardSize: this.config.shardSize,
-        shardRadius: this.config.shardRadius,
-        bootstrapPeers: this.config.bootstrapPeers,
-        privateKey: this.config.privateKey,
-        privateKeyProvider: this.config.privateKeyProvider,
-        gameId: this.config.gameId,
-        roomId: this.config.roomId,
-        pubsubTopic: this.config.stateTopic,
-        additionalPubsubTopics: this.config.additionalPubsubTopics,
-        enableNetworkTelemetry: this.config.enableNetworkTelemetry,
-        networkTelemetryPublish: this.config.networkTelemetryPublish,
-        allowDiscoveryDialWhenIsolated: this.config.allowDiscoveryDialWhenIsolated,
-        allowLocalDial: this.config.allowLocalDial,
-        webrtc: this.config.webrtc,
-        network: this.config.network,
-        iceServers: this.config.iceServers,
-        iceTransportPolicy: this.config.iceTransportPolicy,
-        rtcConfiguration: this.config.rtcConfiguration,
-        preferDirect: this.config.preferDirect,
-        dropRelayOnDirect: this.config.dropRelayOnDirect,
-        dropRelayBootstrapOnDirect: this.config.dropRelayBootstrapOnDirect,
-        presenceIntervalMs: this.config.presenceIntervalMs,
-        maxDialPeers: this.config.maxDialPeers,
-        bootstrapDialThrottleMs: this.config.bootstrapDialThrottleMs,
-        maxConnections: this.config.maxConnections,
-        maxIncomingPendingConnections: this.config.maxIncomingPendingConnections,
-        maxParallelDials: this.config.maxParallelDials,
-        maxDialQueueLength: this.config.maxDialQueueLength,
-        maxPeerAddrsToDial: this.config.maxPeerAddrsToDial,
-        dialTimeoutMs: this.config.dialTimeoutMs ?? this.config.dialTimeout,
-        transportManager: this.config.transportManager,
-        pubsubType: this.config.pubsubType,
-        gossipsub: this.config.gossipsub,
-        debugOutput: this.config.debugOutput,
-        schedulerClock: this.config.clockPolicy.mode === 'kernel' ? 'external' : 'internal',
-        schedulerProfile: this.config.clockPolicy.networkProfile,
-        presenceCapabilitiesProvider: this._buildPresenceCapabilities.bind(this),
-        onPublishError: this.config.onPublishError,
-        onPublishSuccess: this.config.onPublishSuccess,
-        onConnectionFailure: this.config.onConnectionFailure,
-        onMessage: this._handleNetworkMessage.bind(this),
-        onPeerConnect: this._handlePeerConnect.bind(this),
-        onPeerDisconnect: this._handlePeerDisconnect.bind(this)
-      });
-      
-      await this.networkManager.initialize();
-      console.log('[NodeKernel] NetworkManager initialized');
-      
-      // 2. Initialize StateManager with NetworkManager
-      const stateDocName = this.config.docName || `peercompute-${this.config.gameId}-${this.config.roomId}`;
-      if (this.config.enableGPUHub) {
-        this.gpuHub = new GPUHubManager({
-          frameBudgetMs: this.config.gpuHubFrameBudgetMs
-        });
-      }
-
-      this.stateManager = new StateManager(this.networkManager, {
-        docName: stateDocName,
-        topic: this.config.stateTopic,
-        enablePersistence: this.config.enablePersistence,
-        disableNetworkProvider: this.config.disableStateNetworkProvider,
-        disableBroadcast: this.config.disableStateBroadcast,
-        broadcastNamespaces: this.config.stateBroadcastNamespaces,
-        deltaNamespace: this.config.deltaNamespace,
-        hotStore: this.gpuHub?.getHotStore()
-      });
-      
-      await this.stateManager.initialize({
-        nodeId: this.nodeId,
-        topology: this.config.topology,
-        createdAt: Date.now()
-      });
-      console.log('[NodeKernel] StateManager initialized');
-
-      // Optional large-file storage is owned by StateManager; the network borrows it.
-      if (this.config.artifacts?.enabled === true) {
-        const store = this.stateManager.createArtifactStore(this.config.artifacts.store || {});
-        await store.open();
-        if (this.config.artifacts.network !== false) {
-          await this.networkManager.createArtifactTransport(store, this.config.artifacts.network || {});
-        }
-      }
-
-      if (this.config.enableWarmDeltaProvider) {
-        this.networkManager.registerWarmDeltaProvider(() => this.stateManager.getWarmDeltas());
-      }
-      
-      // 3. Initialize ComputeManager
-      this.computeManager = new ComputeManager({
-        enableWebGPU: this.config.enableWebGPU,
-        maxWorkers: this.config.maxWorkers,
-        minWorkers: this.config.minWorkers,
-        targetWorkers: this.config.targetWorkers,
-        initialWorkers: this.config.initialWorkers,
-        autoScaleWorkers: this.config.autoScaleWorkers,
-        resourceProfile: this.config.resourceProfile,
-        workerBootstrapURL: this.config.workerBootstrapURL || this.config.computeWorkerBootstrapURL,
-        enableWorkers: this.config.enableWorkers !== false,
-        requireWorkers: this.config.requireWorkers === true,
-        workerBootstrapTimeoutMs: this.config.workerBootstrapTimeoutMs,
-        gpuHub: this.gpuHub || null
-      });
-      await this.computeManager.initialize();
-      this.networkTelemetryRelease = this.networkManager.setNetworkTelemetryProvider(() => ({
-        application: this.config.gameId, role: this.config.networkTelemetryRole || 'world',
-        compute: this.computeManager?.getStats?.() ?? null,
-        capabilities: this._buildPresenceCapabilities()
-      }));
-      this.computeManager.setCommitDeltaHandler((delta) => {
-        this.stateManager?.commitDelta?.(delta);
-      });
-      console.log('[NodeKernel] ComputeManager initialized');
-
-      if (this.config.modelInference?.enabled === true) {
-        this.modelInference = await this.createModelInferenceService(this.config.modelInference);
-      }
-      
-      this.isInitialized = true;
-      console.log('[NodeKernel] Initialization complete');
-      
-    } catch (error) {
+    this.initPromise = (async () => {
       try {
-        await this._cleanupManagers();
-      } catch (cleanupError) {
-        if (error && typeof error === 'object') error.cleanupError = cleanupError;
-        console.error('[NodeKernel] Initialization cleanup failed:', cleanupError);
+        console.log('[NodeKernel] Initializing...');
+        
+        // Generate unique node ID
+        this.nodeId = generateId();
+        this.createdAt = Date.now();
+        this.localStatus = 'initializing';
+        this.netVizDebugSessionId = `session-${this.nodeId}`;
+        this._registerBrowserKernelHandle();
+        console.log(`[NodeKernel] Node ID: ${this.nodeId}`);
+        
+        // 1. Initialize NetworkManager first
+        this.networkManager = new NetworkManager({
+          topology: this.config.topology,
+          topologyId: this.config.topologyId,
+          topicPrefix: this.config.topicPrefix,
+          useScopedTopics: this.config.useScopedTopics,
+          enforceTopologyScope: this.config.enforceTopologyScope,
+          enableTopologyController: this.config.enableTopologyController,
+          topologyTickMs: this.config.topologyTickMs,
+          topologyMetric: this.config.topologyMetric,
+          targetConnections: this.config.targetConnections,
+          connectionRadius: this.config.connectionRadius,
+          isolationMinConnections: this.config.isolationMinConnections,
+          longRangeCount: this.config.longRangeCount,
+          longRangeRefreshMs: this.config.longRangeRefreshMs,
+          enableSharding: this.config.enableSharding,
+          shardSize: this.config.shardSize,
+          shardRadius: this.config.shardRadius,
+          bootstrapPeers: this.config.bootstrapPeers,
+          privateKey: this.config.privateKey,
+          privateKeyProvider: this.config.privateKeyProvider,
+          gameId: this.config.gameId,
+          roomId: this.config.roomId,
+          pubsubTopic: this.config.stateTopic,
+          additionalPubsubTopics: this.config.additionalPubsubTopics,
+          enableNetworkTelemetry: this.config.enableNetworkTelemetry,
+          networkTelemetryPublish: this.config.networkTelemetryPublish,
+          allowDiscoveryDialWhenIsolated: this.config.allowDiscoveryDialWhenIsolated,
+          allowLocalDial: this.config.allowLocalDial,
+          webrtc: this.config.webrtc,
+          network: this.config.network,
+          iceServers: this.config.iceServers,
+          iceTransportPolicy: this.config.iceTransportPolicy,
+          rtcConfiguration: this.config.rtcConfiguration,
+          preferDirect: this.config.preferDirect,
+          dropRelayOnDirect: this.config.dropRelayOnDirect,
+          dropRelayBootstrapOnDirect: this.config.dropRelayBootstrapOnDirect,
+          presenceIntervalMs: this.config.presenceIntervalMs,
+          maxDialPeers: this.config.maxDialPeers,
+          bootstrapDialThrottleMs: this.config.bootstrapDialThrottleMs,
+          maxConnections: this.config.maxConnections,
+          maxIncomingPendingConnections: this.config.maxIncomingPendingConnections,
+          maxParallelDials: this.config.maxParallelDials,
+          maxDialQueueLength: this.config.maxDialQueueLength,
+          maxPeerAddrsToDial: this.config.maxPeerAddrsToDial,
+          dialTimeoutMs: this.config.dialTimeoutMs ?? this.config.dialTimeout,
+          transportManager: this.config.transportManager,
+          pubsubType: this.config.pubsubType,
+          gossipsub: this.config.gossipsub,
+          debugOutput: this.config.debugOutput,
+          schedulerClock: this.config.clockPolicy.mode === 'kernel' ? 'external' : 'internal',
+          schedulerProfile: this.config.clockPolicy.networkProfile,
+          presenceCapabilitiesProvider: this._buildPresenceCapabilities.bind(this),
+          onPublishError: this.config.onPublishError,
+          onPublishSuccess: this.config.onPublishSuccess,
+          onConnectionFailure: this.config.onConnectionFailure,
+          onMessage: this._handleNetworkMessage.bind(this),
+          onPeerConnect: this._handlePeerConnect.bind(this),
+          onPeerDisconnect: this._handlePeerDisconnect.bind(this)
+        });
+        
+        await this.networkManager.initialize();
+        console.log('[NodeKernel] NetworkManager initialized');
+        
+        // 2. Initialize StateManager with NetworkManager
+        const stateDocName = this.config.docName || `peercompute-${this.config.gameId}-${this.config.roomId}`;
+        if (this.config.enableGPUHub) {
+          this.gpuHub = new GPUHubManager({
+            frameBudgetMs: this.config.gpuHubFrameBudgetMs
+          });
+        }
+
+        this.stateManager = new StateManager(this.networkManager, {
+          nodeId: this.nodeId,
+          docName: stateDocName,
+          topic: this.config.stateTopic,
+          enablePersistence: this.config.enablePersistence,
+          disableNetworkProvider: this.config.disableStateNetworkProvider,
+          disableBroadcast: this.config.disableStateBroadcast,
+          broadcastNamespaces: this.config.stateBroadcastNamespaces,
+          deltaNamespace: this.config.deltaNamespace,
+          hotStore: this.gpuHub?.getHotStore()
+        });
+        
+        // Keep node-local lifecycle metadata in memory instead of clobbering
+        // shared room-level CRDT root keys across every peer in the room.
+        await this.stateManager.initialize();
+        console.log('[NodeKernel] StateManager initialized');
+
+        // Optional large-file storage is owned by StateManager; the network borrows it.
+        if (this.config.artifacts?.enabled === true) {
+          const store = this.stateManager.createArtifactStore(this.config.artifacts.store || {});
+          await store.open();
+          if (this.config.artifacts.network !== false) {
+            await this.networkManager.createArtifactTransport(store, this.config.artifacts.network || {});
+          }
+        }
+
+        if (this.config.enableWarmDeltaProvider) {
+          this.networkManager.registerWarmDeltaProvider(() => this.stateManager.getWarmDeltas());
+        }
+        
+        // 3. Initialize ComputeManager
+        this.computeManager = new ComputeManager({
+          enableWebGPU: this.config.enableWebGPU,
+          maxWorkers: this.config.maxWorkers,
+          minWorkers: this.config.minWorkers,
+          targetWorkers: this.config.targetWorkers,
+          initialWorkers: this.config.initialWorkers,
+          autoScaleWorkers: this.config.autoScaleWorkers,
+          resourceProfile: this.config.resourceProfile,
+          workerBootstrapURL: this.config.workerBootstrapURL || this.config.computeWorkerBootstrapURL,
+          enableWorkers: this.config.enableWorkers !== false,
+          requireWorkers: this.config.requireWorkers === true,
+          workerBootstrapTimeoutMs: this.config.workerBootstrapTimeoutMs,
+          gpuHub: this.gpuHub || null
+        });
+        await this.computeManager.initialize();
+        this.networkTelemetryRelease = this.networkManager.setNetworkTelemetryProvider(() => ({
+          application: this.config.gameId, role: this.config.networkTelemetryRole || 'world',
+          compute: this.computeManager?.getStats?.() ?? null,
+          capabilities: this._buildPresenceCapabilities()
+        }));
+        this.computeManager.setCommitDeltaHandler((delta) => {
+          this.stateManager?.commitDelta?.(delta);
+        });
+        console.log('[NodeKernel] ComputeManager initialized');
+
+        if (this.config.modelInference?.enabled === true) {
+          this.modelInference = await this.createModelInferenceService(this.config.modelInference);
+        }
+        
+        this.isInitialized = true;
+        this.localStatus = 'initialized';
+        console.log('[NodeKernel] Initialization complete');
+        
+      } catch (error) {
+        try {
+          await this._cleanupManagers();
+        } catch (cleanupError) {
+          if (error && typeof error === 'object') error.cleanupError = cleanupError;
+          console.error('[NodeKernel] Initialization cleanup failed:', cleanupError);
+        }
+        console.error('[NodeKernel] Initialization failed:', error);
+        throw error;
+      } finally {
+        this.initPromise = null;
       }
-      console.error('[NodeKernel] Initialization failed:', error);
-      throw error;
+    })();
+
+    return this.initPromise;
+  }
+
+  _rejectPendingRemoteRequests(code = 'ERR_NODE_STOPPED', message = 'NodeKernel stopped while remote request was pending') {
+    for (const [requestId, pending] of [...this.pendingRemoteComputeRequests.entries()]) {
+      this.pendingRemoteComputeRequests.delete(requestId);
+      clearTimeout(pending.timeoutId);
+      const err = new Error(message);
+      err.code = code;
+      err.requestId = requestId;
+      err.peerId = pending.peerId || null;
+      pending.reject(err);
+    }
+    for (const [requestId, pending] of [...this.pendingRemoteTaskGraphRequests.entries()]) {
+      this.pendingRemoteTaskGraphRequests.delete(requestId);
+      clearTimeout(pending.timeoutId);
+      const err = new Error(message);
+      err.code = code;
+      err.requestId = requestId;
+      err.peerId = pending.peerId || null;
+      pending.reject(err);
     }
   }
 
@@ -785,6 +826,7 @@ export class NodeKernel {
     const computeManager = this.computeManager;
     const networkManager = this.networkManager;
     const stateManager = this.stateManager;
+    const gpuHub = this.gpuHub;
     const cleanupErrors = [];
     const attempt = async (phase, callback) => {
       try {
@@ -801,10 +843,11 @@ export class NodeKernel {
     this._stopNetVizDebugTelemetryLoop();
     this._stopNetVizSessionBroadcast();
     this._stopNetVizNetworkSessionLoop();
+    this._rejectPendingRemoteRequests();
     this.networkTelemetryRelease?.(); this.networkTelemetryRelease = null;
 
-    if (writeStopped && stateManager?.write) {
-      await attempt('state-status', () => stateManager.write('status', 'stopped'));
+    if (writeStopped) {
+      this.localStatus = 'stopped';
     }
     if (computeManager?.destroy) {
       await attempt('compute-manager', () => computeManager.destroy());
@@ -823,14 +866,20 @@ export class NodeKernel {
     if (stateManager?.destroy) {
       await attempt('state-manager', () => stateManager.destroy());
     }
+    if (gpuHub?.destroy) {
+      await attempt('gpu-hub', () => gpuHub.destroy());
+    }
 
     this.computeManager = null;
     this.modelInference = null;
     this.networkManager = null;
     this.stateManager = null;
     this.gpuHub = null;
+    this.localConnectedPeers.clear();
     this.isStarted = false;
     this.isInitialized = false;
+    this.startPromise = null;
+    this.localStatus = 'stopped';
     this._unregisterBrowserKernelHandle();
 
     if (cleanupErrors.length > 0) {
@@ -852,38 +901,62 @@ export class NodeKernel {
       console.warn('[NodeKernel] Already started');
       return;
     }
-
-    try {
-      console.log('[NodeKernel] Starting...');
-      
-      // Connect to P2P network
-      await this.networkManager.connect();
-
-      if (this.config.clockPolicy.networkProfile) {
-        this.networkManager.configureScheduler(this.config.clockPolicy.networkProfile);
-      }
-      if (this.config.clockPolicy.mode === 'kernel') {
-        this._startKernelClock();
-      }
-      
-      // Set node state to active
-      this.stateManager.write('status', 'active');
-      this.stateManager.write('startedAt', Date.now());
-      await this._requestStateProviderSync('start');
-      this._scheduleStateProviderSyncRetries();
-
-      this._startNetVizDebugTelemetryLoop();
-      this._startNetVizSessionBroadcast();
-      this._startNetVizNetworkSessionLoop();
-      this._logNetVizAttachHint();
-      
-      this.isStarted = true;
-      console.log('[NodeKernel] Node started and connected to P2P network');
-      
-    } catch (error) {
-      console.error('[NodeKernel] Start failed:', error);
-      throw error;
+    if (this.startPromise) {
+      return this.startPromise;
     }
+
+    this.startPromise = (async () => {
+      try {
+        console.log('[NodeKernel] Starting...');
+
+        if (Array.isArray(bootstrapPeers) && bootstrapPeers.length > 0) {
+          this.config.bootstrapPeers = [...bootstrapPeers];
+          if (typeof this.networkManager?.setBootstrapPeers === 'function') {
+            this.networkManager.setBootstrapPeers(bootstrapPeers);
+          } else if (this.networkManager?.config) {
+            this.networkManager.config.bootstrapPeers = [...bootstrapPeers];
+          }
+        }
+        
+        // Connect to P2P network
+        await this.networkManager.connect();
+
+        if (this.config.clockPolicy.networkProfile) {
+          this.networkManager.configureScheduler(this.config.clockPolicy.networkProfile);
+        }
+        if (this.config.clockPolicy.mode === 'kernel') {
+          this._startKernelClock();
+        }
+        
+        // Record node-local lifecycle state without polluting shared CRDT root keys
+        this.localStatus = 'active';
+        this.startedAt = Date.now();
+        await this._requestStateProviderSync('start');
+        this._scheduleStateProviderSyncRetries();
+
+        this._startNetVizDebugTelemetryLoop();
+        this._startNetVizSessionBroadcast();
+        this._startNetVizNetworkSessionLoop();
+        this._logNetVizAttachHint();
+        
+        this.isStarted = true;
+        console.log('[NodeKernel] Node started and connected to P2P network');
+        
+      } catch (error) {
+        this._stopKernelClock();
+        this._clearStateProviderSyncTimers();
+        this._stopNetVizDebugTelemetryLoop();
+        this._stopNetVizSessionBroadcast();
+        this._stopNetVizNetworkSessionLoop();
+        this.localStatus = 'initialized';
+        console.error('[NodeKernel] Start failed:', error);
+        throw error;
+      } finally {
+        this.startPromise = null;
+      }
+    })();
+
+    return this.startPromise;
   }
 
   /**
@@ -937,6 +1010,7 @@ export class NodeKernel {
     this.kernelClockTimer = setInterval(() => {
       this.tick(Date.now());
     }, intervalMs);
+    this.kernelClockTimer?.unref?.();
   }
 
   _stopKernelClock() {
@@ -1119,6 +1193,7 @@ export class NodeKernel {
     this.netVizDebugTelemetryTimer = setInterval(() => {
       this._publishNetVizDebugTelemetry();
     }, this.config.netVizDebugTelemetryIntervalMs || 2000);
+    this.netVizDebugTelemetryTimer?.unref?.();
   }
 
   _stopNetVizDebugTelemetryLoop() {
@@ -1148,6 +1223,7 @@ export class NodeKernel {
         if (!this.isStarted) return;
         this._requestStateProviderSync(`retry-${delayMs}`).catch(() => {});
       }, delayMs);
+      timer?.unref?.();
       this.stateProviderSyncTimers.add(timer);
     }
   }
@@ -1188,6 +1264,7 @@ export class NodeKernel {
       publish,
       this.config.netVizDebugSessionIntervalMs || 2000
     );
+    this.netVizDebugSessionTimer?.unref?.();
   }
 
   _stopNetVizSessionBroadcast() {
@@ -1251,6 +1328,7 @@ export class NodeKernel {
     this.netVizNetworkSessionTimer = setInterval(() => {
       this._publishNetVizSessionUpsertOverNetwork().catch(() => {});
     }, this.config.netVizDebugSessionIntervalMs || 2000);
+    this.netVizNetworkSessionTimer?.unref?.();
   }
 
   _stopNetVizNetworkSessionLoop() {
@@ -1855,11 +1933,8 @@ export class NodeKernel {
         || Object.values(warmDeltas)
           .map((entry) => entry?.payload)
           .find((payload) => payload?.schema === NODE_KERNEL_REMOTE_GPU_RESIDENT_STAGE_RESULT_ADMISSION_SCHEMA
-            && (
-              !config.cacheKey
-              || payload.cacheKey === config.cacheKey
-              || payload.leaseId === config.leaseId
-            ))
+            && (!config.cacheKey || payload.cacheKey === config.cacheKey)
+            && (!config.leaseId || payload.leaseId === config.leaseId))
         || null;
     }
     if (!admission || admission.schema !== NODE_KERNEL_REMOTE_GPU_RESIDENT_STAGE_RESULT_ADMISSION_SCHEMA) {
@@ -2861,6 +2936,12 @@ export class NodeKernel {
       allowFunctions: options.allowRemoteFunctionTasks === true
     });
     const requestId = options.requestId || this._createRemoteTaskGraphRequestId();
+    if (this.pendingRemoteTaskGraphRequests.has(requestId)) {
+      const err = new Error(`Duplicate pending remote task graph requestId: ${requestId}`);
+      err.code = 'ERR_DUPLICATE_REQUEST_ID';
+      err.requestId = requestId;
+      throw err;
+    }
     const timeoutMs = normalizeInteger(
       options.timeoutMs ?? this.config.remoteTaskGraphTimeoutMs ?? this.config.remoteComputeTimeoutMs,
       this.config.remoteTaskGraphTimeoutMs || this.config.remoteComputeTimeoutMs,
@@ -2885,6 +2966,7 @@ export class NodeKernel {
         err.requestId = requestId;
         reject(err);
       }, timeoutMs);
+      timeoutId?.unref?.();
       this.pendingRemoteTaskGraphRequests.set(requestId, {
         peerId: targetPeerId,
         resolve,
@@ -2917,6 +2999,12 @@ export class NodeKernel {
       throw new Error('submitRemoteComputeTask requires peerId');
     }
     const requestId = options.requestId || this._createRemoteComputeRequestId();
+    if (this.pendingRemoteComputeRequests.has(requestId)) {
+      const err = new Error(`Duplicate pending remote compute requestId: ${requestId}`);
+      err.code = 'ERR_DUPLICATE_REQUEST_ID';
+      err.requestId = requestId;
+      throw err;
+    }
     const timeoutMs = normalizeInteger(options.timeoutMs ?? this.config.remoteComputeTimeoutMs, this.config.remoteComputeTimeoutMs, 1, 3600000);
     const task = this._normalizeRemoteComputePayload(payload, {
       allowFunctions: options.allowRemoteFunctionTasks === true
@@ -2941,6 +3029,7 @@ export class NodeKernel {
         err.requestId = requestId;
         reject(err);
       }, timeoutMs);
+      timeoutId?.unref?.();
       this.pendingRemoteComputeRequests.set(requestId, {
         peerId: targetPeerId,
         resolve,
@@ -3066,7 +3155,7 @@ export class NodeKernel {
     );
     const gpuAvailable = resourceProfile.gpuAvailable === true
       || capabilities.webgpu === true
-      || this.config.enableWebGPU === true;
+      || hwCaps?.webgpu?.available === true;
     const gpuCount = gpuAvailable
       ? normalizeInteger(
         resourceProfile.gpuCount ?? resourceProfile.gpuAdapterCount ?? capabilities.gpuCount,
@@ -3128,7 +3217,7 @@ export class NodeKernel {
           : null,
         gpuFeatures,
         gpuLimits,
-        webgpuAvailable: capabilities.webgpu === true || this.config.enableWebGPU === true,
+        webgpuAvailable: capabilities.webgpu === true || hwCaps?.webgpu?.available === true,
         wasmAvailable: capabilities.wasm === true,
         wasmFeatures: hwCaps?.wasm ? cloneSerializableValue(hwCaps.wasm) : null,
         hardwareFingerprint: typeof hwCaps?.hardwareFingerprint === 'string' ? hwCaps.hardwareFingerprint : null,
@@ -3881,6 +3970,32 @@ export class NodeKernel {
       const localRetainedRefs = Array.isArray(refreshResult?.retainedBufferRefs)
         ? refreshResult.retainedBufferRefs
         : initialLocalRetainedBufferRefs;
+      const executorBlocked = refreshResult?.refreshed === false
+        || refreshResult?.ok === false
+        || (typeof refreshResult?.status === 'string' && refreshResult.status.startsWith('blocked'));
+      if (executorBlocked || localRetainedRefs.length === 0) {
+        let rejectedLease = null;
+        if (lease?.leaseId) {
+          try {
+            rejectedLease = this.computeManager.rejectGpuResidentLaneLease(
+              lease.leaseId,
+              'remote-task-graph-hot-buffer-refresh-not-completed'
+            );
+          } catch {
+            rejectedLease = null;
+          }
+        }
+        return {
+          ...base,
+          status: 'hot-buffer-refresh-not-completed',
+          reason: refreshResult?.reason || 'local-hot-buffer-refresh-not-completed',
+          seedScope,
+          seedTaskId,
+          lease: cloneSerializableValue(lease),
+          rejectedLease: cloneSerializableValue(rejectedLease),
+          refreshResult: cloneSerializableValue(refreshResult)
+        };
+      }
       const execution = this.computeManager.completeGpuResidentLaneLease(lease.leaseId, {
         status: refreshResult?.gpuFence?.status || refreshResult?.fenceStatus || 'queue-work-completed',
         method: refreshResult?.gpuFence?.method || refreshResult?.fenceMethod || 'local-hot-buffer-refresh-executor',
@@ -4013,18 +4128,26 @@ export class NodeKernel {
    * @param {Object} message - Message data
    */
   _handleNetworkMessage(peerId, message) {
+    if (!message || typeof message !== 'object') return;
     if (this.debugOutputEnabled) {
       console.log(`[NodeKernel] Message from ${peerId}:`, message.type);
     }
+
+    const runAsync = (label, promise) => {
+      Promise.resolve(promise).catch((err) => {
+        console.warn(`[NodeKernel] ${label} handler failed:`, err?.message || err);
+      });
+    };
     
     // Route messages based on type
     switch (message.type) {
       case 'state-request':
-        this._handleStateRequest(peerId, message.data);
+        runAsync('state-request', this._handleStateRequest(peerId, message.data));
         break;
         
       case 'yjs-update':
-        if (this.stateManager) {
+        // Avoid double-applying updates when PeerComputeProvider is already active.
+        if (this.stateManager && !this.stateManager.libp2pProvider) {
           this.stateManager.applyRemoteUpdate(message.data);
         }
         break;
@@ -4047,7 +4170,7 @@ export class NodeKernel {
         break;
 
       case 'compute-task':
-        this._handleComputeTask(peerId, message.data);
+        runAsync('compute-task', this._handleComputeTask(peerId, message.data));
         break;
 
       case 'compute-result':
@@ -4055,7 +4178,7 @@ export class NodeKernel {
         break;
 
       case 'compute-task-graph':
-        this._handleComputeTaskGraph(peerId, message.data);
+        runAsync('compute-task-graph', this._handleComputeTaskGraph(peerId, message.data));
         break;
 
       case 'compute-task-graph-result':
@@ -4063,7 +4186,7 @@ export class NodeKernel {
         break;
         
       case 'ping':
-        this._handlePing(peerId, message.data);
+        runAsync('ping', this._handlePing(peerId, message.data));
         break;
 
       case 'netviz-session-upsert': {
@@ -4205,14 +4328,8 @@ export class NodeKernel {
     };
     this.peerAvailability.set(peerId, nextEntry);
 
-    // Update state with connected peer
-    if (this.stateManager) {
-      const peers = this.stateManager.read('connectedPeers') || [];
-      if (!peers.includes(peerId)) {
-        peers.push(peerId);
-        this.stateManager.write('connectedPeers', peers);
-      }
-    }
+    // Track connected peers locally without mutating shared room CRDT root keys
+    this.localConnectedPeers.add(peerId);
 
     const event = Object.freeze({
       type: isReconnect ? 'reconnect' : 'connect',
@@ -4288,12 +4405,8 @@ export class NodeKernel {
       } catch {}
     }
 
-    // Update state
-    if (this.stateManager) {
-      const peers = this.stateManager.read('connectedPeers') || [];
-      const filtered = peers.filter(p => p !== peerId);
-      this.stateManager.write('connectedPeers', filtered);
-    }
+    // Update local peer set without mutating shared room CRDT root keys
+    this.localConnectedPeers.delete(peerId);
 
     const event = Object.freeze({
       type: 'disconnect',
@@ -4318,6 +4431,7 @@ export class NodeKernel {
    * @param {Object} data - Request data
    */
   async _handleStateRequest(peerId, data) {
+    if (!this.stateManager?.isInitialized || !this.networkManager?.sendToPeer) return;
     // Send state snapshot to requesting peer
     const snapshot = this.stateManager.snapshot();
     
@@ -4395,7 +4509,7 @@ export class NodeKernel {
           code: err?.code || 'ERR_REMOTE_COMPUTE_FAILED',
           message: err?.message || String(err)
         }
-      });
+      }).catch(() => {});
     }
   }
 
@@ -4405,15 +4519,13 @@ export class NodeKernel {
     if (!requestId) return;
     const pending = this.pendingRemoteComputeRequests.get(requestId);
     if (!pending) return;
-    this.pendingRemoteComputeRequests.delete(requestId);
-    clearTimeout(pending.timeoutId);
     if (pending.peerId && peerId && pending.peerId !== peerId) {
-      const err = new Error(`Remote compute result came from unexpected peer ${peerId}`);
-      err.code = 'ERR_REMOTE_COMPUTE_PEER_MISMATCH';
-      err.requestId = requestId;
-      pending.reject(err);
+      // Ignore spoofed/unexpected-peer replies so a third party cannot abort
+      // an in-flight request awaiting the real target peer.
       return;
     }
+    this.pendingRemoteComputeRequests.delete(requestId);
+    clearTimeout(pending.timeoutId);
     if (response.ok === false) {
       const err = new Error(response.error?.message || 'Remote compute task failed');
       err.code = response.error?.code || 'ERR_REMOTE_COMPUTE_FAILED';
@@ -4495,7 +4607,7 @@ export class NodeKernel {
           code: err?.code || 'ERR_REMOTE_TASK_GRAPH_FAILED',
           message: err?.message || String(err)
         }
-      });
+      }).catch(() => {});
     }
   }
 
@@ -4505,15 +4617,12 @@ export class NodeKernel {
     if (!requestId) return;
     const pending = this.pendingRemoteTaskGraphRequests.get(requestId);
     if (!pending) return;
-    this.pendingRemoteTaskGraphRequests.delete(requestId);
-    clearTimeout(pending.timeoutId);
     if (pending.peerId && peerId && pending.peerId !== peerId) {
-      const err = new Error(`Remote task graph result came from unexpected peer ${peerId}`);
-      err.code = 'ERR_REMOTE_TASK_GRAPH_PEER_MISMATCH';
-      err.requestId = requestId;
-      pending.reject(err);
+      // Ignore spoofed/unexpected-peer replies without disturbing the live request.
       return;
     }
+    this.pendingRemoteTaskGraphRequests.delete(requestId);
+    clearTimeout(pending.timeoutId);
     if (response.ok === false) {
       const err = new Error(response.error?.message || 'Remote task graph failed');
       err.code = response.error?.code || 'ERR_REMOTE_TASK_GRAPH_FAILED';
@@ -4543,12 +4652,13 @@ export class NodeKernel {
    * @param {Object} data - Ping data
    */
   async _handlePing(peerId, data) {
+    if (!this.networkManager?.sendToPeer) return;
     // Respond with pong
     await this.networkManager.sendToPeer(peerId, {
       type: 'pong',
       data: {
         timestamp: Date.now(),
-        originalTimestamp: data.timestamp
+        originalTimestamp: data?.timestamp ?? null
       }
     });
   }

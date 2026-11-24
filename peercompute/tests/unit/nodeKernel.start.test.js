@@ -231,10 +231,10 @@ test('NodeKernel requests StateManager provider sync after network connect', asy
   await node.start();
 
   assert.equal(node.isStarted, true);
+  assert.equal(node.localStatus, 'active');
+  assert.equal(Number.isFinite(node.startedAt), true);
   assert.deepEqual(events, [
     'connect',
-    'write:status',
-    'write:startedAt',
     'request-provider-sync'
   ]);
 });

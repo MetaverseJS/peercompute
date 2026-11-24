@@ -1068,7 +1068,20 @@ export class NetworkManager {
   }
 
   addMessageHandler(handler) {
-    this.messageHandlers.push(handler);
+    if (typeof handler !== 'function') return () => {};
+    if (!this.messageHandlers.includes(handler)) {
+      this.messageHandlers.push(handler);
+    }
+    return () => this.removeMessageHandler(handler);
+  }
+
+  removeMessageHandler(handler) {
+    const idx = this.messageHandlers.indexOf(handler);
+    if (idx !== -1) {
+      this.messageHandlers.splice(idx, 1);
+      return true;
+    }
+    return false;
   }
 
   _infoLog(...args) {

@@ -78,15 +78,42 @@ function defaultResidentStageWorkerFactory(moduleUrl, { workerScriptType = 'modu
   return new Worker(moduleUrl, { type: workerScriptType });
 }
 
-function addWorkerMessageListener(worker, listener) {
+function addWorkerEventListeners(worker, { onMessage, onError, onMessageError }) {
+  const cleanups = [];
   if (typeof worker.addEventListener === 'function') {
-    worker.addEventListener('message', listener);
-    return () => worker.removeEventListener?.('message', listener);
+    if (onMessage) {
+      worker.addEventListener('message', onMessage);
+      cleanups.push(() => worker.removeEventListener?.('message', onMessage));
+    }
+    if (onError) {
+      worker.addEventListener('error', onError);
+      cleanups.push(() => worker.removeEventListener?.('error', onError));
+    }
+    if (onMessageError) {
+      worker.addEventListener('messageerror', onMessageError);
+      cleanups.push(() => worker.removeEventListener?.('messageerror', onMessageError));
+    }
+  } else {
+    if (onMessage) {
+      const previous = worker.onmessage;
+      worker.onmessage = onMessage;
+      cleanups.push(() => { if (worker.onmessage === onMessage) worker.onmessage = previous || null; });
+    }
+    if (onError) {
+      const previous = worker.onerror;
+      worker.onerror = onError;
+      cleanups.push(() => { if (worker.onerror === onError) worker.onerror = previous || null; });
+    }
+    if (onMessageError) {
+      const previous = worker.onmessageerror;
+      worker.onmessageerror = onMessageError;
+      cleanups.push(() => { if (worker.onmessageerror === onMessageError) worker.onmessageerror = previous || null; });
+    }
   }
-  const previous = worker.onmessage;
-  worker.onmessage = listener;
   return () => {
-    if (worker.onmessage === listener) worker.onmessage = previous || null;
+    for (const fn of cleanups) {
+      try { fn(); } catch {}
+    }
   };
 }
 
@@ -117,16 +144,37 @@ export class ResidentStageWorkerBackend {
     this.nextRequestOrdinal = 1;
   }
 
+  _failAllPending(error, { terminateWorker = false } = {}) {
+    const err = error instanceof Error ? error : new Error(String(error || 'resident stage worker failed'));
+    for (const [id, pending] of [...this.pending.entries()]) {
+      clearTimeout(pending.timeout);
+      this.pending.delete(id);
+      pending.reject(err);
+    }
+    if (terminateWorker) {
+      this.disposeMessageListener?.();
+      this.disposeMessageListener = null;
+      this.worker?.terminate?.();
+      this.worker = null;
+    }
+  }
+
   ensureWorker() {
     if (this.worker) return this.worker;
     this.worker = this.workerFactory(this.workerModuleUrl, {
       workerScriptType: this.workerScriptType,
       backend: this
     });
-    this.disposeMessageListener = addWorkerMessageListener(
-      this.worker,
-      (event) => this.handleMessage(workerMessageData(event))
-    );
+    this.disposeMessageListener = addWorkerEventListeners(this.worker, {
+      onMessage: (event) => this.handleMessage(workerMessageData(event)),
+      onError: (event) => {
+        const msg = event?.message || event?.error?.message || 'resident stage worker crashed';
+        this._failAllPending(new Error(msg), { terminateWorker: true });
+      },
+      onMessageError: () => {
+        this._failAllPending(new Error('resident stage worker message deserialization failed'));
+      }
+    });
     return this.worker;
   }
 
@@ -169,8 +217,15 @@ export class ResidentStageWorkerBackend {
         this.pending.delete(id);
         reject(new Error(`resident stage worker timed out: ${id}`));
       }, this.timeoutMs);
+      timeout?.unref?.();
       this.pending.set(id, { resolve, reject, timeout });
-      worker.postMessage(message);
+      try {
+        worker.postMessage(message);
+      } catch (err) {
+        clearTimeout(timeout);
+        this.pending.delete(id);
+        reject(err);
+      }
     });
   }
 
@@ -202,6 +257,8 @@ export class GPUHubManager {
     this.hotStore = config.hotStore || new Map();
     this.adapter = null;
     this.device = null;
+    this._ownsDevice = false;
+    this._ownedBuffers = new Set();
     this.deviceInfo = null;
     this.features = [];
     this.limits = null;
@@ -247,6 +304,7 @@ export class GPUHubManager {
     });
     this.adapter = managed.adapter;
     this.device = managed.device;
+    this._ownsDevice = true;
     this.deviceInfo = managed.adapterInfo;
     this.features = managed.features;
     this.limits = managed.limits;
@@ -257,6 +315,7 @@ export class GPUHubManager {
 
   setDevice(device, metadata = {}) {
     this.device = device || null;
+    this._ownsDevice = metadata.owned === true;
     this.adapter = metadata.adapter ?? this.adapter ?? null;
     this.deviceInfo = metadata.adapterInfo ?? this.deviceInfo ?? null;
     this.isFallbackAdapter = metadata.isFallbackAdapter ?? this.isFallbackAdapter ?? null;
@@ -313,16 +372,27 @@ export class GPUHubManager {
     if (!this.device) {
       throw new Error('[GPUHubManager] Device not initialized');
     }
+    const existing = this.hotStore.get(key);
+    if (existing && this._ownedBuffers.has(existing)) {
+      this._ownedBuffers.delete(existing);
+      try { existing.destroy?.(); } catch {}
+    }
     const buffer = this.device.createBuffer({
       size,
       usage,
       label
     });
+    this._ownedBuffers.add(buffer);
     this.hotStore.set(key, buffer);
     return buffer;
   }
 
   removeHotBuffer(key) {
+    const existing = this.hotStore.get(key);
+    if (existing && this._ownedBuffers.has(existing)) {
+      this._ownedBuffers.delete(existing);
+      try { existing.destroy?.(); } catch {}
+    }
     this.hotStore.delete(key);
   }
 
@@ -433,5 +503,30 @@ export class GPUHubManager {
    */
   tick() {
     // Intentionally minimal: scheduling is handled by the render loop.
+  }
+
+  /**
+   * Release owned GPU buffers, resident stage worker backends, and owned GPUDevice.
+   */
+  destroy() {
+    for (const buffer of [...this._ownedBuffers]) {
+      try { buffer?.destroy?.(); } catch {}
+    }
+    this._ownedBuffers.clear();
+    this.hotStore.clear();
+
+    for (const record of [...this.residentStageExecutors.values()]) {
+      try { record?.workerRunner?.dispose?.(); } catch {}
+    }
+    this.residentStageExecutors.clear();
+    this.residentStageExecutorAliases.clear();
+    this.tasks.clear();
+
+    if (this._ownsDevice && this.device) {
+      try { this.device.destroy?.(); } catch {}
+    }
+    this._ownsDevice = false;
+    this.device = null;
+    this.adapter = null;
   }
 }

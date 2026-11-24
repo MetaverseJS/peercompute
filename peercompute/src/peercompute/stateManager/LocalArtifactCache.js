@@ -489,7 +489,14 @@ export class LocalArtifactCache {
       if (mediaType && entry.metadata.mediaType !== mediaType) {
         throw codedError(Error, 'ERR_LOCAL_ARTIFACT_MEDIA_TYPE', 'Local artifact media type does not match.');
       }
-      if (fromPersistence) await this.#validateEntry(entry, validate);
+      if (fromPersistence) {
+        await this.#validateEntry(entry, validate);
+      } else if (validate) {
+        const accepted = await validate(entry.bytes.slice(), publicMetadata(entry.metadata));
+        if (accepted === false) {
+          throw codedError(Error, 'ERR_LOCAL_ARTIFACT_VALIDATION', 'Local artifact validator rejected the bytes.');
+        }
+      }
     } catch {
       this.counters.validationFailures += 1;
       this.#removeMemory(key);
@@ -507,7 +514,6 @@ export class LocalArtifactCache {
     if (!fresh && !allowStale) return null;
     if (fromPersistence) this.#remember(key, entry);
     if (this.entries.has(key)) this.#touch(key, entry);
-    void this.#queuePersistence(() => this.#writePersistent(key, entry));
     return { entry, fresh };
   }
 
@@ -607,7 +613,9 @@ export class LocalArtifactCache {
       record.promise.then(
         (result) => {
           cleanup();
-          resolve(coalesced ? Object.freeze({ ...result, cacheStatus: 'coalesced' }) : result);
+          resolve(coalesced
+            ? Object.freeze({ ...result, bytes: result.bytes.slice(), cacheStatus: 'coalesced' })
+            : Object.freeze({ ...result, bytes: result.bytes.slice() }));
         },
         (error) => {
           cleanup();
@@ -696,7 +704,12 @@ export class LocalArtifactCache {
         return publicResult(entry, 'miss');
       })
       .catch((error) => {
-        if (cached && this.clock() <= cached.entry.metadata.staleUntil) {
+        if (cached
+          && !record.invalidated
+          && !this.destroyed
+          && generation === this.generation
+          && !controller.signal.aborted
+          && this.clock() <= cached.entry.metadata.staleUntil) {
           this.counters.stale += 1;
           return publicResult(cached.entry, 'stale', {
             refreshErrorCode: typeof error?.code === 'string' ? error.code : 'UPSTREAM_REFRESH_FAILED'
@@ -764,11 +777,22 @@ export class LocalArtifactCache {
     if (this.destroyed) return;
     this.destroyed = true;
     this.generation += 1;
-    for (const pending of this.inflight.values()) {
+    const inflightPromises = [...this.inflight.values()].map((pending) => {
       pending.invalidated = true;
       pending.controller.abort();
+      return pending.promise;
+    });
+    if (inflightPromises.length > 0) {
+      let timer = null;
+      await Promise.race([
+        Promise.allSettled(inflightPromises),
+        new Promise((resolve) => {
+          timer = setTimeout(resolve, 2000);
+          timer?.unref?.();
+        })
+      ]);
+      if (timer) clearTimeout(timer);
     }
-    await Promise.allSettled([...this.inflight.values()].map((pending) => pending.promise));
     await this.persistenceQueue.catch(() => {});
     this.entries.clear();
     this.inflight.clear();

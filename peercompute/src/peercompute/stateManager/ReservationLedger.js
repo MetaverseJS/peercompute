@@ -23,13 +23,14 @@ let ledgerSerial = 0;
 export const RESERVATION_LEDGER_SCHEMA = 'peercompute.reservation-ledger.v1';
 
 export class ReservationLedger {
-  constructor({ name = 'default', maxKeys = 4096, audit = null, now = () => Date.now() } = {}) {
+  constructor({ name = 'default', maxKeys = 4096, audit = null, now = () => Date.now(), onDestroy = null } = {}) {
     if (!Number.isSafeInteger(maxKeys) || maxKeys < 1) throw new RangeError('maxKeys must be a positive integer');
     this.name = String(name);
     this.ledgerId = `${this.name}#${++ledgerSerial}:${Math.random().toString(36).slice(2, 10)}`;
     this.maxKeys = maxKeys;
     this.audit = typeof audit === 'function' ? audit : null;
     this.now = now;
+    this.onDestroy = typeof onDestroy === 'function' ? onDestroy : null;
     this.keys = new Map();
     this.nextReservationId = 1;
     this.destroyed = false;
@@ -94,6 +95,9 @@ export class ReservationLedger {
     const owner = String(consumerId);
     let record = this._record(k);
     if (!record) {
+      if (expectedEpoch != null && expectedEpoch !== 0) {
+        return this._reject('stale-epoch', { epoch: 0 });
+      }
       if (this.keys.size >= this.maxKeys) return this._reject('capacity', { maxKeys: this.maxKeys });
       record = { key: k, epoch: 0, state: 'free', owner: null, reservationId: null, resources: [] };
       this.keys.set(k, record);
@@ -185,8 +189,12 @@ export class ReservationLedger {
   /** Release every attached resource exactly once and refuse further work. */
   destroy() {
     if (this.destroyed) return false;
-    // Invalidate every token before cleanup can re-enter the ledger.
+    // Invalidate every token and detach from owning registries before cleanup
+    // callbacks run (allowing cleanup to register a fresh replacement).
     this.destroyed = true;
+    const onDestroy = this.onDestroy;
+    this.onDestroy = null;
+    try { onDestroy?.(this); } catch { /* registry cleanup is best-effort */ }
     for (const record of this.keys.values()) this._release(this._takeResources(record));
     return true;
   }

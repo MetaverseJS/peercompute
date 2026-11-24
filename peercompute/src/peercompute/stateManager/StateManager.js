@@ -9,7 +9,11 @@ import { ModelEvidenceStore } from '../modelEvidence/ModelEvidenceStore.js';
 
 import * as Y from 'yjs';
 import { IndexeddbPersistence } from 'y-indexeddb';
-import { PeerComputeProvider } from './PeerComputeProvider.js';
+import {
+  bytesFromSerializable,
+  isEmptyYjsUpdate,
+  PeerComputeProvider
+} from './PeerComputeProvider.js';
 import { DataState } from './DataState.js';
 import { LocalArtifactCache } from './LocalArtifactCache.js';
 import { ArtifactStore } from '../artifacts/ArtifactStore.js';
@@ -27,6 +31,10 @@ export const STATE_TASK_GRAPH_CACHE_ARTIFACT_ADMISSION_SCHEMA = 'peercompute.sta
 export const STATE_TASK_GRAPH_CACHE_ARTIFACT_INVALIDATION_SCHEMA = 'peercompute.state.task-graph-cache-artifact-invalidation.v0';
 export const STATE_TASK_GRAPH_CACHE_ARTIFACT_ADMISSION_NAMESPACE = 'taskGraphCacheArtifactAdmissions';
 export const STATE_TASK_GRAPH_CACHE_ARTIFACT_INVALIDATION_NAMESPACE = 'taskGraphCacheArtifactInvalidations';
+
+const NAMESPACE_MAP_PREFIX = 'ns:';
+const DEFAULT_PERSISTENCE_SYNC_TIMEOUT_MS = 5000;
+const DEFAULT_MAX_TASK_GRAPH_INVALIDATIONS = 256;
 
 function normalizeStringList(value, fallback = []) {
   if (Array.isArray(value)) {
@@ -69,11 +77,22 @@ export class StateManager {
       docName: config.docName || 'peercompute-state',
       topic: config.topic || 'peercompute-state-sync',
       enablePersistence: config.enablePersistence !== false,
+      persistenceSyncTimeoutMs: Number.isFinite(config.persistenceSyncTimeoutMs) && config.persistenceSyncTimeoutMs > 0
+        ? config.persistenceSyncTimeoutMs
+        : DEFAULT_PERSISTENCE_SYNC_TIMEOUT_MS,
+      maxTaskGraphInvalidationRecords: Number.isSafeInteger(config.maxTaskGraphInvalidationRecords)
+        && config.maxTaskGraphInvalidationRecords > 0
+        ? config.maxTaskGraphInvalidationRecords
+        : DEFAULT_MAX_TASK_GRAPH_INVALIDATIONS,
       disableNetworkProvider: config.disableNetworkProvider || false,
       disableBroadcast: config.disableBroadcast || false,
       broadcastNamespaces: Array.isArray(config.broadcastNamespaces) ? config.broadcastNamespaces : null,
       ...config
     };
+    this.localNodeId = config.nodeId || null;
+    this.initPromise = null;
+    this.destroyed = false;
+    this.destroying = null;
     
     // Yjs document - the CRDT state container
     this.ydoc = new Y.Doc();
@@ -113,42 +132,56 @@ export class StateManager {
   }
 
   /**
-   * Internal helper to get or create a namespaced Y.Map within the root state
+   * Internal helper to get a deterministic top-level namespaced Y.Map.
+   * Using root Y.Doc named maps avoids nested-Y.Map concurrent creation races
+   * and keeps observation/reads completely mutation-free.
    * @param {string} namespace
    * @returns {Y.Map}
    * @private
    */
   _getNamespaceMap(namespace) {
-    let nsMap = this.state.get(namespace);
-    if (!nsMap) {
-      nsMap = new Y.Map();
-      this.state.set(namespace, nsMap);
+    return this.ydoc.getMap(`${NAMESPACE_MAP_PREFIX}${namespace}`);
+  }
+
+  /**
+   * Read-only fallback lookup for historical nested Y.Maps stored under `this.state`.
+   * @param {string} namespace
+   * @returns {Y.Map|null}
+   * @private
+   */
+  _getLegacyNamespaceMap(namespace) {
+    const legacy = this.state.get(namespace);
+    return legacy instanceof Y.Map ? legacy : null;
+  }
+
+  /**
+   * Whether legacy `state-set` pubsub broadcasts should be emitted.
+   * Disabled automatically when PeerComputeProvider is active to prevent
+   * dual-sync message amplification.
+   * @param {string|null} namespace
+   * @returns {boolean}
+   * @private
+   */
+  _shouldBroadcastStateSet(namespace = null) {
+    if (this.libp2pProvider) return false;
+    if (!this.networkManager?.broadcast || this.config.disableBroadcast) return false;
+    if (namespace && this.config.broadcastNamespaces && !this.config.broadcastNamespaces.includes(namespace)) {
+      return false;
     }
-    return nsMap;
+    return true;
   }
 
   /**
    * Apply a Yjs update received from the network (libp2p pubsub path)
-   * @param {Array|Uint8Array} updateArr
+   * @param {Array|Uint8Array|string} updateArr
    */
   applyRemoteUpdate(updateArr) {
     try {
-      const normalized = (() => {
-        if (updateArr instanceof Uint8Array) return updateArr;
-        if (Array.isArray(updateArr)) return new Uint8Array(updateArr);
-        if (updateArr && typeof updateArr === 'object') {
-          // Handle plain object maps of index->byte
-          const values = Object.values(updateArr);
-          return new Uint8Array(values);
-        }
-        return new Uint8Array(0);
-      })();
-      if (normalized.byteLength === 0) {
-        console.warn('[StateManager] Remote update was empty, skipping');
+      const normalized = bytesFromSerializable(updateArr);
+      if (isEmptyYjsUpdate(normalized)) {
         return;
       }
-      const update = normalized;
-      Y.applyUpdate(this.ydoc, update, this);
+      Y.applyUpdate(this.ydoc, normalized, 'remote-yjs-update');
     } catch (err) {
       console.error('[StateManager] Failed to apply remote update:', err);
     }
@@ -164,8 +197,10 @@ export class StateManager {
       this.ydoc.transact(() => {
         if (namespace) {
           const nsMap = this._getNamespaceMap(namespace);
+          const legacy = this._getLegacyNamespaceMap(namespace);
           if (value === undefined) {
             nsMap.delete(key);
+            legacy?.delete(key);
           } else {
             nsMap.set(key, value);
           }
@@ -214,6 +249,7 @@ export class StateManager {
       ...options,
       onDestroy: (destroyedCache) => {
         this.dataState.unregisterLocalArtifactCache(destroyedCache.name, destroyedCache);
+        options.onDestroy?.(destroyedCache);
       }
     });
     try {
@@ -342,6 +378,12 @@ export class StateManager {
       audit: (record) => {
         if (auditNamespace) this.writeScoped(auditNamespace, record.key, record);
         options.audit?.(record);
+      },
+      onDestroy: (closed) => {
+        if (this.reservationLedgers.get(name) === closed) {
+          this.reservationLedgers.delete(name);
+        }
+        options.onDestroy?.(closed);
       }
     });
     this.reservationLedgers.set(name, ledger);
@@ -372,7 +414,13 @@ export class StateManager {
     const broker = new SpatialTileLeaseBroker({
       ...options,
       name,
-      stateManager: this
+      stateManager: this,
+      onDestroy: (closed) => {
+        if (this.spatialTileLeaseBrokers.get(name) === closed) {
+          this.spatialTileLeaseBrokers.delete(name);
+        }
+        options.onDestroy?.(closed);
+      }
     });
     this.spatialTileLeaseBrokers.set(name, broker);
     return broker;
@@ -501,7 +549,7 @@ export class StateManager {
       admittedAt,
       acceptedAt: admittedAt,
       expiresAt: options.expiresAt ?? artifact.expiresAt ?? null,
-      sourceNodeId: options.sourceNodeId || this.state.get('nodeId') || null,
+      sourceNodeId: options.sourceNodeId || this.localNodeId || this.state.get('nodeId') || null,
       artifact: cloneStateManagerValue(artifact)
     };
     this.writeScoped(STATE_TASK_GRAPH_CACHE_ARTIFACT_ADMISSION_NAMESPACE, cacheKey, record);
@@ -542,13 +590,27 @@ export class StateManager {
       invalidationRefs,
       previousAdmissionStatus: existing?.status || null,
       invalidatedAt,
-      sourceNodeId: options.sourceNodeId || this.state.get('nodeId') || null
+      sourceNodeId: options.sourceNodeId || this.localNodeId || this.state.get('nodeId') || null
     };
     this.writeScoped(
       STATE_TASK_GRAPH_CACHE_ARTIFACT_INVALIDATION_NAMESPACE,
       invalidation.invalidationId,
       invalidation
     );
+    const maxInvalidations = this.config.maxTaskGraphInvalidationRecords || DEFAULT_MAX_TASK_GRAPH_INVALIDATIONS;
+    const invalidationKeys = this.listNamespaceKeys(STATE_TASK_GRAPH_CACHE_ARTIFACT_INVALIDATION_NAMESPACE);
+    if (invalidationKeys.length > maxInvalidations) {
+      const oldest = invalidationKeys
+        .map((key) => ({
+          key,
+          ts: Number(this.readScoped(STATE_TASK_GRAPH_CACHE_ARTIFACT_INVALIDATION_NAMESPACE, key)?.invalidatedAt ?? 0)
+        }))
+        .sort((a, b) => a.ts - b.ts || a.key.localeCompare(b.key))
+        .slice(0, invalidationKeys.length - maxInvalidations);
+      for (const entry of oldest) {
+        this.deleteScoped(STATE_TASK_GRAPH_CACHE_ARTIFACT_INVALIDATION_NAMESPACE, entry.key);
+      }
+    }
     if (existing) {
       this.writeScoped(STATE_TASK_GRAPH_CACHE_ARTIFACT_ADMISSION_NAMESPACE, cacheKey, {
         ...existing,
@@ -589,63 +651,111 @@ export class StateManager {
    * @returns {Promise<void>}
    */
   async initialize(initialState = {}) {
+    if (this.destroyed) {
+      throw new Error('StateManager is destroyed');
+    }
     if (this.isInitialized) {
       console.warn('[StateManager] Already initialized');
       return;
     }
-    
-    try {
-      // Set up IndexedDB persistence if enabled
-      if (this.config.enablePersistence) {
-        this.indexeddbProvider = new IndexeddbPersistence(
-          this.config.docName,
-          this.ydoc
-        );
-        
-        // Wait for persistence to sync from IndexedDB
-        await new Promise((resolve) => {
-          this.indexeddbProvider.once('synced', resolve);
-        });
-        
-        console.log('[StateManager] IndexedDB persistence loaded');
-      }
-      
-      // Set up PeerComputeProvider synchronization (Custom replacement for y-libp2p)
-      if (this.networkManager && !this.config.disableNetworkProvider) {
-        try {
-          this.libp2pProvider = new PeerComputeProvider(
-            this.networkManager,
-            this.ydoc,
-            {
-              topic: this.config.topic
-            }
-          );
-          
-          console.log('[StateManager] PeerCompute P2P synchronization enabled');
-        } catch (error) {
-          console.error('[StateManager] Failed to enable P2P sync:', error);
-        }
-      }
-      
-      // Apply initial state if provided
-      if (Object.keys(initialState).length > 0) {
-        this.ydoc.transact(() => {
-          for (const [key, value] of Object.entries(initialState)) {
-            this.state.set(key, value);
-          }
-        });
-      }
-      
-      // Set up change observers
-      this._setupObservers();
-      
-      this.isInitialized = true;
-      console.log('[StateManager] Initialized');
-      
-    } catch (error) {
-      console.error('[StateManager] Initialization failed:', error);
-      throw error;
+    if (this.initPromise) {
+      return this.initPromise;
     }
+
+    this.initPromise = (async () => {
+      try {
+        // Set up IndexedDB persistence if enabled and available in this runtime
+        if (this.config.enablePersistence) {
+          if (typeof globalThis.indexedDB?.open !== 'function') {
+            console.warn('[StateManager] IndexedDB unavailable in this runtime, continuing in memory');
+            this.persistenceFailed = true;
+          } else {
+            try {
+              const persistence = new IndexeddbPersistence(
+                this.config.docName,
+                this.ydoc
+              );
+              this.indexeddbProvider = persistence;
+
+              // Wait for persistence to sync from IndexedDB with a bounded timeout
+              const timeoutMs = this.config.persistenceSyncTimeoutMs || DEFAULT_PERSISTENCE_SYNC_TIMEOUT_MS;
+              const synced = await new Promise((resolve) => {
+                let settled = false;
+                const done = (ok) => {
+                  if (settled) return;
+                  settled = true;
+                  clearTimeout(timer);
+                  resolve(ok);
+                };
+                const timer = setTimeout(() => done(false), timeoutMs);
+                timer?.unref?.();
+                persistence.once('synced', () => done(true));
+              });
+
+              if (synced) {
+                console.log('[StateManager] IndexedDB persistence loaded');
+              } else {
+                console.warn(`[StateManager] IndexedDB persistence sync timed out after ${timeoutMs}ms, continuing in memory`);
+                this.persistenceFailed = true;
+                try { await persistence.destroy?.(); } catch {}
+                if (this.indexeddbProvider === persistence) {
+                  this.indexeddbProvider = null;
+                }
+              }
+            } catch (error) {
+              console.warn('[StateManager] IndexedDB persistence failed, continuing in memory:', error);
+              this.persistenceFailed = true;
+              try { await this.indexeddbProvider?.destroy?.(); } catch {}
+              this.indexeddbProvider = null;
+            }
+          }
+        }
+
+        if (this.destroyed) {
+          return;
+        }
+
+        // Set up PeerComputeProvider synchronization (Custom replacement for y-libp2p)
+        if (this.networkManager && !this.config.disableNetworkProvider) {
+          try {
+            this.libp2pProvider = new PeerComputeProvider(
+              this.networkManager,
+              this.ydoc,
+              {
+                topic: this.config.topic
+              }
+            );
+
+            console.log('[StateManager] PeerCompute P2P synchronization enabled');
+          } catch (error) {
+            console.error('[StateManager] Failed to enable P2P sync:', error);
+          }
+        }
+
+        // Apply initial state if provided
+        if (initialState && typeof initialState === 'object' && Object.keys(initialState).length > 0) {
+          this.ydoc.transact(() => {
+            for (const [key, value] of Object.entries(initialState)) {
+              this.state.set(key, value);
+            }
+          });
+        }
+
+        // Set up change observers
+        this._setupObservers();
+
+        this.isInitialized = true;
+        console.log('[StateManager] Initialized');
+
+      } catch (error) {
+        console.error('[StateManager] Initialization failed:', error);
+        throw error;
+      } finally {
+        this.initPromise = null;
+      }
+    })();
+
+    return this.initPromise;
   }
 
   /**
@@ -728,8 +838,8 @@ export class StateManager {
     // No need for queuing or manual conflict resolution
     this._safeSetMap(this.state, key, value);
 
-    // Opportunistic direct broadcast for libp2p pubsub path
-    if (this.networkManager?.broadcast && !this.config.disableBroadcast) {
+    // Legacy fallback broadcast only when PeerComputeProvider is inactive
+    if (this._shouldBroadcastStateSet()) {
       this.networkManager.broadcast({
         type: 'state-set',
         data: { key, value }
@@ -747,13 +857,11 @@ export class StateManager {
     const nsMap = this._getNamespaceMap(namespace);
     this._safeSetMap(nsMap, key, value);
 
-    if (this.networkManager?.broadcast && !this.config.disableBroadcast) {
-      if (!this.config.broadcastNamespaces || this.config.broadcastNamespaces.includes(namespace)) {
-        this.networkManager.broadcast({
-          type: 'state-set',
-          data: { namespace, key, value }
-        }).catch(() => {});
-      }
+    if (this._shouldBroadcastStateSet(namespace)) {
+      this.networkManager.broadcast({
+        type: 'state-set',
+        data: { namespace, key, value }
+      }).catch(() => {});
     }
   }
 
@@ -763,18 +871,20 @@ export class StateManager {
    * @param {string} key
    */
   readScoped(namespace, key) {
-    const nsMap = this.state.get(namespace);
-    if (!nsMap) return undefined;
-    return nsMap.get(key);
+    const nsMap = this._getNamespaceMap(namespace);
+    if (nsMap.has(key)) return nsMap.get(key);
+    const legacy = this._getLegacyNamespaceMap(namespace);
+    return legacy ? legacy.get(key) : undefined;
   }
 
   /**
    * Check existence of a key within a namespace without pulling the value.
    */
   hasScoped(namespace, key) {
-    const nsMap = this.state.get(namespace);
-    if (!nsMap) return false;
-    return nsMap.has(key);
+    const nsMap = this._getNamespaceMap(namespace);
+    if (nsMap.has(key)) return true;
+    const legacy = this._getLegacyNamespaceMap(namespace);
+    return legacy ? legacy.has(key) : false;
   }
 
   /**
@@ -783,9 +893,12 @@ export class StateManager {
    * @returns {string[]}
    */
   listNamespaceKeys(namespace) {
-    const nsMap = this.state.get(namespace);
-    if (!nsMap) return [];
-    return Array.from(nsMap.keys());
+    const nsMap = this._getNamespaceMap(namespace);
+    const legacy = this._getLegacyNamespaceMap(namespace);
+    if (!legacy) {
+      return Array.from(nsMap.keys());
+    }
+    return Array.from(new Set([...legacy.keys(), ...nsMap.keys()]));
   }
 
   /**
@@ -793,13 +906,17 @@ export class StateManager {
    * @param {string} namespace
    */
   clearNamespace(namespace) {
-    const nsMap = this.state.get(namespace);
-    if (!nsMap) return;
-    const keys = Array.from(nsMap.keys());
+    const nsMap = this._getNamespaceMap(namespace);
+    const legacy = this._getLegacyNamespaceMap(namespace);
+    const keys = this.listNamespaceKeys(namespace);
+    if (keys.length === 0) return;
     this.ydoc.transact(() => {
-      keys.forEach((k) => nsMap.delete(k));
+      keys.forEach((k) => {
+        nsMap.delete(k);
+        legacy?.delete(k);
+      });
     });
-    if (this.networkManager?.broadcast && !this.config.disableBroadcast) {
+    if (this._shouldBroadcastStateSet(namespace)) {
       keys.forEach((key) => {
         this.networkManager.broadcast({
           type: 'state-set',
@@ -815,10 +932,15 @@ export class StateManager {
    * @param {string} key
    */
   deleteScoped(namespace, key) {
-    const nsMap = this.state.get(namespace);
-    if (!nsMap) return;
-    nsMap.delete(key);
-    if (this.networkManager?.broadcast && !this.config.disableBroadcast) {
+    const nsMap = this._getNamespaceMap(namespace);
+    const legacy = this._getLegacyNamespaceMap(namespace);
+    const existed = nsMap.has(key) || Boolean(legacy?.has(key));
+    if (!existed) return;
+    this.ydoc.transact(() => {
+      nsMap.delete(key);
+      legacy?.delete(key);
+    });
+    if (this._shouldBroadcastStateSet(namespace)) {
       this.networkManager.broadcast({
         type: 'state-set',
         data: { namespace, key, value: undefined }
@@ -936,89 +1058,44 @@ export class StateManager {
   }
 
   /**
-   * Observe changes within a namespaced map
+   * Observe changes within a namespaced map.
+   * Read-only: attaching an observer never mutates the Yjs CRDT or emits updates.
    * @param {string} namespace
    * @param {Function} callback - (value, key) => void
    * @returns {Function} unsubscribe
    */
   observeNamespace(namespace, callback) {
-    let nsMap = this._getNamespaceMap(namespace);
-    let observedKeys = new Set(nsMap.keys());
-    let replacementTransaction = null;
+    const nsMap = this._getNamespaceMap(namespace);
     let active = true;
 
-    const currentNamespaceMap = () => {
-      const value = this.state.get(namespace);
-      return value instanceof Y.Map ? value : null;
-    };
-
-    let namespaceHandler;
-    const rebindNamespaceMap = (nextMap, transaction = null) => {
-      if (!active || nextMap === nsMap) return;
-
-      const previousKeys = observedKeys;
-      const nextEntries = nextMap ? Array.from(nextMap.entries()) : [];
-      const nextKeys = new Set(nextEntries.map(([key]) => key));
-
-      nsMap?.unobserve(namespaceHandler);
-      nsMap = nextMap;
-      observedKeys = nextKeys;
-      replacementTransaction = transaction;
-      nsMap?.observe(namespaceHandler);
-
-      // A nested Y.Map can lose a concurrent assignment to the namespace key.
-      // Replaying the winning map keeps consumers from retaining keys that only
-      // existed in the detached map and gives them one coherent replacement view.
-      for (const key of previousKeys) {
-        if (!nextKeys.has(key)) {
-          if (!active || currentNamespaceMap() !== nsMap) return;
-          callback(undefined, key);
-        }
-      }
-      for (const [key, value] of nextEntries) {
-        if (!active || currentNamespaceMap() !== nsMap) return;
-        callback(value, key);
-      }
-    };
-
-    namespaceHandler = (event, transaction) => {
+    const namespaceHandler = (event) => {
       if (!active || event.target !== nsMap) return;
-
-      const currentMap = currentNamespaceMap();
-      if (currentMap !== nsMap) {
-        rebindNamespaceMap(currentMap, transaction);
-        return;
-      }
-
-      // The replacement snapshot already contains every change from the Yjs
-      // transaction that installed the winning nested map.
-      if (transaction === replacementTransaction) return;
-
       event.keysChanged.forEach((key) => {
-        if (!active || event.target !== nsMap || currentNamespaceMap() !== nsMap) return;
-        if (nsMap.has(key)) {
-          observedKeys.add(key);
-        } else {
-          observedKeys.delete(key);
+        if (!active) return;
+        try {
+          callback(nsMap.get(key), key);
+        } catch (error) {
+          console.error('[StateManager] Namespace observer error:', error);
         }
-        callback(nsMap.get(key), key);
       });
     };
 
-    const rootHandler = (event, transaction) => {
-      if (!active || !event.keysChanged.has(namespace)) return;
-      rebindNamespaceMap(currentNamespaceMap(), transaction);
-    };
-
     nsMap.observe(namespaceHandler);
-    this.state.observe(rootHandler);
 
     return () => {
       if (!active) return;
       active = false;
-      nsMap?.unobserve(namespaceHandler);
-      this.state.unobserve(rootHandler);
+      nsMap.unobserve(namespaceHandler);
     };
+  }
+
+  /**
+   * Get the Y.Map backing a namespace (top-level named CRDT map).
+   * @param {string} namespace
+   * @returns {Y.Map}
+   */
+  getNamespaceMap(namespace) {
+    return this._getNamespaceMap(namespace);
   }
 
   /**
