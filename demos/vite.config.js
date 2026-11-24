@@ -93,6 +93,8 @@ const siblingRequireFrom = [
   .filter((pkg) => fs.existsSync(pkg))
   .map((pkg) => createRequire(pkg));
 
+const EXOTUI_OPTIONAL_EXTERNALS = new Set(['@mermaid-js/mermaid-zenuml']);
+
 function exotuiDependencyFallbackPlugin() {
   return {
     name: 'vibeslopdb-exotui-dep-fallback',
@@ -102,6 +104,9 @@ function exotuiDependencyFallbackPlugin() {
       }
       if (importer && (importer.includes('/node_modules/') || !importer.startsWith(exotuiDir))) {
         return null;
+      }
+      if (EXOTUI_OPTIONAL_EXTERNALS.has(source)) {
+        return { id: source, external: true };
       }
       for (const req of siblingRequireFrom) {
         try {
@@ -395,6 +400,7 @@ export function createDemoBuildConfig(demoName, { command = 'build', mode = 'pro
   } else if (demo.vibeslopdb) {
     rollupOptions = {
       preserveEntrySignatures: 'exports-only',
+      external: [...EXOTUI_OPTIONAL_EXTERNALS],
       input: {
         index: path.resolve(demoRoot, 'index.html'),
         host: path.resolve(demoRoot, 'src/peercomputeHost.js')
