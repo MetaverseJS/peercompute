@@ -10,7 +10,7 @@ networking, shared state and managed CPU/WASM/WebGPU execution for browser
 applications. Its current controller provides spatial neighbor selection and
 connection recovery; compute placement uses explicit policies and executors.
 Demonstrating throughput-driven topology emergence is a research goal of the
-[Keystone experiment](plan/branch/keystone-demo.md).
+[Keystone experiment](plan/todo/keystone-demo.md).
 
 [Try the demos](https://metaversejs.github.io/peercompute/) ·
 [Library guide](peercompute/README.md) · [API](peercompute/docs/API.md) ·
@@ -113,7 +113,7 @@ physics experiments. Each demo owns its setup, controls and implementation notes
 
 Run core tests with `npm --prefix peercompute run test:unit`. Build the library and
 all demos with `npm run build:all`; `npm run docs:preview` serves the result locally.
-See [test coverage](plan/tests.md), the [network chaos lab](net-chaos-lab/README.md)
+See [test coverage](plan/test/test.md), the [network chaos lab](net-chaos-lab/README.md)
 and [relay operations](peercompute/docs/RELAY_SERVER.md) for deeper workflows.
 
 ## License

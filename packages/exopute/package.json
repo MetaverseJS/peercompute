@@ -1,0 +1,44 @@
+{
+  "name": "exopute",
+  "version": "0.1.0-alpha.1",
+  "description": "ExoPute — browser-native P2P WebRTC/libp2p and WebGPU distributed compute mesh (upcoming brand for PeerCompute).",
+  "license": "MIT",
+  "homepage": "https://exopute.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MetaverseJS/peercompute.git",
+    "directory": "packages/exopute"
+  },
+  "keywords": [
+    "exopute",
+    "peercompute",
+    "p2p",
+    "webrtc",
+    "libp2p",
+    "webgpu",
+    "wasm",
+    "distributed-compute",
+    "browser-mesh"
+  ],
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./core": "./src/core.js",
+    "./inference": "./src/inference.js"
+  },
+  "files": [
+    "src/**",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test tests/*.test.js"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "dependencies": {
+    "peercompute": "^0.1.0-alpha.1"
+  }
+}

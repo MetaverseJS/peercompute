@@ -8,9 +8,16 @@ demos/**/node_modules/
 **/.cache/
 **/.parcel-cache/
 
-# Logs and pids
+# Logs, pids & debug dumps
 *.log
 *.pid
+a.out
+webrtc_internals_dump.txt
+rtcstats_dump.gz
+
+# Test reports & Playwright outputs
+**/playwright-report/
+**/test-results/
 
 # Relay identity keys
 config/relay-peer-id.json

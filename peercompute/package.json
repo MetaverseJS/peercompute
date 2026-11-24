@@ -1,7 +1,26 @@
 {
   "name": "peercompute",
-  "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0-alpha.1",
+  "description": "Browser-native P2P WebRTC/libp2p networking, CRDT state, spatial tile leases, and managed CPU/WASM/WebGPU compute mesh.",
+  "license": "MIT",
+  "homepage": "https://metaversejs.github.io/peercompute/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MetaverseJS/peercompute.git",
+    "directory": "peercompute"
+  },
+  "keywords": [
+    "peercompute",
+    "exopute",
+    "p2p",
+    "webrtc",
+    "libp2p",
+    "webgpu",
+    "wasm",
+    "yjs",
+    "distributed-compute",
+    "browser-mesh"
+  ],
   "type": "module",
   "main": "./src/peercompute/index.js",
   "exports": {
@@ -9,6 +28,15 @@
     "./core": "./src/peercompute/core.js",
     "./inference": "./src/peercompute/inference.js",
     "./*": "./*"
+  },
+  "files": [
+    "src/peercompute/**",
+    "docs/**",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=24.0.0"
   },
   "scripts": {
     "build": "webpack --mode production",
@@ -77,7 +105,6 @@
     "multiformats": "14.0.5",
     "peercompute-artifact-noise": "npm:@libp2p/noise@17.0.2",
     "peercompute-diffusion-ort": "npm:onnxruntime-web@1.31.1",
-    "playwright": "^1.56.1",
     "process": "^0.11.10",
     "stream-browserify": "^3.0.0",
     "y-indexeddb": "^9.0.12",

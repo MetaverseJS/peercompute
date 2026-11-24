@@ -2,6 +2,7 @@
   "name": "peercompute-root",
   "private": true,
   "workspaces": [
+    "packages/exopute",
     "packages/geo-core",
     "services/geodata",
     "peercompute",

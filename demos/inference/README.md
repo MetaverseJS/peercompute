@@ -308,9 +308,9 @@ npm run test:agent-layer
 
 Hardware/peer-browser harnesses have separate setup and resource requirements;
 passing unit tests does not qualify every model on every device. See
-[test evidence](../../plan/tests.md), the [artifact plan](../../plan/branch/ipfs-large-files-model-inference.md),
+[test evidence](../../plan/test/test.md), the [artifact plan](../../plan/todo/done/ipfs-large-files-model-inference.md),
 [model discovery](../../plan/demos/inference/model-browser.md) and
-[implementation log](../../plan/log.md) for dated trials and remaining gates.
+[development summary](../../plan/log/log-summary.md) for dated trials and remaining gates.
 
 ## Model observations
 
