@@ -142,8 +142,11 @@ export class ComputeManagerServiceAdapter {
   async #runTask(task = {}) {
     const rootTaskId = normalizeRootTaskId(task);
     if (this.closed) return;
+    const abortController = typeof AbortController !== 'undefined' ? new AbortController() : null;
     const active = {
       rootTaskId,
+      computeTaskId: rootTaskId,
+      abortController,
       status: 'running',
       cancelled: false
     };
@@ -162,7 +165,10 @@ export class ComputeManagerServiceAdapter {
         adapter: this,
         computeManager: this.computeManager
       });
-      const result = await this.#submitMappedTask(mapped);
+      if (mapped && typeof mapped === 'object') {
+        active.computeTaskId = mapped.solverInput?.id || mapped.id || rootTaskId;
+      }
+      const result = await this.#submitMappedTask(mapped, abortController?.signal || null);
       if (active.cancelled || this.closed) return;
       this.activeTasks.delete(rootTaskId);
       this.#emitMessage({
@@ -182,21 +188,26 @@ export class ComputeManagerServiceAdapter {
         })
       });
     } catch (error) {
+      const wasCancelled = active.cancelled || this.closed;
       this.activeTasks.delete(rootTaskId);
+      if (wasCancelled) return;
       this.#emitMessage({
         type: 'task-error',
         rootTaskId,
         error: error?.message || String(error)
       });
-      this.#emitError(error);
     }
   }
 
-  #submitMappedTask(mapped = {}) {
+  #submitMappedTask(mapped = {}, signal = null) {
     if (mapped.solverId && mapped.solverInput) {
-      return this.computeManager.submitSolverTask(mapped.solverId, mapped.solverInput);
+      const solverInput = signal && !mapped.solverInput.signal
+        ? { ...mapped.solverInput, signal }
+        : mapped.solverInput;
+      return this.computeManager.submitSolverTask(mapped.solverId, solverInput);
     }
-    return this.computeManager.submitTask(mapped);
+    const taskPayload = signal && !mapped.signal ? { ...mapped, signal } : mapped;
+    return this.computeManager.submitTask(taskPayload);
   }
 
   #cancelTask(rootTaskId) {
@@ -205,6 +216,14 @@ export class ComputeManagerServiceAdapter {
     active.cancelled = true;
     active.status = 'cancelled-clean';
     this.activeTasks.delete(rootTaskId);
+    try {
+      active.abortController?.abort(new Error('Task cancelled by WorkerSupervisor'));
+    } catch {}
+    if (typeof this.computeManager?.cancelTask === 'function') {
+      try {
+        void Promise.resolve(this.computeManager.cancelTask(active.computeTaskId || rootTaskId)).catch(() => {});
+      } catch {}
+    }
     this.#emitMessage({
       type: 'task-cancelled',
       rootTaskId,

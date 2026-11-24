@@ -7,6 +7,10 @@
 import { NetworkManager, normalizeIceTransportPolicy } from '../networkManager/NetworkManager.js';
 import { StateManager } from '../stateManager/StateManager.js';
 import { ComputeManager } from '../computeManager/ComputeManager.js';
+import {
+  assertSafeRemoteTaskUrls,
+  sha256StableHash
+} from '../computeManager/remoteModulePolicy.js';
 import { GPUHubManager } from '../gpu/GPUHubManager.js';
 import { generateId } from '../utils/Utils.js';
 import { isDebugOutputEnabled } from '../utils/debugOutput.js';
@@ -127,48 +131,9 @@ function normalizeStringList(value) {
   return out;
 }
 
-function stableRemoteResultValue(value) {
-  if (value == null) return value;
-  if (typeof value === 'number') return Number.isFinite(value) ? value : String(value);
-  if (typeof value === 'string' || typeof value === 'boolean') return value;
-  if (typeof value === 'bigint') return `${value.toString()}n`;
-  if (typeof value === 'function') return `[Function:${value.name || 'anonymous'}]`;
-  if (ArrayBuffer.isView(value)) {
-    return {
-      typedArray: value.constructor?.name || 'TypedArray',
-      values: Array.from(value)
-    };
-  }
-  if (value instanceof ArrayBuffer) {
-    return {
-      arrayBufferBytes: Array.from(new Uint8Array(value))
-    };
-  }
-  if (Array.isArray(value)) return value.map(stableRemoteResultValue);
-  if (typeof value === 'object') {
-    const out = {};
-    for (const key of Object.keys(value).sort()) {
-      const entry = stableRemoteResultValue(value[key]);
-      if (entry !== undefined) out[key] = entry;
-    }
-    return out;
-  }
-  return String(value);
-}
-
-function hashRemoteResultString(value) {
-  const input = String(value ?? '');
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < input.length; i += 1) {
-    hash ^= input.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return `fnv1a32-${hash.toString(16).padStart(8, '0')}`;
-}
-
 function hashRemoteResultValue(value) {
   if (value === undefined) return null;
-  return hashRemoteResultString(JSON.stringify(stableRemoteResultValue(value)));
+  return sha256StableHash(value);
 }
 
 function replicaRequestId(baseRequestId, index, peerId) {
@@ -2319,7 +2284,29 @@ export class NodeKernel {
     return `remote-task-graph-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   }
 
-  _normalizeRemoteComputePayload(payload = {}, { allowFunctions = false } = {}) {
+  _getRemoteModulePolicy(options = {}) {
+    return {
+      allowUntrustedRemoteModules: options.allowUntrustedRemoteModules === true
+        || this.config.allowUntrustedRemoteModules === true,
+      allowLocalFileModules: options.allowLocalFileModules === true
+        || this.config.allowLocalFileRemoteModules === true,
+      allowedRemoteModules: Array.isArray(options.allowedRemoteModules)
+        ? options.allowedRemoteModules
+        : (Array.isArray(this.config.allowedRemoteModules) ? this.config.allowedRemoteModules : []),
+      allowedRemoteModuleOrigins: Array.isArray(options.allowedRemoteModuleOrigins)
+        ? options.allowedRemoteModuleOrigins
+        : (Array.isArray(this.config.allowedRemoteModuleOrigins) ? this.config.allowedRemoteModuleOrigins : []),
+      baseUrl: options.remoteModuleBaseUrl || this.config.remoteModuleBaseUrl || null,
+      allowFunctions: options.allowFunctions === true || this.config.allowRemoteFunctionTasks === true
+    };
+  }
+
+  _normalizeRemoteComputePayload(payload = {}, {
+    allowFunctions = false,
+    modulePolicy = null,
+    peerId = null,
+    isResponder = false
+  } = {}) {
     const task = payload && typeof payload === 'object' ? payload : {};
     if (task.fn && !allowFunctions) {
       const err = new Error('Remote compute function payloads are disabled; use module or WASM tasks');
@@ -2336,6 +2323,19 @@ export class NodeKernel {
       err.code = 'ERR_REMOTE_COMPUTE_MODULE_REQUIRED';
       throw err;
     }
+    const effectivePolicy = modulePolicy || this._getRemoteModulePolicy({ allowFunctions });
+    assertSafeRemoteTaskUrls(task, effectivePolicy);
+
+    const rawAffinityKey = task.affinityKey || task.workerKey || task.data?.affinityKey || task.data?.stateKey;
+    const namespacedAffinityKey = isResponder && rawAffinityKey
+      ? `remote:${String(peerId || 'peer').replace(/[^a-zA-Z0-9_.:-]/g, '_')}:${String(rawAffinityKey)}`
+      : rawAffinityKey;
+
+    const requireWorker = isResponder
+      ? (this.config.requireRemoteWorker === true
+        || (Boolean(this.computeManager?._supportsWorkers?.()) && this.config.allowRemoteInlineFallback !== true))
+      : false;
+
     return {
       id: task.id,
       runtime,
@@ -2351,32 +2351,84 @@ export class NodeKernel {
       source: task.source,
       args: task.args,
       webgpu: task.webgpu,
-      affinityKey: task.affinityKey || task.workerKey || task.data?.affinityKey || task.data?.stateKey,
+      ...(task.gpuFence !== undefined ? { gpuFence: task.gpuFence } : {}),
+      ...(task.gpuResidentLane !== undefined ? { gpuResidentLane: task.gpuResidentLane } : {}),
+      affinityKey: namespacedAffinityKey,
       suppressCommitDelta: true,
       returnEnvelope: true,
+      ...(isResponder ? { remote: true, remoteModulePolicy: effectivePolicy, requireWorker } : {}),
       ...(allowFunctions && task.fn ? { fn: task.fn } : {})
     };
   }
 
-  _assertRemoteTaskGraphSafe(graph = {}, { allowFunctions = false } = {}) {
-    if (allowFunctions) return;
+  _assertRemoteTaskGraphSafe(graph = {}, { allowFunctions = false, modulePolicy = null } = {}) {
+    const effectivePolicy = modulePolicy || this._getRemoteModulePolicy({ allowFunctions });
     const nodes = Array.isArray(graph.nodes) ? graph.nodes : [];
     for (const node of nodes) {
-      if (typeof node?.createTask === 'function' || typeof node?.task === 'function' || node?.task?.fn) {
+      if (!allowFunctions && (typeof node?.createTask === 'function' || typeof node?.task === 'function' || node?.task?.fn)) {
         const err = new Error('Remote task graph function nodes are disabled; use module or WASM task nodes');
         err.code = 'ERR_REMOTE_TASK_GRAPH_UNSAFE_NODE';
         err.nodeId = node?.id || node?.nodeId || null;
         throw err;
       }
+      if (node?.task && typeof node.task === 'object') {
+        assertSafeRemoteTaskUrls(node.task, effectivePolicy);
+      }
     }
+  }
+
+  _sanitizeIncomingRemoteTaskGraph(graph = {}, { peerId = null, modulePolicy = null } = {}) {
+    const safePeer = String(peerId || 'peer').replace(/[^a-zA-Z0-9_.:-]/g, '_');
+    const sanitized = { ...graph };
+    delete sanitized.taskGraphExecutor;
+    delete sanitized.cacheAdmission;
+    if (sanitized.cachePolicy && typeof sanitized.cachePolicy === 'object' && this.config.allowRemoteTaskGraphCacheWrite !== true) {
+      sanitized.cachePolicy = {
+        ...sanitized.cachePolicy,
+        mode: sanitized.cachePolicy.mode === 'read-only' ? 'read-only' : 'off',
+        writeEnabled: false
+      };
+    }
+    const requireWorker = this.config.requireRemoteWorker === true
+      || (Boolean(this.computeManager?._supportsWorkers?.()) && this.config.allowRemoteInlineFallback !== true);
+    if (Array.isArray(graph.nodes)) {
+      sanitized.nodes = graph.nodes.map((node) => {
+        if (!node || typeof node !== 'object') return node;
+        if (!node.task || typeof node.task !== 'object') return node;
+        const rawAffinity = node.task.affinityKey || node.task.workerKey;
+        const nextTask = {
+          ...node.task,
+          suppressCommitDelta: true,
+          remote: true,
+          remoteModulePolicy: modulePolicy || this._getRemoteModulePolicy(),
+          ...(requireWorker ? { requireWorker: true } : {}),
+          ...(rawAffinity ? { affinityKey: `remote:${safePeer}:${String(rawAffinity)}` } : {})
+        };
+        if (nextTask.placementHint && typeof nextTask.placementHint === 'object') {
+          nextTask.placementHint = { ...nextTask.placementHint, advisoryOnly: true };
+        }
+        if (nextTask.placement && typeof nextTask.placement === 'object') {
+          nextTask.placement = { ...nextTask.placement, advisoryOnly: true };
+        }
+        return {
+          ...node,
+          task: nextTask
+        };
+      });
+    }
+    return sanitized;
   }
 
   _buildNetworkPlacementResultEnvelope(targetPeerId, payload, response, { executorId, role = 'primary' } = {}) {
     const resultEnvelope = response?.result && typeof response.result === 'object'
       ? { ...response.result }
       : { value: response?.result };
-    const taskPacket = response?.taskPacket || payload?.taskPacket || null;
-    const taskEnvelope = response?.taskEnvelope || payload?.taskEnvelope || null;
+    const taskPacket = response?.taskPacket && typeof response.taskPacket === 'object'
+      ? response.taskPacket
+      : null;
+    const taskEnvelope = response?.taskEnvelope && typeof response.taskEnvelope === 'object'
+      ? response.taskEnvelope
+      : null;
     const resultValueForHash = hasOwn(resultEnvelope, 'value')
       ? resultEnvelope.value
       : resultEnvelope?.result;
@@ -2390,16 +2442,10 @@ export class NodeKernel {
     const transportPeerId = response?.peerId || null;
     const responderNodeId = response?.responderId || null;
     const responderPeerId = response?.responderPeerId || transportPeerId || targetPeerId;
-    const outputHash = firstDefined(
-      resultEnvelope?.outputHash,
-      resultEnvelope?.resultHash,
-      hashRemoteResultValue(resultValueForHash)
-    );
-    const commitDeltaHash = firstDefined(
-      resultEnvelope?.commitDeltaHash,
-      resultEnvelope?.deltaHash,
-      hashRemoteResultValue(commitDelta)
-    );
+    // Always compute output/delta digests locally from received payload bytes so
+    // an untrusted responder cannot spoof matching hashes while returning tampered data.
+    const outputHash = hashRemoteResultValue(resultValueForHash);
+    const commitDeltaHash = hashRemoteResultValue(commitDelta);
     const placementProvenance = {
       schema: REMOTE_COMPUTE_PLACEMENT_PROVENANCE_SCHEMA,
       transport: 'nodekernel-remote-compute',
@@ -3007,7 +3053,11 @@ export class NodeKernel {
     }
     const timeoutMs = normalizeInteger(options.timeoutMs ?? this.config.remoteComputeTimeoutMs, this.config.remoteComputeTimeoutMs, 1, 3600000);
     const task = this._normalizeRemoteComputePayload(payload, {
-      allowFunctions: options.allowRemoteFunctionTasks === true
+      allowFunctions: options.allowRemoteFunctionTasks === true,
+      modulePolicy: this._getRemoteModulePolicy({
+        ...options,
+        allowFunctions: options.allowRemoteFunctionTasks === true
+      })
     });
     const request = {
       schema: REMOTE_COMPUTE_REQUEST_SCHEMA,
@@ -3021,19 +3071,60 @@ export class NodeKernel {
       sentAt: Date.now()
     };
 
+    const signal = options.signal || payload?.signal || null;
+    if (signal?.aborted) {
+      const reason = signal.reason;
+      throw reason instanceof Error
+        ? reason
+        : Object.assign(new Error(String(reason || 'Remote compute request cancelled')), {
+          name: 'AbortError',
+          code: 'ERR_COMPUTE_TASK_CANCELLED',
+          requestId
+        });
+    }
+
     return new Promise((resolve, reject) => {
+      let settled = false;
+      const cleanup = () => {
+        clearTimeout(timeoutId);
+        signal?.removeEventListener?.('abort', onAbort);
+      };
+      const settleResolve = (value) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve(value);
+      };
+      const settleReject = (err) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(err);
+      };
+      const onAbort = () => {
+        this.pendingRemoteComputeRequests.delete(requestId);
+        const reason = signal?.reason;
+        settleReject(reason instanceof Error
+          ? reason
+          : Object.assign(new Error(String(reason || 'Remote compute request cancelled')), {
+            name: 'AbortError',
+            code: 'ERR_COMPUTE_TASK_CANCELLED',
+            requestId
+          }));
+      };
       const timeoutId = setTimeout(() => {
         this.pendingRemoteComputeRequests.delete(requestId);
         const err = new Error(`Remote compute request timed out after ${timeoutMs}ms`);
         err.code = 'ERR_REMOTE_COMPUTE_TIMEOUT';
         err.requestId = requestId;
-        reject(err);
+        settleReject(err);
       }, timeoutMs);
       timeoutId?.unref?.();
+      signal?.addEventListener?.('abort', onAbort, { once: true });
       this.pendingRemoteComputeRequests.set(requestId, {
         peerId: targetPeerId,
-        resolve,
-        reject,
+        resolve: settleResolve,
+        reject: settleReject,
         timeoutId,
         requestId,
         sentAt: request.sentAt,
@@ -3043,9 +3134,8 @@ export class NodeKernel {
         type: 'compute-task',
         data: request
       }).catch((err) => {
-        clearTimeout(timeoutId);
         this.pendingRemoteComputeRequests.delete(requestId);
-        reject(err);
+        settleReject(err);
       });
     });
   }
@@ -4491,15 +4581,40 @@ export class NodeKernel {
         throw err;
       }
       const payload = request.task || request.payload || request;
-      const task = this._normalizeRemoteComputePayload(payload, {
+      const modulePolicy = this._getRemoteModulePolicy({
         allowFunctions: this.config.allowRemoteFunctionTasks === true
       });
+      const task = this._normalizeRemoteComputePayload(payload, {
+        allowFunctions: this.config.allowRemoteFunctionTasks === true,
+        modulePolicy,
+        peerId,
+        isResponder: true
+      });
       task.id = task.id || requestId;
+      // Recompute authoritative task packet hashes from the actual task being
+      // executed so the responder never blindly echoes forged hashes.
+      const localPacket = typeof this.computeManager?._createTaskPacket === 'function'
+        ? this.computeManager._createTaskPacket({
+            ...task,
+            gpuFence: task.gpuFence ?? null,
+            gpuResidentLane: task.gpuResidentLane ?? null
+          }, request.placement || {})
+        : null;
       const result = await this.computeManager.submitTask(task);
+      const responseTaskPacket = localPacket
+        ? {
+            ...(request.taskPacket && typeof request.taskPacket === 'object' ? request.taskPacket : localPacket),
+            schema: localPacket.schema,
+            codeHash: localPacket.codeHash,
+            inputHash: request.placement ? localPacket.inputHash : (request.taskPacket?.inputHash || localPacket.inputHash),
+            taskHash: request.placement ? localPacket.taskHash : (request.taskPacket?.taskHash || localPacket.taskHash),
+            hashAlgorithm: localPacket.hashAlgorithm
+          }
+        : (request.taskPacket || null);
       await sendResult({
         ok: true,
         result,
-        taskPacket: request.taskPacket || null,
+        taskPacket: responseTaskPacket,
         taskEnvelope: request.taskEnvelope || null
       });
     } catch (err) {
@@ -4592,10 +4707,18 @@ export class NodeKernel {
         throw err;
       }
       const graph = request.graph || request.taskGraph || request.payload || request;
-      this._assertRemoteTaskGraphSafe(graph, {
+      const modulePolicy = this._getRemoteModulePolicy({
         allowFunctions: this.config.allowRemoteFunctionTasks === true
       });
-      const result = await this.computeManager.submitTaskGraph(graph);
+      this._assertRemoteTaskGraphSafe(graph, {
+        allowFunctions: this.config.allowRemoteFunctionTasks === true,
+        modulePolicy
+      });
+      const sanitizedGraph = this._sanitizeIncomingRemoteTaskGraph(graph, {
+        peerId,
+        modulePolicy
+      });
+      const result = await this.computeManager.submitTaskGraph(sanitizedGraph);
       await sendResult({
         ok: true,
         result

@@ -173,6 +173,9 @@ test('ComputeManager can delegate non-advisory remote placement through one mana
           executorId: 'peer-fixture-executor',
           peerId: 'peer-a',
           workerId: 'worker-a',
+          codeHash: payload.taskPacket.codeHash,
+          inputHash: payload.taskPacket.inputHash,
+          taskHash: payload.taskPacket.taskHash,
           outputHash: 'output-hash-a',
           resultSchema: 'peercompute.test.remote-result.v0',
           validated: true,
@@ -279,6 +282,9 @@ test('ComputeManager accepts remote placement only after required GPU fence evid
           executorId: 'gpu-fence-peer-executor',
           peerId: 'peer-gpu-a',
           workerId: 'worker-gpu-a',
+          codeHash: payload.taskPacket.codeHash,
+          inputHash: payload.taskPacket.inputHash,
+          taskHash: payload.taskPacket.taskHash,
           gpuFence: {
             status: 'queue-work-completed',
             method: 'queue.onSubmittedWorkDone',
@@ -332,7 +338,7 @@ test('ComputeManager accepts remote placement only after required GPU fence evid
 test('ComputeManager rejects remote placement when a required GPU fence report is missing', async () => {
   const manager = new ComputeManager({
     enableWorkers: false,
-    placementExecutor: async () => ({
+    placementExecutor: async (payload) => ({
       value: { ok: true },
       commitDelta: {
         taskId: 'remote-gpu-fence-missing-task',
@@ -341,7 +347,10 @@ test('ComputeManager rejects remote placement when a required GPU fence report i
       },
       provenance: {
         executorId: 'gpu-fence-missing-executor',
-        peerId: 'peer-gpu-missing'
+        peerId: 'peer-gpu-missing',
+        codeHash: payload.taskPacket.codeHash,
+        inputHash: payload.taskPacket.inputHash,
+        taskHash: payload.taskPacket.taskHash
       }
     })
   });
@@ -421,7 +430,10 @@ test('ComputeManager attaches signed task envelopes before remote admission and 
         value: { ok: true, signed: payload.taskEnvelope.signed },
         provenance: {
           executorId: 'signed-envelope-executor',
-          peerId: 'peer-signed'
+          peerId: 'peer-signed',
+          codeHash: payload.taskPacket.codeHash,
+          inputHash: payload.taskPacket.inputHash,
+          taskHash: payload.taskPacket.taskHash
         }
       };
     }
@@ -478,7 +490,10 @@ test('ComputeManager can configure remote placement hooks after construction', a
         value: { ok: true, remote: true },
         provenance: {
           executorId: 'late-peer-executor',
-          peerId: 'peer-late'
+          peerId: 'peer-late',
+          codeHash: payload.taskPacket.codeHash,
+          inputHash: payload.taskPacket.inputHash,
+          taskHash: payload.taskPacket.taskHash
         }
       };
     },
@@ -594,6 +609,9 @@ test('ComputeManager retries transient remote placement executor failures before
         provenance: {
           executorId: 'retry-peer-executor',
           peerId: 'peer-retry',
+          codeHash: payload.taskPacket.codeHash,
+          inputHash: payload.taskPacket.inputHash,
+          taskHash: payload.taskPacket.taskHash,
           outputHash: 'output-retry'
         }
       };
@@ -707,13 +725,15 @@ test('ComputeManager rejects remote placement when provenance hashes do not matc
     enableWorkers: false,
     placementMaxAttempts: 3,
     placementRetryBaseDelayMs: 0,
-    placementExecutor: async () => {
+    placementExecutor: async (payload) => {
       attempts += 1;
       return {
         value: { ok: true },
         provenance: {
           executorId: 'bad-peer-executor',
           peerId: 'peer-b',
+          codeHash: payload.taskPacket.codeHash,
+          taskHash: payload.taskPacket.taskHash,
           inputHash: 'fnv1a32-deadbeef'
         }
       };
@@ -789,7 +809,7 @@ test('ComputeManager rejects remote placement when result validator denies it', 
         replicaCount: 2
       };
     },
-    placementExecutor: async () => ({
+    placementExecutor: async (payload) => ({
       value: { ok: true },
       commitDelta: {
         taskId: 'remote-validation-task',
@@ -799,7 +819,10 @@ test('ComputeManager rejects remote placement when result validator denies it', 
       },
       provenance: {
         executorId: 'peer-validation-executor',
-        peerId: 'peer-c'
+        peerId: 'peer-c',
+        codeHash: payload.taskPacket.codeHash,
+        inputHash: payload.taskPacket.inputHash,
+        taskHash: payload.taskPacket.taskHash
       }
     })
   });

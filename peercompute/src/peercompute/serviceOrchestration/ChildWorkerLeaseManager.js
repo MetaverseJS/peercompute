@@ -83,12 +83,29 @@ function normalizePolicy(spec = {}, defaultPolicy = {}) {
   };
 }
 
+const OPAQUE_OR_UNSAFE_CHILD_SCHEMES = /^(?:data|blob|javascript|vbscript|file|about|chrome|chrome-extension|filesystem):/i;
+
 function assertSameOriginModule(moduleUrl, policy) {
-  if (!policy.sameOriginOnly || !policy.baseUrl || !moduleUrl) return;
+  if (!policy.sameOriginOnly || !moduleUrl) return;
+  const raw = String(moduleUrl).trim();
+  if (!raw) return;
+  if (raw.startsWith('//') || OPAQUE_OR_UNSAFE_CHILD_SCHEMES.test(raw)) {
+    throw new Error(`Child worker module must be same-origin: ${moduleUrl}`);
+  }
+  const effectiveBase = policy.baseUrl
+    || (typeof globalThis.location?.href === 'string' && globalThis.location.href ? globalThis.location.href : null);
+  if (!effectiveBase) {
+    // In headless environments without a baseUrl/location, allow relative paths
+    // but reject explicit cross-origin URLs.
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw)) {
+      throw new Error(`Child worker module must be same-origin: ${moduleUrl}`);
+    }
+    return;
+  }
   const fallbackBase = globalThis.location?.href || 'http://localhost/';
-  const base = new URL(policy.baseUrl, fallbackBase);
-  const target = new URL(moduleUrl, base);
-  if (target.origin !== base.origin) {
+  const base = new URL(effectiveBase, fallbackBase);
+  const target = new URL(raw, base);
+  if (base.origin === 'null' || target.origin === 'null' || target.origin !== base.origin) {
     throw new Error(`Child worker module must be same-origin: ${moduleUrl}`);
   }
 }
@@ -121,6 +138,7 @@ export class ChildWorkerLeaseManager {
     this.defaultWarmTtlMs = normalizeInteger(defaultWarmTtlMs, 60_000, 1);
     this.now = now;
     this.leases = new Map();
+    this._requestQueue = Promise.resolve();
     this.warmStats = {
       warmHits: 0,
       warmMisses: 0,
@@ -129,7 +147,13 @@ export class ChildWorkerLeaseManager {
     };
   }
 
-  async request(parentWorkerId, spec = {}) {
+  request(parentWorkerId, spec = {}) {
+    const run = this._requestQueue.then(() => this.#requestSerialized(parentWorkerId, spec));
+    this._requestQueue = run.catch(() => {});
+    return run;
+  }
+
+  async #requestSerialized(parentWorkerId, spec = {}) {
     const parentId = String(parentWorkerId || '').trim();
     if (!parentId) throw new Error('parentWorkerId is required');
 

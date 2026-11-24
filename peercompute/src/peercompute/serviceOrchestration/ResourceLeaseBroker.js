@@ -132,7 +132,10 @@ export class ResourceLeaseBroker {
 
     const priorityClass = normalizePriorityClass(spec.priorityClass);
     const priority = priorityValue(priorityClass, spec.priority);
-    const units = normalizePositiveInteger(spec.units ?? spec.count, 1, 1, pool.units);
+    const units = normalizePositiveInteger(spec.units ?? spec.count, 1, 1);
+    if (units > pool.units) {
+      throw new Error(`Resource quota exceeded for ${kind}: requested ${units} units exceeds pool capacity ${pool.units}`);
+    }
     const memoryBytes = normalizeNonNegativeInteger(spec.memoryBytes, 0);
     // A caller may tighten a borrowed pool for this request without mutating its
     // owner's capacity. Both checks and the eventual lease insertion are
@@ -311,7 +314,6 @@ export class ResourceLeaseBroker {
   }
 
   #preemptLowerPriority(kind, priority, neededUnits) {
-    let freed = 0;
     const candidates = [...this.leases.values()]
       .filter((lease) => (
         lease.status === 'active'
@@ -321,15 +323,24 @@ export class ResourceLeaseBroker {
         && lease.priority < priority
       ))
       .sort((left, right) => left.priority - right.priority || left.createdAt - right.createdAt);
+    const victims = [];
+    let potentialFreed = 0;
     for (const lease of candidates) {
-      lease.status = 'preempted';
-      lease.preemptedAt = this.now();
-      lease.preemptedByPriority = priority;
-      freed += lease.units;
-      this.preemptionCount += 1;
-      if (freed >= neededUnits) break;
+      victims.push(lease);
+      potentialFreed += lease.units;
+      if (potentialFreed >= neededUnits) break;
     }
-    return freed;
+    if (potentialFreed < neededUnits) {
+      return 0;
+    }
+    const now = this.now();
+    for (const lease of victims) {
+      lease.status = 'preempted';
+      lease.preemptedAt = now;
+      lease.preemptedByPriority = priority;
+      this.preemptionCount += 1;
+    }
+    return potentialFreed;
   }
 
   #mark(leaseId, status, timestampField) {

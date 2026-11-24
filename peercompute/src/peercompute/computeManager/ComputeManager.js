@@ -1,4 +1,5 @@
 import { executeTaskPayload } from './taskRuntime.js';
+import { stableCanonicalValue } from './remoteModulePolicy.js';
 import { SolverRegistry } from './SolverRegistry.js';
 import {
   GpuResidentLaneManager,
@@ -258,10 +259,36 @@ function nowMs() {
   return Date.now();
 }
 
-function sleepMs(delayMs) {
+function sleepMs(delayMs, signal = null) {
   const ms = Math.max(0, Number(delayMs) || 0);
+  if (signal?.aborted) {
+    const reason = signal.reason;
+    return Promise.reject(reason instanceof Error
+      ? reason
+      : Object.assign(new Error(String(reason || 'Compute task cancelled')), {
+        name: 'AbortError',
+        code: 'ERR_COMPUTE_TASK_CANCELLED'
+      }));
+  }
   if (ms <= 0) return Promise.resolve();
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      const reason = signal?.reason;
+      reject(reason instanceof Error
+        ? reason
+        : Object.assign(new Error(String(reason || 'Compute task cancelled')), {
+          name: 'AbortError',
+          code: 'ERR_COMPUTE_TASK_CANCELLED'
+        }));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener?.('abort', onAbort);
+      resolve();
+    }, ms);
+    timer?.unref?.();
+    signal?.addEventListener?.('abort', onAbort, { once: true });
+  });
 }
 
 function makeEmptyRuntimeStats() {
@@ -894,35 +921,10 @@ function normalizeRemoteReplicaSummaries(value) {
   });
 }
 
+const TASK_PACKET_OMIT_KEYS = new Set(['taskPacket', 'taskEnvelope']);
+
 function stableTaskValue(value) {
-  if (value == null) return value;
-  if (typeof value === 'number') return Number.isFinite(value) ? value : String(value);
-  if (typeof value === 'string' || typeof value === 'boolean') return value;
-  if (typeof value === 'bigint') return `${value.toString()}n`;
-  if (typeof value === 'function') return `[Function:${value.name || 'anonymous'}]`;
-  if (ArrayBuffer.isView(value)) {
-    return {
-      typedArray: value.constructor?.name || 'TypedArray',
-      values: Array.from(value)
-    };
-  }
-  if (value instanceof ArrayBuffer) {
-    return {
-      arrayBufferBytes: Array.from(new Uint8Array(value))
-    };
-  }
-  if (Array.isArray(value)) return value.map(stableTaskValue);
-  if (typeof value === 'object') {
-    const out = {};
-    for (const key of Object.keys(value).sort()) {
-      if (key === 'taskPacket') continue;
-      if (key === 'taskEnvelope') continue;
-      const entry = stableTaskValue(value[key]);
-      if (entry !== undefined) out[key] = entry;
-    }
-    return out;
-  }
-  return String(value);
+  return stableCanonicalValue(value, { omitKeys: TASK_PACKET_OMIT_KEYS });
 }
 
 function stableSerialize(value) {
@@ -1034,6 +1036,7 @@ export class ComputeManager {
     this.workers = [];
     this.taskQueue = [];
     this.activeTasks = new Map();
+    this.pendingPreDispatchTasks = new Map();
     this.activeTaskGraphs = new Map();
     this.taskGraphCache = new Map();
     this.taskGraphCacheArtifacts = new Map();
@@ -1347,6 +1350,11 @@ export class ComputeManager {
     const error = Object.assign(new Error('ComputeManager was destroyed before pending work completed'), {
       name: 'ComputeManagerDestroyedError', code: 'ERR_COMPUTE_MANAGER_DESTROYED'
     });
+    for (const [taskId, task] of [...this.pendingPreDispatchTasks.entries()]) {
+      this.pendingPreDispatchTasks.delete(taskId);
+      this._rejectTaskGpuResidentLaneLease(task, error.code);
+      task.reject(error);
+    }
     while (this.taskQueue.length) {
       const task = this.taskQueue.shift();
       this._rejectTaskGpuResidentLaneLease(task, error.code);
@@ -1603,9 +1611,11 @@ export class ComputeManager {
       suppressCommitDelta: task.suppressCommitDelta === true || task.commitDelta === false,
       returnEnvelope: task.returnEnvelope === true || task.returnRawResult === true,
       requireWorker: task.requireWorker === true,
+      ...(task.remote === true ? { remote: true } : {}),
+      ...(task.remoteModulePolicy ? { remoteModulePolicy: task.remoteModulePolicy } : {}),
       affinityKey
     };
-    if (payload.requireWorker && (gpuResidentLane?.localExecution === 'inline' || placement.requestedPlacement !== 'local' && !placement.advisory)) {
+    if (payload.requireWorker && (gpuResidentLane?.localExecution === 'inline' || (placement.requestedPlacement !== 'local' && !placement.advisoryOnly))) {
       throw this._createRequiredWorkerError('required local worker conflicts with requested placement');
     }
     if (payload.affinityKey && this.residentWorkerAffinities.has(payload.affinityKey)
@@ -1619,25 +1629,46 @@ export class ComputeManager {
     if (this.workerRequirementError) throw this.workerRequirementError;
 
     return new Promise((resolve, reject) => {
-      const control = { settled: false, cancelRequested: false, timer: null, bootstrapTimer: null };
+      const abortController = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const control = {
+        settled: false,
+        cancelRequested: false,
+        timer: null,
+        bootstrapTimer: null,
+        abortController
+      };
       let complete;
       const completion = new Promise((done) => { complete = done; });
-      const onAbort = () => { void this.cancelTask(id).catch(() => {}); };
+      const onAbort = () => {
+        try {
+          abortController?.abort?.(task.signal?.reason || Object.assign(new Error('Compute task cancelled'), {
+            name: 'AbortError',
+            code: 'ERR_COMPUTE_TASK_CANCELLED'
+          }));
+        } catch {}
+        void this.cancelTask(id).catch(() => {});
+      };
+      let wrapped;
       const finish = (callback, value) => {
         if (control.settled) return;
         control.settled = true;
         clearTimeout(control.timer);
         clearTimeout(control.bootstrapTimer);
+        this.pendingPreDispatchTasks.delete(id);
         task.signal?.removeEventListener('abort', onAbort);
+        if (wrapped) {
+          this._releaseTaskResourceLease(wrapped);
+        }
         callback(value);
         complete();
       };
       const sequence = this.nextTaskSequence;
       this.nextTaskSequence += 1;
-      const wrapped = {
+      wrapped = {
         id,
         sequence,
         payload,
+        signal: abortController?.signal || task.signal || null,
         control,
         completion,
         resolve: (value) => finish(resolve, value),
@@ -1664,6 +1695,7 @@ export class ComputeManager {
           this._recordTaskCompletion(wrapped, { ok: false, mode: 'queued' });
           wrapped.reject(this._createRequiredWorkerError('task worker readiness timed out'));
         }, this.config.workerBootstrapTimeoutMs);
+        control.bootstrapTimer?.unref?.();
       }
       task.signal?.addEventListener('abort', onAbort, { once: true });
       if (task.signal?.aborted) {
@@ -1671,18 +1703,34 @@ export class ComputeManager {
         return;
       }
       const acquireAndSchedule = async () => {
+        this.pendingPreDispatchTasks.set(id, wrapped);
         if (this.resourceBroker && taskResources) {
           try {
             const lease = await this._acquireBoundedTaskResourceLease(wrapped);
             wrapped.taskResourceLeaseId = lease?.leaseId || null;
           } catch (error) {
-            this._recordTaskCompletion(wrapped, { ok: false, mode: 'queued' });
-            wrapped.reject(error);
+            this.pendingPreDispatchTasks.delete(id);
+            if (!control.settled) {
+              this._recordTaskCompletion(wrapped, { ok: false, mode: 'queued' });
+              wrapped.reject(error);
+            }
             return;
           }
         }
-        if (control.settled || task.signal?.aborted) {
+        this.pendingPreDispatchTasks.delete(id);
+        if (control.settled) {
           this._releaseTaskResourceLease(wrapped);
+          return;
+        }
+        if (task.signal?.aborted || control.cancelRequested) {
+          this._recordTaskCompletion(wrapped, { ok: false, mode: 'queued' });
+          const abortErr = task.signal?.reason instanceof Error
+            ? task.signal.reason
+            : Object.assign(new Error(String(task.signal?.reason || 'Compute task cancelled')), {
+              name: 'AbortError',
+              code: 'ERR_COMPUTE_TASK_CANCELLED'
+            });
+          wrapped.reject(abortErr);
           return;
         }
         if (this._dispatchToPlacementExecutor(wrapped)) return;
@@ -1954,19 +2002,25 @@ export class ComputeManager {
     const executionOrder = [];
     const executionBatches = [];
     const startedAt = nowMs();
+    const graphAbortController = typeof AbortController !== 'undefined' ? new AbortController() : null;
     const activeGraph = {
       graphId,
       startedAt,
       cancelled: abortSignal?.aborted === true,
       reason: abortSignal?.reason || null,
+      abortController: graphAbortController,
       cacheKey: cachePolicy.cacheKey,
       stateSeedPayload,
       placementPolicy,
       graphLaneSpec
     };
+    if (activeGraph.cancelled) {
+      try { graphAbortController?.abort?.(activeGraph.reason || 'abort-signal'); } catch {}
+    }
     const onAbort = () => {
       activeGraph.cancelled = true;
       activeGraph.reason = abortSignal?.reason || 'abort-signal';
+      try { graphAbortController?.abort?.(activeGraph.reason); } catch {}
     };
     if (abortSignal?.addEventListener) abortSignal.addEventListener('abort', onAbort, { once: true });
     this.activeTaskGraphs.set(graphId, activeGraph);
@@ -2040,6 +2094,9 @@ export class ComputeManager {
             throw new Error(`Task graph node ${node.id} did not produce a task`);
           }
           task = injectTaskGraphResultInputs(task, node, nodeResults);
+          if (graphAbortController?.signal && !task.signal) {
+            task = { ...task, signal: graphAbortController.signal };
+          }
           assertNotCancelled();
           const nodeStartedAt = nowMs();
           const result = await this.submitTask(task);
@@ -2233,14 +2290,23 @@ export class ComputeManager {
    * @returns {Promise<void>}
    */
   async cancelTask(taskId, options = {}) {
+    const preDispatchTask = this.pendingPreDispatchTasks.get(taskId);
     const queuedIndex = this.taskQueue.findIndex((entry) => entry.id === taskId);
-    const task = queuedIndex >= 0 ? this.taskQueue[queuedIndex] : this.activeTasks.get(taskId);
+    const task = preDispatchTask
+      || (queuedIndex >= 0 ? this.taskQueue[queuedIndex] : this.activeTasks.get(taskId));
     if (!task) return { cancelled: false, status: 'not-found' };
     if (!task.control) return { cancelled: false, status: 'unsupported-executor' };
     if (task.control.cancelRequested) {
       return task.control.cancellation;
     }
-    if (queuedIndex < 0 && !task.worker) return { cancelled: false, status: 'unsupported-executor' };
+    const isRemoteOrAbortable = !task.worker && (
+      String(task.executionMode || '').startsWith('remote-')
+      || Boolean(task.control.abortController)
+      || Boolean(preDispatchTask)
+    );
+    if (!preDispatchTask && queuedIndex < 0 && !task.worker && !isRemoteOrAbortable) {
+      return { cancelled: false, status: 'unsupported-executor' };
+    }
     task.control.cancelRequested = true;
     const error = Object.assign(new Error(String(options.reason || 'Compute task cancelled')), {
       name: 'AbortError', code: 'ERR_COMPUTE_TASK_CANCELLED'
@@ -2250,12 +2316,22 @@ export class ComputeManager {
     task.control.cancellation = Promise.race([task.completion, stopFailed]).then(() => ({
       cancelled: true, status: 'settled', workerTerminated: Boolean(error.workerTerminated)
     }));
+    if (preDispatchTask) {
+      this.pendingPreDispatchTasks.delete(taskId);
+      this._recordTaskCompletion(task, { ok: false, mode: 'queued' });
+      task.reject(error);
+      return { cancelled: true, status: 'cancelled-pre-dispatch' };
+    }
     if (queuedIndex >= 0) {
       this.taskQueue.splice(queuedIndex, 1);
       this._recordTaskCompletion(task, { ok: false, mode: 'queued' });
       task.reject(error);
       this._scheduleNext();
       return { cancelled: true, status: 'cancelled-queued' };
+    }
+    if (!task.worker) {
+      try { task.control.abortController?.abort?.(error); } catch {}
+      return task.control.cancellation;
     }
     const hardStop = () => {
       if (task.control.settled) return;
@@ -2267,6 +2343,7 @@ export class ComputeManager {
         return;
       }
       this.activeTasks.delete(taskId);
+      this._rejectTaskGpuResidentLaneLease(task, 'ERR_COMPUTE_TASK_CANCELLED');
       error.workerTerminated = true;
       this._recordTaskCompletion(task, { ok: false, mode: 'worker' });
       task.reject(error);
@@ -2274,6 +2351,7 @@ export class ComputeManager {
       this._scheduleNext();
     };
     task.control.timer = setTimeout(hardStop, normalizeInteger(options.timeoutMs, 2000, 1, 60000));
+    task.control.timer?.unref?.();
     try { task.worker.postMessage({ type: 'cancel', id: taskId }); } catch { hardStop(); }
     return task.control.cancellation;
   }
@@ -2394,6 +2472,12 @@ export class ComputeManager {
     }
     active.cancelled = true;
     active.reason = String(reason || 'cancelTaskGraph');
+    try {
+      active.abortController?.abort?.(Object.assign(new Error(`Task graph cancelled: ${id}`), {
+        name: 'AbortError',
+        code: 'TASK_GRAPH_CANCELLED'
+      }));
+    } catch {}
     return {
       schema: COMPUTE_TASK_GRAPH_CANCELLATION_SCHEMA,
       graphId: id,
@@ -3098,53 +3182,6 @@ export class ComputeManager {
     };
   }
 
-  /**
-   * Execute task on appropriate worker
-   * @private
-   * @param {Object} task - Task to execute
-   * @returns {Promise<any>} Task result
-   */
-  async _executeTask(task) {
-    // TODO: Select appropriate worker based on task type
-    // TODO: Send task to worker
-    // TODO: Wait for result
-    // TODO: Handle errors
-  }
-
-  /**
-   * Schedule next task from queue
-   * @private
-   */
-  _scheduleNext() {
-    // TODO: Check for available workers
-    // TODO: Get next task from queue
-    // TODO: Execute task
-  }
-
-  /**
-   * Handle task completion
-   * @private
-   * @param {string} taskId - Completed task ID
-   * @param {any} result - Task result
-   */
-  _handleTaskComplete(taskId, result) {
-    // TODO: Remove from active tasks
-    // TODO: Return result to submitter
-    // TODO: Schedule next queued task
-  }
-
-  /**
-   * Handle task error
-   * @private
-   * @param {string} taskId - Failed task ID
-   * @param {Error} error - Error details
-   */
-  _handleTaskError(taskId, error) {
-    // TODO: Log error
-    // TODO: Retry task if appropriate
-    // TODO: Return error to submitter
-  }
-
   /* Internal helpers */
   _supportsWorkers() {
     return typeof Worker !== 'undefined' && this.config.enableWorkers;
@@ -3647,6 +3684,7 @@ export class ComputeManager {
   }
 
   _placementErrorKind(err) {
+    if (err?.code === 'ERR_COMPUTE_TASK_CANCELLED' || err?.name === 'AbortError') return 'cancelled';
     if (err?.code === 'ERR_COMPUTE_PLACEMENT_TIMEOUT') return 'timeout';
     if (err?.code === 'ERR_COMPUTE_PLACEMENT_REJECTED') return 'rejected';
     if (err?.code === 'ERR_COMPUTE_PLACEMENT_VERIFICATION') return 'verification-failed';
@@ -3739,36 +3777,81 @@ export class ComputeManager {
 
   _runPlacementExecutorWithTimeout(task, { mode, attempt = 1, retryPolicy = null } = {}) {
     const timeoutMs = this._placementTimeoutFor(task);
+    const parentSignal = task.signal || task.control?.abortController?.signal || null;
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    if (parentSignal?.aborted) {
+      const reason = parentSignal.reason;
+      return Promise.reject(reason instanceof Error
+        ? reason
+        : Object.assign(new Error(String(reason || 'Compute task cancelled')), {
+          name: 'AbortError',
+          code: 'ERR_COMPUTE_TASK_CANCELLED'
+        }));
+    }
+    const onParentAbort = () => {
+      try {
+        controller?.abort?.(parentSignal?.reason || Object.assign(new Error('Compute task cancelled'), {
+          name: 'AbortError',
+          code: 'ERR_COMPUTE_TASK_CANCELLED'
+        }));
+      } catch {}
+    };
+    parentSignal?.addEventListener?.('abort', onParentAbort, { once: true });
+
     const executorPromise = Promise.resolve()
       .then(() => this._runPlacementExecutor(task, {
-        signal: controller?.signal || null,
+        signal: controller?.signal || parentSignal || null,
         timeoutMs,
         mode,
         attempt,
         retryPolicy
       }));
 
-    if (timeoutMs <= 0) return executorPromise;
+    const cleanup = () => {
+      parentSignal?.removeEventListener?.('abort', onParentAbort);
+    };
 
+    const races = [executorPromise];
     let timeoutId = null;
-    const timeoutPromise = new Promise((resolve, reject) => {
-      timeoutId = setTimeout(() => {
-        const err = new Error(`Placement executor timed out after ${timeoutMs}ms for ${mode}`);
-        err.name = 'PlacementExecutorTimeoutError';
-        err.code = 'ERR_COMPUTE_PLACEMENT_TIMEOUT';
-        err.timeoutMs = timeoutMs;
-        err.placementMode = mode;
-        try {
-          controller?.abort?.(err);
-        } catch {}
-        reject(err);
-      }, timeoutMs);
-    });
+    if (timeoutMs > 0) {
+      races.push(new Promise((resolve, reject) => {
+        timeoutId = setTimeout(() => {
+          const err = new Error(`Placement executor timed out after ${timeoutMs}ms for ${mode}`);
+          err.name = 'PlacementExecutorTimeoutError';
+          err.code = 'ERR_COMPUTE_PLACEMENT_TIMEOUT';
+          err.timeoutMs = timeoutMs;
+          err.placementMode = mode;
+          try {
+            controller?.abort?.(err);
+          } catch {}
+          reject(err);
+        }, timeoutMs);
+        timeoutId?.unref?.();
+      }));
+    }
+    if (parentSignal) {
+      races.push(new Promise((resolve, reject) => {
+        const rejectAbort = () => {
+          const reason = parentSignal.reason;
+          reject(reason instanceof Error
+            ? reason
+            : Object.assign(new Error(String(reason || 'Compute task cancelled')), {
+              name: 'AbortError',
+              code: 'ERR_COMPUTE_TASK_CANCELLED'
+            }));
+        };
+        if (parentSignal.aborted) {
+          rejectAbort();
+        } else {
+          parentSignal.addEventListener('abort', rejectAbort, { once: true });
+        }
+      }));
+    }
 
-    return Promise.race([executorPromise, timeoutPromise])
+    return Promise.race(races)
       .finally(() => {
         if (timeoutId != null) clearTimeout(timeoutId);
+        cleanup();
       });
   }
 
@@ -3848,9 +3931,11 @@ export class ComputeManager {
       gpuFence,
       gpuFenceStatus: gpuFence?.status ?? null,
       gpuFenceSatisfied: gpuFence?.fenceSatisfied ?? false,
-      codeHash: raw.codeHash || resultObject.codeHash || taskPacket?.codeHash || null,
-      inputHash: raw.inputHash || resultObject.inputHash || taskPacket?.inputHash || null,
-      taskHash: raw.taskHash || resultObject.taskHash || taskPacket?.taskHash || null,
+      // Fail-closed: never backfill codeHash/inputHash/taskHash from the local
+      // taskPacket when remote provenance omits them.
+      codeHash: raw.codeHash || resultObject.codeHash || null,
+      inputHash: raw.inputHash || resultObject.inputHash || null,
+      taskHash: raw.taskHash || resultObject.taskHash || null,
       outputHash: raw.outputHash || resultObject.outputHash || null,
       resultHash: raw.resultHash || resultObject.resultHash || raw.outputHash || resultObject.outputHash || null,
       commitDeltaHash: raw.commitDeltaHash || resultObject.commitDeltaHash || raw.deltaHash || resultObject.deltaHash || null,
@@ -4042,7 +4127,7 @@ export class ComputeManager {
           throw err;
         }
         this._recordPlacementRetry(startedTask, { mode, retry });
-        await sleepMs(retry.delayMs);
+        await sleepMs(retry.delayMs, startedTask.signal || startedTask.control?.abortController?.signal || null);
       }
     }
     const err = new Error(`Remote placement exhausted retry policy for ${mode}`);
@@ -5105,12 +5190,28 @@ export class ComputeManager {
       startedAt: nowMs(),
       executionMode: 'worker'
     };
+    try {
+      this._acquireTaskGpuResidentLaneLease(startedTask);
+    } catch (error) {
+      this._recordTaskCompletion(startedTask, { ok: false, mode: 'worker' });
+      startedTask.reject(error);
+      return true;
+    }
     this._recordExecutorStart(workerId, startedTask, { kind: 'worker' });
     this.activeTasks.set(task.id, startedTask);
+    const workerPayload = this._taskPayloadWithGpuResidentLaneLeaseIdentity(startedTask);
     try {
-      worker.postMessage({ type: 'run', ...task.payload, workerId }, task.transferables || []);
+      worker.postMessage({ type: 'run', ...workerPayload, workerId }, task.transferables || []);
     } catch (error) {
-      this._handleWorkerFailure(worker, error);
+      if (error?.name === 'DataCloneError') {
+        this.activeTasks.delete(task.id);
+        this._rejectTaskGpuResidentLaneLease(startedTask, 'DataCloneError');
+        this._recordTaskCompletion(startedTask, { ok: false, mode: 'worker' });
+        startedTask.reject(error);
+        this._scheduleNext();
+      } else {
+        this._handleWorkerFailure(worker, error);
+      }
     }
     return true;
   }
@@ -5182,7 +5283,12 @@ export class ComputeManager {
     try {
       this._acquireTaskGpuResidentLaneLease(task);
       const rawResult = await executeTaskPayload(
-        this._taskPayloadWithGpuResidentLaneLeaseIdentity(task)
+        this._taskPayloadWithGpuResidentLaneLeaseIdentity(task),
+        {
+          signal: task.signal || task.control?.abortController?.signal || null,
+          remote: task.payload?.remote === true,
+          remoteModulePolicy: task.payload?.remoteModulePolicy || null
+        }
       );
       const result = this._completeTaskGpuResidentLaneLease(task, rawResult, { mode: task.executionMode || 'inline' });
       this._assertRequiredGpuFenceSatisfied(task, result);
@@ -5192,21 +5298,18 @@ export class ComputeManager {
         }
         const finalResult = Object.prototype.hasOwnProperty.call(result, 'value') ? result.value : result.result;
         this._recordTaskCompletion(task, { ok: true, mode: task.executionMode || 'inline' });
-        this._releaseTaskResourceLease(task);
         task.resolve(task.payload?.returnEnvelope === true
           ? this._attachTaskExecutionReport(result, task, { mode: task.executionMode || 'inline' })
           : finalResult);
         return;
       }
       this._recordTaskCompletion(task, { ok: true, mode: task.executionMode || 'inline' });
-      this._releaseTaskResourceLease(task);
       task.resolve(task.payload?.returnEnvelope === true
         ? this._attachTaskExecutionReport(result, task, { mode: task.executionMode || 'inline' })
         : result);
     } catch (err) {
       this._rejectTaskGpuResidentLaneLease(task, err?.code || 'inline-task-error');
       this._recordTaskCompletion(task, { ok: false, mode: task.executionMode || 'inline' });
-      this._releaseTaskResourceLease(task);
       task.reject(err);
     }
   }
@@ -5239,8 +5342,8 @@ export class ComputeManager {
       && this.residentWorkerAffinities.has(task.payload?.affinityKey)
       && ['ERR_MODEL_GPU', 'ERR_MODEL_GPU_OUT_OF_MEMORY', 'ERR_MODEL_RUNTIME', 'MODEL_DISPOSE_FAILED'].includes(message.code);
     if (task.control?.cancelRequested && !fatalResidentError) {
+      this._rejectTaskGpuResidentLaneLease(task, 'ERR_COMPUTE_TASK_CANCELLED');
       this._recordTaskCompletion(task, { ok: false, mode: 'worker' });
-      this._releaseTaskResourceLease(task);
       task.reject(Object.assign(new Error('Compute task cancelled'), { name: 'AbortError', code: 'ERR_COMPUTE_TASK_CANCELLED' }));
       this.activeTasks.delete(id);
       this._retireIdleWorkers();
@@ -5249,24 +5352,34 @@ export class ComputeManager {
     }
 
     if (type === 'result') {
-      let finalResult = result;
-      if (result && typeof result === 'object' && Object.prototype.hasOwnProperty.call(result, 'commitDelta')) {
-        if (task.payload?.suppressCommitDelta !== true) {
-          this.commitDelta(result.commitDelta);
+      try {
+        const completedResult = this._completeTaskGpuResidentLaneLease(task, result, { mode: 'worker' });
+        this._assertRequiredGpuFenceSatisfied(task, completedResult);
+        let finalResult = completedResult;
+        if (completedResult && typeof completedResult === 'object' && Object.prototype.hasOwnProperty.call(completedResult, 'commitDelta')) {
+          if (task.payload?.suppressCommitDelta !== true) {
+            this.commitDelta(completedResult.commitDelta);
+          }
+          finalResult = Object.prototype.hasOwnProperty.call(completedResult, 'value')
+            ? completedResult.value
+            : completedResult.result;
         }
-        finalResult = Object.prototype.hasOwnProperty.call(result, 'value') ? result.value : result.result;
+        this._recordTaskCompletion(task, { ok: true, mode: 'worker' });
+        task.resolve(task.payload?.returnEnvelope === true
+          ? this._attachTaskExecutionReport(completedResult, task, { mode: 'worker' })
+          : finalResult);
+      } catch (fenceErr) {
+        this._rejectTaskGpuResidentLaneLease(task, fenceErr?.code || 'worker-gpu-fence-error');
+        this._recordTaskCompletion(task, { ok: false, mode: 'worker' });
+        task.reject(fenceErr);
       }
-      this._recordTaskCompletion(task, { ok: true, mode: 'worker' });
-      task.resolve(task.payload?.returnEnvelope === true
-        ? this._attachTaskExecutionReport(result, task, { mode: 'worker' })
-        : finalResult);
     } else if (type === 'error') {
+      this._rejectTaskGpuResidentLaneLease(task, message.code || 'worker-task-error');
       this._recordTaskCompletion(task, { ok: false, mode: 'worker' });
       task.reject(Object.assign(new Error(error || 'Worker task failed'), {
         name: message.name || 'Error', ...(message.code ? { code: message.code } : {})
       }));
     }
-    this._releaseTaskResourceLease(task);
     this.activeTasks.delete(id);
     this._retireIdleWorkers();
     this._scheduleIdleScaleDown();
@@ -5299,11 +5412,16 @@ export class ComputeManager {
         const failure = terminated
           ? Object.assign(new Error(error?.message || 'Managed worker terminated'), { workerTerminated: true, code: 'ERR_COMPUTE_WORKER_TERMINATED' })
           : this.workerTerminationFailures.get(worker);
+        this._rejectTaskGpuResidentLaneLease(task, failure?.code || 'worker-terminated');
         this._recordTaskCompletion(task, { ok: false, mode: 'worker' });
         task.reject(failure);
         return;
       }
-      if (this.workers.length > 0 && this._dispatchToWorker(task)) {
+      if (this.workers.length > 0) {
+        if (this._dispatchToWorker(task)) return;
+        // Healthy workers still exist (just busy): re-enqueue instead of
+        // pulling the task onto the main thread.
+        this._enqueueTask(task);
         return;
       }
       task.executionMode = 'inline-fallback';

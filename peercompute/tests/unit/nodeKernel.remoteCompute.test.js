@@ -293,10 +293,12 @@ test('NodeKernel remote compute responder runs module tasks without local delta 
 });
 
 test('NodeKernel placement executor runs through a responder ComputeManager without responder delta commit', async () => {
-  const requester = makeKernel({ nodeId: 'node-a' });
+  const moduleUrl = new URL('../fixtures/remotePlacementModule.js', import.meta.url).toString();
+  const requester = makeKernel({ nodeId: 'node-a', allowedRemoteModules: [moduleUrl] });
   const responder = makeKernel({
     nodeId: 'node-b',
-    enableRemoteComputeResponder: true
+    enableRemoteComputeResponder: true,
+    allowedRemoteModules: [moduleUrl]
   });
   connectInMemoryKernels({ requester, responder });
 
@@ -337,7 +339,6 @@ test('NodeKernel placement executor runs through a responder ComputeManager with
   });
   requesterCompute.setCommitDeltaHandler((delta) => requesterDeltas.push(delta));
 
-  const moduleUrl = new URL('../fixtures/remotePlacementModule.js', import.meta.url).toString();
   const result = await requesterCompute.submitTask({
     id: 'two-kernel-placement-task',
     runtime: 'js',
@@ -414,14 +415,17 @@ test('NodeKernel placement executor runs through a responder ComputeManager with
 });
 
 test('NodeKernel redundant placement executor attaches matching replica reports for quorum validation', async () => {
-  const requester = makeKernel({ nodeId: 'node-a' });
+  const moduleUrl = new URL('../fixtures/remotePlacementModule.js', import.meta.url).toString();
+  const requester = makeKernel({ nodeId: 'node-a', allowedRemoteModules: [moduleUrl] });
   const responderB = makeKernel({
     nodeId: 'node-b',
-    enableRemoteComputeResponder: true
+    enableRemoteComputeResponder: true,
+    allowedRemoteModules: [moduleUrl]
   });
   const responderC = makeKernel({
     nodeId: 'node-c',
-    enableRemoteComputeResponder: true
+    enableRemoteComputeResponder: true,
+    allowedRemoteModules: [moduleUrl]
   });
   connectInMemoryKernelMesh({
     requester,
@@ -465,7 +469,6 @@ test('NodeKernel redundant placement executor attaches matching replica reports 
   });
   requesterCompute.setCommitDeltaHandler((delta) => requesterDeltas.push(delta));
 
-  const moduleUrl = new URL('../fixtures/remotePlacementModule.js', import.meta.url).toString();
   const result = await requesterCompute.submitTask({
     id: 'redundant-placement-task',
     runtime: 'js',
@@ -534,14 +537,17 @@ test('NodeKernel redundant placement executor attaches matching replica reports 
 });
 
 test('NodeKernel redundant placement promotes a replica when the primary fails', async () => {
-  const requester = makeKernel({ nodeId: 'node-a' });
+  const moduleUrl = new URL('../fixtures/remotePlacementModule.js', import.meta.url).toString();
+  const requester = makeKernel({ nodeId: 'node-a', allowedRemoteModules: [moduleUrl] });
   const responderC = makeKernel({
     nodeId: 'node-c',
-    enableRemoteComputeResponder: true
+    enableRemoteComputeResponder: true,
+    allowedRemoteModules: [moduleUrl]
   });
   const responderD = makeKernel({
     nodeId: 'node-d',
-    enableRemoteComputeResponder: true
+    enableRemoteComputeResponder: true,
+    allowedRemoteModules: [moduleUrl]
   });
   connectInMemoryKernelMesh({
     requester,
@@ -587,7 +593,6 @@ test('NodeKernel redundant placement promotes a replica when the primary fails',
   });
   requesterCompute.setCommitDeltaHandler((delta) => requesterDeltas.push(delta));
 
-  const moduleUrl = new URL('../fixtures/remotePlacementModule.js', import.meta.url).toString();
   const result = await requesterCompute.submitTask({
     id: 'redundant-promote-placement-task',
     runtime: 'js',

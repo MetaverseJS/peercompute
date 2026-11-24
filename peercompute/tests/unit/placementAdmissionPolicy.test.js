@@ -127,12 +127,15 @@ test('placement admission policy integrates with ComputeManager remote hook', as
   const manager = new ComputeManager({
     enableWorkers: false,
     placementAdmission,
-    placementExecutor: async () => {
+    placementExecutor: async (payload) => {
       executorCalled = true;
       return {
         value: 'remote-ok',
         provenance: {
           peerId: 'peer-a',
+          codeHash: payload.taskPacket.codeHash,
+          inputHash: payload.taskPacket.inputHash,
+          taskHash: payload.taskPacket.taskHash,
           resultSchema: 'peercompute.test.remote-ok.v0',
           validated: true
         }

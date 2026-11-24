@@ -160,6 +160,12 @@ export class WorkerSupervisor {
     handle.cleanup.push(addErrorListener(host, (event) => {
       handle.status = 'error';
       handle.error = event?.message || String(event || 'service host error');
+      const hostErr = new Error(handle.error);
+      for (const task of [...this.tasks.values()]) {
+        if (task.serviceId === serviceId && this.pending.has(task.rootTaskId)) {
+          void this.#failTask(task.rootTaskId, hostErr).catch(() => {});
+        }
+      }
       this.#emit({ type: 'worker-error', handle: this.#handleSummary(handle), error: handle.error });
     }));
 
@@ -200,7 +206,12 @@ export class WorkerSupervisor {
     const promise = new Promise((resolve, reject) => {
       this.pending.set(rootTaskId, { resolve, reject });
     });
-    postHostMessage(handle.host, { type: 'submit-task', task: normalizedTask, resourceLease });
+    try {
+      postHostMessage(handle.host, { type: 'submit-task', task: normalizedTask, resourceLease });
+    } catch (error) {
+      await this.#failTask(rootTaskId, error);
+      return promise;
+    }
     this.#emit({ type: 'task-submitted', task: this.#taskSummary(taskRecord) });
     return promise;
   }
@@ -241,6 +252,24 @@ export class WorkerSupervisor {
       handle.terminatedAt = this.now();
     }
     this.handles.clear();
+    const shutdownErr = Object.assign(new Error('WorkerSupervisor shut down'), {
+      code: 'ERR_WORKER_SUPERVISOR_SHUTDOWN'
+    });
+    for (const [rootTaskId, entry] of [...this.pending.entries()]) {
+      this.pending.delete(rootTaskId);
+      const task = this.tasks.get(rootTaskId);
+      if (task) {
+        task.status = 'cancelled-clean';
+        task.finishedAt = this.now();
+        if (task.resourceLease && this.resourceBroker?.releaseLease) {
+          try {
+            const releasedLease = await this.resourceBroker.releaseLease(task.resourceLease.leaseId);
+            if (releasedLease) task.resourceLease = releasedLease;
+          } catch {}
+        }
+      }
+      try { entry.reject(shutdownErr); } catch {}
+    }
     this.#emit({ type: 'shutdown' });
   }
 
@@ -405,9 +434,12 @@ export class WorkerSupervisor {
   }
 
   #emit(event) {
+    if (this.listeners.size === 0) return;
     const telemetry = this.getTreeTelemetry();
-    for (const listener of this.listeners) {
-      listener(event, telemetry);
+    for (const listener of [...this.listeners]) {
+      try {
+        listener(event, telemetry);
+      } catch {}
     }
   }
 }

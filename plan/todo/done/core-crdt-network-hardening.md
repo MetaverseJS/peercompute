@@ -1,6 +1,6 @@
 # Core CRDT, Networking, Conjecture & Compute Hardening
 
-Status: active
+Status: done
 Branch: `feature/core-crdt-network-hardening`
 Worktree: `/home/cos/projects/peercompute-core-hardening` (branched from `main` at `ea51d66a`; `/home/cos/projects/peercompute` left untouched while ULG depends on it)
 

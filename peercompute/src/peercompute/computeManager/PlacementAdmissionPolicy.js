@@ -2,23 +2,25 @@ export const PLACEMENT_ADMISSION_POLICY_SCHEMA = 'peercompute.compute.placement-
 export const PLACEMENT_ADMISSION_RESULT_SCHEMA = 'peercompute.compute.placement-admission.v0';
 
 function normalizeNumber(value, fallback, min = 0, max = Number.MAX_SAFE_INTEGER) {
+  if (value === undefined || value === null || value === '' || typeof value === 'boolean') return fallback;
   const number = Number(value);
   if (!Number.isFinite(number)) return fallback;
   return Math.min(max, Math.max(min, number));
 }
 
 function normalizeInteger(value, fallback, min = 0, max = Number.MAX_SAFE_INTEGER) {
+  if (value === undefined || value === null || value === '' || typeof value === 'boolean') return fallback;
   const number = Math.floor(Number(value));
   if (!Number.isFinite(number)) return fallback;
   return Math.min(max, Math.max(min, number));
 }
 
 function normalizeAllowedPlacements(value) {
-  const list = Array.isArray(value) ? value : ['peer', 'cluster'];
-  const allowed = list
+  if (!Array.isArray(value)) return ['peer', 'cluster'];
+  const allowed = value
     .map((entry) => String(entry || '').trim().toLowerCase())
     .filter((entry) => entry === 'peer' || entry === 'cluster');
-  return allowed.length > 0 ? [...new Set(allowed)] : ['peer', 'cluster'];
+  return [...new Set(allowed)];
 }
 
 function normalizeTrustedPeerIds(value) {
@@ -32,7 +34,7 @@ function normalizeFeatureList(value) {
 }
 
 function normalizeOptionalNumber(value, min = 0, max = Number.MAX_SAFE_INTEGER) {
-  if (value === undefined || value === null) return null;
+  if (value === undefined || value === null || value === '' || typeof value === 'boolean') return null;
   const number = Number(value);
   if (!Number.isFinite(number)) return null;
   return Math.min(max, Math.max(min, number));
@@ -78,6 +80,7 @@ function resolvePeerCapabilities(payload = {}, context = {}, network = {}) {
 
 function selectMetric(...values) {
   for (const value of values) {
+    if (value === undefined || value === null || value === '' || typeof value === 'boolean') continue;
     const number = Number(value);
     if (Number.isFinite(number)) return number;
   }
@@ -113,7 +116,8 @@ export function evaluatePlacementAdmission(payload = {}, context = {}, policyOpt
     : normalizePlacementAdmissionPolicyOptions(policyOptions);
   const placement = context.placement || payload.placement || payload.data?.placement || {};
   const requestedPlacement = String(placement.requestedPlacement || placement.recommendedPlacement || 'local').trim().toLowerCase();
-  const confidence = normalizeNumber(placement.confidence, 1, 0, 1);
+  const explicitConfidence = normalizeOptionalNumber(placement.confidence, 0, 1);
+  const confidence = explicitConfidence ?? (options.minConfidence > 0 ? 0 : 1);
   const network = resolveNetworkCapacity(payload, context, options);
   const bandwidthMbps = selectMetric(
     placement.bandwidthMbps,
@@ -189,6 +193,9 @@ export function evaluatePlacementAdmission(payload = {}, context = {}, policyOpt
   } else if (requestedPlacement === 'cluster') {
     if (remoteWorkerCapacity < options.minRemoteWorkers) {
       addReason(blockedReasons, 'remote-workers-below-floor');
+    }
+    if (options.requireTrustedPeer && (!peerId || !options.trustedPeerIds.includes(peerId))) {
+      addReason(blockedReasons, 'peer-not-trusted');
     }
     if (clusterNodes < options.minClusterNodes) {
       addReason(blockedReasons, 'cluster-nodes-below-floor');

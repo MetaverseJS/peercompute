@@ -1,56 +1,31 @@
 import { COMPUTE_REMOTE_PLACEMENT_VALIDATION_SCHEMA } from './ComputeManager.js';
+import { fnv1a32StableHash, sha256StableHash } from './remoteModulePolicy.js';
 
 export const REMOTE_RESULT_QUORUM_POLICY_SCHEMA = 'peercompute.compute.remote-result-quorum-policy.v0';
 export const REMOTE_RESULT_QUORUM_REPORT_SCHEMA = 'peercompute.compute.remote-result-quorum.v0';
 
 function normalizeInteger(value, fallback, min = 0, max = Number.MAX_SAFE_INTEGER) {
+  if (value === undefined || value === null || value === '' || typeof value === 'boolean') return fallback;
   const number = Math.floor(Number(value));
   if (!Number.isFinite(number)) return fallback;
   return Math.min(max, Math.max(min, number));
 }
 
-function stableValue(value) {
-  if (value == null) return value;
-  if (typeof value === 'number') return Number.isFinite(value) ? value : String(value);
-  if (typeof value === 'string' || typeof value === 'boolean') return value;
-  if (typeof value === 'bigint') return `${value.toString()}n`;
-  if (typeof value === 'function') return `[Function:${value.name || 'anonymous'}]`;
-  if (ArrayBuffer.isView(value)) {
-    return {
-      typedArray: value.constructor?.name || 'TypedArray',
-      values: Array.from(value)
-    };
-  }
-  if (value instanceof ArrayBuffer) {
-    return {
-      arrayBufferBytes: Array.from(new Uint8Array(value))
-    };
-  }
-  if (Array.isArray(value)) return value.map(stableValue);
-  if (typeof value === 'object') {
-    const out = {};
-    for (const key of Object.keys(value).sort()) {
-      const entry = stableValue(value[key]);
-      if (entry !== undefined) out[key] = entry;
-    }
-    return out;
-  }
-  return String(value);
-}
-
-function hashString(value) {
-  const input = String(value ?? '');
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < input.length; i += 1) {
-    hash ^= input.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return `fnv1a32-${hash.toString(16).padStart(8, '0')}`;
-}
-
 function stableHash(value) {
   if (value === undefined) return null;
-  return hashString(JSON.stringify(stableValue(value)));
+  return sha256StableHash(value);
+}
+
+function digestMatchesValue(claimedHash, value) {
+  if (claimedHash == null || value === undefined) return true;
+  const text = String(claimedHash);
+  if (text.startsWith('sha256-')) {
+    return text === sha256StableHash(value);
+  }
+  if (text.startsWith('fnv1a32-')) {
+    return text === fnv1a32StableHash(value);
+  }
+  return true;
 }
 
 function normalizeBoolean(value, fallback) {
@@ -84,6 +59,8 @@ export function normalizeRemoteResultQuorumOptions(options = {}) {
     compareCommitDeltaHash: normalizeBoolean(options.compareCommitDeltaHash, true),
     compareTaskHashes: normalizeBoolean(options.compareTaskHashes, true),
     requireReplicaTaskHashes: normalizeBoolean(options.requireReplicaTaskHashes, false),
+    verifyPayloadDigests: normalizeBoolean(options.verifyPayloadDigests, true),
+    requireDistinctPeers: normalizeBoolean(options.requireDistinctPeers, true),
     failClosedOnUnavailableResponder: normalizeBoolean(options.failClosedOnUnavailableResponder, true),
     maxReplicaReports: normalizeInteger(options.maxReplicaReports, 64, 1, 1000000),
     isPeerAvailable: typeof options.isPeerAvailable === 'function' ? options.isPeerAvailable : null,
@@ -135,18 +112,25 @@ function buildPeerAvailabilityChecker(context = {}, options = {}) {
 
 function normalizeReplica(entry, index, context, options, availability) {
   const source = entry && typeof entry === 'object' ? entry : { value: entry };
+  const hasExplicitValue = Object.prototype.hasOwnProperty.call(source, 'value')
+    || Object.prototype.hasOwnProperty.call(source, 'result')
+    || Object.prototype.hasOwnProperty.call(source, 'finalResult');
   const value = firstDefined(source.value, source.result, source.finalResult);
+  const hasExplicitCommitDelta = Object.prototype.hasOwnProperty.call(source, 'commitDelta')
+    || Object.prototype.hasOwnProperty.call(source, 'delta');
   const commitDelta = firstDefined(source.commitDelta, source.delta);
-  const outputHash = firstDefined(
-    source.outputHash,
-    source.resultHash,
-    value !== null ? stableHash(value) : null
-  );
-  const commitDeltaHash = firstDefined(
-    source.commitDeltaHash,
-    source.deltaHash,
-    commitDelta !== null ? stableHash(commitDelta) : null
-  );
+  const claimedOutputHash = firstDefined(source.outputHash, source.resultHash);
+  const claimedCommitDeltaHash = firstDefined(source.commitDeltaHash, source.deltaHash);
+  const computedOutputHash = hasExplicitValue ? stableHash(value) : null;
+  const computedCommitDeltaHash = hasExplicitCommitDelta ? stableHash(commitDelta) : null;
+  const outputDigestValid = !options.verifyPayloadDigests
+    || !hasExplicitValue
+    || digestMatchesValue(claimedOutputHash, value);
+  const commitDeltaDigestValid = !options.verifyPayloadDigests
+    || !hasExplicitCommitDelta
+    || digestMatchesValue(claimedCommitDeltaHash, commitDelta);
+  const outputHash = firstDefined(claimedOutputHash, computedOutputHash);
+  const commitDeltaHash = firstDefined(claimedCommitDeltaHash, computedCommitDeltaHash);
   const taskPacket = context.taskPacket || {};
   const taskHashChecks = ['codeHash', 'inputHash', 'taskHash'].map((field) => {
     const expected = taskPacket[field] || null;
@@ -167,14 +151,24 @@ function normalizeReplica(entry, index, context, options, availability) {
     index,
     peerId,
     peerAvailable,
+    duplicatePeer: false,
     workerId: source.workerId || source.remoteWorkerId || null,
     executorId: source.executorId || null,
     outputHash,
+    computedOutputHash,
+    outputDigestValid,
     commitDeltaHash,
+    computedCommitDeltaHash,
+    commitDeltaDigestValid,
     codeHash: source.codeHash || null,
     inputHash: source.inputHash || null,
     taskHash: source.taskHash || null,
-    ok: source.ok !== false && source.accepted !== false && source.valid !== false && peerAvailable,
+    ok: source.ok !== false
+      && source.accepted !== false
+      && source.valid !== false
+      && peerAvailable
+      && outputDigestValid
+      && commitDeltaDigestValid,
     taskHashChecks,
     taskHashMismatchFields: taskHashChecks.filter((check) => !check.ok).map((check) => check.field)
   };
@@ -182,16 +176,18 @@ function normalizeReplica(entry, index, context, options, availability) {
 
 function normalizePrimary(finalResult, context = {}, options = {}, availability = null) {
   const provenance = context.provenance || {};
-  const outputHash = firstDefined(
-    provenance.outputHash,
-    provenance.resultHash,
-    stableHash(finalResult)
-  );
-  const commitDeltaHash = firstDefined(
-    provenance.commitDeltaHash,
-    provenance.deltaHash,
-    stableHash(context.commitDelta)
-  );
+  const claimedOutputHash = firstDefined(provenance.outputHash, provenance.resultHash);
+  const claimedCommitDeltaHash = firstDefined(provenance.commitDeltaHash, provenance.deltaHash);
+  const computedOutputHash = finalResult !== undefined ? stableHash(finalResult) : null;
+  const computedCommitDeltaHash = context.commitDelta !== undefined ? stableHash(context.commitDelta) : null;
+  const outputDigestValid = !options.verifyPayloadDigests
+    || finalResult === undefined
+    || digestMatchesValue(claimedOutputHash, finalResult);
+  const commitDeltaDigestValid = !options.verifyPayloadDigests
+    || context.commitDelta === undefined
+    || digestMatchesValue(claimedCommitDeltaHash, context.commitDelta);
+  const outputHash = firstDefined(claimedOutputHash, computedOutputHash);
+  const commitDeltaHash = firstDefined(claimedCommitDeltaHash, computedCommitDeltaHash);
   const peerId = firstDefined(
     provenance.peerId,
     provenance.responderPeerId,
@@ -205,7 +201,11 @@ function normalizePrimary(finalResult, context = {}, options = {}, availability 
     peerId,
     peerAvailable,
     outputHash,
+    computedOutputHash,
+    outputDigestValid,
     commitDeltaHash,
+    computedCommitDeltaHash,
+    commitDeltaDigestValid,
     codeHash: provenance.codeHash || context.taskPacket?.codeHash || null,
     inputHash: provenance.inputHash || context.taskPacket?.inputHash || null,
     taskHash: provenance.taskHash || context.taskPacket?.taskHash || null
@@ -213,9 +213,27 @@ function normalizePrimary(finalResult, context = {}, options = {}, availability 
 }
 
 function replicaMatchesPrimary(replica, primary, options) {
-  if (!replica.ok || !replica.peerAvailable) return false;
+  if (!replica.ok || !replica.peerAvailable || replica.duplicatePeer) return false;
+  if (!primary.outputDigestValid || !primary.commitDeltaDigestValid) return false;
+  if (!replica.outputDigestValid || !replica.commitDeltaDigestValid) return false;
   if (replica.taskHashMismatchFields.length > 0) return false;
+  if (
+    options.compareOutputHash
+    && primary.computedOutputHash
+    && replica.computedOutputHash
+    && primary.computedOutputHash !== replica.computedOutputHash
+  ) {
+    return false;
+  }
   if (options.compareOutputHash && (!replica.outputHash || replica.outputHash !== primary.outputHash)) return false;
+  if (
+    options.compareCommitDeltaHash
+    && primary.computedCommitDeltaHash
+    && replica.computedCommitDeltaHash
+    && primary.computedCommitDeltaHash !== replica.computedCommitDeltaHash
+  ) {
+    return false;
+  }
   if (
     options.compareCommitDeltaHash
     && (primary.commitDeltaHash || replica.commitDeltaHash)
@@ -232,22 +250,48 @@ export function evaluateRemoteResultQuorum(finalResult, context = {}, options = 
     : normalizeRemoteResultQuorumOptions(options);
   const availability = buildPeerAvailabilityChecker(context, normalized);
   const primary = normalizePrimary(finalResult, context, normalized, availability);
+  const seenPeerIds = new Set();
+  const normalizedPrimaryPeerId = String(primary.peerId || '').trim();
+  if (normalizedPrimaryPeerId) {
+    seenPeerIds.add(normalizedPrimaryPeerId);
+  }
   const replicas = extractReplicaList(context)
     .slice(0, normalized.maxReplicaReports)
-    .map((entry, index) => normalizeReplica(entry, index, context, normalized, availability));
+    .map((entry, index) => normalizeReplica(entry, index, context, normalized, availability))
+    .map((replica) => {
+      const normalizedPeerId = String(replica.peerId || '').trim();
+      let duplicatePeer = false;
+      if (normalized.requireDistinctPeers && normalizedPeerId) {
+        if (seenPeerIds.has(normalizedPeerId)) {
+          duplicatePeer = true;
+        } else {
+          seenPeerIds.add(normalizedPeerId);
+        }
+      }
+      return {
+        ...replica,
+        duplicatePeer,
+        ok: replica.ok && !duplicatePeer
+      };
+    });
   const evaluatedReplicas = replicas.map((replica) => ({
     ...replica,
     matchesPrimary: primary.peerAvailable && replicaMatchesPrimary(replica, primary, normalized)
   }));
-  const taskHashMismatchCount = evaluatedReplicas
+  const duplicatePeerCount = evaluatedReplicas.filter((replica) => replica.duplicatePeer).length;
+  const distinctReplicas = evaluatedReplicas.filter((replica) => !replica.duplicatePeer);
+  const taskHashMismatchCount = distinctReplicas
     .filter((replica) => replica.taskHashMismatchFields.length > 0)
     .length;
-  const unavailableReplicaCount = evaluatedReplicas.filter((replica) => !replica.peerAvailable).length;
-  const availableReplicaCount = evaluatedReplicas.length - unavailableReplicaCount;
-  const matchingReplicaCount = evaluatedReplicas.filter((replica) => replica.matchesPrimary).length;
+  const digestMismatchCount = (primary.outputDigestValid && primary.commitDeltaDigestValid ? 0 : 1)
+    + distinctReplicas.filter((replica) => !replica.outputDigestValid || !replica.commitDeltaDigestValid).length;
+  const unavailableReplicaCount = distinctReplicas.filter((replica) => !replica.peerAvailable).length;
+  const availableReplicaCount = distinctReplicas.length - unavailableReplicaCount;
+  const matchingReplicaCount = distinctReplicas.filter((replica) => replica.matchesPrimary).length;
   const primaryAvailableCount = primary.peerAvailable ? 1 : 0;
-  const matchingResultCount = primaryAvailableCount + matchingReplicaCount;
-  const totalResultCount = 1 + evaluatedReplicas.length;
+  const matchingResultCount = (primary.peerAvailable && primary.outputDigestValid && primary.commitDeltaDigestValid ? 1 : 0)
+    + matchingReplicaCount;
+  const totalResultCount = 1 + distinctReplicas.length;
   const availableResultCount = primaryAvailableCount + availableReplicaCount;
   const unavailablePeers = [
     ...new Set([
@@ -262,9 +306,12 @@ export function evaluateRemoteResultQuorum(finalResult, context = {}, options = 
   if (!primary.peerAvailable) {
     valid = false;
     reason = 'primary-responder-unavailable';
+  } else if (!primary.outputDigestValid || !primary.commitDeltaDigestValid) {
+    valid = false;
+    reason = 'primary-digest-mismatch';
   } else if (totalResultCount < normalized.minReplicaCount) {
     valid = false;
-    reason = 'replica-count-below-floor';
+    reason = duplicatePeerCount > 0 ? 'duplicate-responder-peer' : 'replica-count-below-floor';
   } else if (availableResultCount < normalized.minReplicaCount) {
     valid = false;
     reason = 'responder-unavailable';
@@ -273,7 +320,15 @@ export function evaluateRemoteResultQuorum(finalResult, context = {}, options = 
     reason = 'task-hash-mismatch';
   } else if (matchingResultCount < normalized.minMatchingReplicas) {
     valid = false;
-    reason = unavailableReplicaCount > 0 ? 'responder-unavailable' : 'quorum-mismatch';
+    if (digestMismatchCount > 0) {
+      reason = 'replica-digest-mismatch';
+    } else if (unavailableReplicaCount > 0) {
+      reason = 'responder-unavailable';
+    } else if (duplicatePeerCount > 0) {
+      reason = 'duplicate-responder-peer';
+    } else {
+      reason = 'quorum-mismatch';
+    }
   }
 
   return {
@@ -289,6 +344,9 @@ export function evaluateRemoteResultQuorum(finalResult, context = {}, options = 
     totalResultCount,
     availableResultCount,
     remoteReplicaCount: evaluatedReplicas.length,
+    distinctRemoteReplicaCount: distinctReplicas.length,
+    duplicatePeerCount,
+    digestMismatchCount,
     unavailableReplicaCount,
     unavailablePeers,
     matchingResultCount,

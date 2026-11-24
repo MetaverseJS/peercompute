@@ -225,7 +225,16 @@ function selectConflictFreeReadyBatch(readyStages = []) {
 }
 
 function validateStageDependencies(stagePlan = {}) {
-  const stageIds = new Set((stagePlan.stages || []).map((stage) => stage.id));
+  const stageIds = new Set();
+  for (const stage of stagePlan.stages || []) {
+    if (stageIds.has(stage.id)) {
+      const err = new Error(`GPU resident lane stage plan contains duplicate stage id: ${stage.id}`);
+      err.code = 'ERR_GPU_RESIDENT_LANE_STAGE_DUPLICATE_ID';
+      err.stage = clonePlain(stage);
+      throw err;
+    }
+    stageIds.add(stage.id);
+  }
   for (const stage of stagePlan.stages || []) {
     for (const dependencyId of stage.dependsOn || []) {
       if (!stageIds.has(dependencyId)) {
@@ -415,6 +424,14 @@ export class GpuResidentLaneManager {
     return lane;
   }
 
+  _resolveLease(leaseOrId) {
+    const leaseId = typeof leaseOrId === 'string'
+      ? leaseOrId
+      : (leaseOrId && typeof leaseOrId === 'object' ? leaseOrId.leaseId : null);
+    if (!leaseId) return null;
+    return this.leases.get(leaseId) || null;
+  }
+
   acquireLease(spec = {}) {
     const lane = this.getOrCreateLane(spec);
     const leaseId = normalizeString(
@@ -423,6 +440,26 @@ export class GpuResidentLaneManager {
     );
     if (this.leases.has(leaseId)) {
       throw new Error(`GPU resident lane lease already exists: ${leaseId}`);
+    }
+    const readFamilies = normalizeStringList(spec.readFamilies);
+    const writeFamilies = normalizeStringList(spec.writeFamilies);
+    if (spec.allowConcurrentWriteConflict !== true && (readFamilies.length > 0 || writeFamilies.length > 0)) {
+      for (const active of lane.activeLeases.values()) {
+        const conflict = stateFamilyConflictBetweenStages(
+          { reads: active.readFamilies, writes: active.writeFamilies },
+          { reads: readFamilies, writes: writeFamilies }
+        );
+        if (conflict) {
+          const err = new Error(
+            `GPU resident lane ${lane.laneId} has conflicting active lease ${active.leaseId} (${conflict.conflictType} on ${conflict.families.join(', ')})`
+          );
+          err.code = 'ERR_GPU_RESIDENT_LANE_FAMILY_CONFLICT';
+          err.laneId = lane.laneId;
+          err.conflictingLeaseId = active.leaseId;
+          err.conflict = conflict;
+          throw err;
+        }
+      }
     }
     const copyBudget = normalizeCopyBudget(spec.copyBudget || {});
     const residentSequenceLaneContract = normalizeResidentLaneContract(spec) || clonePlain(lane.residentSequenceLaneContract);
@@ -446,8 +483,8 @@ export class GpuResidentLaneManager {
       solverId: normalizeString(spec.solverId, lane.solverId),
       taskId: normalizeString(spec.taskId, null),
       owner: normalizeString(spec.owner, 'compute-manager'),
-      readFamilies: normalizeStringList(spec.readFamilies),
-      writeFamilies: normalizeStringList(spec.writeFamilies),
+      readFamilies,
+      writeFamilies,
       retainedBufferRefs: normalizeStringList(spec.retainedBufferRefs),
       copyBudget,
       queueFencePolicy: lane.queueFencePolicy,
@@ -484,8 +521,8 @@ export class GpuResidentLaneManager {
     completed = null,
     source = 'gpu-resident-lane-manager'
   } = {}) {
-    const lease = typeof leaseOrId === 'string' ? this.leases.get(leaseOrId) : leaseOrId;
-    if (!lease) throw new Error(`Unknown GPU resident lane lease: ${leaseOrId}`);
+    const lease = this._resolveLease(leaseOrId);
+    if (!lease) throw new Error(`Unknown GPU resident lane lease: ${typeof leaseOrId === 'string' ? leaseOrId : leaseOrId?.leaseId}`);
     const lane = this.lanes.get(lease.laneId);
     const satisfied = completed == null ? fenceSatisfied(status) : completed === true;
     return {
@@ -509,9 +546,44 @@ export class GpuResidentLaneManager {
     };
   }
 
-  completeLease(leaseId, options = {}) {
-    const lease = this.leases.get(leaseId);
-    if (!lease) throw new Error(`Unknown GPU resident lane lease: ${leaseId}`);
+  async waitForGpuFence(leaseOrId, {
+    device = null,
+    retainedBufferRefs = null,
+    requireDeviceQueue = false,
+    source = 'gpu-resident-lane-manager-queue-fence'
+  } = {}) {
+    const lease = this._resolveLease(leaseOrId);
+    if (!lease) throw new Error(`Unknown GPU resident lane lease: ${typeof leaseOrId === 'string' ? leaseOrId : leaseOrId?.leaseId}`);
+    const targetDevice = device || this.gpuHub?.device || null;
+    const queue = targetDevice?.queue || null;
+    if (queue && typeof queue.onSubmittedWorkDone === 'function') {
+      await queue.onSubmittedWorkDone();
+      return this.createFenceReport(lease, {
+        status: 'queue-work-completed',
+        method: 'queue.onSubmittedWorkDone',
+        retainedBufferRefs,
+        completed: true,
+        source
+      });
+    }
+    if (requireDeviceQueue) {
+      const err = new Error(`GPU queue.onSubmittedWorkDone is unavailable for lane ${lease.laneId}`);
+      err.code = 'ERR_GPU_RESIDENT_LANE_QUEUE_UNAVAILABLE';
+      throw err;
+    }
+    return this.createFenceReport(lease, {
+      status: 'gpu-queue-unavailable',
+      method: 'queue.onSubmittedWorkDone',
+      retainedBufferRefs,
+      completed: false,
+      source
+    });
+  }
+
+  completeLease(leaseOrId, options = {}) {
+    const lease = this._resolveLease(leaseOrId);
+    if (!lease) throw new Error(`Unknown GPU resident lane lease: ${typeof leaseOrId === 'string' ? leaseOrId : leaseOrId?.leaseId}`);
+    const leaseId = lease.leaseId;
     const lane = this.lanes.get(lease.laneId);
     const gpuFence = this.createFenceReport(lease, options);
     lease.status = gpuFence.fenceSatisfied ? 'completed' : 'completed-unsatisfied-fence';
@@ -549,8 +621,8 @@ export class GpuResidentLaneManager {
     stageExecutors = {},
     allowMissingExecutors = false
   } = {}) {
-    const lease = typeof leaseOrId === 'string' ? this.leases.get(leaseOrId) : leaseOrId;
-    if (!lease) throw new Error(`Unknown GPU resident lane lease: ${leaseOrId}`);
+    const lease = this._resolveLease(leaseOrId);
+    if (!lease) throw new Error(`Unknown GPU resident lane lease: ${typeof leaseOrId === 'string' ? leaseOrId : leaseOrId?.leaseId}`);
     const lane = this.lanes.get(lease.laneId);
     const stagePlan = lease.stagePlan || createStagePlanFromContract(lease.residentSequenceLaneContract, {
       laneId: lease.laneId,
@@ -711,8 +783,8 @@ export class GpuResidentLaneManager {
     stageExecutors = {},
     allowMissingExecutors = false
   } = {}) {
-    const lease = typeof leaseOrId === 'string' ? this.leases.get(leaseOrId) : leaseOrId;
-    if (!lease) throw new Error(`Unknown GPU resident lane lease: ${leaseOrId}`);
+    const lease = this._resolveLease(leaseOrId);
+    if (!lease) throw new Error(`Unknown GPU resident lane lease: ${typeof leaseOrId === 'string' ? leaseOrId : leaseOrId?.leaseId}`);
     const lane = this.lanes.get(lease.laneId);
     const stagePlan = lease.stagePlan || createStagePlanFromContract(lease.residentSequenceLaneContract, {
       laneId: lease.laneId,
@@ -806,9 +878,10 @@ export class GpuResidentLaneManager {
     return this.preflightStagePlacement(leaseOrId, options);
   }
 
-  rejectLease(leaseId, reason = 'lane-validation-rejected') {
-    const lease = this.leases.get(leaseId);
-    if (!lease) throw new Error(`Unknown GPU resident lane lease: ${leaseId}`);
+  rejectLease(leaseOrId, reason = 'lane-validation-rejected') {
+    const lease = this._resolveLease(leaseOrId);
+    if (!lease) throw new Error(`Unknown GPU resident lane lease: ${typeof leaseOrId === 'string' ? leaseOrId : leaseOrId?.leaseId}`);
+    const leaseId = lease.leaseId;
     const lane = this.lanes.get(lease.laneId);
     lease.status = 'rejected';
     lease.releasedAt = this.now();

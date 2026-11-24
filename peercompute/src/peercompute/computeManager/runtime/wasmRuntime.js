@@ -1,7 +1,18 @@
 import { requestManagedGpuDevice } from '../../capabilities/managedGpuDevice.js';
+import { assertSafeRemoteModuleUrl } from '../remoteModulePolicy.js';
 
 const helperModuleCache = new Map();
 const wasmModuleCache = new Map();
+
+function throwIfAborted(signal) {
+  if (!signal?.aborted) return;
+  const reason = signal.reason;
+  if (reason instanceof Error) throw reason;
+  throw Object.assign(new Error(String(reason || 'Compute task cancelled')), {
+    name: 'AbortError',
+    code: 'ERR_COMPUTE_TASK_CANCELLED'
+  });
+}
 
 const TYPED_ARRAYS = {
   Int8Array,
@@ -46,60 +57,96 @@ function normalizeSourceToUint8Array(source) {
   return null;
 }
 
-async function loadHelperModule(modulePath) {
+async function loadHelperModule(modulePath, { remote = false, remoteModulePolicy = null, fieldName = 'helperModule' } = {}) {
+  if (remote) {
+    assertSafeRemoteModuleUrl(modulePath, {
+      ...(remoteModulePolicy && typeof remoteModulePolicy === 'object' ? remoteModulePolicy : {}),
+      fieldName
+    });
+  }
   const cacheKey = String(modulePath);
   if (!helperModuleCache.has(cacheKey)) {
-    helperModuleCache.set(
-      cacheKey,
-      import(
-        /* webpackChunkName: "compute-task-helper" */
-        /* webpackMode: "lazy" */
-        /* @vite-ignore */
-        `${cacheKey}`
-      )
-    );
+    const promise = import(
+      /* webpackChunkName: "compute-task-helper" */
+      /* webpackMode: "lazy" */
+      /* @vite-ignore */
+      `${cacheKey}`
+    ).catch((err) => {
+      if (helperModuleCache.get(cacheKey) === promise) {
+        helperModuleCache.delete(cacheKey);
+      }
+      throw err;
+    });
+    helperModuleCache.set(cacheKey, promise);
   }
   return helperModuleCache.get(cacheKey);
 }
 
-async function loadWasmBytes(source) {
+async function loadWasmBytes(source, { signal = null, remote = false, remoteModulePolicy = null } = {}) {
+  throwIfAborted(signal);
   const inlineBytes = normalizeSourceToUint8Array(source);
   if (inlineBytes) return inlineBytes;
 
   if (typeof source === 'string' || source instanceof URL) {
-    const response = await fetch(String(source));
+    if (remote) {
+      assertSafeRemoteModuleUrl(source, {
+        ...(remoteModulePolicy && typeof remoteModulePolicy === 'object' ? remoteModulePolicy : {}),
+        fieldName: 'wasm.source'
+      });
+    }
+    const response = await fetch(String(source), signal ? { signal } : undefined);
+    throwIfAborted(signal);
     if (!response.ok) {
       throw new Error(`Failed to fetch wasm module: ${response.status} ${response.statusText}`);
     }
     const bytes = await response.arrayBuffer();
+    throwIfAborted(signal);
     return new Uint8Array(bytes);
   }
 
   throw new Error('wasm.source must be a URL string, URL, ArrayBuffer, TypedArray, or byte array');
 }
 
-async function compileWasmModule(source) {
+async function compileWasmModule(source, { signal = null, remote = false, remoteModulePolicy = null } = {}) {
+  throwIfAborted(signal);
   if (typeof source === 'string' || source instanceof URL) {
+    if (remote) {
+      assertSafeRemoteModuleUrl(source, {
+        ...(remoteModulePolicy && typeof remoteModulePolicy === 'object' ? remoteModulePolicy : {}),
+        fieldName: 'wasm.source'
+      });
+    }
     const cacheKey = String(source);
     if (!wasmModuleCache.has(cacheKey)) {
-      wasmModuleCache.set(
-        cacheKey,
-        (async () => {
-          const bytes = await loadWasmBytes(source);
-          return WebAssembly.compile(bytes);
-        })()
-      );
+      const promise = (async () => {
+        const bytes = await loadWasmBytes(source, { signal, remote, remoteModulePolicy });
+        return WebAssembly.compile(bytes);
+      })().catch((err) => {
+        if (wasmModuleCache.get(cacheKey) === promise) {
+          wasmModuleCache.delete(cacheKey);
+        }
+        throw err;
+      });
+      wasmModuleCache.set(cacheKey, promise);
     }
-    return wasmModuleCache.get(cacheKey);
+    const compiled = await wasmModuleCache.get(cacheKey);
+    throwIfAborted(signal);
+    return compiled;
   }
 
-  const bytes = await loadWasmBytes(source);
+  const bytes = await loadWasmBytes(source, { signal, remote, remoteModulePolicy });
   return WebAssembly.compile(bytes);
 }
 
-async function resolveImports(wasmConfig, context) {
+async function resolveImports(wasmConfig, context, { remote = false, remoteModulePolicy = null, signal = null } = {}) {
+  throwIfAborted(signal);
   if (wasmConfig.importsModule) {
-    const mod = await loadHelperModule(wasmConfig.importsModule);
+    const mod = await loadHelperModule(wasmConfig.importsModule, {
+      remote,
+      remoteModulePolicy,
+      fieldName: 'wasm.importsModule'
+    });
+    throwIfAborted(signal);
     const exportName = wasmConfig.importsExport || 'default';
     const imported = mod[exportName];
     if (typeof imported === 'function') {
@@ -193,12 +240,16 @@ function normalizeArgs(task, wasmConfig) {
   return [];
 }
 
-function createWebGPUContext(task = {}) {
+function createWebGPUContext(task = {}, ownedDevices = null) {
   const gpu = globalThis.navigator?.gpu ?? null;
   const required = task.webgpu?.required === true;
   if (required && !gpu) {
     throw new Error('WebGPU is required for this task but navigator.gpu is unavailable');
   }
+  const trackDevice = (device) => {
+    if (device && ownedDevices) ownedDevices.add(device);
+    return device;
+  };
 
   return {
     supported: !!gpu,
@@ -215,7 +266,7 @@ function createWebGPUContext(task = {}) {
       if (!promoteLimits) {
         const adapter = options.adapter || await gpu.requestAdapter(adapterOptions || undefined);
         if (!adapter) return null;
-        return adapter.requestDevice(deviceDescriptor || undefined);
+        return trackDevice(await adapter.requestDevice(deviceDescriptor || undefined));
       }
       try {
         const managed = await requestManagedGpuDevice({
@@ -229,7 +280,7 @@ function createWebGPUContext(task = {}) {
           deviceDescriptor,
           label: options.label || task.webgpu?.label || 'peercompute-wasm-webgpu'
         });
-        return managed.device;
+        return trackDevice(managed.device);
       } catch (error) {
         if (error?.code === 'ERR_GPU_ADAPTER_UNAVAILABLE' || error?.code === 'ERR_WEBGPU_UNAVAILABLE') {
           return null;
@@ -240,20 +291,28 @@ function createWebGPUContext(task = {}) {
   };
 }
 
-async function createWasmContext(task) {
+async function createWasmContext(task, execContext = {}) {
+  const signal = execContext?.signal || task?.signal || null;
+  const remote = task?.remote === true || execContext?.remote === true;
+  const remoteModulePolicy = task?.remoteModulePolicy || execContext?.remoteModulePolicy || null;
+  throwIfAborted(signal);
   const wasmConfig = task.wasm || {};
   const source = wasmConfig.source ?? task.wasmSource ?? task.source;
   if (!source) {
     throw new Error('wasm tasks require wasm.source');
   }
 
-  const module = await compileWasmModule(source);
+  const module = await compileWasmModule(source, { signal, remote, remoteModulePolicy });
+  throwIfAborted(signal);
   const imports = await resolveImports(wasmConfig, {
     task,
     data: task.data ?? null,
-    WebAssembly
-  });
+    WebAssembly,
+    signal
+  }, { remote, remoteModulePolicy, signal });
+  throwIfAborted(signal);
   const instance = await WebAssembly.instantiate(module, imports);
+  throwIfAborted(signal);
   writeInputViews(instance, wasmConfig, task.data ?? null);
 
   return {
@@ -279,13 +338,22 @@ async function createWasmContext(task) {
   };
 }
 
-async function adaptWasmResult(task, wasm, payload) {
+async function adaptWasmResult(task, wasm, payload, execContext = {}) {
+  const signal = execContext?.signal || task?.signal || null;
+  const remote = task?.remote === true || execContext?.remote === true;
+  const remoteModulePolicy = task?.remoteModulePolicy || execContext?.remoteModulePolicy || null;
+  throwIfAborted(signal);
   const wasmConfig = task.wasm || {};
   if (!wasmConfig.resultModule) {
     return payload.value;
   }
 
-  const mod = await loadHelperModule(wasmConfig.resultModule);
+  const mod = await loadHelperModule(wasmConfig.resultModule, {
+    remote,
+    remoteModulePolicy,
+    fieldName: 'wasm.resultModule'
+  });
+  throwIfAborted(signal);
   const exportName = wasmConfig.resultExport || 'default';
   const adapter = mod[exportName];
   if (typeof adapter !== 'function') {
@@ -296,17 +364,21 @@ async function adaptWasmResult(task, wasm, payload) {
     ...payload,
     wasm,
     task,
-    data: task.data ?? null
+    data: task.data ?? null,
+    signal
   });
 
   return typeof adapted === 'undefined' ? payload : adapted;
 }
 
-export async function executeWasmTask(task) {
-  const wasm = await createWasmContext(task);
+export async function executeWasmTask(task, execContext = {}) {
+  const signal = execContext?.signal || task?.signal || null;
+  const wasm = await createWasmContext(task, execContext);
+  throwIfAborted(signal);
   const wasmConfig = task.wasm || {};
   const args = normalizeArgs(task, wasmConfig);
   const returnValue = wasmConfig.entry ? await wasm.callExport(wasmConfig.entry, args) : undefined;
+  throwIfAborted(signal);
   const outputs = wasm.readOutputViews();
 
   const defaultPayload = outputs
@@ -317,11 +389,15 @@ export async function executeWasmTask(task) {
     returnValue,
     outputs,
     value: defaultPayload
-  });
+  }, execContext);
 }
 
-export async function executeWasmWebGPUTask(task) {
-  const wasm = await createWasmContext(task);
+export async function executeWasmWebGPUTask(task, execContext = {}) {
+  const signal = execContext?.signal || task?.signal || null;
+  const remote = task?.remote === true || execContext?.remote === true;
+  const remoteModulePolicy = task?.remoteModulePolicy || execContext?.remoteModulePolicy || null;
+  const wasm = await createWasmContext(task, execContext);
+  throwIfAborted(signal);
   const modulePath = task.hostModule || task.module;
   if (!modulePath) {
     throw new Error('wasm-webgpu tasks require hostModule or module');
@@ -329,19 +405,39 @@ export async function executeWasmWebGPUTask(task) {
 
   if (task.wasm?.callEntryBeforeHost && task.wasm.entry) {
     wasm.entryResult = await wasm.callExport(task.wasm.entry, normalizeArgs(task, task.wasm));
+    throwIfAborted(signal);
   }
 
-  const mod = await loadHelperModule(modulePath);
+  const mod = await loadHelperModule(modulePath, {
+    remote,
+    remoteModulePolicy,
+    fieldName: task.hostModule ? 'hostModule' : 'module'
+  });
+  throwIfAborted(signal);
   const exportName = task.hostExport || task.exportName || 'default';
   const handler = mod[exportName];
   if (typeof handler !== 'function') {
     throw new Error(`wasm-webgpu host export "${exportName}" must be a function`);
   }
 
-  return handler({
-    task,
-    data: task.data ?? null,
-    wasm,
-    webgpu: createWebGPUContext(task)
-  });
+  const ownedDevices = new Set();
+  const webgpu = createWebGPUContext(task, ownedDevices);
+  try {
+    return await handler({
+      task,
+      data: task.data ?? null,
+      wasm,
+      webgpu,
+      signal
+    });
+  } finally {
+    if (task.webgpu?.keepDeviceAlive !== true) {
+      for (const device of ownedDevices) {
+        try {
+          device?.destroy?.();
+        } catch {}
+      }
+    }
+    ownedDevices.clear();
+  }
 }

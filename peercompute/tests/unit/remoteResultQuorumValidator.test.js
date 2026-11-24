@@ -91,6 +91,9 @@ test('remote result quorum validator integrates with ComputeManager before commi
       provenance: {
         executorId: 'primary-peer',
         peerId: 'peer-a',
+        codeHash: payload.taskPacket.codeHash,
+        inputHash: payload.taskPacket.inputHash,
+        taskHash: payload.taskPacket.taskHash,
         outputHash: 'result-a',
         commitDeltaHash: 'delta-a',
         replicas: [
@@ -143,7 +146,7 @@ test('remote result quorum validator prevents mismatched remote delta commits', 
       minMatchingReplicas: 2,
       compareCommitDeltaHash: false
     }),
-    placementExecutor: async () => ({
+    placementExecutor: async (payload) => ({
       value: { ok: true },
       commitDelta: {
         taskId: 'quorum-mismatch-task',
@@ -154,6 +157,9 @@ test('remote result quorum validator prevents mismatched remote delta commits', 
       provenance: {
         executorId: 'primary-peer',
         peerId: 'peer-a',
+        codeHash: payload.taskPacket.codeHash,
+        inputHash: payload.taskPacket.inputHash,
+        taskHash: payload.taskPacket.taskHash,
         outputHash: 'result-a',
         replicas: [
           {
