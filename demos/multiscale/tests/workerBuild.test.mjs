@@ -6,7 +6,8 @@ import test from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { init as initModuleLexer, parse as parseModuleImports } from 'es-module-lexer';
-import { build } from 'vite';
+import { build, mergeConfig } from 'vite';
+import { createDemoBuildConfig } from '../../vite.config.js';
 
 import {
   createMultiscaleSolverDescriptors,
@@ -114,15 +115,13 @@ test('fresh production build emits descriptor-addressable modules with a closed 
   const outputDir = await mkdtemp(path.join(tmpdir(), 'peercompute-multiscale-build-'));
 
   try {
-    const result = await build({
-      root: demoRoot,
-      configFile: path.resolve(demoRoot, 'vite.config.js'),
+    const result = await build(mergeConfig(createDemoBuildConfig('multiscale'), {
       logLevel: 'silent',
       build: {
         outDir: outputDir,
         emptyOutDir: true
       }
-    });
+    }));
     const rollupOutputs = Array.isArray(result) ? result : [result];
     const emitted = rollupOutputs.flatMap((rollupOutput) => rollupOutput.output);
     const emittedPaths = new Set(emitted.map((entry) => entry.fileName));

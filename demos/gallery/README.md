@@ -6,7 +6,7 @@ Charts fit the guide window as you resize it. Click or tap a chart, choose **Enl
 
 **Settings** controls the desktop theme, wallpaper, window animations and CRT shader stack. Under **Settings → Windows**, scrolling defaults to **fast**, and each window transition defaults to **random**. You can change the speed or choose a particular effect for each transition. This browser remembers your choices. A touch flick glides after you lift your finger. Dragging a window to an edge or corner outlines where it will land.
 
-In browsers with HTML-in-Canvas, each same-origin demo supplies its live pixels to the desktop before ExoWebTUI runs its shader passes. The title bar, toolbar, and demo share one CRT curve, scanline grid and degauss clock. The iframe keeps its original document, focus and session. Foreign origins, unsupported browsers, and scenes the browser cannot capture use a regular interactive iframe, labeled **Standard view** when desktop effects are on. Use `?prod=1` on port 4173 to open the same-origin built demos. At maximum curvature Chrome can deliver the initial touch-down at the unwarped location before activating the control under your finger.
+In browsers with HTML-in-Canvas, each same-origin demo supplies its live pixels to the desktop before ExoWebTUI runs its shader passes. The title bar, toolbar, and demo share one CRT curve, scanline grid and degauss clock. The iframe keeps its original document, focus and session. Foreign origins, unsupported browsers, and scenes the browser cannot capture use a regular interactive iframe, labeled **Standard view** when desktop effects are on. Both the unified dev server (`https://localhost:5173/`) and the static preview (`https://localhost:4173/`) serve the gallery and all demos from the same origin. At maximum curvature Chrome can deliver the initial touch-down at the unwarped location before activating the control under your finger.
 
 Menus and the task switcher cover only their own area. Demos continue loading and repainting underneath. Switching between live demos keeps their documents and takes effect immediately.
 
@@ -16,7 +16,7 @@ Drag a title bar to an edge or corner to snap it, or press **G** to tile the foc
 
 ## Run it
 
-From the repository root run `npm run docs:dev` and visit `https://localhost:4173/?prod=1` for the built demos. Port 4173 otherwise points to the individual development servers. Add `view=html` for the searchable HTML directory.
+From the repository root run `npm run dev` (or `npm run dev:demos`) and visit `https://localhost:5173/` for the live unified dev gallery and all 17 demos on one port, or run `npm run build:all && npm run docs:preview` and visit `https://localhost:4173/` for the static built release. Add `view=html` for the searchable HTML directory.
 
 For a static preview, mount `docs/` at `/peercompute/` to match the shared runtime asset URLs. Threaded WASM and GGUF inference in an iframe require cross-origin isolation on the top-level page and the child. The docs development and preview servers set `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: credentialless`. A host that cannot set these headers can still launch the model console in a separate tab.
 

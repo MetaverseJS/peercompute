@@ -1,0 +1,126 @@
+{
+  "devPort": 5173,
+  "demos": [
+    {
+      "name": "hyperborea",
+      "usesInference": false,
+      "requiresRelayConfig": true,
+      "inputs": {
+        "index": "index.html",
+        "cb": "cb.html"
+      }
+    },
+    {
+      "name": "cubechat",
+      "usesInference": true,
+      "requiresRelayConfig": true,
+      "pagesIsolation": true
+    },
+    {
+      "name": "planetgen",
+      "usesInference": false,
+      "requiresRelayConfig": false
+    },
+    {
+      "name": "wxglobe",
+      "usesInference": false,
+      "requiresRelayConfig": false,
+      "cesium": true,
+      "chunkSizeWarningLimit": 2000
+    },
+    {
+      "name": "earth",
+      "usesInference": true,
+      "requiresRelayConfig": false,
+      "cesium": true,
+      "geodataProxy": true,
+      "pagesIsolation": true,
+      "chunkSizeWarningLimit": 2200
+    },
+    {
+      "name": "motorcycle",
+      "usesInference": false,
+      "requiresRelayConfig": false,
+      "cesium": true,
+      "geodataProxy": true,
+      "chunkSizeWarningLimit": 2200
+    },
+    {
+      "name": "multiscale",
+      "usesInference": false,
+      "requiresRelayConfig": false,
+      "multiscaleWorkers": true
+    },
+    {
+      "name": "universes",
+      "usesInference": false,
+      "requiresRelayConfig": false,
+      "universesEnv": true
+    },
+    {
+      "name": "webgpuphys",
+      "usesInference": false,
+      "requiresRelayConfig": false,
+      "webgpuphys": true
+    },
+    {
+      "name": "sneakywoods",
+      "usesInference": false,
+      "requiresRelayConfig": true
+    },
+    {
+      "name": "daddygo",
+      "usesInference": false,
+      "requiresRelayConfig": true
+    },
+    {
+      "name": "fano-reactor",
+      "usesInference": false,
+      "requiresRelayConfig": true
+    },
+    {
+      "name": "schrodinger",
+      "usesInference": false,
+      "requiresRelayConfig": true
+    },
+    {
+      "name": "netviz",
+      "usesInference": false,
+      "requiresRelayConfig": false,
+      "chaosApiProxy": true
+    },
+    {
+      "name": "inference",
+      "usesInference": true,
+      "requiresRelayConfig": false,
+      "pagesIsolation": {
+        "appShell": {
+          "publicFiles": [
+            "manifest.webmanifest",
+            "icons/peercompute.svg",
+            "icons/peercompute-192.png",
+            "icons/peercompute-512.png",
+            "icons/peercompute-maskable-512.png"
+          ]
+        }
+      },
+      "target": "esnext",
+      "readableEsbuild": true
+    },
+    {
+      "name": "vibeslopdb",
+      "usesInference": true,
+      "requiresRelayConfig": false,
+      "pagesIsolation": true,
+      "vibeslopdb": true,
+      "target": "esnext",
+      "readableEsbuild": true
+    },
+    {
+      "name": "eshkols-in-space",
+      "usesInference": false,
+      "requiresRelayConfig": false,
+      "target": "esnext"
+    }
+  ]
+}

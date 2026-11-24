@@ -63,7 +63,6 @@ case "${RELAY_DEV_EXPOSE_LAN:-0}" in
 esac
 
 if [[ "$dev_expose_lan" != "1" ]]; then
-  # Default local dev to loopback to avoid TLS SAN/certificate mismatches on LAN/IPv6 hosts.
   if [[ -n "${RELAY_PUBLIC_HOST:-}" ]] && ! is_loopback_host "${RELAY_PUBLIC_HOST:-}"; then
     echo "[dev] overriding RELAY_PUBLIC_HOST=${RELAY_PUBLIC_HOST} -> localhost (set RELAY_DEV_EXPOSE_LAN=1 to keep LAN host)"
   fi
@@ -108,38 +107,12 @@ fi
 if [[ -z "${RELAY_SSL_KEY:-}" ]]; then
   RELAY_SSL_KEY="$repo_root/certs/dev-key.pem"
 fi
+
+dev_relay_dir="$repo_root/demos/.dev-relay"
+mkdir -p "$dev_relay_dir"
 if [[ -z "${RELAY_CONFIG_DIRS:-}" ]]; then
-  relay_config_dirs=(
-    "$repo_root/demos/hyperborea/public"
-    "$repo_root/demos/cubechat/public"
-    "$repo_root/demos/planetgen/public"
-    "$repo_root/demos/wxglobe/public"
-    "$repo_root/demos/multiscale/public"
-    "$repo_root/demos/universes/public"
-    "$repo_root/demos/webgpuphys/public"
-    "$repo_root/demos/sneakywoods/public"
-    "$repo_root/demos/daddygo/public"
-    "$repo_root/demos/fano-reactor/public"
-    "$repo_root/demos/schrodinger/public"
-    "$repo_root/demos/netviz/public"
-    "$repo_root/demos/vibeslopdb/public"
-    "$repo_root/demos/eshkols-in-space/public"
-    "$repo_root/docs/hyperborea"
-    "$repo_root/docs/cubechat"
-    "$repo_root/docs/planetgen"
-    "$repo_root/docs/wxglobe"
-    "$repo_root/docs/multiscale"
-    "$repo_root/docs/universes"
-    "$repo_root/docs/webgpuphys"
-    "$repo_root/docs/sneakywoods"
-    "$repo_root/docs/daddygo"
-    "$repo_root/docs/fano-reactor"
-    "$repo_root/docs/schrodinger"
-    "$repo_root/docs/netviz"
-    "$repo_root/docs/vibeslopdb"
-    "$repo_root/docs/eshkols-in-space"
-  )
-  RELAY_CONFIG_DIRS="$(IFS=,; echo "${relay_config_dirs[*]}")"
+  relay_config_dirs=("$dev_relay_dir")
+  RELAY_CONFIG_DIRS="$dev_relay_dir"
 else
   IFS=',' read -r -a relay_config_dirs <<< "$RELAY_CONFIG_DIRS"
   RELAY_CONFIG_DIRS="$(IFS=,; echo "${relay_config_dirs[*]}")"
@@ -173,54 +146,26 @@ overview_host="localhost"
 if ! is_loopback_host "${RELAY_PUBLIC_HOST:-}"; then
   overview_host="$RELAY_PUBLIC_HOST"
 fi
+demos_port="${DEMOS_PORT:-5173}"
+export DEMOS_PORT="$demos_port"
 
 vite_host_args="--host"
 if is_ipv6_host "${overview_host:-}"; then
   vite_host_args="--host ::"
 fi
-vite_extra_args="$vite_host_args"
+vite_extra_args="$vite_host_args --port $demos_port"
 if [[ "${DEV_STRICT_PORT:-1}" != "0" ]]; then
   vite_extra_args="$vite_extra_args --strictPort"
 fi
 
-echo "Dev servers (HTTPS):"
-echo "  geodata:   http://127.0.0.1:8788/ (proxied by Earth/RoadVector)"
-echo "  relay: dynamic WSS (check relay logs for address)"
-echo "  hyperborea: https://$(to_url_host "$overview_host"):5175/"
-echo "  cubechat:   https://$(to_url_host "$overview_host"):5176/"
-echo "  planetgen:  https://$(to_url_host "$overview_host"):5177/"
-echo "  wxglobe:    https://$(to_url_host "$overview_host"):5186/"
-echo "  earthgrid:  https://$(to_url_host "$overview_host"):5187/"
-echo "  roadvector: https://$(to_url_host "$overview_host"):5188/"
-echo "  multiscale: https://$(to_url_host "$overview_host"):5185/"
-echo "  universes:  https://$(to_url_host "$overview_host"):5178/"
-echo "  webgpuphys: https://$(to_url_host "$overview_host"):5179/"
-echo "  sneakywoods: https://$(to_url_host "$overview_host"):5180/"
-echo "  daddygo:    https://$(to_url_host "$overview_host"):5181/"
-echo "  fano-reactor: https://$(to_url_host "$overview_host"):5183/"
-echo "  schrodinger: https://$(to_url_host "$overview_host"):5184/"
-echo "  netviz:     https://$(to_url_host "$overview_host"):5182/"
-echo "  inference:  https://$(to_url_host "$overview_host"):5189/"
-echo "  vibeslopdb: https://$(to_url_host "$overview_host"):5190/"
-echo "  eshkols-in-space: https://$(to_url_host "$overview_host"):5191/"
+base_url="https://$(to_url_host "$overview_host"):${demos_port}"
+echo "Dev servers (HTTPS — single unified port):"
+echo "  geodata:  http://127.0.0.1:8788/ (proxied by Earth/RoadVector)"
+echo "  relay:    dynamic WSS (writes demos/.dev-relay/relay-config.json)"
+echo "  gallery:  ${base_url}/"
+echo "  demos:    ${base_url}/<demo>/ (e.g. /netviz/, /cubechat/, /inference/, /earth/, /motorcycle/, /wxglobe/, /multiscale/, /vibeslopdb/, /eshkols-in-space/, /webgpuphys/demos/toychest.html)"
 
-"$repo_root/node_modules/.bin/concurrently" -k -n relay,geodata,hyperborea,cubechat,planetgen,wxglobe,earth,motorcycle,multiscale,universes,webgpuphys,sneakywoods,daddygo,fano,schrodinger,netviz,inference,vibeslopdb,eshkols-in-space \
+"$repo_root/node_modules/.bin/concurrently" -k -n relay,geodata,demos \
   "npm run dev:relay" \
   "GEODATA_ALLOW_PUBLIC_OVERPASS=1 npm --prefix \"$repo_root/services/geodata\" start" \
-  "npm --prefix \"$repo_root/demos/hyperborea\" run dev -- $vite_extra_args" \
-  "npm --prefix \"$repo_root/demos/cubechat\" run dev -- $vite_extra_args" \
-  "npm --prefix \"$repo_root/demos/planetgen\" run dev -- $vite_extra_args" \
-  "npm --prefix \"$repo_root/demos/wxglobe\" run dev -- $vite_extra_args" \
-  "npm --prefix \"$repo_root/demos/earth\" run dev -- $vite_extra_args" \
-  "npm --prefix \"$repo_root/demos/motorcycle\" run dev -- $vite_extra_args" \
-  "npm --prefix \"$repo_root/demos/multiscale\" run dev -- $vite_extra_args" \
-  "npm --prefix \"$repo_root/demos/universes\" run dev -- $vite_extra_args" \
-  "npm --prefix \"$repo_root/demos/webgpuphys\" run dev -- $vite_extra_args" \
-  "npm --prefix \"$repo_root/demos/sneakywoods\" run dev -- $vite_extra_args" \
-  "npm --prefix \"$repo_root/demos/daddygo\" run dev -- $vite_extra_args" \
-  "npm --prefix \"$repo_root/demos/fano-reactor\" run dev -- $vite_extra_args" \
-  "npm --prefix \"$repo_root/demos/schrodinger\" run dev -- $vite_extra_args" \
-  "npm --prefix \"$repo_root/demos/netviz\" run dev -- $vite_extra_args" \
-  "npm --prefix \"$repo_root/demos/inference\" run dev -- $vite_extra_args" \
-  "npm --prefix \"$repo_root/demos/vibeslopdb\" run dev -- $vite_extra_args" \
-  "npm --prefix \"$repo_root/demos/eshkols-in-space\" run dev -- $vite_extra_args"
+  "npm run dev:demos -- $vite_extra_args"

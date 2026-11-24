@@ -1,3 +1,4 @@
+import { createDemoServerConfig } from "../vite.config.js";
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -73,13 +74,13 @@ async function loadStored() {
   }, repository), 300000, 'Stored model load');
 }
 try {
-  server = await createServer({ configFile: path.join(repo, 'demos/inference/vite.config.js'), logLevel: 'error',
+  server = await createServer(createDemoServerConfig("inference", { logLevel: 'error',
     server: { host: '127.0.0.1', port, strictPort: true, hmr: false }, plugins: [{ name: 'agent-acceptance', configureServer(vite) {
       vite.middlewares.use('/__agent_acceptance', (_request, response) => {
         response.setHeader('Content-Type', 'text/html'); response.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
         response.setHeader('Cross-Origin-Embedder-Policy', 'require-corp'); response.end(html);
       });
-    } }] });
+    } }] }));
   await server.listen(); const origin = `https://127.0.0.1:${port}`; report.origin = origin;
   await launch(origin); report.load = await loadStored();
   assert.equal(report.load.status.status, 'ready');

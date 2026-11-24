@@ -1,3 +1,4 @@
+import { createDemoServerConfig } from "../vite.config.js";
 import assert from 'node:assert/strict';
 import { mkdir, writeFile, readFile, mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
@@ -52,7 +53,7 @@ async function launch(origin, restart = false) {
   await page.waitForFunction(() => window.inferencePanel?.runtime?.getDeviceCapabilities(), null, { timeout: 90000 });
 }
 try {
-  server = await createServer({ configFile: path.join(repo, 'demos/inference/vite.config.js'), logLevel: 'error',
+  server = await createServer(createDemoServerConfig("inference", { logLevel: 'error',
     server: { port: 0, host: '127.0.0.1', hmr: false },
     plugins: [{ name: 'hf-acceptance', configureServer(vite) {
       vite.middlewares.use('/__hf_acceptance', (_request, response) => {
@@ -60,7 +61,7 @@ try {
         response.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
         response.setHeader('Cross-Origin-Embedder-Policy', 'require-corp'); response.end(html);
       });
-    } }] });
+    } }] }));
   await server.listen(); const origin = 'https://127.0.0.1:' + server.httpServer.address().port;
   report.origin = origin; await launch(origin);
   await page.locator('.pc-model-toolbar').getByRole('button', { name: 'Models', exact: true }).click();

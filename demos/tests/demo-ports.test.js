@@ -93,14 +93,17 @@ for (const demo of demoSpecs) {
     const demoRoot = path.join(demosRoot, demo.name);
     assert.ok(exists(demoRoot), `${demo.name} folder missing`);
 
-    const packageJson = path.join(demoRoot, 'package.json');
-    assert.ok(exists(packageJson), `${demo.name} package.json missing`);
+    const demosPackage = path.join(demosRoot, 'package.json');
+    assert.ok(exists(demosPackage), 'unified demos/package.json missing');
 
-    const viteConfig = [
-      path.join(demoRoot, 'vite.config.js'),
-      path.join(demoRoot, 'vite.config.ts')
-    ].find(exists);
-    assert.ok(viteConfig, `${demo.name} Vite config missing`);
+    const unifiedViteConfig = path.join(demosRoot, 'vite.config.js');
+    assert.ok(exists(unifiedViteConfig), 'unified demos/vite.config.js missing');
+
+    const manifest = JSON.parse(fs.readFileSync(path.join(demosRoot, 'manifest.json'), 'utf8'));
+    assert.ok(
+      manifest.demos.some((entry) => entry.name === demo.name),
+      `${demo.name} missing from demos/manifest.json`
+    );
 
     const entry = demo.entryCandidates.map((file) => path.join(demoRoot, file)).find(exists);
     assert.ok(entry, `${demo.name} entry HTML missing`);
@@ -114,9 +117,11 @@ for (const demo of demoSpecs) {
 
 test('wxglobe is wired as a first-class imagery-free Cesium demo', () => {
   const rootPackage = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
-  const demoPackage = JSON.parse(fs.readFileSync(path.join(demosRoot, 'wxglobe', 'package.json'), 'utf8'));
+  const demoPackage = JSON.parse(fs.readFileSync(path.join(demosRoot, 'package.json'), 'utf8'));
+  const manifest = JSON.parse(fs.readFileSync(path.join(demosRoot, 'manifest.json'), 'utf8'));
+  const wxglobeSpec = manifest.demos.find((entry) => entry.name === 'wxglobe');
   const indexHtml = fs.readFileSync(path.join(demosRoot, 'wxglobe', 'index.html'), 'utf8');
-  const viteConfig = fs.readFileSync(path.join(demosRoot, 'wxglobe', 'vite.config.js'), 'utf8');
+  const viteConfig = fs.readFileSync(path.join(demosRoot, 'vite.config.js'), 'utf8');
   const main = fs.readFileSync(path.join(demosRoot, 'wxglobe', 'src', 'main.js'), 'utf8');
   const etopoTerrain = fs.readFileSync(path.join(demosRoot, 'wxglobe', 'src', 'terrain', 'etopo2022.js'), 'utf8');
   const terrariumTerrain = fs.readFileSync(path.join(demosRoot, 'wxglobe', 'src', 'terrain', 'terrarium.js'), 'utf8');
@@ -126,13 +131,14 @@ test('wxglobe is wired as a first-class imagery-free Cesium demo', () => {
   const devLocalRelay = fs.readFileSync(path.join(repoRoot, 'scripts', 'dev-local-relay.sh'), 'utf8');
   const docsIndex = fs.readFileSync(path.join(repoRoot, 'docs', 'index.html'), 'utf8');
 
-  assert.ok(rootPackage.workspaces.includes('demos/wxglobe'), 'root workspaces missing wxglobe');
-  assert.equal(rootPackage.scripts['dev:wxglobe'], 'npm --prefix demos/wxglobe run dev -- --host');
-  assert.equal(rootPackage.scripts['build:wxglobe'], 'npm --prefix demos/wxglobe run build');
-  assert.ok(rootPackage.scripts['build:demos'].includes('npm run build:wxglobe'), 'build:demos missing wxglobe');
-  assert.match(viteConfig, /port:\s*5186/, 'wxglobe Vite config must keep port 5186');
-  assert.ok(viteConfig.includes("path.resolve(docsRoot, 'wxglobe')"), 'wxglobe must build to docs/wxglobe');
-  assert.ok(viteConfig.includes("CESIUM_BASE_URL: JSON.stringify('./cesium/')"), 'wxglobe Cesium base URL must be nested-path safe');
+  assert.ok(rootPackage.workspaces.includes('demos'), 'root workspaces missing unified demos workspace');
+  assert.equal(rootPackage.scripts['dev:wxglobe'], 'node scripts/dev-demo.mjs wxglobe');
+  assert.equal(rootPackage.scripts['build:wxglobe'], 'node scripts/build-demos.mjs wxglobe');
+  assert.equal(rootPackage.scripts['build:demos'], 'node scripts/build-demos.mjs');
+  assert.equal(manifest.devPort, 5173, 'unified demos devPort must default to 5173');
+  assert.equal(wxglobeSpec?.cesium, true, 'wxglobe manifest entry must enable Cesium');
+  assert.ok(viteConfig.includes('path.resolve(docsRoot, demoName)'), 'unified Vite config must build demos to docs/<demo>');
+  assert.ok(viteConfig.includes("CESIUM_BASE_URL = JSON.stringify('./cesium/')"), 'wxglobe Cesium base URL must be nested-path safe');
   assert.ok(viteConfig.includes("['Workers', 'ThirdParty', 'Assets', 'Widgets']"), 'wxglobe must copy Cesium runtime assets');
   assert.equal(demoPackage.dependencies.cesium, '1.144.0');
   assert.equal(demoPackage.dependencies['grib-js'], undefined, 'retired GRIB dependency must stay absent');
@@ -154,23 +160,23 @@ test('wxglobe is wired as a first-class imagery-free Cesium demo', () => {
   assert.ok(!indexHtml.includes('RTMA'), 'wxglobe UI must not retain retired RTMA controls');
 
   [devAll, devLocalRelay].forEach((script) => {
-    assert.ok(script.includes('demos/wxglobe/public'), 'dev launcher missing wxglobe relay-config parity dir');
-    assert.ok(script.includes('docs/wxglobe'), 'dev launcher missing docs/wxglobe relay-config parity dir');
-    assert.ok(script.includes('demos/wxglobe'), 'dev launcher missing wxglobe dev command');
-    assert.ok(script.includes(':5186/'), 'dev launcher missing wxglobe port 5186');
+    assert.ok(script.includes('demos/.dev-relay'), 'dev launcher missing unified relay-config dir');
+    assert.ok(script.includes('npm run dev:demos'), 'dev launcher missing unified dev:demos server');
+    assert.ok(script.includes('DEMOS_PORT:-5173'), 'dev launcher missing unified port 5173');
   });
 
   assert.ok(docsIndex.includes('href="./wxglobe/"'), 'docs overview missing wxglobe link');
   assert.ok(docsIndex.includes('data-demo-dir="wxglobe"'), 'docs overview missing wxglobe metadata');
-  assert.ok(docsIndex.includes('data-demo-port="5186"'), 'docs overview missing wxglobe dev port');
+  assert.ok(docsIndex.includes('data-demo-port="5173"'), 'docs overview missing unified dev port');
 });
 
 test('earth and motorcycle are first-class real-data demos with a shared backend', () => {
   const rootPackage = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
-  const earthPackage = JSON.parse(fs.readFileSync(path.join(demosRoot, 'earth', 'package.json'), 'utf8'));
-  const motorcyclePackage = JSON.parse(fs.readFileSync(path.join(demosRoot, 'motorcycle', 'package.json'), 'utf8'));
-  const earthConfig = fs.readFileSync(path.join(demosRoot, 'earth', 'vite.config.js'), 'utf8');
-  const motorcycleConfig = fs.readFileSync(path.join(demosRoot, 'motorcycle', 'vite.config.js'), 'utf8');
+  const demoPackage = JSON.parse(fs.readFileSync(path.join(demosRoot, 'package.json'), 'utf8'));
+  const manifest = JSON.parse(fs.readFileSync(path.join(demosRoot, 'manifest.json'), 'utf8'));
+  const earthSpec = manifest.demos.find((entry) => entry.name === 'earth');
+  const motorcycleSpec = manifest.demos.find((entry) => entry.name === 'motorcycle');
+  const viteConfig = fs.readFileSync(path.join(demosRoot, 'vite.config.js'), 'utf8');
   const motorcycleHtml = fs.readFileSync(path.join(demosRoot, 'motorcycle', 'index.html'), 'utf8');
   const motorcycleMain = fs.readFileSync(path.join(demosRoot, 'motorcycle', 'src', 'main.js'), 'utf8');
   const devAll = fs.readFileSync(path.join(repoRoot, 'scripts', 'dev-all.sh'), 'utf8');
@@ -179,22 +185,20 @@ test('earth and motorcycle are first-class real-data demos with a shared backend
 
   assert.ok(rootPackage.workspaces.includes('packages/geo-core'));
   assert.ok(rootPackage.workspaces.includes('services/geodata'));
-  assert.ok(rootPackage.workspaces.includes('demos/earth'));
-  assert.ok(rootPackage.workspaces.includes('demos/motorcycle'));
-  assert.equal(rootPackage.scripts['dev:earth'], 'npm --prefix demos/earth run dev -- --host');
-  assert.equal(rootPackage.scripts['dev:motorcycle'], 'npm --prefix demos/motorcycle run dev -- --host');
-  assert.equal(rootPackage.scripts['build:earth'], 'npm --prefix demos/earth run build');
-  assert.equal(rootPackage.scripts['build:motorcycle'], 'npm --prefix demos/motorcycle run build');
-  assert.match(earthConfig, /port:\s*5187/);
-  assert.match(motorcycleConfig, /port:\s*5188/);
-  assert.ok(earthConfig.includes("path.resolve(docsRoot, 'earth')"));
-  assert.ok(motorcycleConfig.includes("path.resolve(docsRoot, 'motorcycle')"));
-  assert.equal(earthPackage.dependencies.cesium, '1.144.0');
-  assert.equal(motorcyclePackage.dependencies.cesium, '1.144.0');
-  assert.equal(motorcyclePackage.devDependencies['vite-plugin-static-copy'], '^4.1.1');
-  assert.ok(motorcycleConfig.includes("CESIUM_BASE_URL: JSON.stringify('./cesium/')"));
-  assert.ok(motorcycleConfig.includes("['Workers', 'ThirdParty', 'Assets', 'Widgets']"));
-  assert.ok(motorcycleConfig.includes("'/api'"), 'motorcycle dev server must proxy the geodata API');
+  assert.ok(rootPackage.workspaces.includes('demos'));
+  assert.equal(rootPackage.scripts['dev:earth'], 'node scripts/dev-demo.mjs earth');
+  assert.equal(rootPackage.scripts['dev:motorcycle'], 'node scripts/dev-demo.mjs motorcycle');
+  assert.equal(rootPackage.scripts['build:earth'], 'node scripts/build-demos.mjs earth');
+  assert.equal(rootPackage.scripts['build:motorcycle'], 'node scripts/build-demos.mjs motorcycle');
+  assert.equal(earthSpec?.cesium, true);
+  assert.equal(earthSpec?.geodataProxy, true);
+  assert.equal(motorcycleSpec?.cesium, true);
+  assert.equal(motorcycleSpec?.geodataProxy, true);
+  assert.equal(demoPackage.dependencies.cesium, '1.144.0');
+  assert.equal(demoPackage.devDependencies['vite-plugin-static-copy'], '^4.1.1');
+  assert.ok(viteConfig.includes("CESIUM_BASE_URL = JSON.stringify('./cesium/')"));
+  assert.ok(viteConfig.includes("['Workers', 'ThirdParty', 'Assets', 'Widgets']"));
+  assert.ok(viteConfig.includes("'/api'"), 'unified dev server must proxy the geodata API');
   assert.ok(motorcycleHtml.includes('id="overview-viewport"'));
   assert.ok(motorcycleMain.includes("import * as Cesium from 'cesium'"));
   assert.ok(motorcycleMain.includes('createRoadvectorOverviewRuntime'));
@@ -204,21 +208,21 @@ test('earth and motorcycle are first-class real-data demos with a shared backend
   assert.ok(motorcycleMain.includes('createMotorcycleXrPanel'));
   [devAll, devLocalRelay].forEach((script) => {
     assert.ok(script.includes('services/geodata'));
-    assert.ok(script.includes('demos/earth'));
-    assert.ok(script.includes('demos/motorcycle'));
-    assert.ok(script.includes(':5187/'));
-    assert.ok(script.includes(':5188/'));
+    assert.ok(script.includes('npm run dev:demos'));
+    assert.ok(script.includes('DEMOS_PORT:-5173'));
   });
   assert.ok(docsIndex.includes('href="./earth/"'));
-  assert.ok(docsIndex.includes('data-demo-port="5187"'));
   assert.ok(docsIndex.includes('href="./motorcycle/"'));
-  assert.ok(docsIndex.includes('data-demo-port="5188"'));
+  assert.ok(docsIndex.includes('data-demo-port="5173"'));
 });
 
 test('multiscale ladder is wired as a first-class repo demo', () => {
   const rootPackage = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
+  const manifest = JSON.parse(fs.readFileSync(path.join(demosRoot, 'manifest.json'), 'utf8'));
+  const demoOrder = manifest.demos.map((entry) => entry.name);
+  const multiscaleSpec = manifest.demos.find((entry) => entry.name === 'multiscale');
   const indexHtml = fs.readFileSync(path.join(demosRoot, 'multiscale', 'index.html'), 'utf8');
-  const viteConfig = fs.readFileSync(path.join(demosRoot, 'multiscale', 'vite.config.js'), 'utf8');
+  const viteConfig = fs.readFileSync(path.join(demosRoot, 'vite.config.js'), 'utf8');
   const main = fs.readFileSync(path.join(demosRoot, 'multiscale', 'src', 'main.js'), 'utf8');
   const runtime = fs.readFileSync(path.join(demosRoot, 'multiscale', 'src', 'compute', 'peercomputeLadderRuntime.js'), 'utf8');
   const orchestrator = fs.readFileSync(path.join(demosRoot, 'multiscale', 'src', 'compute', 'scaleComputeOrchestrator.js'), 'utf8');
@@ -239,46 +243,47 @@ test('multiscale ladder is wired as a first-class repo demo', () => {
   const devLocalRelay = fs.readFileSync(path.join(repoRoot, 'scripts', 'dev-local-relay.sh'), 'utf8');
   const docsIndex = fs.readFileSync(path.join(repoRoot, 'docs', 'index.html'), 'utf8');
 
-  assert.ok(rootPackage.workspaces.includes('demos/multiscale'), 'root workspaces missing demos/multiscale');
+  assert.ok(rootPackage.workspaces.includes('demos'), 'root workspaces missing demos');
   assert.equal(
     rootPackage.scripts['dev:multiscale'],
-    'npm --prefix demos/multiscale run dev -- --host',
+    'node scripts/dev-demo.mjs multiscale',
     'root dev:multiscale script mismatch'
   );
   assert.equal(
     rootPackage.scripts['build:multiscale'],
-    'npm --prefix demos/multiscale run build',
+    'node scripts/build-demos.mjs multiscale',
     'root build:multiscale script mismatch'
   );
-  assert.ok(
-    rootPackage.scripts['build:demos'].includes('npm run build:multiscale'),
-    'build:demos missing multiscale build'
+  assert.equal(
+    rootPackage.scripts['build:demos'],
+    'node scripts/build-demos.mjs',
+    'build:demos must use unified build driver'
   );
+  assert.equal(multiscaleSpec?.multiscaleWorkers, true, 'multiscale manifest entry missing multiscaleWorkers flag');
   assert.ok(
-    rootPackage.scripts['build:demos'].indexOf('build:planetgen') < rootPackage.scripts['build:demos'].indexOf('build:multiscale')
-      && rootPackage.scripts['build:demos'].indexOf('build:multiscale') < rootPackage.scripts['build:demos'].indexOf('build:universes'),
-    'build:demos should build multiscale between planetgen and universes'
+    demoOrder.indexOf('planetgen') < demoOrder.indexOf('multiscale')
+      && demoOrder.indexOf('multiscale') < demoOrder.indexOf('universes'),
+    'demos/manifest.json should build multiscale between planetgen and universes'
   );
 
-  assert.match(viteConfig, /port:\s*5185/, 'multiscale Vite config must keep port 5185');
   assert.ok(
-    viteConfig.includes("path.resolve(docsRoot, 'multiscale')"),
-    'multiscale Vite config must build to docs/multiscale'
+    viteConfig.includes('path.resolve(docsRoot, demoName)'),
+    'unified Vite config must build multiscale to docs/multiscale'
   );
-  assert.ok(viteConfig.includes("'@peercompute'"), 'multiscale Vite config missing @peercompute alias');
-  assert.ok(viteConfig.includes('peercomputeLadderTasks'), 'multiscale Vite config must emit ladder task entry');
-  assert.ok(viteConfig.includes('nbodyGravityTasks'), 'multiscale Vite config must emit N-body solver task entry');
-  assert.ok(viteConfig.includes('reactiveThermalTasks'), 'multiscale Vite config must emit reactive thermal solver task entry');
-  assert.ok(viteConfig.includes('maxwellTasks'), 'multiscale Vite config must emit Maxwell solver task entry');
-  assert.ok(viteConfig.includes('stellarFusionTasks'), 'multiscale Vite config must emit stellar fusion solver task entry');
-  assert.ok(viteConfig.includes('magnetospherePlasmaTasks'), 'multiscale Vite config must emit magnetosphere plasma solver task entry');
-  assert.ok(viteConfig.includes('picPlasmaPatchTasks'), 'multiscale Vite config must emit PIC plasma patch solver task entry');
-  assert.ok(viteConfig.includes('relativisticCorrectionTasks'), 'multiscale Vite config must emit relativistic correction solver task entry');
-  assert.ok(viteConfig.includes('cosmologyExpansionTasks'), 'multiscale Vite config must emit cosmology expansion solver task entry');
-  assert.ok(viteConfig.includes('molecularDynamicsTasks'), 'multiscale Vite config must emit molecular dynamics solver task entry');
-  assert.ok(viteConfig.includes('peercomputeComputeWorker'), 'multiscale Vite config must emit ComputeManager worker entry');
-  const peercomputeImport = main.match(/import\s*\{([\s\S]*?)\}\s*from\s*['"]@peercompute['"]/);
-  assert.ok(peercomputeImport, 'multiscale main must import from @peercompute');
+  assert.ok(viteConfig.includes('@peercompute\\/core'), 'unified Vite config missing @peercompute/core alias');
+  assert.ok(viteConfig.includes('peercomputeLadderTasks'), 'unified Vite config must emit ladder task entry');
+  assert.ok(viteConfig.includes('nbodyGravityTasks'), 'unified Vite config must emit N-body solver task entry');
+  assert.ok(viteConfig.includes('reactiveThermalTasks'), 'unified Vite config must emit reactive thermal solver task entry');
+  assert.ok(viteConfig.includes('maxwellTasks'), 'unified Vite config must emit Maxwell solver task entry');
+  assert.ok(viteConfig.includes('stellarFusionTasks'), 'unified Vite config must emit stellar fusion solver task entry');
+  assert.ok(viteConfig.includes('magnetospherePlasmaTasks'), 'unified Vite config must emit magnetosphere plasma solver task entry');
+  assert.ok(viteConfig.includes('picPlasmaPatchTasks'), 'unified Vite config must emit PIC plasma patch solver task entry');
+  assert.ok(viteConfig.includes('relativisticCorrectionTasks'), 'unified Vite config must emit relativistic correction solver task entry');
+  assert.ok(viteConfig.includes('cosmologyExpansionTasks'), 'unified Vite config must emit cosmology expansion solver task entry');
+  assert.ok(viteConfig.includes('molecularDynamicsTasks'), 'unified Vite config must emit molecular dynamics solver task entry');
+  assert.ok(viteConfig.includes('peercomputeComputeWorker'), 'unified Vite config must emit ComputeManager worker entry');
+  const peercomputeImport = main.match(/import\s*\{([\s\S]*?)\}\s*from\s*['"]@peercompute\/core['"]/);
+  assert.ok(peercomputeImport, 'multiscale main must import from @peercompute/core');
   assert.match(peercomputeImport[1], /\bComputeManager\b/, 'multiscale main must import PeerCompute ComputeManager');
   assert.match(peercomputeImport[1], /\bStateManager\b/, 'multiscale main must import PeerCompute StateManager');
   assert.ok(main.includes('workerBootstrapURL'), 'multiscale main must provide a bundled ComputeManager worker URL');
@@ -435,15 +440,14 @@ test('multiscale ladder is wired as a first-class repo demo', () => {
   assert.ok(webgpuCompute.includes('createComputePipeline'), 'multiscale WebGPU compute pipeline missing');
 
   [devAll, devLocalRelay].forEach((script) => {
-    assert.ok(script.includes('demos/multiscale/public'), 'dev launcher missing multiscale relay-config dir');
-    assert.ok(script.includes('docs/multiscale'), 'dev launcher missing docs/multiscale relay-config dir');
-    assert.ok(script.includes('demos/multiscale'), 'dev launcher missing multiscale dev command');
-    assert.ok(script.includes(':5185/'), 'dev launcher missing multiscale port 5185');
+    assert.ok(script.includes('demos/.dev-relay'), 'dev launcher missing unified relay-config dir');
+    assert.ok(script.includes('npm run dev:demos'), 'dev launcher missing unified dev:demos command');
+    assert.ok(script.includes('DEMOS_PORT:-5173'), 'dev launcher missing unified port 5173');
   });
 
   assert.ok(docsIndex.includes('href="./multiscale/"'), 'docs overview missing multiscale folder link');
   assert.ok(docsIndex.includes('data-demo-dir="multiscale"'), 'docs overview missing multiscale demo metadata');
-  assert.ok(docsIndex.includes('data-demo-port="5185"'), 'docs overview missing multiscale dev port');
+  assert.ok(docsIndex.includes('data-demo-port="5173"'), 'docs overview missing unified dev port');
 });
 
 test('cubechat uses PeerCompute for WebRTC signaling', () => {
@@ -594,8 +598,8 @@ test('webgpuphys headless uses isolated compute tasks', () => {
   assert.ok(headlessContent.includes('ComputeManager'), 'webgpuphys headless ComputeManager usage missing');
   assert.ok(headlessContent.includes('virtual:peercompute-mpm-task-url'), 'webgpuphys bundled compute module URL missing');
   assert.ok(headlessContent.includes('module: COMPUTE_MODULE_URL'), 'webgpuphys tasks must use the bundled module URL');
-  const config = fs.readFileSync(path.join(demosRoot, 'webgpuphys', 'vite.config.js'), 'utf8');
-  assert.ok(config.includes('demos/shared/mpmComputeTasks.js') && config.includes("preserveSignature: 'strict'"), 'webgpuphys task exports must survive bundling');
+  const config = fs.readFileSync(path.join(demosRoot, 'vite.config.js'), 'utf8');
+  assert.ok(config.includes('webgpuphys/demos/shared/mpmComputeTasks.js') && config.includes("preserveSignature: 'strict'"), 'webgpuphys task exports must survive bundling');
 });
 
 test('fano-reactor ships sedenion chemistry model modules', () => {
@@ -640,58 +644,60 @@ test('schrodinger ships material packet and visualization modules', () => {
 
 test('vibeslopdb is wired as a first-class PeerCompute ExoWebTUI demo', () => {
   const rootPackage = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
-  const viteConfig = fs.readFileSync(path.join(demosRoot, 'vibeslopdb', 'vite.config.js'), 'utf8');
+  const manifest = JSON.parse(fs.readFileSync(path.join(demosRoot, 'manifest.json'), 'utf8'));
+  const vibeSpec = manifest.demos.find((entry) => entry.name === 'vibeslopdb');
+  const viteConfig = fs.readFileSync(path.join(demosRoot, 'vite.config.js'), 'utf8');
   const main = fs.readFileSync(path.join(demosRoot, 'vibeslopdb', 'src', 'main.js'), 'utf8');
   const devAll = fs.readFileSync(path.join(repoRoot, 'scripts', 'dev-all.sh'), 'utf8');
   const devLocalRelay = fs.readFileSync(path.join(repoRoot, 'scripts', 'dev-local-relay.sh'), 'utf8');
   const docsIndex = fs.readFileSync(path.join(repoRoot, 'docs', 'index.html'), 'utf8');
 
-  assert.ok(rootPackage.workspaces.includes('demos/vibeslopdb'), 'root workspaces missing demos/vibeslopdb');
-  assert.equal(rootPackage.scripts['dev:vibeslopdb'], 'npm --prefix demos/vibeslopdb run dev -- --host');
-  assert.equal(rootPackage.scripts['build:vibeslopdb'], 'npm --prefix demos/vibeslopdb run build');
-  assert.ok(rootPackage.scripts['build:demos'].includes('npm run build:vibeslopdb'), 'build:demos missing vibeslopdb');
-  assert.match(viteConfig, /port:\s*5190/, 'vibeslopdb Vite config must use port 5190');
-  assert.ok(viteConfig.includes("path.join(docsRoot, 'vibeslopdb')"), 'vibeslopdb must build to docs/vibeslopdb');
-  assert.ok(viteConfig.includes('pagesIsolationPlugin'), 'vibeslopdb must wire pagesIsolationPlugin');
+  assert.ok(rootPackage.workspaces.includes('demos'), 'root workspaces missing demos');
+  assert.equal(rootPackage.scripts['dev:vibeslopdb'], 'node scripts/dev-demo.mjs vibeslopdb');
+  assert.equal(rootPackage.scripts['build:vibeslopdb'], 'node scripts/build-demos.mjs vibeslopdb');
+  assert.equal(rootPackage.scripts['build:demos'], 'node scripts/build-demos.mjs');
+  assert.equal(vibeSpec?.vibeslopdb, true, 'vibeslopdb manifest flag missing');
+  assert.equal(vibeSpec?.pagesIsolation, true, 'vibeslopdb must enable pagesIsolation');
+  assert.ok(viteConfig.includes('pagesIsolationPlugin'), 'unified Vite config must wire pagesIsolationPlugin');
   assert.ok(main.includes('createLocalStateStore'), 'vibeslopdb must persist state via PeerCompute StateManager');
   assert.ok(main.includes('createPeerComputeAiBridge'), 'vibeslopdb must wire PeerCompute AI bridge');
   assert.ok(main.includes('returnToPeerComputeAtlas'), 'vibeslopdb must support PeerCompute ExoWebTUI return protocol');
   [devAll, devLocalRelay].forEach((script) => {
-    assert.ok(script.includes('demos/vibeslopdb'), 'dev launcher missing vibeslopdb');
-    assert.ok(script.includes(':5190/'), 'dev launcher missing vibeslopdb port 5190');
+    assert.ok(script.includes('npm run dev:demos'), 'dev launcher missing unified dev:demos');
+    assert.ok(script.includes('DEMOS_PORT:-5173'), 'dev launcher missing unified port 5173');
   });
   assert.ok(docsIndex.includes('href="./vibeslopdb/"'), 'docs overview missing vibeslopdb link');
   assert.ok(docsIndex.includes('data-demo-dir="vibeslopdb"'), 'docs overview missing vibeslopdb metadata');
-  assert.ok(docsIndex.includes('data-demo-port="5190"'), 'docs overview missing vibeslopdb dev port');
+  assert.ok(docsIndex.includes('data-demo-port="5173"'), 'docs overview missing unified dev port');
   assert.ok(docsIndex.includes('data-host-module="./vibeslopdb/host.js"'), 'docs overview missing vibeslopdb multi-window host module');
   assert.ok(fs.existsSync(path.join(demosRoot, 'vibeslopdb', 'src', 'peercomputeHost.js')), 'vibeslopdb peercomputeHost.js missing');
 });
 
 test('eshkols-in-space is wired as a first-class PeerCompute WebGPU N-body demo', () => {
   const rootPackage = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
-  const viteConfig = fs.readFileSync(path.join(demosRoot, 'eshkols-in-space', 'vite.config.js'), 'utf8');
+  const manifest = JSON.parse(fs.readFileSync(path.join(demosRoot, 'manifest.json'), 'utf8'));
+  const eshkolSpec = manifest.demos.find((entry) => entry.name === 'eshkols-in-space');
   const runtime = fs.readFileSync(path.join(demosRoot, 'eshkols-in-space', 'src', 'compute', 'runtime.js'), 'utf8');
   const app = fs.readFileSync(path.join(demosRoot, 'eshkols-in-space', 'src', 'app.js'), 'utf8');
   const devAll = fs.readFileSync(path.join(repoRoot, 'scripts', 'dev-all.sh'), 'utf8');
   const devLocalRelay = fs.readFileSync(path.join(repoRoot, 'scripts', 'dev-local-relay.sh'), 'utf8');
   const docsIndex = fs.readFileSync(path.join(repoRoot, 'docs', 'index.html'), 'utf8');
 
-  assert.ok(rootPackage.workspaces.includes('demos/eshkols-in-space'), 'root workspaces missing demos/eshkols-in-space');
-  assert.equal(rootPackage.scripts['dev:eshkols-in-space'], 'npm --prefix demos/eshkols-in-space run dev -- --host');
-  assert.equal(rootPackage.scripts['build:eshkols-in-space'], 'npm --prefix demos/eshkols-in-space run build');
-  assert.equal(rootPackage.scripts['test:eshkols-in-space'], 'npm --prefix demos/eshkols-in-space test');
-  assert.ok(rootPackage.scripts['build:demos'].includes('npm run build:eshkols-in-space'), 'build:demos missing eshkols-in-space');
-  assert.match(viteConfig, /port:\s*5191/, 'eshkols-in-space Vite config must use port 5191');
-  assert.ok(viteConfig.includes("path.resolve(docsRoot, 'eshkols-in-space')"), 'eshkols-in-space must build to docs/eshkols-in-space');
+  assert.ok(rootPackage.workspaces.includes('demos'), 'root workspaces missing demos');
+  assert.equal(rootPackage.scripts['dev:eshkols-in-space'], 'node scripts/dev-demo.mjs eshkols-in-space');
+  assert.equal(rootPackage.scripts['build:eshkols-in-space'], 'node scripts/build-demos.mjs eshkols-in-space');
+  assert.ok(rootPackage.scripts['test:eshkols-in-space'].includes('demos/eshkols-in-space/physics/physics.test.mjs'));
+  assert.equal(rootPackage.scripts['build:demos'], 'node scripts/build-demos.mjs');
+  assert.equal(eshkolSpec?.target, 'esnext', 'eshkols-in-space manifest must target esnext');
   assert.ok(runtime.includes("from '@peercompute/gpu-hub'"), 'eshkols-in-space runtime must import GPUHubManager from @peercompute/gpu-hub');
   assert.ok(app.includes('returnToPeerComputeAtlas'), 'eshkols-in-space must support PeerCompute ExoWebTUI return protocol');
   assert.ok(app.includes('window.__eshkolsInSpace'), 'eshkols-in-space must expose diagnostics handle');
   [devAll, devLocalRelay].forEach((script) => {
-    assert.ok(script.includes('demos/eshkols-in-space'), 'dev launcher missing eshkols-in-space');
-    assert.ok(script.includes(':5191/'), 'dev launcher missing eshkols-in-space port 5191');
+    assert.ok(script.includes('npm run dev:demos'), 'dev launcher missing unified dev:demos');
+    assert.ok(script.includes('DEMOS_PORT:-5173'), 'dev launcher missing unified port 5173');
   });
   assert.ok(docsIndex.includes('href="./eshkols-in-space/"'), 'docs overview missing eshkols-in-space link');
   assert.ok(docsIndex.includes('data-demo-dir="eshkols-in-space"'), 'docs overview missing eshkols-in-space metadata');
-  assert.ok(docsIndex.includes('data-demo-port="5191"'), 'docs overview missing eshkols-in-space dev port');
+  assert.ok(docsIndex.includes('data-demo-port="5173"'), 'docs overview missing unified dev port');
   assert.ok(docsIndex.includes('data-live-gpu="1"'), 'docs overview missing eshkols-in-space live GPU shader flag');
 });

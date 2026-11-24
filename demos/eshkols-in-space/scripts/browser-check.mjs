@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
-import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
-import { preview } from 'vite';
+import { mergeConfig, preview } from 'vite';
+import { createDemoBuildConfig } from '../../vite.config.js';
 
-const configFile = fileURLToPath(new URL('../vite.config.js', import.meta.url));
 // Use the production bundle in docs/eshkols-in-space, an ephemeral loopback port, and a fresh browser profile.
-const server = await preview({ configFile, preview: { port: 0, host: '127.0.0.1', https: false } });
+const server = await preview(mergeConfig(createDemoBuildConfig('eshkols-in-space', { command: 'build' }), {
+  preview: { port: 0, host: '127.0.0.1', https: false }
+}));
 const url = 'http://127.0.0.1:' + server.httpServer.address().port;
 let browser;
 try {

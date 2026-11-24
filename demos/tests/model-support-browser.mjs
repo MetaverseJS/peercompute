@@ -1,3 +1,4 @@
+import { createDemoServerConfig } from "../vite.config.js";
 import assert from 'node:assert/strict';
 import { mkdir, writeFile, readFile, mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
@@ -133,13 +134,13 @@ async function qualifyMedia() {
   return { images, audio, expectedAudioText };
 }
 try {
-  server = await createServer({ configFile: path.join(repo, 'demos/inference/vite.config.js'), logLevel: 'error',
+  server = await createServer(createDemoServerConfig("inference", { logLevel: 'error',
     server: { port: Number(process.env.MODEL_SUPPORT_PORT || 0), strictPort: true, host: '127.0.0.1', hmr: false }, plugins: [{ name: 'model-support-acceptance', configureServer(vite) {
       vite.middlewares.use('/__model_support', (_request, response) => {
         response.setHeader('Content-Type', 'text/html'); response.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
         response.setHeader('Cross-Origin-Embedder-Policy', 'require-corp'); response.end(html);
       });
-    } }] });
+    } }] }));
   await server.listen(); const origin = 'https://127.0.0.1:' + server.httpServer.address().port; report.origin = origin;
   await launch(origin);
   if (source) {

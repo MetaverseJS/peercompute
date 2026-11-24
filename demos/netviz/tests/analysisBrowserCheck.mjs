@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { build, mergeConfig } from 'vite';
 import { chromium } from 'playwright';
+import { createDemoBuildConfig } from '../../vite.config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
@@ -61,7 +62,10 @@ async function startStaticServer(rootDir) {
 let server = null;
 let browser = null;
 try {
-  await runCmd('npx', ['vite', 'build', '--outDir', outDir, '--emptyOutDir'], netvizDir);
+  await build(mergeConfig(createDemoBuildConfig('netviz'), {
+    logLevel: 'silent',
+    build: { outDir, emptyOutDir: true }
+  }));
   const started = await startStaticServer(outDir);
   server = started.server;
 

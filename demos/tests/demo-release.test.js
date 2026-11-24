@@ -158,8 +158,10 @@ test('docs overview keeps expected tile order', () => {
 
 test('wxglobe release wiring is imagery-free and excludes retired weather data', () => {
   const rootPackage = JSON.parse(read('package.json'));
-  const demoPackage = JSON.parse(read('demos/wxglobe/package.json'));
-  const viteConfig = read('demos/wxglobe/vite.config.js');
+  const demoPackage = JSON.parse(read('demos/package.json'));
+  const manifest = JSON.parse(read('demos/manifest.json'));
+  const wxglobeSpec = manifest.demos.find((entry) => entry.name === 'wxglobe');
+  const viteConfig = read('demos/vite.config.js');
   const indexHtml = read('demos/wxglobe/index.html');
   const main = read('demos/wxglobe/src/main.js');
   const etopoTerrain = read('demos/wxglobe/src/terrain/etopo2022.js');
@@ -170,12 +172,13 @@ test('wxglobe release wiring is imagery-free and excludes retired weather data',
   const devAll = read('scripts/dev-all.sh');
   const devLocalRelay = read('scripts/dev-local-relay.sh');
 
-  assert.ok(rootPackage.workspaces.includes('demos/wxglobe'));
-  assert.equal(rootPackage.scripts['dev:wxglobe'], 'npm --prefix demos/wxglobe run dev -- --host');
-  assert.equal(rootPackage.scripts['build:wxglobe'], 'npm --prefix demos/wxglobe run build');
-  assert.ok(rootPackage.scripts['build:demos'].includes('npm run build:wxglobe'));
-  assert.match(viteConfig, /port:\s*5186/);
-  assert.ok(viteConfig.includes("path.resolve(docsRoot, 'wxglobe')"));
+  assert.ok(rootPackage.workspaces.includes('demos'));
+  assert.equal(rootPackage.scripts['dev:wxglobe'], 'node scripts/dev-demo.mjs wxglobe');
+  assert.equal(rootPackage.scripts['build:wxglobe'], 'node scripts/build-demos.mjs wxglobe');
+  assert.equal(rootPackage.scripts['build:demos'], 'node scripts/build-demos.mjs');
+  assert.equal(manifest.devPort, 5173);
+  assert.equal(wxglobeSpec?.cesium, true);
+  assert.ok(viteConfig.includes('path.resolve(docsRoot, demoName)'));
   assert.ok(viteConfig.includes("JSON.stringify('./cesium/')"));
   assert.equal(demoPackage.dependencies.cesium, '1.144.0');
   assert.equal(demoPackage.dependencies['grib-js'], undefined);
@@ -204,8 +207,8 @@ test('wxglobe release wiring is imagery-free and excludes retired weather data',
   assert.ok(!exists('demos/wxglobe/src/weatherWorker.js'));
   assert.ok(!exists('demos/wxglobe/src/windLayer.js'));
   assert.ok(!exists('demos/wxglobe/wxdata_subset'));
-  assert.ok(devAll.includes('demos/wxglobe/public'));
-  assert.ok(devLocalRelay.includes('VITE_WXGLOBE_URL="${demo_base}:5186/"'));
+  assert.ok(devAll.includes('npm run dev:demos'));
+  assert.ok(devLocalRelay.includes('npm run dev:demos'));
 });
 
 test('wxglobe built docs include nested-path-safe Cesium runtime assets', () => {
@@ -374,22 +377,24 @@ test('earth and motorcycle production artifacts carry their real-data runtime co
   assert.ok(exists('docs/assets/motorcycle.png'));
 });
 
-test('multiscale release wiring uses fixed port and docs output', () => {
+test('multiscale release wiring uses unified dev port and docs output', () => {
   const rootPackage = JSON.parse(read('package.json'));
-  const viteConfig = read('demos/multiscale/vite.config.js');
+  const manifest = JSON.parse(read('demos/manifest.json'));
+  const multiscaleSpec = manifest.demos.find((entry) => entry.name === 'multiscale');
+  const viteConfig = read('demos/vite.config.js');
   const devAll = read('scripts/dev-all.sh');
   const devLocalRelay = read('scripts/dev-local-relay.sh');
 
-  assert.ok(rootPackage.workspaces.includes('demos/multiscale'), 'package workspaces missing multiscale');
-  assert.equal(rootPackage.scripts['dev:multiscale'], 'npm --prefix demos/multiscale run dev -- --host');
-  assert.equal(rootPackage.scripts['build:multiscale'], 'npm --prefix demos/multiscale run build');
-  assert.ok(rootPackage.scripts['build:demos'].includes('npm run build:multiscale'), 'build:demos missing multiscale');
-  assert.match(viteConfig, /port:\s*5185/, 'multiscale Vite port changed from 5185');
-  assert.ok(viteConfig.includes("path.resolve(docsRoot, 'multiscale')"), 'multiscale build output changed from docs/multiscale');
-  assert.ok(devAll.includes('demos/multiscale/public'), 'dev-all missing multiscale public relay config dir');
-  assert.ok(devAll.includes('docs/multiscale'), 'dev-all missing docs/multiscale relay config dir');
-  assert.ok(devLocalRelay.includes('VITE_MULTISCALE_URL="${demo_base}:5185/"'), 'dev-local-relay missing multiscale overview URL');
-  assert.match(devLocalRelay, /demos\/multiscale\\?" run dev/, 'dev-local-relay missing multiscale dev command');
+  assert.ok(rootPackage.workspaces.includes('demos'), 'package workspaces missing demos');
+  assert.equal(rootPackage.scripts['dev:multiscale'], 'node scripts/dev-demo.mjs multiscale');
+  assert.equal(rootPackage.scripts['build:multiscale'], 'node scripts/build-demos.mjs multiscale');
+  assert.equal(rootPackage.scripts['build:demos'], 'node scripts/build-demos.mjs');
+  assert.equal(manifest.devPort, 5173, 'unified dev port changed from 5173');
+  assert.equal(multiscaleSpec?.multiscaleWorkers, true, 'multiscale workers flag missing from manifest');
+  assert.ok(viteConfig.includes('path.resolve(docsRoot, demoName)'), 'unified Vite config build output changed');
+  assert.ok(devAll.includes('demos/.dev-relay'), 'dev-all missing unified relay config dir');
+  assert.ok(devAll.includes('npm run dev:demos'), 'dev-all missing unified dev:demos command');
+  assert.ok(devLocalRelay.includes('npm run dev:demos'), 'dev-local-relay missing unified dev:demos command');
 });
 
 test('hyperborea has settings + room UI and room directory wiring', () => {

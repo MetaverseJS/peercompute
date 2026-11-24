@@ -19,9 +19,10 @@ rtcstats_dump.gz
 **/playwright-report/
 **/test-results/
 
-# Relay identity keys
+# Relay identity keys & local dev relay config
 config/relay-peer-id.json
 config/relay-config.json
+demos/.dev-relay/
 
 # Python caches / test outputs
 **/__pycache__/

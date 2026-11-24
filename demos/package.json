@@ -1,0 +1,24 @@
+{
+  "name": "peercompute-demos",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "dev": "vite --config vite.config.js --host",
+    "build": "node ../scripts/build-demos.mjs"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.5.17",
+    "@peercompute/geo-core": "*",
+    "cannon-es": "^0.20.0",
+    "cesium": "1.144.0",
+    "html2canvas": "^1.4.1",
+    "mermaid": "^12.1.0",
+    "sql.js": "^1.17.0",
+    "three": "^0.182.0"
+  },
+  "devDependencies": {
+    "es-module-lexer": "^2.0.0",
+    "vite": "^6.4.1",
+    "vite-plugin-static-copy": "^4.1.1"
+  }
+}

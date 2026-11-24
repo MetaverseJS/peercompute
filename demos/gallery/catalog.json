@@ -2,14 +2,14 @@
   {
     "dir": "inference",
     "title": "Local Model Console",
-    "port": 5189,
+    "port": 5173,
     "category": "AI & network",
     "description": "Chat with browser-hosted models. Route text, images, and voice between local and remote peers."
   },
   {
     "dir": "cubechat",
     "title": "CubeChat",
-    "port": 5176,
+    "port": 5173,
     "category": "Worlds & games",
     "description": "Step into a shared 3D room with proximity video chat and AI residents.",
     "image": "cubechat.png"
@@ -17,7 +17,7 @@
   {
     "dir": "eshkols-in-space",
     "title": "Eshkols in Space",
-    "port": 5191,
+    "port": 5173,
     "category": "Earth & space",
     "description": "Simulate up to two million gravitating bodies with Eshkol laws, Barnes–Hut octrees, and WebGPU.",
     "image": "eshkols-in-space.png",
@@ -26,7 +26,7 @@
   {
     "dir": "vibeslopdb",
     "title": "VibeSlopDB",
-    "port": 5190,
+    "port": 5173,
     "category": "AI & network",
     "description": "Issue YOLO natural-language SQL to a local or peer LLM against live SQLite, Postgres, and IndexedDB databases.",
     "image": "vibeslopdb.png",
@@ -35,7 +35,7 @@
   {
     "dir": "universes",
     "title": "Universes",
-    "port": 5178,
+    "port": 5173,
     "category": "Earth & space",
     "description": "Generate galaxies and star systems across scales with shared compute workers.",
     "image": "universes.png"
@@ -43,7 +43,7 @@
   {
     "dir": "planetgen",
     "title": "PlanetGen",
-    "port": 5177,
+    "port": 5173,
     "category": "Earth & space",
     "description": "Shape a procedural planet with GPU-driven oceans, atmosphere, and weather.",
     "image": "planetgen.png"
@@ -51,7 +51,7 @@
   {
     "dir": "netviz",
     "title": "NetViz",
-    "port": 5182,
+    "port": 5173,
     "category": "AI & network",
     "description": "Inspect live peer connections and watch the network topology change.",
     "image": "netviz-screenshot.gif"
@@ -59,7 +59,7 @@
   {
     "dir": "sneakywoods",
     "title": "SneakyWoods",
-    "port": 5180,
+    "port": 5173,
     "category": "Worlds & games",
     "description": "Join a multiplayer woodland arena with synchronized player state.",
     "image": "sneakywoods.png"
@@ -67,7 +67,7 @@
   {
     "dir": "daddygo",
     "title": "Daddy Go!",
-    "port": 5181,
+    "port": 5173,
     "category": "Worlds & games",
     "description": "Control a runner with your body and compete for the shared high score.",
     "image": "daddygo.png"
@@ -75,7 +75,7 @@
   {
     "dir": "webgpuphys",
     "title": "Dynamics (WebGpuPhys)",
-    "port": 5179,
+    "port": 5173,
     "category": "Simulation",
     "description": "Play with a particle-based dynamics engine in a WebGPU physics sandbox.",
     "image": "webgpuphys.png",
@@ -85,7 +85,7 @@
   {
     "dir": "webgpuphys",
     "title": "MPM Visual (WebGpuPhys)",
-    "port": 5179,
+    "port": 5173,
     "category": "Simulation",
     "description": "Experiment with particle materials, thermal effects, and MLS-MPM dynamics.",
     "image": "mpm-visual.png",
@@ -95,7 +95,7 @@
   {
     "dir": "webgpuphys",
     "title": "PPF Contact Solver (WebGpuPhys)",
-    "port": 5179,
+    "port": 5173,
     "category": "Simulation",
     "description": "Investigate collisions and friction with a GPU-accelerated contact solver.",
     "image": "ppf-contact-solver.png",
@@ -105,7 +105,7 @@
   {
     "dir": "hyperborea",
     "title": "Hyperborea",
-    "port": 5175,
+    "port": 5173,
     "category": "Worlds & games",
     "description": "Enter a WebXR-ready multiplayer scene backed by a shared GPU hub.",
     "image": "hyperborea.png"
@@ -113,7 +113,7 @@
   {
     "dir": "multiscale",
     "title": "Multiscale Ladder",
-    "port": 5185,
+    "port": 5173,
     "category": "Earth & space",
     "description": "Travel from supergalactic structures to orbital clouds in a WebGPU simulation.",
     "image": "multiscale.svg"
@@ -121,7 +121,7 @@
   {
     "dir": "wxglobe",
     "title": "WXGlobe",
-    "port": 5186,
+    "port": 5173,
     "category": "Earth & space",
     "description": "Explore Earth’s elevation and ocean depths through global topographic contours.",
     "image": "wxglobe.png"
@@ -129,7 +129,7 @@
   {
     "dir": "earth",
     "title": "EarthGrid",
-    "port": 5187,
+    "port": 5173,
     "category": "Earth & space",
     "description": "Explore NOAA terrain, weather, roads, and buildings in a shared world.",
     "image": "earth.png"
@@ -137,7 +137,7 @@
   {
     "dir": "motorcycle",
     "title": "RoadVector",
-    "port": 5188,
+    "port": 5173,
     "category": "Worlds & games",
     "description": "Ride a particle-based motorcycle along real roads with simulated traffic.",
     "image": "motorcycle.png"
@@ -145,7 +145,7 @@
   {
     "dir": "fano-reactor",
     "title": "Fano Reactor",
-    "port": 5183,
+    "port": 5173,
     "category": "Simulation",
     "description": "Explore sedenion bonds, target a Fano map, and probe cascades.",
     "image": "fano-reactor.svg"
@@ -153,7 +153,7 @@
   {
     "dir": "schrodinger",
     "title": "Schrodinger",
-    "port": 5184,
+    "port": 5173,
     "category": "Simulation",
     "description": "Explore atoms, orbitals, and the properties of water and other materials.",
     "image": "schrodinger.svg"

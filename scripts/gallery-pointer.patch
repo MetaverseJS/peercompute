@@ -1,0 +1,40 @@
+diff --git a/examples/web/desktop_app.ts b/examples/web/desktop_app.ts
+index 40098d54..7e97a8c0 100644
+--- a/examples/web/desktop_app.ts
++++ b/examples/web/desktop_app.ts
+@@ -2294,6 +2294,11 @@ function paintDesktop(now: number): VizCell[][] {
+     const line = frame[cursor.row];
+     if (line && cursor.column >= 0 && cursor.column < line.length) {
+-      const under = line[cursor.column]!;
+-      line[cursor.column] = { char: cursor.glyph, foreground: DESKTOP.accent, background: under.background };
++      // A full block hides its own background. Inset the ordinary pointer so both
++      // colors stay visible even on an accent title bar or a solid color swatch.
++      line[cursor.column] = {
++        char: cursor.glyph === "█" ? "■" : cursor.glyph,
++        foreground: [255, 255, 255],
++        background: [0, 0, 0],
++      };
+     }
+   }
+diff --git a/src/web/platform.ts b/src/web/platform.ts
+index 8a2d5bce..26d8e93b 100644
+--- a/src/web/platform.ts
++++ b/src/web/platform.ts
+@@ -165,4 +165,10 @@ export class BrowserInputSource implements InputSource {
+         passive: false,
+       }),
++      ...(["enter", "leave"] as const).map((kind) =>
++        addListener(this.#target, `pointer${kind}`, (event) => {
++          const pointer = event as PointerEvent;
++          this.#emitPointerInput(pointer, kind, this.#cellPosition(pointer));
++        })
++      ),
+       addListener(this.#target, "pointerup", (event) => this.#handlePointer(event as PointerEvent, "up"), {
+         passive: false,
+@@ -276,5 +282,5 @@ export class BrowserInputSource implements InputSource {
+   #emitPointerInput(
+     event: PointerEvent,
+-    kind: Extract<PointerInputKind, "down" | "move" | "up" | "cancel">,
++    kind: Extract<PointerInputKind, "down" | "move" | "up" | "cancel" | "enter" | "leave">,
+     position: { x: number; y: number },
+   ): void {

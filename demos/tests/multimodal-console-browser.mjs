@@ -1,3 +1,4 @@
+import { createDemoServerConfig } from "../vite.config.js";
 import assert from 'node:assert/strict';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
@@ -75,7 +76,7 @@ try {
   await relay.start();
   const relayAddress = relay.libp2p.getMultiaddrs()[0].toString(), scope = `multimodal-${crypto.randomUUID()}`;
   for (const [index, origin] of origins.entries()) {
-    const server = await createServer({ configFile: path.join(repo, 'demos/inference/vite.config.js'), logLevel: 'error',
+    const server = await createServer(createDemoServerConfig("inference", { logLevel: 'error',
       server: { host: '127.0.0.1', port: Number(new URL(origin).port), strictPort: true, hmr: false },
       plugins: [{ name: 'multimodal-acceptance', configureServer(vite) { vite.middlewares.use(async (req, res, next) => {
         const url = new URL(req.url, origin);
@@ -89,7 +90,7 @@ try {
           createReadStream(path.join(speechCache, 'sources', id, file.path)).pipe(res); return;
         }
         next();
-      }); } }] });
+      }); } }] }));
     servers.push(server); await server.listen();
     const context = await chromium.launchPersistentContext(profiles[index], { executablePath: '/opt/google/chrome/chrome', headless: true,
       ignoreHTTPSErrors: true, viewport: { width: 1280, height: 900 }, permissions: ['microphone'],

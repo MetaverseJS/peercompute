@@ -6,7 +6,7 @@ import path from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
 import { build } from 'vite';
-import { mpmComputeTaskPlugin } from '../vite.config.js';
+import { mpmComputeTaskPlugin } from '../../vite.config.js';
 
 test('production MPM task URL resolves to a bundled worker-importable module with all handlers', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'peercompute-mpm-task-bundle-'));

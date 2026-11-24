@@ -267,7 +267,7 @@ are not qualified. Decorative meshes without colliders are not sensed; rotated
 physics boxes use conservative axis-aligned bounds.
 
 Actual browser-peer delivery and visuals are separate preview acceptance gates;
-see `plan/log.md` for results and limitations.
+see `plan/log/log-summary.md` for results and limitations.
 
 ## Generated objects
 

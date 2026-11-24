@@ -1,3 +1,4 @@
+import { createDemoServerConfig } from "../vite.config.js";
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile, stat } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
@@ -54,7 +55,7 @@ async function launch() {
   await page.waitForFunction(() => window.ready, null, { timeout: 90000 });
 }
 try {
-  server = await createServer({ configFile: path.join(repo, 'demos/inference/vite.config.js'), logLevel: 'error',
+  server = await createServer(createDemoServerConfig("inference", { logLevel: 'error',
     server: { host: '127.0.0.1', port, strictPort: true, hmr: false }, plugins: [{ name: 'speech-acceptance', configureServer(vite) {
       vite.middlewares.use(async (request, response, next) => {
         const url = new URL(request.url, origin);
@@ -77,7 +78,7 @@ try {
         }
         next();
       });
-    } }] });
+    } }] }));
   await server.listen(); await launch();
   report.load = await page.evaluate(() => prepare()); await save(); console.log('Speech models loaded', JSON.stringify(report.load));
   sourceAllowed = false;

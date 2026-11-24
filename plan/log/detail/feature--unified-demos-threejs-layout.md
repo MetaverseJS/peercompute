@@ -31,3 +31,28 @@ Worktree: `/home/cos/projects/peercompute-demo-consolidation` (branched from `ma
 - Validation:
   - `node --test peercompute/tests/unit/workspaceBoundary.test.js peercompute/tests/unit/coreEntrypoint.test.js demos/tests/pages-shared-runtime.test.js demos/tests/model-compatibility-help.test.js demos/tests/room-directory.test.js packages/exopute/tests/exopute.test.js`: 24/24 PASS.
   - `npm --prefix peercompute run test:unit`: 1392/1393 PASS (only pre-existing external staged-ULG fixture `serviceOrchestration.test.js:4095` blocked, identical to baseline `main`).
+
+### Phase 2 Completed — Single-Port Unified Multi-Page Vite Dev Server + Consolidated `demos/` Workspace
+- Replaced 17 per-demo `demos/*/vite.config.{js,ts}` files and 17 per-demo `demos/*/package.json` workspaces with:
+  - `demos/manifest.json` (single source of truth for all 17 demos, build flags, and unified `devPort: 5173`)
+  - `demos/package.json` (single consolidated workspace package unifying `three@^0.182.0` across all demos, removing drifting `0.160`/`0.167`/`0.171` copies and stale `playwright@^1.42.0`/`gh-pages`)
+  - `demos/vite.config.js` (single HTTPS Vite dev server on port `5173` serving `/` ExoWebTUI gallery + `/<demo>/` for all 17 demos on one origin with COOP/COEP headers, per-demo `public/` overlay, live Cesium static mount from `node_modules/cesium`, live `/vibeslopdb/host.js` mapping, `/api` & `/chaos-api` proxies, and `createDemoBuildConfig`/`createDemoServerConfig` for programmatic builds and browser tests)
+  - `scripts/build-demos.mjs` (single-process Vite programmatic build driver for all or selected demos)
+  - `scripts/dev-demo.mjs` (focused single-port dev launcher printing the exact `https://localhost:5173/<demo>/` URL)
+- Collapsed root `package.json` `workspaces` from 21 entries to 5 (`peercompute`, `packages/exopute`, `packages/geo-core`, `services/geodata`, `demos`), refreshed `package-lock.json` cleanly (`removed 40 packages`), and added direct root `test:*` commands for all demo test suites.
+- Updated 9 demo HTML entry files from root-relative `/src/...` to `./src/...` for clean single-port `/<demo>/` resolution; updated `scripts/dev-all.sh` and `scripts/dev-local-relay.sh` to spawn 3 processes (`relay`, `geodata`, `demos`) instead of 19–20; updated `scripts/write-prod-relay-config.mjs`, `demos/gallery/catalog.json`, `docs/assets/gallery.js`, `demos/tests/{demo-ports,demo-release}.test.js`, 6 inference browser harnesses, `demos/multiscale/tests/workerBuild.test.mjs`, `demos/webgpuphys/tests/mpm-task-bundle.test.mjs`, `demos/netviz/tests/analysisBrowserCheck.mjs`, `demos/eshkols-in-space/scripts/browser-check.mjs`, `demos/README.md`, `demos/gallery/README.md`, and `README.md`.
+- Committed previously untracked `scripts/gallery-pointer.patch` (required by `scripts/build-gallery.mjs`) and fixed two stale `plan/tests.md` / `plan/log.md` links in `demos/wxglobe/README.md` and `demos/cubechat/README.md`.
+- Artifact size measurement after full 17-demo build (`docs/`):
+  - **684.4 MB -> 228 MB** (**456 MB / 66.7% reduction**).
+  - 0 `ort-wasm` files in any of the 13 non-inference demos (`fano-reactor` 40 KB, `eshkols-in-space` 912 KB, `planetgen` 928 KB, `universes` 1.2 MB, `daddygo` 3.0 MB, `sneakywoods`/`schrodinger` 3.1 MB, `netviz` 3.2 MB, `hyperborea` 3.3 MB, `webgpuphys` 4.1 MB, `multiscale` 6.2 MB).
+  - Single pooled copy of each inference WASM (`ort-wasm-simd-threaded.jsep`, `ort-wasm-simd-threaded.asyncify` ×2, `wllama`) in `docs/assets/runtime/`.
+- Validation:
+  - `node --test demos/tests/demo-ports.test.js demos/tests/demo-release.test.js demos/tests/gallery-guides.test.mjs`: 51/51 PASS.
+  - Per-demo & platform suites (`test:geo-core`, `test:geodata`, `test:earth`, `test:wxglobe`, `test:motorcycle`, `test:multiscale`, `mpm-task-bundle.test.mjs`, `test:planetgen`, `test:schrodinger`, `test:vibeslopdb`, `test:eshkols-in-space`, `test:physics`, `test:traffic`, `test:xr`, `test:network-telemetry`, `test:capabilities`, `test:artifacts`, `test:inference`, `test:peer-inference`, `test:gguf`, `test:diffusion`, `console-navigation`, `pages-isolation`, `pages-release-assets`, `backend-server`, `go test ./...`): 100% PASS.
+  - `npm pack --dry-run`: `peercompute@0.1.0-alpha.1` (787.5 kB, 228 files), `exopute@0.1.0-alpha.1` (1.8 kB, 6 files).
+  - Live single-port unified Vite dev server (`https://127.0.0.1:<port>/`): verified `/netviz` 302 redirect, `crossOriginIsolated === true`, ExoWebTUI gallery `/` + all 17 demo routes cleanly in headless Chrome (including Three.js 0.182 aligned `hyperborea`, `sneakywoods`, `planetgen`, `universes`, plus `vibeslopdb` SQLite/PGlite and `eshkols-in-space` WebGPU).
+  - `demos/tests/gallery-browser.mjs`: 6/6 PASS; `demos/netviz/tests/analysisBrowserCheck.mjs`: PASS; `demos/eshkols-in-space/scripts/browser-check.mjs`: PASS (direct + 65,536-body Barnes-Hut octree).
+  - `demos/tests/runtime-p2p.mjs`: PASS on both `floodsub` and `gossipsub` (all 5 networked demos: `cubechat`, `hyperborea`, `sneakywoods`, `daddygo`, `netviz`).
+  - `demos/tests/world-agent-host.test.js` & `demos/tests/cubechat-native-ui.test.js`: 115/115 PASS.
+  - `test:global-chat` (including `inference-global-integration.test.js`): 28/28 PASS; `test:root-host`: 45/45 PASS.
+  - `demos/tests/runtime-smoke.mjs`: `hyperborea`, `sneakywoods`, `daddygo`, `planetgen`, `wxglobe`, `motorcycle`, `universes`, `fano-reactor` all PASS with zero errors; `cubechat` & `earth` passed all runtime & 65+ real-data geometry/cache assertions (only expected self-signed HTTPS ServiceWorker console message); `webgpuphys` rejected fallback SwiftShader adapter as documented in `plan/test/test.md`.

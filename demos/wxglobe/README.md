@@ -65,4 +65,4 @@ The build writes `docs/wxglobe/`, including Cesium's runtime files and licenses.
 Unit tests cover source decoding, geographic seams, request bounds, cancellation
 and contour behavior. Browser acceptance additionally switches between actual
 NOAA/AWS sources and checks visible terrain; see [plan.md](plan.md) and the
-[project test strategy](../../plan/tests.md).
+[project test strategy](../../plan/test/test.md).

@@ -149,11 +149,11 @@ if (relayConfigBase.gossipsub && typeof relayConfigBase.gossipsub === 'object') 
 const relayConfigUrl = resolveRelayConfigUrl(relayConfigBase);
 const relayConfigSource = { relayConfigUrl };
 
-const rootPackage = readJson(path.join(repoRoot, 'package.json'));
-const workspaces = Array.isArray(rootPackage.workspaces) ? rootPackage.workspaces : [];
-const demoRoots = workspaces
-  .filter((entry) => typeof entry === 'string' && entry.startsWith('demos/'))
-  .map((entry) => path.join(repoRoot, entry));
+const demoManifest = readJson(path.join(repoRoot, 'demos', 'manifest.json'));
+const demoRoots = (Array.isArray(demoManifest.demos) ? demoManifest.demos : [])
+  .map((entry) => entry?.name)
+  .filter((name) => typeof name === 'string' && name.length > 0)
+  .map((name) => path.join(repoRoot, 'demos', name));
 
 demoRoots.forEach((demoRoot) => {
   const publicDir = path.join(demoRoot, 'public');

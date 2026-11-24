@@ -1,3 +1,4 @@
+import { createDemoServerConfig } from "../vite.config.js";
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -8,14 +9,14 @@ const output = process.env.SPEECH_AUDIO_EVIDENCE || '/mnt/data2/peercompute-worl
 await mkdir(output,{recursive:true});
 let server,browser; const report={errors:[],passed:false};
 try {
- server=await createServer({configFile:repo+'demos/inference/vite.config.js',logLevel:'error',server:{host:'127.0.0.1',port:5298,strictPort:true,hmr:false},plugins:[{name:'audio-check',configureServer(vite){vite.middlewares.use((req,res,next)=>{
+ server=await createServer(createDemoServerConfig("inference", { logLevel:'error',server:{host:'127.0.0.1',port:5298,strictPort:true,hmr:false},plugins:[{name:'audio-check',configureServer(vite){vite.middlewares.use((req,res,next)=>{
  if(req.url!=='/__audio')return next();res.setHeader('Content-Type','text/html');res.end(`<!doctype html><button id="start">Start</button><script type="module">
  import{createWorldAudio}from'/@fs/${repo}demos/shared/agents/speech/WorldAudio.js';
  window.tracks=[];const media=navigator.mediaDevices;const native=media.getUserMedia.bind(media);media.getUserMedia=async(...args)=>{const s=await native(...args);tracks.push(...s.getTracks());return s};
  window.audio=createWorldAudio({getAudioPose:()=>({source:[2,0,0],listener:[0,0,0]})});
  document.querySelector('button').onclick=()=>audio.startRecording().then(()=>window.recording=true).catch(e=>window.error=e.message);window.ready=true;
  </script>`);
- });}}]});await server.listen();
+ });}}]}));await server.listen();
  browser=await chromium.launch({executablePath:'/opt/google/chrome/chrome',headless:true,args:['--disable-gpu','--use-fake-ui-for-media-stream','--use-fake-device-for-media-stream','--use-file-for-fake-audio-capture=/mnt/data2/peercompute-world-speech/jfk.wav']});
  const page=await browser.newPage({ignoreHTTPSErrors:true});page.on('pageerror',e=>report.errors.push(e.message));
  await page.goto('https://127.0.0.1:5298/__audio');await page.waitForFunction(()=>window.ready);await page.click('#start');await page.waitForFunction(()=>window.recording||window.error);

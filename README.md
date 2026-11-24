@@ -34,11 +34,7 @@ npm install
 npm run dev
 ```
 
-This starts the local relay and demo servers over HTTPS. Open NetViz at
-`https://localhost:5182/` to inspect the network, or choose an application from the
-[demo directory](demos/README.md), which lists ports and individual start commands.
-Use a trusted development certificate for WebGPU and microphone access; certificate
-and LAN setup are covered in that guide. GPU workloads need a compatible browser/device.
+This starts the local relay and the unified HTTPS demo server on port `5173`. Open the ExoWebTUI overview at `https://localhost:5173/` or NetViz directly at `https://localhost:5173/netviz/` to inspect the network, or choose an application from the [demo directory](demos/README.md), which lists routes and start commands. Use a trusted development certificate for WebGPU and microphone access; certificate and LAN setup are covered in that guide. GPU workloads need a compatible browser/device.
 
 ## Use the library
 
