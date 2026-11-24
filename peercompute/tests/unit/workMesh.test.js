@@ -284,12 +284,13 @@ test('bad input is rejected and foreign messages are ignored', () => {
   assert.throws(() => new WorkMesh({ nodeId: 'a' }), TypeError);
   const mesh = new WorkMesh({ nodeId: 'a', send() {}, execute() {} });
   assert.throws(() => mesh.submitJob({ jobId: 'j' }), TypeError);
-  mesh.submitJob({ jobId: 'j', tasks: [1] });
+  const pendingJob = mesh.submitJob({ jobId: 'j', tasks: [1] });
   assert.throws(() => mesh.submitJob({ jobId: 'j', tasks: [1] }), /already running/);
   mesh.receive('stranger', { schema: WORK_MESH_SCHEMA, type: 'work', tasks: [{ jobId: 'x', taskId: 0, origin: 'z', payload: 1 }] });
   mesh.linkUp('b');
   mesh.receive('b', { schema: 'other', type: 'work', tasks: [{ jobId: 'x', taskId: 0, origin: 'z', payload: 1 }] });
   assert.equal(mesh.queue.length, 0);
   mesh.destroy();
+  pendingJob.catch(() => {});
   assert.throws(() => mesh.submitJob({ jobId: 'k', tasks: [] }), /destroyed/);
 });

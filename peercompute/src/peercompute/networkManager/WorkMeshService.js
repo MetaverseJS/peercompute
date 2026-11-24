@@ -59,6 +59,7 @@ export class WorkMeshService {
     this.released = new Map(); // peerId -> time until which the link stays down
     this.releaseLink = (peerId) => this._release(peerId);
     this.timer = null;
+    this.started = false;
     this.closed = false;
     this.bytesSent = 0;
     this.bytesReceived = 0;
@@ -76,7 +77,8 @@ export class WorkMeshService {
     if (!peerId || this.closed || !this.peers.has(peerId)) return null;
     const rate = this.manager.peerWork?.get?.(peerId)?.rate || 0;
     const linkState = this.mesh?.links?.get?.(peerId) || null;
-    const inFlight = linkState?.inFlight?.size || 0;
+    const inFlight = (Array.isArray(linkState?.work) ? linkState.work.length : 0)
+      + (Array.isArray(linkState?.results) ? linkState.results.length : 0);
     const linkCost = Number.isFinite(linkState?.cost) ? linkState.cost : 0;
     const streamResets = this.peerStreamResets.get(peerId) || 0;
     return {
@@ -87,10 +89,24 @@ export class WorkMeshService {
     };
   }
 
+  _isDirectConnection(connection) {
+    if (!connection || connection.limits) return false;
+    if (connection.status && connection.status !== 'open') return false;
+    const address = String(connection.remoteAddr ?? '');
+    if (!address) return true; // test mocks without remoteAddr
+    return !address.includes('/p2p-circuit') || address.includes('/webrtc');
+  }
+
   async start() {
+    if (this.closed) throw new Error('WorkMeshService is closed');
+    if (this.started) return this;
+    this.started = true;
     await this.manager.libp2p.handle(WORK_MESH_PROTOCOL, (stream, connection) => {
       const peerId = connection?.remotePeer?.toString?.();
-      if (this.closed || !peerId) { try { stream.abort(new Error('Work mesh is closed')); } catch { /* closed */ } return; }
+      if (this.closed || !peerId || !this._isDirectConnection(connection)) {
+        try { stream.abort(new Error('Work mesh requires an open direct connection')); } catch { /* closed */ }
+        return;
+      }
       let lastReadBytes = 0;
       const channel = this.channel(stream, this.maxFrameBytes, (byteLength) => {
         lastReadBytes = byteLength || 0;
@@ -100,11 +116,12 @@ export class WorkMeshService {
         lastReadBytes = 0;
         return bytes;
       });
-    }, { maxInboundStreams: 64, maxOutboundStreams: 64 });
+    }, { maxInboundStreams: 64, maxOutboundStreams: 64, runOnLimitedConnection: false });
     // The topology closes a link by asking for it here first.
     this.manager.topologyLinkReleasers?.add(this.releaseLink);
     this.manager.workMeshTelemetryProvider = this._telemetryProvider;
     this.timer = setInterval(() => this.tick(), this.tickMs);
+    this.timer?.unref?.();
     return this;
   }
 
@@ -198,6 +215,7 @@ export class WorkMeshService {
   _reset(peerId, peer) {
     peer.out?.abort(new Error('Work mesh stream failed'));
     peer.out = null;
+    peer.opening = false;
     peer.outbox = [];
     this.streamResets += 1;
     this.peerStreamResets.set(peerId, (this.peerStreamResets.get(peerId) || 0) + 1);
@@ -249,6 +267,7 @@ export class WorkMeshService {
         if (this.shape && (message.type === 'work' || message.type === 'results')) {
           const wait = this.shape(peerId, message);
           if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+          if (this.closed || this.peers.get(peerId) !== peer || !peer.out) break;
         }
         const written = await peer.out.write(message);
         const txBytes = Number.isFinite(written) && written > 0 ? written : 0;

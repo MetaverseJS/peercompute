@@ -83,6 +83,10 @@ export class WorkMesh {
     this.rateSample = null; // { at, drained }
     this.now = 0;
     this.destroyed = false;
+    this._pumping = false;
+    this.maxQueue = Number.isSafeInteger(config.maxQueue) && config.maxQueue > 0 ? config.maxQueue : 4096;
+    this.maxResults = Number.isSafeInteger(config.maxResults) && config.maxResults > 0 ? config.maxResults : 4096;
+    this.maxOrigins = Number.isSafeInteger(config.maxOrigins) && config.maxOrigins > 0 ? config.maxOrigins : 1024;
   }
 
   /**
@@ -94,10 +98,11 @@ export class WorkMesh {
     if (!jobId || !Array.isArray(tasks)) throw new TypeError('submitJob requires jobId and a tasks array');
     if (this.jobs.has(jobId)) throw new Error(`Job ${jobId} is already running`);
     let resolve;
-    const done = new Promise((ok) => { resolve = ok; });
+    let reject;
+    const done = new Promise((ok, fail) => { resolve = ok; reject = fail; });
     this.jobs.set(jobId, {
       payloads: tasks, values: new Array(tasks.length), finished: new Uint8Array(tasks.length),
-      remaining: tasks.length, next: 0, retry: [], issued: new Map(), onResult, resolve
+      remaining: tasks.length, next: 0, retry: [], issued: new Map(), onResult, resolve, reject
     });
     this.origins.set(jobId, this.nodeId);
     this.distances.set(jobId, 0);
@@ -132,20 +137,32 @@ export class WorkMesh {
         link.rate = Number.isFinite(message.rate) ? Math.max(0, message.rate) : 0;
         link.held = Number.isFinite(message.held) ? Math.max(0, message.held) : 0;
         link.distances = new Map();
-        for (const [jobId, origin, distance] of Array.isArray(message.jobs) ? message.jobs : []) {
-          if (!this.origins.has(jobId)) this.origins.set(jobId, origin);
+        for (const entry of Array.isArray(message.jobs) ? message.jobs : []) {
+          if (!Array.isArray(entry) || entry.length < 3) continue;
+          const [jobId, origin, distance] = entry;
+          if (typeof jobId !== 'string' || !jobId) continue;
+          if (!this.origins.has(jobId) && this.origins.size < this.maxOrigins && typeof origin === 'string' && origin) {
+            this.origins.set(jobId, origin);
+          }
           if (Number.isFinite(distance) && distance >= 0) link.distances.set(jobId, distance);
         }
         break;
-      case 'work':
+      case 'work': {
+        let accepted = 0;
         for (const task of Array.isArray(message.tasks) ? message.tasks : []) {
-          if (!this.origins.has(task.jobId)) this.origins.set(task.jobId, task.origin);
+          if (!task || typeof task !== 'object' || typeof task.jobId !== 'string' || !task.jobId) continue;
+          if (this.queue.length >= this.maxQueue) break;
+          if (!this.origins.has(task.jobId) && this.origins.size < this.maxOrigins && typeof task.origin === 'string' && task.origin) {
+            this.origins.set(task.jobId, task.origin);
+          }
           this.queue.push(task);
+          accepted += 1;
         }
-        this._moved(peerId, message.tasks?.length || 0);
+        this._moved(peerId, accepted);
         this.send(peerId, { schema: WORK_MESH_SCHEMA, type: 'work-ack' });
         this._pump();
         break;
+      }
       case 'work-ack':
         if (link.work) {
           this.counters.forwarded += link.work.length;
@@ -297,26 +314,56 @@ export class WorkMesh {
   }
 
   destroy() {
+    if (this.destroyed) return;
     this.destroyed = true;
-    this.queue = []; this.results = []; this.links.clear();
+    const pendingJobs = [...this.jobs.values()];
+    this.jobs.clear();
+    this.queue = [];
+    this.results = [];
+    this.links.clear();
+    this.origins.clear();
+    this.distances.clear();
+    this.liveDistances.clear();
+    this.unreachableSince.clear();
+    for (const job of pendingJobs) {
+      try {
+        job.reject?.(new Error('WorkMesh destroyed'));
+      } catch {
+        // ignore
+      }
+    }
   }
 
   /** Start tasks until this node is busy or holding too many results. */
   _pump() {
-    const bufferLimit = this._effectiveResultBuffer();
-    while (!this.destroyed && this.running < this.config.concurrency && this.queue.length
-        && this.results.length < bufferLimit) {
-      const task = this.queue.shift();
-      this.running += 1;
-      let settled = false;
-      this.execute(task, (value) => {
-        if (settled || this.destroyed) return;
-        settled = true;
-        this.running -= 1;
-        this.counters.executed += 1;
-        this._accept({ jobId: task.jobId, taskId: task.taskId, origin: task.origin, value });
-        this._pump(); // do not wait for the next tick
-      });
+    if (this._pumping || this.destroyed) return;
+    this._pumping = true;
+    try {
+      const bufferLimit = this._effectiveResultBuffer();
+      while (!this.destroyed && this.running < this.config.concurrency && this.queue.length
+          && this.results.length < bufferLimit) {
+        const task = this.queue.shift();
+        this.running += 1;
+        let settled = false;
+        const done = (value) => {
+          if (settled || this.destroyed) return;
+          settled = true;
+          this.running = Math.max(0, this.running - 1);
+          this.counters.executed += 1;
+          this._accept({ jobId: task.jobId, taskId: task.taskId, origin: task.origin, value });
+          if (!this._pumping) this._pump(); // do not wait for the next tick
+        };
+        try {
+          this.execute(task, done);
+        } catch {
+          if (!settled) {
+            settled = true;
+            this.running = Math.max(0, this.running - 1);
+          }
+        }
+      }
+    } finally {
+      this._pumping = false;
     }
   }
 
@@ -394,12 +441,20 @@ export class WorkMesh {
 
   /** A result is either this node's own job (record it) or passes through. */
   _accept(result) {
+    if (!result || typeof result !== 'object' || typeof result.jobId !== 'string' || !result.jobId) return;
     const job = this.jobs.get(result.jobId);
     if (!job) {
       // Finished work is kept even if this node has just lost its way to the
       // origin: links come and go. It is dropped only after `forgetMs`.
-      if (!this.origins.has(result.jobId) && result.origin) this.origins.set(result.jobId, result.origin);
-      if (this.origins.has(result.jobId)) this.results.push(result);
+      if (!this.origins.has(result.jobId) && this.origins.size < this.maxOrigins && typeof result.origin === 'string' && result.origin) {
+        this.origins.set(result.jobId, result.origin);
+      }
+      if (this.origins.has(result.jobId) && this.results.length < this.maxResults) {
+        this.results.push(result);
+      }
+      return;
+    }
+    if (!Number.isInteger(result.taskId) || result.taskId < 0 || result.taskId >= job.payloads.length) {
       return;
     }
     if (job.finished[result.taskId]) { this.counters.duplicates += 1; return; }
@@ -408,7 +463,11 @@ export class WorkMesh {
     job.issued.delete(result.taskId);
     job.remaining -= 1;
     this.counters.returned += 1;
-    job.onResult?.(result.taskId, result.value);
+    try {
+      job.onResult?.(result.taskId, result.value);
+    } catch {
+      // Isolate user callback failures so job completion is never wedged.
+    }
     if (job.remaining === 0) this._finish(result.jobId);
   }
 

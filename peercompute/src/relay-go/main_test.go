@@ -89,7 +89,7 @@ func TestTopicRegistryControlOnlyAndIdleGC(t *testing.T) {
 		t.Fatalf("failed to start gossipsub: %v", err)
 	}
 	allow := map[string]struct{}{"peercompute-presence": {}}
-	reg := newTopicRegistry(ps, []string{"pc.", "peercompute-"}, allow, true)
+	reg := newTopicRegistry(ps, []string{"pc.", "peercompute-"}, allow, true, 16, 4)
 
 	if reg.allowed("pc.cubechat.room1.state") {
 		t.Fatalf("control-only mode must reject .state data topic")
@@ -100,24 +100,60 @@ func TestTopicRegistryControlOnlyAndIdleGC(t *testing.T) {
 	if !reg.allowed("pc.cubechat.room1.presence") {
 		t.Fatalf("control-only mode must allow .presence control topic")
 	}
+	if reg.allowed("pc.bad topic\nwith-space") {
+		t.Fatalf("invalid topic name with whitespace/control chars must be rejected")
+	}
 
 	reg.ensureWithPin("peercompute-presence", true)
-	reg.ensureIfAllowed("pc.cubechat.room1.presence")
+	reg.ensureIfAllowedForPeer("pc.cubechat.room1.presence", "peer-a")
 	if len(reg.topics) != 2 {
 		t.Fatalf("expected 2 registered topics, got %d", len(reg.topics))
 	}
 
-	// Simulate idle expiration: pinned default stays, dynamic unpinned topic is pruned.
+	// Enforce per-peer dynamic topic quota (max 4 for peer-b).
+	for i := 0; i < 6; i++ {
+		topic := "pc.flood.room" + string(rune('a'+i)) + ".presence"
+		got := reg.ensureIfAllowedForPeer(topic, "peer-b")
+		if i < 4 && got == nil {
+			t.Fatalf("expected topic %d within per-peer quota to succeed", i)
+		}
+		if i >= 4 && got != nil {
+			t.Fatalf("expected topic %d exceeding per-peer quota to be rejected", i)
+		}
+	}
+
+	// Simulate idle expiration: pinned default stays, dynamic unpinned topics are pruned.
 	future := time.Now().Add(15 * time.Minute)
 	pruned := reg.pruneIdle(10*time.Minute, future)
-	if pruned != 1 {
-		t.Fatalf("expected 1 pruned idle topic, got %d", pruned)
+	if pruned != 5 {
+		t.Fatalf("expected 5 pruned idle topics, got %d", pruned)
 	}
 	if _, ok := reg.topics["peercompute-presence"]; !ok {
 		t.Fatalf("pinned topic must never be pruned")
 	}
 	if _, ok := reg.topics["pc.cubechat.room1.presence"]; ok {
 		t.Fatalf("idle dynamic topic should have been pruned")
+	}
+}
+
+func TestPeerDirectoryStoreBoundsAndSanitizes(t *testing.T) {
+	store := newPeerDirectoryStore()
+	store.maxEntries = 3
+	for i := 0; i < 5; i++ {
+		store.upsert("peer-"+string(rune('a'+i)), peerDirectoryEntry{
+			Multiaddrs: sanitizeDirectoryAddrs([]any{"/ip4/127.0.0.1/tcp/8080/ws", "", 42}),
+			LastSeen:   int64(1000 + i),
+		})
+	}
+	if len(store.entries) != 3 {
+		t.Fatalf("expected directory bounded to 3 entries, got %d", len(store.entries))
+	}
+	if _, ok := store.get("peer-a"); ok {
+		t.Fatalf("oldest entry peer-a should have been evicted")
+	}
+	entry, ok := store.get("peer-e")
+	if !ok || len(entry.Multiaddrs) != 1 {
+		t.Fatalf("expected sanitized entry for peer-e, got ok=%v addrs=%v", ok, entry.Multiaddrs)
 	}
 }
 

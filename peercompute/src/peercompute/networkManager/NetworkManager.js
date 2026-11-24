@@ -9,7 +9,6 @@ import { webSockets } from '@libp2p/websockets';
 import { webRTC } from '@libp2p/webrtc';
 import { circuitRelayTransport } from '@libp2p/circuit-relay-v2';
 import { noise } from '@libp2p/noise';
-import { plaintext } from '@libp2p/plaintext';
 import { yamux } from '@libp2p/yamux';
 import { floodsub } from '@libp2p/floodsub';
 import { gossipsub } from '@libp2p/gossipsub';
@@ -895,9 +894,11 @@ export class NetworkManager {
     const definedConfig = Object.fromEntries(
       Object.entries(config).filter(([, value]) => value !== undefined)
     );
+    const clampedTargetConnections = Math.min(defaults.targetConnections, defaults.maxConnections);
     this.config = {
-      ...defaults,
       ...definedConfig,
+      ...defaults,
+      targetConnections: clampedTargetConnections,
       additionalPubsubTopics: normalizeTopicList(
         definedConfig.additionalPubsubTopics ?? defaults.additionalPubsubTopics
       ),
@@ -952,8 +953,10 @@ export class NetworkManager {
     this.topologyRewireTimestamps = [];
     this.dialFailureCount = 0;
     this.lastDialFailureAt = null;
-    this.directUnicastStreams = new Map(); // peerId -> { connId, stream, rpc, queue }
+    this.directUnicastStreams = new Map(); // peerId -> { connId, stream, queue, pendingWrites }
+    this.directUnicastOpening = new Map(); // peerId -> Promise<entry|null>
     this.directStreamUnsupportedPeers = new Map(); // peerId -> untilMs
+    this._postBootstrapLogTimer = null;
     this.bootstrapRelayHealth = new Map(); // addrStr -> { addr, peerId, ok, rttMs, lastOkAt, lastFailAt, failures, isLan }
     this.topicHandlers = new Map(); // topic -> Set<fn>
 
@@ -1293,7 +1296,7 @@ export class NetworkManager {
           webRtcTransport,
           relayTransport
         ],
-        connectionEncrypters: [noise(), plaintext()],
+        connectionEncrypters: [noise()],
         streamMuxers: [yamux()],
         peerDiscovery,
         services: {
@@ -1395,9 +1398,14 @@ export class NetworkManager {
     await this._dialBootstrapPeers();
     await this._reserveBootstrapRelayAddrs();
     await this._logLocalAnnounceAddrs('post-bootstrap');
-    setTimeout(() => {
+    if (this._postBootstrapLogTimer) {
+      clearTimeout(this._postBootstrapLogTimer);
+    }
+    this._postBootstrapLogTimer = setTimeout(() => {
+      this._postBootstrapLogTimer = null;
       this._logLocalAnnounceAddrs('post-bootstrap+2s').catch(() => {});
     }, 2000);
+    this._postBootstrapLogTimer?.unref?.();
 
     this._startPresence();
     this._logPubsubStatus('connected');
@@ -1469,6 +1477,10 @@ export class NetworkManager {
     await this._stopPeerInferenceService();
     await this.peerConnectionRecovery?.stop();
     await this._stopArtifactTransport();
+    if (this._postBootstrapLogTimer) {
+      clearTimeout(this._postBootstrapLogTimer);
+      this._postBootstrapLogTimer = null;
+    }
     if (this.isolationReconnectTimer) {
       clearTimeout(this.isolationReconnectTimer);
       this.isolationReconnectTimer = null;
@@ -1494,6 +1506,7 @@ export class NetworkManager {
     }
     this.intentionalCloseUntil.clear();
     this.topologyRewireTimestamps = [];
+    this.directUnicastOpening.clear();
     this._closeAllDirectUnicastStreams();
     this.directStreamUnsupportedPeers.clear();
     if (this.libp2p?.unhandle) {
@@ -1509,6 +1522,16 @@ export class NetworkManager {
     }
 
     this.peers.clear();
+    this.peerWork?.clear?.();
+    this.throughputPendingLinks?.clear?.();
+    this.recentDialAttempts.clear();
+    this.peerDialBackoff.clear();
+    this.peerDialAddrCache.clear();
+    this.disconnectedPeerIds.clear();
+    this.publishErrorAt.clear();
+    this.pubsubStreamErrorAt.clear();
+    this.publishBlockedUntil?.clear?.();
+    this.bootstrapRelayHealth.clear();
     this.pendingTopologyRequests.clear();
     this.pendingTopologyAccepts.clear();
     this.pendingPeerDials.clear();
@@ -1714,6 +1737,23 @@ export class NetworkManager {
         this.topicHandlers.delete(normalized);
       }
     }
+    const remainingHandlers = this.topicHandlers.get(normalized)?.size || 0;
+    const isCoreTopic = normalized === this.config.pubsubTopic
+      || normalized === this.config.directTopic
+      || normalized === this.config.presenceTopic
+      || normalized === this.config.directoryTopic
+      || normalized === NETWORK_TELEMETRY_TOPIC;
+    if (remainingHandlers === 0 && !isCoreTopic) {
+      this.additionalPubsubTopics.delete(normalized);
+      this.allowedTopics.delete(normalized);
+      if (this.libp2p?.services?.pubsub?.unsubscribe) {
+        try {
+          this.libp2p.services.pubsub.unsubscribe(normalized);
+        } catch (err) {
+          debugWarn('[NetworkManager] Dynamic topic unsubscribe failed', normalized, err?.message || err);
+        }
+      }
+    }
   }
 
   async publishTopic(topic, message) {
@@ -1819,19 +1859,39 @@ export class NetworkManager {
       entry = null;
     }
     if (!entry) {
-      try {
-        const stream = await conn.newStream(DIRECT_UNICAST_PROTOCOL);
-        entry = { connId, stream, queue: Promise.resolve() };
-        this.directUnicastStreams.set(peerId, entry);
-      } catch (err) {
-        const msg = String(err?.message || err || '');
-        if (/unsupported|protocol|select/i.test(msg)) {
-          this.directStreamUnsupportedPeers.set(peerId, Date.now() + DIRECT_STREAM_UNSUPPORTED_COOLDOWN_MS);
-        }
-        return false;
+      let opening = this.directUnicastOpening.get(peerId);
+      if (!opening) {
+        opening = (async () => {
+          try {
+            const signal = typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(3000) : undefined;
+            const stream = signal
+              ? await conn.newStream(DIRECT_UNICAST_PROTOCOL, { signal })
+              : await conn.newStream(DIRECT_UNICAST_PROTOCOL);
+            const created = { connId, stream, queue: Promise.resolve(), pendingWrites: 0 };
+            this.directUnicastStreams.set(peerId, created);
+            return created;
+          } catch (err) {
+            const msg = String(err?.message || err || '');
+            if (/unsupported|protocol|select/i.test(msg)) {
+              this.directStreamUnsupportedPeers.set(peerId, Date.now() + DIRECT_STREAM_UNSUPPORTED_COOLDOWN_MS);
+            }
+            return null;
+          } finally {
+            if (this.directUnicastOpening.get(peerId) === opening) {
+              this.directUnicastOpening.delete(peerId);
+            }
+          }
+        })();
+        this.directUnicastOpening.set(peerId, opening);
       }
+      entry = await opening;
+      if (!entry) return false;
     }
 
+    if (entry.pendingWrites >= 128) {
+      return false;
+    }
+    entry.pendingWrites += 1;
     const frame = encodeDirectUnicastFrame(encoded);
     const writeOp = entry.queue.then(async () => {
       if (this.directUnicastStreams.get(peerId) !== entry) {
@@ -1851,6 +1911,8 @@ export class NetworkManager {
       }
       debugWarn('[NetworkManager] Direct unicast write failed, falling back to pubsub', peerId, err?.message || err);
       return false;
+    } finally {
+      entry.pendingWrites = Math.max(0, entry.pendingWrites - 1);
     }
   }
 
@@ -1886,7 +1948,8 @@ export class NetworkManager {
           }
           if (buffer.byteLength < 4 + frameLen) break;
           const raw = buffer.subarray(4, 4 + frameLen);
-          buffer = buffer.subarray(4 + frameLen);
+          const remaining = buffer.byteLength - (4 + frameLen);
+          buffer = remaining > 0 ? buffer.subarray(4 + frameLen).slice() : new Uint8Array(0);
           const byteLength = raw.byteLength;
           let parsed = null;
           try {
@@ -1895,10 +1958,14 @@ export class NetworkManager {
             debugWarn('[NetworkManager] Failed to parse direct unicast payload', err?.message || err);
             continue;
           }
+          if (remotePeerId) {
+            if (parsed?.from && parsed.from !== remotePeerId) continue;
+            if (parsed?.header?.peerId && parsed.header.peerId !== remotePeerId) continue;
+          }
           const now = Date.now();
           this.lastRxAt = now;
           this.scheduler?.recordRx(now);
-          const sender = parsed?.header?.peerId || parsed?.from || remotePeerId || null;
+          const sender = remotePeerId || parsed?.header?.peerId || parsed?.from || null;
           if (sender && sender !== this.peerId) {
             this._recordRx(sender, byteLength);
           }
@@ -1911,14 +1978,17 @@ export class NetworkManager {
           if (!this._matchesScope(parsed)) {
             continue;
           }
+          const verifiedEnvelope = remotePeerId && parsed && typeof parsed === 'object'
+            ? { ...parsed, from: remotePeerId }
+            : parsed;
           const payload = parsed?.payload ?? parsed;
-          if (this._handleRelayAssistMessage(payload, parsed)) {
+          if (this._handleRelayAssistMessage(payload, verifiedEnvelope)) {
             continue;
           }
-          if (this._handleTopologyMessage(payload, parsed)) {
+          if (this._handleTopologyMessage(payload, verifiedEnvelope)) {
             continue;
           }
-          const from = parsed?.from || remotePeerId;
+          const from = remotePeerId || parsed?.from;
           if (from && from !== this.peerId) {
             this._touchPeer(from, { lastMessageTime: now });
           }
@@ -1953,18 +2023,18 @@ export class NetworkManager {
   }
 
   setConnectionLimits({ targetConnections, maxConnections } = {}) {
-    const nextTarget = Number.isFinite(targetConnections)
-      ? Math.max(1, targetConnections)
-      : this.config.targetConnections;
     const nextMax = Number.isFinite(maxConnections)
       ? Math.max(1, maxConnections)
       : this.config.maxConnections;
+    const rawTarget = Number.isFinite(targetConnections)
+      ? Math.max(1, targetConnections)
+      : this.config.targetConnections;
+    const nextTarget = Math.min(rawTarget, nextMax);
     const changed = nextTarget !== this.config.targetConnections || nextMax !== this.config.maxConnections;
     this.config.targetConnections = nextTarget;
     this.config.maxConnections = nextMax;
     const nextTransportMax = this._getTransportMaxConnections(nextMax);
-    const connectionManager =
-      this.libp2p?.services?.connectionManager || this.libp2p?.connectionManager;
+    const connectionManager = this._getConnectionManager();
     if (connectionManager) {
       try {
         if (typeof connectionManager.setMaxConnections === 'function') {
@@ -2547,13 +2617,7 @@ export class NetworkManager {
       const peerId = evt.detail?.remotePeer?.toString?.() || evt.detail?.toString?.();
       if (!peerId) return;
       const previousPeer = this.peers.get(peerId) || null;
-      this._dropPubsubPeer(peerId);
-      this.peers.delete(peerId);
-      this.peerDialBackoff.delete(peerId);
-      this._clearPendingLogicalReservations(peerId);
-      this._clearRelayPruneTimer(peerId);
-      // Fix D: Clean up relay reservation state for disconnected peer
-      this.relayReservationPeers.delete(peerId);
+      this._cleanupPeerState(peerId);
       if (this.bootstrapPeerIds.has(peerId) && !this._hasBootstrapRelayConnections()) {
         this.relayBootstrapConnectedAt = null;
       }
@@ -2567,11 +2631,16 @@ export class NetworkManager {
     });
 
     this.libp2p.services.pubsub.addEventListener('message', (evt) => {
-      const { topic, data } = evt.detail || {};
+      const detail = evt.detail || {};
+      const { topic, data } = detail;
       if (!topic || !data) return;
       if (!this.allowedTopics.has(topic)) return;
       // Telemetry is handled before scope admission and never enters game-state handlers.
-      if (this.networkTelemetryService.handlePubsubMessage(evt.detail)) return;
+      if (this.networkTelemetryService.handlePubsubMessage(detail)) return;
+      // Reject explicitly unsigned pubsub messages.
+      if (detail.type === 'unsigned') return;
+      const authPeerId = detail.from?.toString?.() || null;
+      if (detail.type === 'signed' && !authPeerId) return;
 
       let parsed = null;
       try {
@@ -2580,13 +2649,17 @@ export class NetworkManager {
         debugWarn('[NetworkManager] Failed to parse pubsub payload', err);
         return;
       }
+      if (authPeerId) {
+        if (parsed?.from && parsed.from !== authPeerId) return;
+        if (parsed?.header?.peerId && parsed.header.peerId !== authPeerId) return;
+      }
       const now = Date.now();
       const byteLength = getByteLength(data);
       this.lastRxAt = now;
       this.scheduler?.recordRx(now);
       this._recordPubsubRx(byteLength);
 
-      const sender = parsed?.header?.peerId || parsed?.from || null;
+      const sender = authPeerId || parsed?.header?.peerId || parsed?.from || null;
       if (sender && sender !== this.peerId) {
         this._recordRx(sender, byteLength);
       }
@@ -2594,46 +2667,50 @@ export class NetworkManager {
         return;
       }
 
+      const verifiedParsed = authPeerId && parsed && typeof parsed === 'object'
+        ? { ...parsed, from: authPeerId }
+        : parsed;
+
       if (topic === this.config.presenceTopic) {
-        this._handlePresence(parsed);
+        this._handlePresence(verifiedParsed);
         return;
       }
 
       // Phase 5: Handle directory responses
       if (topic === this.config.directoryTopic) {
-        this._handleDirectoryMessage(parsed);
+        this._handleDirectoryMessage(verifiedParsed);
         return;
       }
 
       if (topic === this.config.directTopic) {
-        if (parsed?.target && parsed.target !== this.peerId) return;
+        if (verifiedParsed?.target && verifiedParsed.target !== this.peerId) return;
       }
 
       const bypassScope = this.additionalPubsubTopics.has(topic);
-      if (!bypassScope && !this._matchesScope(parsed)) return;
+      if (!bypassScope && !this._matchesScope(verifiedParsed)) return;
 
-      const payload = parsed?.payload ?? parsed;
+      const payload = verifiedParsed?.payload ?? verifiedParsed;
+      const from = authPeerId || verifiedParsed?.from || null;
       const customHandlers = this.topicHandlers.get(topic);
       if (customHandlers && customHandlers.size > 0) {
-        const from = parsed?.from || sender || 'unknown';
+        const handlerFrom = from || sender || 'unknown';
         for (const handler of customHandlers) {
           try {
-            handler(from, payload, parsed, topic);
+            handler(handlerFrom, payload, verifiedParsed, topic);
           } catch (err) {
             debugWarn('[NetworkManager] Topic handler error', topic, err?.message || err);
           }
         }
         return;
       }
-      if (this._handleRelayAssistMessage(payload, parsed)) {
+      if (this._handleRelayAssistMessage(payload, verifiedParsed)) {
         return;
       }
-      if (this._handleTopologyMessage(payload, parsed)) {
+      if (this._handleTopologyMessage(payload, verifiedParsed)) {
         return;
       }
-      const from = parsed?.from;
       if (from && from !== this.peerId) {
-        this._touchPeer(from, { lastMessageTime: Date.now() });
+        this._touchPeer(from, { lastMessageTime: now });
       }
 
       this._dispatchMessage(from || 'unknown', payload);
@@ -2730,9 +2807,9 @@ export class NetworkManager {
   }
 
   _matchesScope(message) {
-    if (!message) return true;
-    if (message.gameId && message.gameId !== this.config.gameId) return false;
-    if (message.roomId && message.roomId !== this.config.roomId) return false;
+    if (!message || typeof message !== 'object') return false;
+    if (!message.gameId || message.gameId !== this.config.gameId) return false;
+    if (!message.roomId || message.roomId !== this.config.roomId) return false;
     if (this.config.enforceTopologyScope) {
       const msgTopology = message.topologyId || message.header?.topologyId || null;
       if (!msgTopology) return false;
@@ -2762,6 +2839,9 @@ export class NetworkManager {
       topologyId: message.topologyId,
       topologyType: message.topologyType,
       shardId: message.shardId,
+      hostGroupId: typeof message.hostGroupId === 'string' && message.hostGroupId
+        ? message.hostGroupId
+        : (existing.hostGroupId ?? null),
       metric: message.metric || null,
       metricInitialized: message.metricInitialized ?? null,
       targetConnections: message.targetConnections,
@@ -2777,6 +2857,10 @@ export class NetworkManager {
       via: preservedVia
     });
     if (isNewPeer) {
+      const reconnected = this.disconnectedPeerIds.delete(message.from);
+      this._emitPeerConnectionEvent(reconnected ? 'reconnect' : 'connect', message.from, {
+        connectionPath: classifyConnectionPath(this.peers.get(message.from))
+      });
       this.onPeerConnect(message.from);
     }
     if (Array.isArray(message.multiaddrs) && message.multiaddrs.length > 0) {
@@ -3792,6 +3876,29 @@ export class NetworkManager {
     return true;
   }
 
+  _cleanupPeerState(peerId) {
+    if (!peerId) return;
+    this._dropPubsubPeer(peerId);
+    this._closeDirectUnicastStream(peerId);
+    this.directUnicastOpening?.delete?.(peerId);
+    this.peers.delete(peerId);
+    this.peerWork?.delete?.(peerId);
+    this.throughputPendingLinks?.delete?.(peerId);
+    this.recentDialAttempts.delete(peerId);
+    this.peerDialBackoff.delete(peerId);
+    this.intentionalCloseUntil.delete(peerId);
+    this._clearPendingLogicalReservations(peerId);
+    this._clearRelayPruneTimer(peerId);
+    this.relayReservationPeers.delete(peerId);
+    this.relayAssistState?.lastRequestAt?.delete?.(peerId);
+    this.relayAssistState?.inboundRequestAt?.delete?.(peerId);
+    const pendingTimeout = this.relayAssistState?.pendingReadyTimeouts?.get?.(peerId);
+    if (pendingTimeout) {
+      clearTimeout(pendingTimeout);
+      this.relayAssistState.pendingReadyTimeouts.delete(peerId);
+    }
+  }
+
   _pruneStalePeers(now = Date.now()) {
     const configured = this.config.peerStaleMs;
     const presenceInterval = Number.isFinite(this.config.presenceIntervalMs)
@@ -3801,7 +3908,7 @@ export class NetworkManager {
       ? configured
       : Math.max(30000, presenceInterval * 3);
     if (maxAgeMs <= 0) return;
-    for (const [peerId, meta] of this.peers.entries()) {
+    for (const [peerId, meta] of [...this.peers.entries()]) {
       if (!peerId) continue;
       const lastSeen = Number(meta?.lastSeen ?? meta?.lastMessageTime ?? meta?.connectedAt ?? meta?.joinedAt ?? 0);
       if (!lastSeen) continue;
@@ -3809,22 +3916,13 @@ export class NetworkManager {
       const connections = this._getConnectionsForPeer(peerId);
       const hasConnection = connections.some((conn) => conn?.status !== 'closed');
       if (hasConnection) continue;
-      this.peers.delete(peerId);
-      this._dropPubsubPeer(peerId);
-      this.recentDialAttempts.delete(peerId);
-      this.peerDialBackoff.delete(peerId);
-      this._clearPendingLogicalReservations(peerId);
-      this._clearRelayPruneTimer(peerId);
-      // Fix D: Clean up relay reservation for stale peer
-      this.relayReservationPeers.delete(peerId);
-      // Fix E: Clean up relayAssistState Maps for stale peer
-      this.relayAssistState?.lastRequestAt?.delete?.(peerId);
-      this.relayAssistState?.inboundRequestAt?.delete?.(peerId);
-      const pendingTimeout = this.relayAssistState?.pendingReadyTimeouts?.get?.(peerId);
-      if (pendingTimeout) {
-        clearTimeout(pendingTimeout);
-        this.relayAssistState.pendingReadyTimeouts.delete(peerId);
-      }
+      this._cleanupPeerState(peerId);
+      this.disconnectedPeerIds.add(peerId);
+      this._emitPeerConnectionEvent('disconnect', peerId, {
+        reason: 'stale-pruned',
+        lastConnectionPath: classifyConnectionPath(meta)
+      });
+      this.onPeerDisconnect(peerId);
     }
   }
 
@@ -3853,7 +3951,11 @@ export class NetworkManager {
     this.telemetry.rxCount += 1;
     this.telemetry.rxBytes += byteLength || 0;
     if (!peerId) return;
-    const existing = this.peers.get(peerId) || {};
+    let existing = this.peers.get(peerId);
+    if (!existing) {
+      if (!this._getConnectionsForPeer(peerId).some(isConnectionOpen)) return;
+      existing = {};
+    }
     this.peers.set(peerId, {
       ...existing,
       rxCount: (existing.rxCount || 0) + 1,
@@ -3872,7 +3974,11 @@ export class NetworkManager {
     this.telemetry.txCount += 1;
     this.telemetry.txBytes += byteLength || 0;
     if (!peerId) return;
-    const existing = this.peers.get(peerId) || {};
+    let existing = this.peers.get(peerId);
+    if (!existing) {
+      if (!this._getConnectionsForPeer(peerId).some(isConnectionOpen)) return;
+      existing = {};
+    }
     this.peers.set(peerId, {
       ...existing,
       txCount: (existing.txCount || 0) + 1,
@@ -3950,6 +4056,7 @@ export class NetworkManager {
     this.presenceInterval = setInterval(() => {
       tick();
     }, this.config.presenceIntervalMs || 3000);
+    this.presenceInterval?.unref?.();
   }
 
   /**
@@ -4005,6 +4112,7 @@ export class NetworkManager {
       activeConnections,
       relayConnected: this._hasBootstrapRelayConnections(),
       relayKeeper: this._isRelayKeeper(Date.now()),
+      ...(this.config.hostGroupId ? { hostGroupId: String(this.config.hostGroupId) } : {}),
       ...(capabilities ? { capabilities } : {}),
       multiaddrs: this._getAnnounceAddrs()
     };
@@ -4061,6 +4169,7 @@ export class NetworkManager {
         this.pendingDirectoryQueries.delete(requestId);
         resolve(null); // Timeout = not found
       }, timeoutMs);
+      timeout?.unref?.();
       this.pendingDirectoryQueries.set(requestId, { resolve, timeout });
       this._publish(this.config.directoryTopic, query).catch(() => {
         clearTimeout(timeout);
@@ -4158,9 +4267,11 @@ export class NetworkManager {
     const tick = () => {
       this._tickTopology();
       this.topologyTimer = setTimeout(tick, this.config.topologyTickMs || 1500);
+      this.topologyTimer?.unref?.();
     };
     this._tickTopology(true);
     this.topologyTimer = setTimeout(tick, this.config.topologyTickMs || 1500);
+    this.topologyTimer?.unref?.();
   }
 
   _stopTopologyController() {
@@ -4269,8 +4380,12 @@ export class NetworkManager {
     const linked = new Set(connected.map((peer) => peer.peerId));
     const links = connected.map((peer) => {
       const meta = this.peers.get(peer.peerId);
-      // Remember when each link was first seen; presence updates may not say.
-      if (meta && !meta.linkSince) meta.linkSince = Number(meta.connectedAt) || now;
+      const wasPendingTrial = this.throughputPendingLinks.has(peer.peerId);
+      // Newly opened trial links start their trialMs window at `now`; existing
+      // pre-connected links keep their original connectedAt timestamp.
+      if (meta && (!meta.linkSince || wasPendingTrial)) {
+        meta.linkSince = wasPendingTrial ? now : (Number(meta.connectedAt) || now);
+      }
       return { peerId: peer.peerId, flow: rate(peer.peerId), since: meta?.linkSince ?? now };
     });
     for (const [peerId, meta] of this.peers) if (!linked.has(peerId) && meta?.linkSince) delete meta.linkSince;
@@ -4557,7 +4672,7 @@ export class NetworkManager {
     this._prunePendingLogicalReservations(now);
     for (const peerId of desiredPeers) {
       if (!peerId) continue;
-      if (this.peers.get(peerId)?.connectedAt) continue;
+      if (this._getConnectionsForPeer(peerId).some(isConnectionOpen)) continue;
       if (this.pendingTopologyRequests.has(peerId)) continue;
       if (!this._hasAvailableLogicalPeerSlot(peerId, now)) continue;
       this.pendingTopologyRequests.set(peerId, {
@@ -4832,8 +4947,10 @@ export class NetworkManager {
     const tick = () => {
       this._sampleTelemetry(Date.now());
       this.telemetryTimer = setTimeout(tick, interval);
+      this.telemetryTimer?.unref?.();
     };
     this.telemetryTimer = setTimeout(tick, interval);
+    this.telemetryTimer?.unref?.();
   }
 
   _stopTelemetrySampler() {
@@ -4994,14 +5111,15 @@ export class NetworkManager {
   }
 
   _sampleRtt(now, peers) {
-    const ping = this.libp2p?.services?.ping?.ping;
-    if (!ping || !this.config.enableTelemetry) return;
+    const pingService = this.libp2p?.services?.ping;
+    if (typeof pingService?.ping !== 'function' || !this.config.enableTelemetry) return;
     const pingInterval = this.config.telemetryPingMs || 5000;
 
     peers.forEach((peer) => {
       const peerId = peer.peerId;
       if (!peerId) return;
-      const existing = this.peers.get(peerId) || {};
+      const existing = this.peers.get(peerId);
+      if (!existing) return;
       if (existing.pingInFlight) return;
       if (existing.lastRttAt && now - existing.lastRttAt < pingInterval) return;
 
@@ -5014,15 +5132,20 @@ export class NetworkManager {
 
       existing.pingInFlight = true;
       this.peers.set(peerId, existing);
-      ping(peerTarget)
+      pingService.ping(peerTarget)
         .then((rtt) => {
+          if (!this.peers.has(peerId)) return;
           this._touchPeer(peerId, { rttMs: Math.round(rtt), lastRttAt: Date.now() });
         })
         .catch(() => {
-          this._touchPeer(peerId, { rttMs: null, lastRttAt: Date.now() });
+          const current = this.peers.get(peerId);
+          if (!current) return;
+          const fallbackRtt = Number.isFinite(current.candidatePairRttMs) ? current.candidatePairRttMs : null;
+          this._touchPeer(peerId, { rttMs: fallbackRtt, lastRttAt: Date.now() });
         })
         .finally(() => {
-          const current = this.peers.get(peerId) || {};
+          const current = this.peers.get(peerId);
+          if (!current) return;
           current.pingInFlight = false;
           this.peers.set(peerId, current);
         });
@@ -5046,8 +5169,10 @@ export class NetworkManager {
       if (!this.scheduler) return;
       this.scheduler.tick(Date.now());
       this.schedulerTimer = setTimeout(tick, this.scheduler.getTickIntervalMs());
+      this.schedulerTimer?.unref?.();
     };
     this.schedulerTimer = setTimeout(tick, this.scheduler.getTickIntervalMs());
+    this.schedulerTimer?.unref?.();
   }
 
   _stopScheduler() {
@@ -5397,15 +5522,22 @@ export class NetworkManager {
     }
     this._prunePendingLogicalReservations(now);
     if (!this._hasAvailableLogicalPeerSlot(peerId, now)) {
+      this.throughputPendingLinks?.delete?.(peerId);
       debugLog('[NetworkManager] Skipping dial at logical capacity', peerId, source || 'unknown');
       return;
     }
     if (!forceDial) {
       const backoff = this._getDialBackoffEntry(peerId, now);
-      if (backoff) return;
+      if (backoff) {
+        if (source === 'topology-accept') this.throughputPendingLinks?.delete?.(peerId);
+        return;
+      }
     }
     const lastAttempt = this.recentDialAttempts.get(peerId) || 0;
-    if (!forceDial && now - lastAttempt < PEER_DIAL_THROTTLE_MS) return;
+    if (!forceDial && now - lastAttempt < PEER_DIAL_THROTTLE_MS) {
+      if (source === 'topology-accept') this.throughputPendingLinks?.delete?.(peerId);
+      return;
+    }
     this.recentDialAttempts.set(peerId, now);
     this.pendingPeerDials.set(peerId, {
       reservedAt: now,
@@ -5699,6 +5831,12 @@ export class NetworkManager {
         .filter((addr) => typeof addr === 'string' && addr.includes('/p2p/'))
         .map((addr) => normalizeBootstrapAddr(addr))
         .forEach((addr) => {
+          const relayPeerId = getPeerIdFromAddr(addr);
+          const relayConnected = relayPeerId
+            ? (this.relayReservationPeers.has(relayPeerId)
+              || this._getConnectionsForPeer(relayPeerId).some(isConnectionOpen))
+            : false;
+          if (!relayConnected) return;
           relayAddrs.push(`${addr}/p2p-circuit/p2p/${peerId}`);
           relayWebrtcAddrs.push(`${addr}/p2p-circuit/webrtc/p2p/${peerId}`);
         });
@@ -5779,6 +5917,7 @@ export class NetworkManager {
       this._maybePruneRelayConnections(peerId);
       this._maybePruneDuplicateConnections(peerId);
     }, delayMs);
+    timeoutId?.unref?.();
     this.relayPruneTimers.set(peerId, timeoutId);
   }
 

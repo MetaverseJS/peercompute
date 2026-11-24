@@ -19,6 +19,10 @@ export const DEFAULT_SCHEDULER_PROFILE = {
   eventTopic: null
 };
 
+const MAX_QUEUED_EVENTS = 512;
+const MAX_PENDING_RELIABLE_EVENTS = 256;
+const MAX_SEEN_RELIABLE_EVENTS = 2048;
+
 export class NetworkScheduler {
   constructor(adapter, profile = {}) {
     this.adapter = adapter;
@@ -26,6 +30,7 @@ export class NetworkScheduler {
     this.commandProviders = new Map();
     this.eventQueue = [];
     this.pendingReliableEvents = new Map();
+    this.seenReliableEventIds = new Set();
     this.reliabilityStats = {
       sent: 0,
       acked: 0,
@@ -115,15 +120,30 @@ export class NetworkScheduler {
   }
 
   addSnapshotHandler(handler) {
+    if (typeof handler !== 'function') return () => {};
     this.snapshotHandlers.push(handler);
+    return () => {
+      const idx = this.snapshotHandlers.indexOf(handler);
+      if (idx !== -1) this.snapshotHandlers.splice(idx, 1);
+    };
   }
 
   addCommandHandler(handler) {
+    if (typeof handler !== 'function') return () => {};
     this.commandHandlers.push(handler);
+    return () => {
+      const idx = this.commandHandlers.indexOf(handler);
+      if (idx !== -1) this.commandHandlers.splice(idx, 1);
+    };
   }
 
   addEventHandler(handler) {
+    if (typeof handler !== 'function') return () => {};
     this.eventHandlers.push(handler);
+    return () => {
+      const idx = this.eventHandlers.indexOf(handler);
+      if (idx !== -1) this.eventHandlers.splice(idx, 1);
+    };
   }
 
   markStateDirty() {
@@ -136,6 +156,13 @@ export class NetworkScheduler {
     const id = options.id || `evt-${now}-${Math.random().toString(36).slice(2, 8)}`;
     if (reliable) {
       if (!this.pendingReliableEvents.has(id)) {
+        if (this.pendingReliableEvents.size >= MAX_PENDING_RELIABLE_EVENTS) {
+          const oldestKey = this.pendingReliableEvents.keys().next().value;
+          if (oldestKey !== undefined) {
+            this.pendingReliableEvents.delete(oldestKey);
+            this.reliabilityStats.dropped += 1;
+          }
+        }
         this.pendingReliableEvents.set(id, {
           id,
           payload,
@@ -147,6 +174,9 @@ export class NetworkScheduler {
         });
       }
       return id;
+    }
+    if (this.eventQueue.length >= MAX_QUEUED_EVENTS) {
+      this.eventQueue.shift();
     }
     this.eventQueue.push({ id, payload, options, reliable: false });
     return id;
@@ -167,14 +197,19 @@ export class NetworkScheduler {
     if (message.target && this.adapter?.getPeerId && message.target !== this.adapter.getPeerId()) {
       return true;
     }
-    this.recordRx(message.header?.ts || Date.now());
+    // Always use local clock for RX freshness so remote clocks cannot poison stall detection.
+    this.recordRx(Date.now());
 
     if (message.type === 'pc-snapshot') {
-      this.snapshotHandlers.forEach((fn) => fn(peerId, message));
+      for (const fn of [...this.snapshotHandlers]) {
+        try { fn(peerId, message); } catch {}
+      }
       return true;
     }
     if (message.type === 'pc-command') {
-      this.commandHandlers.forEach((fn) => fn(peerId, message));
+      for (const fn of [...this.commandHandlers]) {
+        try { fn(peerId, message); } catch {}
+      }
       return true;
     }
     if (message.type === 'pc-ack') {
@@ -191,7 +226,34 @@ export class NetworkScheduler {
       return true;
     }
     if (message.type === 'pc-event') {
-      this.eventHandlers.forEach((fn) => fn(peerId, message));
+      const entries = Array.isArray(message.payload) ? message.payload : null;
+      let deliveredMessage = message;
+      if (entries) {
+        const freshEntries = [];
+        for (const entry of entries) {
+          if (entry?.reliable && entry?.id) {
+            const dedupKey = `${peerId || ''}:${entry.id}`;
+            if (this.seenReliableEventIds.has(dedupKey)) {
+              continue;
+            }
+            if (this.seenReliableEventIds.size >= MAX_SEEN_RELIABLE_EVENTS) {
+              const oldest = this.seenReliableEventIds.values().next().value;
+              if (oldest !== undefined) this.seenReliableEventIds.delete(oldest);
+            }
+            this.seenReliableEventIds.add(dedupKey);
+          }
+          freshEntries.push(entry);
+        }
+        deliveredMessage = freshEntries.length === entries.length
+          ? message
+          : { ...message, payload: freshEntries };
+      }
+      if (!entries || deliveredMessage.payload.length > 0) {
+        for (const fn of [...this.eventHandlers]) {
+          try { fn(peerId, deliveredMessage); } catch {}
+        }
+      }
+      // Always ACK reliable events (including duplicates whose prior ACK may have been lost).
       this._ackReliableEvents(message, peerId);
       return true;
     }
@@ -251,6 +313,11 @@ export class NetworkScheduler {
 
   _flushSnapshots(now) {
     if (this.stateProviders.size === 0) return;
+    const authorityId = this.authorityId || this.adapter?.getAuthority?.() || null;
+    const localPeerId = this.adapter?.getPeerId?.() || null;
+    if (this.profile.snapshotsRequireAuthority && authorityId && localPeerId && authorityId !== localPeerId) {
+      return;
+    }
     if (now - this.lastSnapshotAt < this.snapshotIntervalMs) return;
     const keepalive = now - this.lastSnapshotAt >= this.profile.keepaliveMs;
     if (!this.stateDirty && !keepalive) return;

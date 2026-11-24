@@ -37,32 +37,45 @@ export const THROUGHPUT_TOPOLOGY_PROFILES = Object.freeze([
 
 const LAN_ICE_PATHS = new Set(['lan-host', 'direct-ws', 'direct-tcp']);
 const RELAY_ICE_PATHS = new Set(['turn-relay', 'circuit-relay']);
-
-function isLanAddressString(addr) {
-  if (typeof addr !== 'string' || !addr) return false;
-  if (addr.includes('/p2p-circuit')) return false;
-  return (
-    /\/ip4\/(?:10\.|127\.|169\.254\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)/.test(addr)
-    || /\/ip6\/(?:fe80:|fc|fd|::1\b)/i.test(addr)
-    || /\/dns[46]?\/[^/]+(?:\.local|\.lan|\.ts\.net)\b/i.test(addr)
-  );
-}
+const MAX_TRACKED_FAIL_COUNTS = 256;
 
 function capabilityTierScore(capabilities) {
   if (!capabilities || typeof capabilities !== 'object') return 0;
+  const compute = capabilities.compute && typeof capabilities.compute === 'object'
+    ? capabilities.compute
+    : capabilities;
   let score = 0;
-  const gpuTier = String(capabilities.gpuTier || capabilities.gpu?.tier || '').toLowerCase();
-  if (gpuTier === 'high' || gpuTier === 'discrete') score += 1.2;
-  else if (gpuTier === 'mid' || gpuTier === 'medium' || gpuTier === 'integrated') score += 0.7;
-  else if (gpuTier === 'low') score += 0.3;
-  if (capabilities.webgpu === true || capabilities.gpu?.available === true) score += 0.35;
-  const cores = Number(capabilities.cores ?? capabilities.cpu?.cores);
+  const gpuTier = String(
+    capabilities.gpuTier
+      || capabilities.gpu?.tier
+      || compute.gpuTier
+      || compute.resourceTier
+      || ''
+  ).toLowerCase();
+  if (gpuTier === 'high' || gpuTier === 'discrete' || gpuTier === 'workstation') score += 1.2;
+  else if (gpuTier === 'mid' || gpuTier === 'medium' || gpuTier === 'integrated' || gpuTier === 'desktop') score += 0.7;
+  else if (gpuTier === 'low' || gpuTier === 'mobile') score += 0.3;
+
+  const hasWebGpu = capabilities.webgpu === true
+    || capabilities.gpu?.available === true
+    || compute.webgpuAvailable === true
+    || compute.gpuAvailable === true;
+  if (hasWebGpu) score += 0.35;
+  if (compute.gpuHardwareVerified === true) score += 0.25;
+  else if (compute.isFallbackAdapter === true) score = Math.max(0, score - 0.2);
+
+  const cores = Number(capabilities.cores ?? capabilities.cpu?.cores ?? compute.cpuCores);
   if (Number.isFinite(cores) && cores > 0) {
     score += Math.min(0.6, Math.log2(cores + 1) * 0.15);
   }
-  const gpuGflops = Number(capabilities.bench?.gpuGflops ?? capabilities.gpuGflops);
-  if (Number.isFinite(gpuGflops) && gpuGflops > 0) {
-    score += Math.min(1.0, Math.log10(gpuGflops + 1) * 0.25);
+  const gpuScore = Number(
+    capabilities.bench?.gpuGflops
+      ?? capabilities.gpuGflops
+      ?? compute.gpuComputeScore
+      ?? compute.gpuBandwidthGBps
+  );
+  if (Number.isFinite(gpuScore) && gpuScore > 0) {
+    score += Math.min(1.0, Math.log10(gpuScore + 1) * 0.25);
   }
   return Math.min(2.5, score);
 }
@@ -89,11 +102,12 @@ export function createThroughputProfileScorers(profile = 'batch-throughput', get
     const raw = info?.candidatePairRttMs ?? info?.rttMs;
     return Number.isFinite(raw) && raw >= 0 ? raw : null;
   };
+  // Trust only locally observed ICE path or explicit matching hostGroupId —
+  // never self-reported RFC1918 multiaddrs, which WAN peers can trivially advertise.
   const isLanPeer = (info) => {
     if (!info) return false;
     if (LAN_ICE_PATHS.has(info.icePath)) return true;
     if (localHostGroupId && info.hostGroupId && info.hostGroupId === localHostGroupId) return true;
-    if (Array.isArray(info.multiaddrs) && info.multiaddrs.some(isLanAddressString)) return true;
     return false;
   };
 
@@ -187,7 +201,7 @@ export const THROUGHPUT_TOPOLOGY_DEFAULTS = Object.freeze({
 export function createThroughputTopologyState() {
   return { lastExploreAt: Number.NEGATIVE_INFINITY, exploreDelayMs: null, trialPeerId: null,
     lastRepairAt: Number.NEGATIVE_INFINITY, repairDelayMs: 0, established: new Set(), cooldown: new Map(),
-    failCounts: new Map(), baselines: new Map(), wasIdle: false };
+    failCounts: new Map(), baselines: new Map(), wasIdle: false, lastProfile: null };
 }
 
 function pick(list, random) {
@@ -242,6 +256,11 @@ export function decideThroughputTopology({ now, links = [], candidates = [], ref
   const scaled = (factor) => Math.min(options.maxExploreIntervalMs, Math.max(base, factor * (state.exploreDelayMs ?? base)));
   const scoreLink = typeof options.scoreLink === 'function' ? options.scoreLink : null;
   const scoreCandidate = typeof options.scoreCandidate === 'function' ? options.scoreCandidate : null;
+  const activeProfile = String(options.profile || (scoreLink ? 'custom' : 'batch-throughput'));
+  if (state.lastProfile !== null && state.lastProfile !== activeProfile) {
+    state.baselines.clear();
+  }
+  state.lastProfile = activeProfile;
   const flowTauMs = Number.isFinite(options.flowTauMs) && options.flowTauMs > 0 ? options.flowTauMs : 4000;
   const debiasNewcomer = options.debiasNewcomerFlow === true;
   if (!state.failCounts) state.failCounts = new Map();
@@ -260,7 +279,10 @@ export function decideThroughputTopology({ now, links = [], candidates = [], ref
     const scored = Number(scoreLink({ ...link, flow: baseFlow }));
     return Number.isFinite(scored) ? scored : baseFlow;
   };
+  const cooledThisTick = new Set();
   const setCooldown = (peerId) => {
+    if (cooledThisTick.has(peerId)) return;
+    cooledThisTick.add(peerId);
     const fails = (state.failCounts.get(peerId) || 0) + 1;
     state.failCounts.set(peerId, fails);
     const cap = Number.isFinite(options.maxCooldownMultiplier) ? Math.max(1, options.maxCooldownMultiplier) : 8;
@@ -270,6 +292,14 @@ export function decideThroughputTopology({ now, links = [], candidates = [], ref
   const linked = new Set(links.map((link) => link.peerId));
   for (const peerId of state.established) if (!linked.has(peerId)) state.established.delete(peerId);
   for (const [peerId, until] of state.cooldown) if (until <= now) state.cooldown.delete(peerId);
+  if (state.failCounts.size > MAX_TRACKED_FAIL_COUNTS) {
+    for (const peerId of [...state.failCounts.keys()]) {
+      if (state.failCounts.size <= MAX_TRACKED_FAIL_COUNTS) break;
+      if (!linked.has(peerId) && !state.cooldown.has(peerId)) {
+        state.failCounts.delete(peerId);
+      }
+    }
+  }
 
   // Remember what this node moved just before each new link appeared.
   const scoredLinks = links.map((link) => ({ ...link, effectiveFlow: metricFor(link) }));

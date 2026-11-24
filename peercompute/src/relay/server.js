@@ -27,7 +27,6 @@ import { createLibp2p } from 'libp2p';
 import { tcp } from '@libp2p/tcp';
 import { webSockets } from '@libp2p/websockets';
 import { noise } from '@libp2p/noise';
-import { plaintext } from '@libp2p/plaintext';
 import { yamux } from '@libp2p/yamux';
 import { floodsub } from '@libp2p/floodsub';
 import { gossipsub } from '@libp2p/gossipsub';
@@ -106,6 +105,34 @@ const relayTopicIdleTtlMs = (() => {
   if (Number.isFinite(raw) && raw >= 0) return raw;
   return 10 * 60 * 1000; // 10 min default
 })();
+const relayMaxDynamicTopics = (() => {
+  const raw = Number(process.env.RELAY_MAX_DYNAMIC_TOPICS);
+  return Number.isSafeInteger(raw) && raw > 0 ? raw : 512;
+})();
+const relayMaxTopicsPerPeer = (() => {
+  const raw = Number(process.env.RELAY_MAX_TOPICS_PER_PEER);
+  return Number.isSafeInteger(raw) && raw > 0 ? raw : 16;
+})();
+const relayInfiniteLimits = (() => {
+  const raw = (process.env.RELAY_INFINITE_LIMITS || '').trim().toLowerCase();
+  return raw === 'true' || raw === '1';
+})();
+const relayCircuitDurationMs = (() => {
+  const raw = Number(process.env.RELAY_CIRCUIT_DURATION_SEC);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) * 1000 : 3600 * 1000;
+})();
+const relayCircuitDataBytes = (() => {
+  const raw = Number(process.env.RELAY_CIRCUIT_DATA_MB);
+  return Number.isFinite(raw) && raw > 0 ? BigInt(Math.floor(raw)) * 1024n * 1024n : 64n * 1024n * 1024n;
+})();
+const MAX_TOPIC_NAME_LENGTH = 128;
+const MAX_DIRECTORY_ENTRIES = 4096;
+const MAX_DIRECTORY_ADDRS_PER_PEER = 16;
+const MAX_DIRECTORY_ADDR_LENGTH = 512;
+const KEEPALIVE_MAX_CHUNK_BYTES = 4096;
+const KEEPALIVE_MAX_FRAMES = 1024;
+const KEEPALIVE_MAX_TOTAL_BYTES = 256 * 1024;
+const KEEPALIVE_IDLE_TIMEOUT_MS = 30 * 1000;
 
 // Phase 5: Peer directory configuration
 const relayEnableDirectory = (() => {
@@ -252,14 +279,16 @@ async function startServer() {
         webSockets(wsOptions),
         tcp()
       ],
-      connectionEncrypters: [noise(), plaintext()],
+      connectionEncrypters: [noise()],
       streamMuxers: [yamux()],
       services: {
         pubsub: pubsubService,
         relay: circuitRelayServer({
           reservations: {
             maxReservations: 1000,
-            applyDefaultLimit: false,
+            applyDefaultLimit: !relayInfiniteLimits,
+            defaultDurationLimit: relayCircuitDurationMs,
+            defaultDataLimit: relayCircuitDataBytes,
             reservationTtl: 3600000 // 1 hour
           }
         }),
@@ -293,11 +322,19 @@ async function startServer() {
     console.log('Listening on:');
     addrs.forEach(addr => console.log(addr));
 
-    // Register keep-alive protocol handler
+    // Register keep-alive protocol handler with strict size/rate/idle bounds
     const KEEPALIVE_PROTOCOL = '/peercompute/keepalive/1.0.0';
     await server.handle(KEEPALIVE_PROTOCOL, async ({ stream }) => {
       console.log('[Relay] Keep-alive stream opened from peer');
-      
+      let idleTimer = null;
+      const resetIdleTimer = () => {
+        if (idleTimer) clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => {
+          try { stream?.abort?.(new Error('keep-alive idle timeout')); } catch (_) {}
+        }, KEEPALIVE_IDLE_TIMEOUT_MS);
+        idleTimer?.unref?.();
+      };
+
       try {
         // Support both async-iterable streams and legacy .source/.sink shapes
         const reader = (typeof stream?.[Symbol.asyncIterator] === 'function')
@@ -315,14 +352,27 @@ async function startServer() {
           return;
         }
 
+        let frames = 0;
+        let totalBytes = 0;
+        resetIdleTimer();
         for await (const data of reader) {
+          resetIdleTimer();
           const buffer = (data?.subarray && typeof data.subarray === 'function')
             ? data.subarray()
             : data;
+          const byteLen = buffer?.byteLength ?? buffer?.length ?? 0;
+          frames += 1;
+          totalBytes += byteLen;
+          if (byteLen > KEEPALIVE_MAX_CHUNK_BYTES || frames > KEEPALIVE_MAX_FRAMES || totalBytes > KEEPALIVE_MAX_TOTAL_BYTES) {
+            await stream?.abort?.(new Error('keep-alive frame or byte limit exceeded'));
+            return;
+          }
           await sender(buffer);
         }
       } catch (error) {
         console.log('[Relay] Keep-alive stream closed:', error.message);
+      } finally {
+        if (idleTimer) clearTimeout(idleTimer);
       }
     });
     console.log('[Relay] Keep-alive protocol registered');
@@ -365,6 +415,7 @@ async function startServer() {
     }
     console.log(`Relay subscribed to topics: ${relayTopics.join(', ')}`);
 
+    const intervals = [];
     // Phase 5: Subscribe to directory topic and start cleanup interval
     if (relayEnableDirectory) {
       server.services.pubsub.subscribe(DIRECTORY_TOPIC);
@@ -373,7 +424,7 @@ async function startServer() {
       console.log(`[Relay] Peer directory enabled (TTL: ${relayDirectoryTtlMs}ms)`);
 
       // Periodic cleanup of stale directory entries
-      setInterval(() => {
+      const dirTimer = setInterval(() => {
         const now = Date.now();
         let expiredCount = 0;
         for (const [peerId, entry] of peerDirectory.entries()) {
@@ -386,9 +437,17 @@ async function startServer() {
           console.log(`[Directory] Expired ${expiredCount} entries (${peerDirectory.size} remaining)`);
         }
       }, DIRECTORY_CLEANUP_INTERVAL_MS);
+      dirTimer?.unref?.();
+      intervals.push(dirTimer);
     }
 
-    const shouldRelayTopic = (topic) => relayTopicPrefixes.some((prefix) => topic.startsWith(prefix));
+    const peerDynamicTopics = new Map(); // peerId -> Set<topic>
+    const isValidTopicName = (topic) => {
+      if (typeof topic !== 'string') return false;
+      if (topic.length === 0 || topic.length > MAX_TOPIC_NAME_LENGTH) return false;
+      return !/[\s\x00-\x1f\x7f]/.test(topic);
+    };
+    const shouldRelayTopic = (topic) => isValidTopicName(topic) && relayTopicPrefixes.some((prefix) => topic.startsWith(prefix));
     const isDataTopic = (topic) => {
       // Data topics include state, state-sync, and shard topics
       if (topic.includes('.state') || topic.includes('-state')) return true;
@@ -398,11 +457,21 @@ async function startServer() {
 
     server.services.pubsub.addEventListener('subscription-change', (evt) => {
       const subscriptions = evt?.detail?.subscriptions || [];
+      const peerIdStr = evt?.detail?.peerId?.toString?.() || '';
       const now = Date.now();
       subscriptions.forEach((sub) => {
-        if (!sub?.subscribe) return;
         const topic = sub?.topic;
         if (!topic) return;
+        if (!sub?.subscribe) {
+          if (peerIdStr) {
+            const owned = peerDynamicTopics.get(peerIdStr);
+            if (owned) {
+              owned.delete(topic);
+              if (owned.size === 0) peerDynamicTopics.delete(peerIdStr);
+            }
+          }
+          return;
+        }
         if (relayTopicSet.has(topic)) {
           if (!pinnedRelayTopics.has(topic)) {
             dynamicTopicLastActive.set(topic, now);
@@ -415,6 +484,20 @@ async function startServer() {
           console.log(`[Relay] Skipping data topic (control-only mode): ${topic}`);
           return;
         }
+        if (dynamicTopicLastActive.size >= relayMaxDynamicTopics) {
+          return;
+        }
+        if (peerIdStr) {
+          let owned = peerDynamicTopics.get(peerIdStr);
+          if (!owned) {
+            owned = new Set();
+            peerDynamicTopics.set(peerIdStr, owned);
+          }
+          if (owned.size >= relayMaxTopicsPerPeer) {
+            return;
+          }
+          owned.add(topic);
+        }
         relayTopicSet.add(topic);
         dynamicTopicLastActive.set(topic, now);
         server.services.pubsub.subscribe(topic);
@@ -422,8 +505,15 @@ async function startServer() {
       });
     });
 
+    server.addEventListener('peer:disconnect', (evt) => {
+      const peerId = evt.detail?.remotePeer?.toString?.() || evt.detail?.toString?.();
+      if (peerId) {
+        peerDynamicTopics.delete(peerId);
+      }
+    });
+
     if (relayTopicIdleTtlMs > 0) {
-      setInterval(() => {
+      const pruneTimer = setInterval(() => {
         const now = Date.now();
         let pruned = 0;
         for (const [topic, lastActive] of Array.from(dynamicTopicLastActive.entries())) {
@@ -444,6 +534,7 @@ async function startServer() {
             } catch (_) {}
             relayTopicSet.delete(topic);
             dynamicTopicLastActive.delete(topic);
+            for (const owned of peerDynamicTopics.values()) owned.delete(topic);
             pruned += 1;
           }
         }
@@ -451,7 +542,38 @@ async function startServer() {
           console.log(`[Relay] Unsubscribed ${pruned} idle dynamic topic(s)`);
         }
       }, 60 * 1000);
+      pruneTimer?.unref?.();
+      intervals.push(pruneTimer);
     }
+
+    const sanitizeAddrs = (rawAddrs) => {
+      if (!Array.isArray(rawAddrs)) return [];
+      const out = [];
+      for (const addr of rawAddrs) {
+        if (typeof addr !== 'string') continue;
+        const trimmed = addr.trim();
+        if (!trimmed || trimmed.length > MAX_DIRECTORY_ADDR_LENGTH) continue;
+        out.push(trimmed);
+        if (out.length >= MAX_DIRECTORY_ADDRS_PER_PEER) break;
+      }
+      return out;
+    };
+
+    const upsertDirectoryEntry = (peerIdStr, entry) => {
+      if (!peerIdStr) return;
+      if (!peerDirectory.has(peerIdStr) && peerDirectory.size >= MAX_DIRECTORY_ENTRIES) {
+        let oldestKey = null;
+        let oldestSeen = Infinity;
+        for (const [key, value] of peerDirectory.entries()) {
+          if ((value?.lastSeen ?? 0) < oldestSeen) {
+            oldestSeen = value?.lastSeen ?? 0;
+            oldestKey = key;
+          }
+        }
+        if (oldestKey) peerDirectory.delete(oldestKey);
+      }
+      peerDirectory.set(peerIdStr, entry);
+    };
     
     // Log peer discovery events
     const decoder = new TextDecoder();
@@ -483,23 +605,25 @@ async function startServer() {
     };
 
     server.services.pubsub.addEventListener('message', (evt) => {
-      const { topic, from, data } = evt.detail;
+      const { topic, from, data } = evt.detail || {};
+      const fromStr = from?.toString?.() || '';
       if (topic === discoveryTopic) {
-        console.log(`[Discovery] Peer announcement from ${from.toString()}`);
+        console.log(`[Discovery] Peer announcement from ${fromStr || 'unknown'}`);
         return;
       }
 
-      // Phase 5: Update directory from presence messages
-      if (relayEnableDirectory && (topic === 'peercompute-presence' || topic.includes('.presence'))) {
+      // Phase 5: Update directory from presence messages (bound strictly to authenticated sender)
+      if (relayEnableDirectory && (topic === 'peercompute-presence' || topic?.includes('.presence'))) {
         try {
           const parsed = JSON.parse(decoder.decode(data));
-          if (parsed?.from && Array.isArray(parsed?.multiaddrs)) {
-            peerDirectory.set(parsed.from, {
-              multiaddrs: parsed.multiaddrs,
+          if (!fromStr || (parsed?.from && parsed.from !== fromStr)) return;
+          if (Array.isArray(parsed?.multiaddrs)) {
+            upsertDirectoryEntry(fromStr, {
+              multiaddrs: sanitizeAddrs(parsed.multiaddrs),
               lastSeen: Date.now(),
-              roomId: parsed.roomId,
-              topologyId: parsed.topologyId,
-              shardId: parsed.shardId
+              roomId: typeof parsed.roomId === 'string' ? parsed.roomId.slice(0, 128) : undefined,
+              topologyId: typeof parsed.topologyId === 'string' ? parsed.topologyId.slice(0, 128) : undefined,
+              shardId: typeof parsed.shardId === 'string' ? parsed.shardId.slice(0, 128) : undefined
             });
           }
         } catch (_) {}
@@ -509,18 +633,19 @@ async function startServer() {
       if (relayEnableDirectory && topic === DIRECTORY_TOPIC) {
         try {
           const query = JSON.parse(decoder.decode(data));
-          if (query.type === 'directory-query' && query.targetPeerId) {
-            handleDirectoryQuery(query, from.toString());
-          } else if (query.type === 'directory-register' && query.from) {
-            // Explicit registration
-            peerDirectory.set(query.from, {
-              multiaddrs: query.multiaddrs || [],
+          if (query.type === 'directory-query' && typeof query.targetPeerId === 'string' && query.targetPeerId) {
+            handleDirectoryQuery(query, fromStr || 'unknown');
+          } else if (query.type === 'directory-register') {
+            if (!fromStr || (query.from && query.from !== fromStr)) return;
+            // Explicit registration bound to authenticated libp2p sender
+            upsertDirectoryEntry(fromStr, {
+              multiaddrs: sanitizeAddrs(query.multiaddrs),
               lastSeen: Date.now(),
-              roomId: query.roomId,
-              topologyId: query.topologyId,
-              shardId: query.shardId
+              roomId: typeof query.roomId === 'string' ? query.roomId.slice(0, 128) : undefined,
+              topologyId: typeof query.topologyId === 'string' ? query.topologyId.slice(0, 128) : undefined,
+              shardId: typeof query.shardId === 'string' ? query.shardId.slice(0, 128) : undefined
             });
-            console.log(`[Directory] Registered peer: ${query.from}`);
+            console.log(`[Directory] Registered peer: ${fromStr}`);
           }
         } catch (_) {}
         return;
@@ -532,7 +657,7 @@ async function startServer() {
           const parsed = JSON.parse(decoder.decode(data));
           summary = parsed?.payload?.type || parsed?.type || summary;
         } catch (_) {}
-        console.log(`[Relay] Pubsub ${topic} ${summary} from ${from.toString()}`);
+        console.log(`[Relay] Pubsub ${topic} ${summary} from ${fromStr || 'unknown'}`);
       }
     });
 
@@ -611,6 +736,19 @@ async function startServer() {
     } else {
         console.log('No WebSocket address found!');
     }
+
+    let shuttingDown = false;
+    const shutdown = async () => {
+      if (shuttingDown) return;
+      shuttingDown = true;
+      for (const timer of intervals) clearInterval(timer);
+      try {
+        await server.stop();
+      } catch (_) {}
+      process.exit(0);
+    };
+    process.once('SIGINT', shutdown);
+    process.once('SIGTERM', shutdown);
 
   } catch (err) {
     console.error('Failed to start relay server:', err);

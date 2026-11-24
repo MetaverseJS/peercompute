@@ -51,11 +51,13 @@ export class TopologyController {
   constructor(config = {}) {
     const rawHysteresis = toNumber(config.swapHysteresisRatio, DEFAULT_SWAP_HYSTERESIS_RATIO);
     const rawZeroBoost = toNumber(config.maxZeroConnBoost, DEFAULT_MAX_ZERO_CONN_BOOST);
+    const rawMax = Math.max(1, toNumber(config.maxConnections, DEFAULT_MAX_CONNECTIONS));
+    const rawTarget = Math.min(rawMax, Math.max(1, toNumber(config.targetConnections, DEFAULT_TARGET_CONNECTIONS)));
     this.config = {
       topologyId: config.topologyId || 'default-topology',
       topologyType: config.topologyType || config.topology || 'distributed',
-      targetConnections: toNumber(config.targetConnections, DEFAULT_TARGET_CONNECTIONS),
-      maxConnections: toNumber(config.maxConnections, DEFAULT_MAX_CONNECTIONS),
+      targetConnections: rawTarget,
+      maxConnections: rawMax,
       connectionRadius: toNumber(config.connectionRadius, DEFAULT_CONNECTION_RADIUS),
       isolationMinConnections: toNumber(config.isolationMinConnections, DEFAULT_ISOLATION_CONNECTIONS),
       longRangeCount: toNumber(config.longRangeCount, 1),
@@ -85,11 +87,14 @@ export class TopologyController {
   }
 
   setConnectionLimits({ targetConnections, maxConnections } = {}) {
+    if (Number.isFinite(maxConnections)) {
+      this.config.maxConnections = Math.max(1, maxConnections);
+    }
     if (Number.isFinite(targetConnections)) {
       this.config.targetConnections = Math.max(1, targetConnections);
     }
-    if (Number.isFinite(maxConnections)) {
-      this.config.maxConnections = Math.max(1, maxConnections);
+    if (this.config.targetConnections > this.config.maxConnections) {
+      this.config.targetConnections = this.config.maxConnections;
     }
   }
 
@@ -108,8 +113,16 @@ export class TopologyController {
   }
 
   addReferralPeers(peerIds = []) {
+    const MAX_REFERRAL_PEERS = 128;
     peerIds.forEach((peerId) => {
-      if (peerId) this.referralPeers.add(peerId);
+      if (!peerId) return;
+      if (this.referralPeers.has(peerId)) {
+        this.referralPeers.delete(peerId);
+      } else if (this.referralPeers.size >= MAX_REFERRAL_PEERS) {
+        const oldest = this.referralPeers.values().next().value;
+        if (oldest !== undefined) this.referralPeers.delete(oldest);
+      }
+      this.referralPeers.add(peerId);
     });
   }
 
@@ -172,7 +185,9 @@ export class TopologyController {
     ));
     if (shouldRefresh || retainedValid.length === 0) {
       this.longRangePeers.clear();
-      const picked = pickDeterministic(pool, this.config.longRangeCount, this.peerId || now);
+      const epochBucket = refreshMs > 0 ? Math.floor(now / refreshMs) : 0;
+      const seed = `${this.peerId || 'self'}:${epochBucket}`;
+      const picked = pickDeterministic(pool, this.config.longRangeCount, seed);
       picked.forEach((entry) => this.longRangePeers.add(entry.peerId));
       this.lastLongRangeAt = now;
     } else if (retainedValid.length !== this.longRangePeers.size) {
@@ -263,17 +278,43 @@ export class TopologyController {
     if (closest?.peerId && desired.size < maxConnections) {
       desired.add(closest.peerId);
     }
+    const hasFarCandidates = hasRadius && candidates.some(
+      (entry) => Number.isFinite(entry.distance) && entry.distance > radius
+    );
+    const reservedLongRangeSlots = (!fallback && hasFarCandidates && this.config.longRangeCount > 0 && maxConnections > 1)
+      ? Math.min(this.config.longRangeCount, maxConnections - 1)
+      : 0;
+    const localLimit = Math.max(1, maxConnections - reservedLongRangeSlots);
+
     // Bound zero-connection boost so a burst of fresh joiners cannot evict an
     // entire stable local neighborhood (thundering-herd prevention).
-    if (!fallback && maxZeroConnBoost > 0 && desired.size < maxConnections) {
+    if (!fallback && maxZeroConnBoost > 0 && desired.size < localLimit) {
       let boosted = 0;
       for (const entry of pool) {
-        if (desired.size >= maxConnections || boosted >= maxZeroConnBoost) break;
+        if (desired.size >= localLimit || boosted >= maxZeroConnBoost) break;
         if (!entry.noConnections || desired.has(entry.peerId)) continue;
         desired.add(entry.peerId);
         boosted += 1;
       }
     }
+    for (const entry of pool) {
+      if (desired.size >= localLimit) break;
+      desired.add(entry.peerId);
+    }
+
+    // Small-world long-range links get their reserved slots before local backfill
+    // so dense local clusters cannot starve anti-islanding bridges.
+    if (this.config.longRangeCount > 0 && desired.size < maxConnections) {
+      const longRange = this._pickLongRange(candidates, now, {
+        exclude: desired,
+        minDistance: hasRadius ? radius : null
+      }).filter((peerId) => !desired.has(peerId));
+      longRange.forEach((peerId) => {
+        if (desired.size < maxConnections) desired.add(peerId);
+      });
+    }
+
+    // Backfill any unused slots from local pool if fewer far long-range candidates existed.
     for (const entry of pool) {
       if (desired.size >= maxConnections) break;
       desired.add(entry.peerId);
@@ -283,24 +324,12 @@ export class TopologyController {
       const referralPeers = [];
       for (const peerId of this.referralPeers) {
         if (desired.has(peerId)) continue;
-        const match = candidates.find((entry) => entry.peerId === peerId);
+        const match = candidateMap.get(peerId);
         if (!match) continue;
         if (hasRadius && Number.isFinite(match.distance) && match.distance > radius) continue;
         referralPeers.push(peerId);
       }
       referralPeers.forEach((peerId) => {
-        if (desired.size < maxConnections) desired.add(peerId);
-      });
-    }
-
-    // Small-world long-range links remain active even when connectionRadius is
-    // configured so spatially separated clusters do not island permanently.
-    if (this.config.longRangeCount > 0 && desired.size < maxConnections) {
-      const longRange = this._pickLongRange(candidates, now, {
-        exclude: desired,
-        minDistance: hasRadius ? radius : null
-      }).filter((peerId) => !desired.has(peerId));
-      longRange.forEach((peerId) => {
         if (desired.size < maxConnections) desired.add(peerId);
       });
     }

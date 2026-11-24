@@ -38,12 +38,24 @@ import (
 )
 
 const (
-  keepaliveProtocol         = "/peercompute/keepalive/1.0.0"
-  directoryTopic            = "peercompute-directory"
-  defaultDirectoryTTLMs     = 5 * 60 * 1000
-  defaultTopicIdleTTLMs     = 10 * 60 * 1000
-  defaultCircuitDurationSec = 3600
-  defaultCircuitDataMB      = 64
+  keepaliveProtocol             = "/peercompute/keepalive/1.0.0"
+  directoryTopic                = "peercompute-directory"
+  defaultDirectoryTTLMs         = 5 * 60 * 1000
+  defaultTopicIdleTTLMs         = 10 * 60 * 1000
+  defaultCircuitDurationSec     = 3600
+  defaultCircuitDataMB          = 64
+  defaultMaxDynamicTopics       = 512
+  defaultMaxTopicsPerPeer       = 16
+  defaultMaxReservationsPerIP   = 32
+  defaultMaxReservationsPerASN  = 128
+  maxTopicNameLength            = 128
+  maxDirectoryEntries           = 4096
+  maxDirectoryAddrsPerPeer      = 16
+  maxDirectoryAddrLength        = 512
+  keepaliveMaxChunkBytes        = 4096
+  keepaliveMaxFrames            = 1024
+  keepaliveMaxTotalBytes        = 256 * 1024
+  keepaliveIdleTimeout          = 30 * time.Second
 )
 
 var defaultControlTopics = []string{
@@ -344,8 +356,13 @@ func buildCircuitRelayOptions(resources relay.Resources, infinite bool, duration
   }))
 }
 
+type autoSubRequest struct {
+  topic  string
+  peerID string
+}
+
 type autoSubTracer struct {
-  topics chan string
+  topics chan autoSubRequest
 }
 
 func (t *autoSubTracer) Trace(evt *pubsubpb.TraceEvent) {
@@ -355,9 +372,16 @@ func (t *autoSubTracer) Trace(evt *pubsubpb.TraceEvent) {
   if evt.GetType() != pubsubpb.TraceEvent_RECV_RPC {
     return
   }
-  meta := evt.GetRecvRPC().GetMeta()
+  recv := evt.GetRecvRPC()
+  meta := recv.GetMeta()
   if meta == nil {
     return
+  }
+  fromPeer := ""
+  if rawFrom := recv.GetReceivedFrom(); len(rawFrom) > 0 {
+    if pid, err := peer.IDFromBytes(rawFrom); err == nil {
+      fromPeer = pid.String()
+    }
   }
   for _, sub := range meta.GetSubscription() {
     if !sub.GetSubscribe() {
@@ -368,7 +392,7 @@ func (t *autoSubTracer) Trace(evt *pubsubpb.TraceEvent) {
       continue
     }
     select {
-    case t.topics <- topic:
+    case t.topics <- autoSubRequest{topic: topic, peerID: fromPeer}:
     default:
     }
   }
@@ -382,25 +406,55 @@ type topicEntry struct {
 }
 
 type topicRegistry struct {
-  pubsub          *pubsub.PubSub
-  prefixes        []string
-  allow           map[string]struct{}
-  controlOnlyMode bool
-  mu              sync.Mutex
-  topics          map[string]*topicEntry
+  pubsub           *pubsub.PubSub
+  prefixes         []string
+  allow            map[string]struct{}
+  controlOnlyMode  bool
+  maxDynamicTopics int
+  maxTopicsPerPeer int
+  onJoin           func(name string, topic *pubsub.Topic)
+  mu               sync.Mutex
+  joinMu           sync.Mutex
+  topics           map[string]*topicEntry
+  peerTopics       map[string]map[string]struct{}
 }
 
-func newTopicRegistry(ps *pubsub.PubSub, prefixes []string, allow map[string]struct{}, controlOnlyMode bool) *topicRegistry {
+func newTopicRegistry(ps *pubsub.PubSub, prefixes []string, allow map[string]struct{}, controlOnlyMode bool, maxDynamicTopics int, maxTopicsPerPeer int) *topicRegistry {
+  if maxDynamicTopics <= 0 {
+    maxDynamicTopics = defaultMaxDynamicTopics
+  }
+  if maxTopicsPerPeer <= 0 {
+    maxTopicsPerPeer = defaultMaxTopicsPerPeer
+  }
   return &topicRegistry{
-    pubsub:          ps,
-    prefixes:        prefixes,
-    allow:           allow,
-    controlOnlyMode: controlOnlyMode,
-    topics:          make(map[string]*topicEntry),
+    pubsub:           ps,
+    prefixes:         prefixes,
+    allow:            allow,
+    controlOnlyMode:  controlOnlyMode,
+    maxDynamicTopics: maxDynamicTopics,
+    maxTopicsPerPeer: maxTopicsPerPeer,
+    topics:           make(map[string]*topicEntry),
+    peerTopics:       make(map[string]map[string]struct{}),
   }
 }
 
+func isValidTopicName(topic string) bool {
+  if len(topic) == 0 || len(topic) > maxTopicNameLength {
+    return false
+  }
+  for i := 0; i < len(topic); i++ {
+    c := topic[i]
+    if c <= 0x20 || c == 0x7f {
+      return false
+    }
+  }
+  return true
+}
+
 func (r *topicRegistry) allowed(topic string) bool {
+  if !isValidTopicName(topic) {
+    return false
+  }
   if r.controlOnlyMode && isDataTopic(topic) {
     return false
   }
@@ -415,7 +469,30 @@ func (r *topicRegistry) allowed(topic string) bool {
   return false
 }
 
+func (r *topicRegistry) dynamicCountLocked() int {
+  count := 0
+  for _, entry := range r.topics {
+    if entry != nil && !entry.pinned {
+      count++
+    }
+  }
+  return count
+}
+
+func (r *topicRegistry) forgetPeer(peerID string) {
+  if peerID == "" {
+    return
+  }
+  r.mu.Lock()
+  delete(r.peerTopics, peerID)
+  r.mu.Unlock()
+}
+
 func (r *topicRegistry) ensureWithPin(topic string, pinned bool) *pubsub.Topic {
+  return r.ensureForPeer(topic, "", pinned)
+}
+
+func (r *topicRegistry) ensureForPeer(topic string, peerID string, pinned bool) *pubsub.Topic {
   now := time.Now()
   r.mu.Lock()
   if existing, ok := r.topics[topic]; ok {
@@ -427,13 +504,63 @@ func (r *topicRegistry) ensureWithPin(topic string, pinned bool) *pubsub.Topic {
     r.mu.Unlock()
     return t
   }
+  if !pinned {
+    if r.dynamicCountLocked() >= r.maxDynamicTopics {
+      r.mu.Unlock()
+      return nil
+    }
+    if peerID != "" {
+      owned := r.peerTopics[peerID]
+      if len(owned) >= r.maxTopicsPerPeer {
+        r.mu.Unlock()
+        return nil
+      }
+    }
+  }
+  r.mu.Unlock()
+
+  // Serialize joins so concurrent ensure calls never clobber a live topic handle with nil.
+  r.joinMu.Lock()
+  defer r.joinMu.Unlock()
+
+  r.mu.Lock()
+  if existing, ok := r.topics[topic]; ok {
+    existing.lastActive = now
+    if pinned {
+      existing.pinned = true
+    }
+    t := existing.topic
+    r.mu.Unlock()
+    return t
+  }
+  if !pinned {
+    if r.dynamicCountLocked() >= r.maxDynamicTopics {
+      r.mu.Unlock()
+      return nil
+    }
+    if peerID != "" {
+      owned := r.peerTopics[peerID]
+      if len(owned) >= r.maxTopicsPerPeer {
+        r.mu.Unlock()
+        return nil
+      }
+    }
+  }
   r.mu.Unlock()
 
   t, err := r.pubsub.Join(topic)
   if err != nil {
     if strings.Contains(err.Error(), "topic already exists") {
       r.mu.Lock()
-      r.topics[topic] = &topicEntry{topic: nil, lastActive: now, pinned: pinned}
+      if existing, ok := r.topics[topic]; ok && existing != nil && existing.topic != nil {
+        existing.lastActive = now
+        if pinned {
+          existing.pinned = true
+        }
+        live := existing.topic
+        r.mu.Unlock()
+        return live
+      }
       r.mu.Unlock()
       return nil
     }
@@ -453,7 +580,20 @@ func (r *topicRegistry) ensureWithPin(topic string, pinned bool) *pubsub.Topic {
     lastActive: now,
     pinned:     pinned,
   }
+  if !pinned && peerID != "" {
+    owned := r.peerTopics[peerID]
+    if owned == nil {
+      owned = make(map[string]struct{})
+      r.peerTopics[peerID] = owned
+    }
+    owned[topic] = struct{}{}
+  }
+  onJoin := r.onJoin
   r.mu.Unlock()
+
+  if onJoin != nil {
+    onJoin(topic, t)
+  }
   return t
 }
 
@@ -468,13 +608,20 @@ func (r *topicRegistry) ensureIfAllowed(topic string) *pubsub.Topic {
   return r.ensureWithPin(topic, false)
 }
 
+func (r *topicRegistry) ensureIfAllowedForPeer(topic string, peerID string) *pubsub.Topic {
+  if !r.allowed(topic) {
+    return nil
+  }
+  return r.ensureForPeer(topic, peerID, false)
+}
+
 func (r *topicRegistry) pruneIdle(idleTTL time.Duration, now time.Time) int {
   if idleTTL <= 0 {
     return 0
   }
   type toClose struct {
-    name   string
-    entry  *topicEntry
+    name  string
+    entry *topicEntry
   }
   var expired []toClose
   r.mu.Lock()
@@ -489,6 +636,9 @@ func (r *topicRegistry) pruneIdle(idleTTL time.Duration, now time.Time) int {
     if now.Sub(entry.lastActive) >= idleTTL {
       expired = append(expired, toClose{name: name, entry: entry})
       delete(r.topics, name)
+      for _, owned := range r.peerTopics {
+        delete(owned, name)
+      }
     }
   }
   r.mu.Unlock()
@@ -511,12 +661,51 @@ type peerDirectoryEntry struct {
 }
 
 type peerDirectoryStore struct {
-  mu      sync.Mutex
-  entries map[string]peerDirectoryEntry
+  mu         sync.Mutex
+  entries    map[string]peerDirectoryEntry
+  maxEntries int
 }
 
 func newPeerDirectoryStore() *peerDirectoryStore {
-  return &peerDirectoryStore{entries: make(map[string]peerDirectoryEntry)}
+  return &peerDirectoryStore{
+    entries:    make(map[string]peerDirectoryEntry),
+    maxEntries: maxDirectoryEntries,
+  }
+}
+
+func sanitizeDirectoryAddrs(rawAddrs []any) []string {
+  if len(rawAddrs) == 0 {
+    return nil
+  }
+  addrs := make([]string, 0, min(len(rawAddrs), maxDirectoryAddrsPerPeer))
+  for _, item := range rawAddrs {
+    s, ok := item.(string)
+    if !ok {
+      continue
+    }
+    trimmed := strings.TrimSpace(s)
+    if trimmed == "" || len(trimmed) > maxDirectoryAddrLength {
+      continue
+    }
+    addrs = append(addrs, trimmed)
+    if len(addrs) >= maxDirectoryAddrsPerPeer {
+      break
+    }
+  }
+  return addrs
+}
+
+func authenticatedPubsubSender(msg *pubsub.Message) string {
+  if msg == nil {
+    return ""
+  }
+  if pid := msg.GetFrom(); pid != "" {
+    return pid.String()
+  }
+  if msg.ReceivedFrom != "" {
+    return msg.ReceivedFrom.String()
+  }
+  return ""
 }
 
 func (d *peerDirectoryStore) upsert(peerID string, entry peerDirectoryEntry) {
@@ -524,6 +713,19 @@ func (d *peerDirectoryStore) upsert(peerID string, entry peerDirectoryEntry) {
     return
   }
   d.mu.Lock()
+  if _, exists := d.entries[peerID]; !exists && d.maxEntries > 0 && len(d.entries) >= d.maxEntries {
+    oldestID := ""
+    var oldestSeen int64 = 1<<63 - 1
+    for id, existing := range d.entries {
+      if existing.LastSeen < oldestSeen {
+        oldestSeen = existing.LastSeen
+        oldestID = id
+      }
+    }
+    if oldestID != "" {
+      delete(d.entries, oldestID)
+    }
+  }
   d.entries[peerID] = entry
   d.mu.Unlock()
 }
@@ -683,6 +885,8 @@ func loadRelayIdentity(identityPath string) (crypto.PrivKey, peer.ID, error) {
     }
     log.Printf("[Relay] Loaded identity key from %s", path)
     return key, pid, nil
+  } else if !errors.Is(err, os.ErrNotExist) {
+    return nil, "", err
   }
 
   key, _, err := crypto.GenerateEd25519Key(rand.Reader)
@@ -813,6 +1017,10 @@ func main() {
     relayDirectoryTTLMs = defaultDirectoryTTLMs
   }
   relayTopicIdleTTLMs := parseIntEnv("RELAY_TOPIC_IDLE_TTL_MS", defaultTopicIdleTTLMs)
+  relayMaxDynamicTopics := parseIntEnv("RELAY_MAX_DYNAMIC_TOPICS", defaultMaxDynamicTopics)
+  relayMaxTopicsPerPeer := parseIntEnv("RELAY_MAX_TOPICS_PER_PEER", defaultMaxTopicsPerPeer)
+  relayMaxReservationsPerIP := parseIntEnv("RELAY_MAX_RESERVATIONS_PER_IP", defaultMaxReservationsPerIP)
+  relayMaxReservationsPerASN := parseIntEnv("RELAY_MAX_RESERVATIONS_PER_ASN", defaultMaxReservationsPerASN)
   relayInfiniteLimits := parseBoolEnv("RELAY_INFINITE_LIMITS", false)
   relayCircuitDurationSec := parseIntEnv("RELAY_CIRCUIT_DURATION_SEC", defaultCircuitDurationSec)
   relayCircuitDataMB := parseIntEnv("RELAY_CIRCUIT_DATA_MB", defaultCircuitDataMB)
@@ -933,8 +1141,12 @@ func main() {
   resources.ReservationTTL = time.Hour
   resources.MaxReservations = 1000
   resources.MaxCircuits = 1000
-  resources.MaxReservationsPerIP = 1000
-  resources.MaxReservationsPerASN = 1000
+  if relayMaxReservationsPerIP > 0 {
+    resources.MaxReservationsPerIP = relayMaxReservationsPerIP
+  }
+  if relayMaxReservationsPerASN > 0 {
+    resources.MaxReservationsPerASN = relayMaxReservationsPerASN
+  }
   resources.MaxReservationsPerPeer = 1
   circuitOpts := buildCircuitRelayOptions(resources, relayInfiniteLimits, relayCircuitDurationSec, relayCircuitDataMB)
   relayService, err := relay.New(host, circuitOpts...)
@@ -959,7 +1171,7 @@ func main() {
     initialTopics = append(initialTopics, directoryTopic)
   }
 
-  tracer := &autoSubTracer{topics: make(chan string, 256)}
+  tracer := &autoSubTracer{topics: make(chan autoSubRequest, 256)}
   ctx, cancel := context.WithCancel(context.Background())
   defer cancel()
 
@@ -980,7 +1192,7 @@ func main() {
   for _, topic := range initialTopics {
     allow[topic] = struct{}{}
   }
-  registry := newTopicRegistry(ps, relayTopicPrefixes, allow, relayControlOnlyMode)
+  registry := newTopicRegistry(ps, relayTopicPrefixes, allow, relayControlOnlyMode, relayMaxDynamicTopics, relayMaxTopicsPerPeer)
   joinedTopics := make(map[string]*pubsub.Topic, len(initialTopics))
   for _, topic := range initialTopics {
     if t := registry.ensureWithPin(topic, true); t != nil {
@@ -992,6 +1204,61 @@ func main() {
   if relayEnableDirectory {
     dirStore := newPeerDirectoryStore()
     log.Printf("[Relay] Peer directory enabled (TTL: %dms)", relayDirectoryTTLMs)
+    watchPresenceTopic := func(presenceTopic *pubsub.Topic) {
+      if presenceTopic == nil {
+        return
+      }
+      presSub, err := presenceTopic.Subscribe()
+      if err != nil {
+        return
+      }
+      go func() {
+        defer presSub.Cancel()
+        for {
+          msg, err := presSub.Next(ctx)
+          if err != nil {
+            return
+          }
+          if msg.ReceivedFrom == host.ID() {
+            continue
+          }
+          senderID := authenticatedPubsubSender(msg)
+          if senderID == "" {
+            continue
+          }
+          var payload map[string]any
+          if err := json.Unmarshal(msg.Data, &payload); err != nil {
+            continue
+          }
+          if claimedFrom, _ := payload["from"].(string); claimedFrom != "" && claimedFrom != senderID {
+            continue
+          }
+          rawAddrs, ok := payload["multiaddrs"].([]any)
+          if !ok {
+            continue
+          }
+          roomID, _ := payload["roomId"].(string)
+          topologyID, _ := payload["topologyId"].(string)
+          shardID, _ := payload["shardId"].(string)
+          dirStore.upsert(senderID, peerDirectoryEntry{
+            Multiaddrs: sanitizeDirectoryAddrs(rawAddrs),
+            LastSeen:   time.Now().UnixMilli(),
+            RoomID:     roomID,
+            TopologyID: topologyID,
+            ShardID:    shardID,
+          })
+        }
+      }()
+    }
+
+    registry.mu.Lock()
+    registry.onJoin = func(name string, topic *pubsub.Topic) {
+      if strings.HasSuffix(name, ".presence") {
+        watchPresenceTopic(topic)
+      }
+    }
+    registry.mu.Unlock()
+
     if dirTopic, ok := joinedTopics[directoryTopic]; ok && dirTopic != nil {
       if dirSub, err := dirTopic.Subscribe(); err == nil {
         go func() {
@@ -1004,6 +1271,7 @@ func main() {
             if msg.ReceivedFrom == host.ID() {
               continue
             }
+            senderID := authenticatedPubsubSender(msg)
             var req map[string]any
             if err := json.Unmarshal(msg.Data, &req); err != nil {
               continue
@@ -1011,20 +1279,18 @@ func main() {
             reqType, _ := req["type"].(string)
             switch reqType {
             case "directory-register":
-              fromID, _ := req["from"].(string)
-              var addrs []string
-              if rawAddrs, ok := req["multiaddrs"].([]any); ok {
-                for _, item := range rawAddrs {
-                  if s, ok := item.(string); ok && s != "" {
-                    addrs = append(addrs, s)
-                  }
-                }
+              if senderID == "" {
+                continue
               }
+              if claimedFrom, _ := req["from"].(string); claimedFrom != "" && claimedFrom != senderID {
+                continue
+              }
+              rawAddrs, _ := req["multiaddrs"].([]any)
               roomID, _ := req["roomId"].(string)
               topologyID, _ := req["topologyId"].(string)
               shardID, _ := req["shardId"].(string)
-              dirStore.upsert(fromID, peerDirectoryEntry{
-                Multiaddrs: addrs,
+              dirStore.upsert(senderID, peerDirectoryEntry{
+                Multiaddrs: sanitizeDirectoryAddrs(rawAddrs),
                 LastSeen:   time.Now().UnixMilli(),
                 RoomID:     roomID,
                 TopologyID: topologyID,
@@ -1066,45 +1332,7 @@ func main() {
       }
     }
     if presenceTopic, ok := joinedTopics["peercompute-presence"]; ok && presenceTopic != nil {
-      if presSub, err := presenceTopic.Subscribe(); err == nil {
-        go func() {
-          defer presSub.Cancel()
-          for {
-            msg, err := presSub.Next(ctx)
-            if err != nil {
-              return
-            }
-            if msg.ReceivedFrom == host.ID() {
-              continue
-            }
-            var payload map[string]any
-            if err := json.Unmarshal(msg.Data, &payload); err != nil {
-              continue
-            }
-            fromID, _ := payload["from"].(string)
-            rawAddrs, ok := payload["multiaddrs"].([]any)
-            if fromID == "" || !ok {
-              continue
-            }
-            addrs := make([]string, 0, len(rawAddrs))
-            for _, item := range rawAddrs {
-              if s, ok := item.(string); ok && s != "" {
-                addrs = append(addrs, s)
-              }
-            }
-            roomID, _ := payload["roomId"].(string)
-            topologyID, _ := payload["topologyId"].(string)
-            shardID, _ := payload["shardId"].(string)
-            dirStore.upsert(fromID, peerDirectoryEntry{
-              Multiaddrs: addrs,
-              LastSeen:   time.Now().UnixMilli(),
-              RoomID:     roomID,
-              TopologyID: topologyID,
-              ShardID:    shardID,
-            })
-          }
-        }()
-      }
+      watchPresenceTopic(presenceTopic)
     }
     go func() {
       ticker := time.NewTicker(time.Minute)
@@ -1143,11 +1371,11 @@ func main() {
   go func() {
     for {
       select {
-      case topic := <-tracer.topics:
-        if topic == "" {
+      case req := <-tracer.topics:
+        if req.topic == "" {
           continue
         }
-        registry.ensureIfAllowed(topic)
+        registry.ensureIfAllowedForPeer(req.topic, req.peerID)
       case <-ctx.Done():
         return
       }
@@ -1156,7 +1384,29 @@ func main() {
 
   host.SetStreamHandler(protocol.ID(keepaliveProtocol), func(stream network.Stream) {
     defer stream.Close()
-    _, _ = io.Copy(stream, stream)
+    buf := make([]byte, keepaliveMaxChunkBytes)
+    totalBytes := 0
+    for frames := 0; frames < keepaliveMaxFrames; frames++ {
+      _ = stream.SetReadDeadline(time.Now().Add(keepaliveIdleTimeout))
+      n, err := stream.Read(buf)
+      if n > 0 {
+        totalBytes += n
+        if totalBytes > keepaliveMaxTotalBytes {
+          _ = stream.Reset()
+          return
+        }
+        _ = stream.SetWriteDeadline(time.Now().Add(keepaliveIdleTimeout))
+        if _, werr := stream.Write(buf[:n]); werr != nil {
+          return
+        }
+      }
+      if err != nil {
+        if err != io.EOF {
+          _ = stream.Reset()
+        }
+        return
+      }
+    }
   })
   log.Printf("[Relay] Keep-alive protocol registered")
 
@@ -1165,7 +1415,9 @@ func main() {
       log.Printf("[Relay] Peer connected: %s", conn.RemotePeer().String())
     },
     DisconnectedF: func(_ network.Network, conn network.Conn) {
-      log.Printf("[Relay] Peer disconnected: %s", conn.RemotePeer().String())
+      peerIDStr := conn.RemotePeer().String()
+      registry.forgetPeer(peerIDStr)
+      log.Printf("[Relay] Peer disconnected: %s", peerIDStr)
     },
   })
 

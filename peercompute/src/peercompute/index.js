@@ -119,6 +119,15 @@ export {
   createThroughputProfileScorers
 } from './networkManager/ThroughputTopologyPolicy.js';
 export {
+  WorkMesh,
+  WORK_MESH_SCHEMA,
+  WORK_MESH_DEFAULTS
+} from './workMesh/WorkMesh.js';
+export {
+  WorkMeshService,
+  WORK_MESH_PROTOCOL
+} from './networkManager/WorkMeshService.js';
+export {
   ComputeManager,
   COMPUTE_REMOTE_PLACEMENT_PROVENANCE_SCHEMA,
   COMPUTE_REMOTE_PLACEMENT_RETRY_SCHEMA,

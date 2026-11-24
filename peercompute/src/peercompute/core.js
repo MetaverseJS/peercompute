@@ -108,6 +108,15 @@ export {
   THROUGHPUT_TOPOLOGY_PROFILES,
   createThroughputProfileScorers
 } from './networkManager/ThroughputTopologyPolicy.js';
+export {
+  WorkMesh,
+  WORK_MESH_SCHEMA,
+  WORK_MESH_DEFAULTS
+} from './workMesh/WorkMesh.js';
+export {
+  WorkMeshService,
+  WORK_MESH_PROTOCOL
+} from './networkManager/WorkMeshService.js';
 
 export {
   GPUHubManager,
