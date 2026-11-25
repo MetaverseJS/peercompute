@@ -75,3 +75,22 @@
   - `cd peercompute/src/relay-go && go test -v ./... && CGO_ENABLED=0 go build`: **5/5 pass** + clean static binary build.
   - `npm run build:all` + `node --test demos/tests/demo-ports.test.js demos/tests/demo-release.test.js`: **clean build & 49/49 pass**.
   - Live 2-browser headless Chrome P2P (`CHROME_EXECUTABLE_PATH=/usr/bin/google-chrome node demos/tests/runtime-p2p.mjs`) across `cubechat`, `hyperborea`, `sneakywoods`, `daddygo`, `netviz`: **PASS on both default `floodsub` AND `RELAY_PUBSUB=gossipsub`**.
+- **Local commit:** `44813ea5` (`Harden remote compute security, provenance, quorum & lease hygiene (Slice 3)`).
+
+## 2026-11-24 13:25:56 AKST — Demo Behavior Impact Review
+
+- **Prompt time/date:** `2026-11-24 13:25:56 AKST` (`2026-11-24T13:25:56-09:00`)
+- **Prompt:** *"great did you notice any improvements to the demo behavior as a result of the changes?"*
+- **Actions:** Inspected `demos/tests/runtime-p2p.mjs`, the live 2-browser P2P run logs (`task-3437`), and demo call sites across `demos/*/src/` (`cubechat`, `hyperborea`, `sneakywoods`, `daddygo`, `netviz`, `multiscale`, `vibeslopdb`, `schrodinger`) to separate directly observed pass/fail smoke outcomes from unmeasured A/B performance deltas and architectural behavior changes. No source code modified.
+
+## 2026-11-24 14:05:32 AKST — Next Priority Recommendation
+
+- **Prompt time/date:** `2026-11-24 14:05:32 AKST` (`2026-11-24T14:05:32-09:00`)
+- **Prompt:** *"what do you want to attack next?"*
+- **Actions:** Reviewed remaining open tasks in `plan/todo/` (`keystone-demo.md`, `root-node.md`, `retire-multiscale-and-webpack.md`) and remaining P1/P2 architectural items from `architecture-and-code-review.md` to recommend the highest-leverage next move. No source code modified.
+
+## 2026-11-24 15:01:43 AKST — Final Test Pass & Merge to Local `main`
+
+- **Prompt time/date:** `2026-11-24 15:01:43 AKST` (`2026-11-24T15:01:43-09:00`)
+- **Prompt:** *"I think we're good. can you test what you've got and merge back to main"*
+- **Actions:** Committed branch detail log updates on `feature/core-crdt-network-hardening`, fast-forward merged locally into `main` at `/home/cos/projects/peercompute` (preserving unrelated local uncommitted files under `peercompute/experiments/conjecture/` and `plan/log/detail/main.md`), and ran full post-merge validation on `main`.
