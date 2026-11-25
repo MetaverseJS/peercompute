@@ -189,3 +189,12 @@
     1. `plan/arch/tsotchke-spec-1-qllm-webgpu-runtime.md` (`PC-SPEC-QLLM-RT-001`) — focused strictly on Tsotchke delivering the `qLLM` WebGPU-enabled WASM runtime (`-DQLLM_WASM_INFERENCE=ON`, `QLLM_BACKEND_WEBGPU` via `emdawnwebgpu`, dual `compact-wasm32` / `large-wasm64` profiles, `qllm_vfs_t` 4 MiB range streaming, `qllm_wasm_api.h` ABI including hooks for Spec Sheet 2, Phase 1–3 WGSL kernel matrix, `demos/inference/` integration, and `RT-0..RT-7` acceptance gates).
     2. `plan/arch/tsotchke-spec-2-humunculus-qllm-models.md` (`PC-SPEC-HUMUNCULUS-QLLM-002`) — focused on the custom `qLLM` neural model suite running on top of Spec Sheet 1 for `plan/demos/humunculus/humunculus.pdf` (`humunculus-motor-v1`, `humunculus-router-v1`, `humunculus-world-v1`, `humunculus-embed-v1`, `humunculus-deliberator-v1` local/peer tiers, optional `humunculus-connectome-v1`, composed FP32 memory/latency budgets, `ObservationFrame`/`PolicyStep`/`QLLMST01` contracts, Tsotchke-fleet native training → CID `.eskb` promotion pipeline, mandatory matched Euclidean controls + `u = √c · ρ` engagement logging, and `HM-1..HM-5` milestones).
   - Updated `plan/log/log-summary.md` and committed docs locally on `main` (no runtime code touched).
+
+
+## 2026-11-25 13:16:05 AKST — Generated Exact Markdown Edition of `humunculus.pdf` (`plan/demos/humunculus/humunculus.md`)
+
+- **Prompt time/date:** `2026-11-25 13:16:05 AKST` (`2026-11-25T13:16:05-09:00`)
+- **Prompt:** *"can you also give me a markdown version of the humunculus.pdf plan?"*
+- **Actions:**
+  - Converted `plan/demos/humunculus/humunculus.html` (source for `humunculus.pdf`) into clean GitHub-Flavored Markdown at `plan/demos/humunculus/humunculus.md`, preserving all 26 sections, TOC, 6 SVG figure links (`figures/*.svg`), 16 tables, 3 code/terminal blocks, callouts, metrics, all 32 anchored references, and repository source map.
+  - Verified 100% text coverage against `humunculus.html` and committed `plan/demos/humunculus/humunculus.md` + `plan/log/detail/main.md` locally on `main`.
