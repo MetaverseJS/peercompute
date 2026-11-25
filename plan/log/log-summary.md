@@ -4,6 +4,10 @@ Concise reverse-chronological record of durable PeerCompute progress, decisions,
 
 > **Historical archive:** Pre-`vibe-plan` granular logs and test run logs are preserved in Git history at commit `c5c24a76` (`git show c5c24a76:plan/log.md` and `git show c5c24a76:plan/tests.md`).
 
+## 2026-11-25
+
+- **Authored `semiclassical_qllm` WebGPU + WASM runtime specification (`plan/arch/qllm-webgpu-wasm-spec.md`):** Defined how PeerCompute can load, verify, execute, checkpoint, and peer-serve `semiclassical_qllm` models (`WESKB001`, GRR, GeoRefine v2, Qwen hybrid DeltaNet/MoE) while staying strictly outside `peercompute/core` and aligning with `plan/demos/humunculus/humunculus.pdf` (`compact-wasm32` FP32-first profile for 20–60 Hz embodied control/routing, `large-wasm64` JSPI + `memory64` profile for async deliberation, `QLLM_BACKEND_WEBGPU` via `emdawnwebgpu` + fused causal directed-sheaf WGSL kernels, `QLLMST01` portable entity state snapshots for restart/handoff, multi-worker isolation, honest telemetry, and staged `Q0–Q5` acceptance gates).
+
 ## 2026-11-24
 
 - **Fixed production inference demo registration & Vite `computeWorker` bundling (`main`):**

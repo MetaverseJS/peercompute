@@ -146,3 +146,35 @@
   - Imported `registerInference.js` in `demos/inference/src/runtime.js`, `peercompute/src/peercompute/inference/library/modelRuntimeController.js`, and `demos/tests/network-telemetry-browser.mjs`.
   - Updated `peercompute/tests/unit/coreEntrypoint.test.js` and added a built-artifact regression guard in `demos/tests/demo-release.test.js`.
 - **Verification:** Rebuilt `inference`, `cubechat`, `earth`, and `vibeslopdb` (`0` raw base64 worker leaks; real bundled `computeWorker-*.js`, `ModelInferenceService-*.js`, `PeerInferenceService-*.js` emitted in all 4 demos); verified built `docs/inference/` directly in headless Chrome (`panelMounted: true`, `hasPrompt: true`, `hasButtons: 75`, real bundled worker task returned `42`, `0` page/console/HTTP errors); passed **613/613** tests across entrypoint/boundary/worker/exopute/demo-ports/demo-release (**80/80**), `test:inference` (**109/109**), `test:inference:ui` (**191/191**), `test:peer-inference` (**205/205**), and `test:global-chat` (**28/28**).
+
+
+## 2026-11-24 15:35:34 AKST — Pushed `main` (`ea51d66a..81f7dc6d`) to `origin/main`
+
+- **Prompt time/date:** `2026-11-24 15:35:34 AKST` (`2026-11-24T15:35:34-09:00`)
+- **Prompt:** *"push"*
+- **Actions:** Pushed `main` (`ea51d66a..81f7dc6d`, including Slices 1–3 core hardening and `81f7dc6d` inference registration + Vite `computeWorker` bundling fix) to `origin/main`, triggering `.github/workflows/pages.yml` (`Deploy PeerCompute Demos to GitHub Pages`, run `45519310539`).
+- **Live verification:** Run `45519310539` succeeded (`build` 4m22s + `deploy` 14s). Verified live GitHub Pages CDN bundles (`computeWorker-B2YzNGzQ.js`, `computeWorker-CJCGqN2N.js`, `ModelInferenceService-Dp3woliu.js`, `PeerInferenceService-CJhzpr5X.js`, `0` raw base64 worker leaks) and headless Chrome across `https://metaversejs.github.io/peercompute/inference/` (`PeerCompute Chat`, `crossOriginIsolated: true`, `75` controls, `0` errors / `0` failed requests), `https://metaversejs.github.io/peercompute/earth/` (`EarthGrid // Real Data Platform`, `0` errors / `0` failed requests), and `https://metaversejs.github.io/peercompute/cubechat/` (`CubeChat Ready`, `0` errors / `0` failed requests).
+
+
+## 2026-11-25 12:46:44 AKST — Overview of Tsotchke's `qLLM` (`semiclassical_qllm`)
+
+- **Prompt time/date:** `2026-11-25 12:46:44 AKST` (`2026-11-25T12:46:44-09:00`)
+- **Prompt:** *"what do you know about tsotchke's qllm?"*
+- **Actions:** Read-only lookup across local sibling repos (`/home/cos/projects/semiclassical_qllm`, `/home/cos/projects/tech-stack`, `/home/cos/projects/GeoRefineInternal`) and PeerCompute's `tsotchkeModelCatalog.js` to summarize `semiclassical_qllm`'s architecture, backends, ecosystem role, and relationship to PeerCompute. No PeerCompute runtime code modified.
+
+
+## 2026-11-25 12:48:45 AKST — Inspected `semiclassical_qllm` on `old-donkey` & Queried Tailnet ICC (`qchat`)
+
+- **Prompt time/date:** `2026-11-25 12:48:45 AKST` (`2026-11-25T12:48:45-09:00`)
+- **Prompt:** *"you should ssh into old-donkey and instpect the semiclassical qllm project there you can also ask icc about it here: https://100.121.14.68:8765/qchat"*
+- **Actions:** Read-only SSH inspection of `old-donkey:/home/cos/projects/semiclassical_qllm` (branch `codex/qwen35-native-hybrid-parity-20260908` @ `5d9e9d2`, `build/lib/libsemiclassical_qllm.so`, `docs/QLLM_PAPER_CLAIMS_LEDGER.md`, `docs/QLLM_PRODUCTION_CAMPAIGN.md`, `docs/QLLM_SCIENTIFIC_VALIDATION_CAMPAIGN.md`, `docs/QLLM_ATTENTION_REPORT_2026-08-07.md`, `.icc/evidence/*`, `Selene/QLLM-CLAIMS-AUDIT-2026-08-26.md`), `old-donkey`'s `icc quality-campaign` & `architecture-summary`, and direct query to tailnet ICC via `https://100.121.14.68:8765/api/chat` (`endpoint: "icc"`). No PeerCompute runtime code modified.
+
+
+## 2026-11-25 12:52:55 AKST — Authored WebGPU + WASM Specification for `semiclassical_qllm` on PeerCompute (Aligned with `humunculus.pdf`)
+
+- **Prompt time/date:** `2026-11-25 12:52:55 AKST` (`2026-11-25T12:52:55-09:00`)
+- **Prompt:** *"when you're done there please make a spec in order for us to be able to support models built with that on peercompute. I imagine we're going to need a webgpu enabled wasm runtime for the qllm. consider this while also considering the humunculus.pdf"*
+- **Actions:**
+  - Read `plan/README.md`, `plan/plan.md`, `plan/todo/priority.md`, `plan/demos/humunculus/humunculus.html` (`humunculus.pdf` source), PeerCompute's existing GGUF/ONNX inference stack (`ModelInferenceService.js`, `ArtifactReadBridge.js`, `GgufArtifactReader.js`, `gguf/{runtimeDefinition,engine,modelTask}.js`, `modelManifest.js`, `registerTaskModules.js`, `wasmRuntime.js`), and `old-donkey`'s `semiclassical_qllm` C backend/loader headers (`backend.h`, `shaders_manifest.json`, `eskb_checkpoint.h`, `eskb_checkpoint_ffi.h`, `grr_inference.h`, `hybrid_inference.h`, `directed_sheaf.h`, `geometric_vocabulary.h`, `CMakeLists.txt`).
+  - Wrote durable architecture specification at `plan/arch/qllm-webgpu-wasm-spec.md` covering: lean `QLLM_WASM_INFERENCE` Emscripten target, dual `compact-wasm32` (FP32-first, no `shader-f16`/`memory64`, tailored for Humunculus 20–60 Hz motor/router loops) & `large-wasm64` (JSPI + `memory64` + 4 MiB `ArtifactReadBridge` streaming) profiles, `QLLM_BACKEND_WEBGPU` via `emdawnwebgpu` + `observeGpuDevice` telemetry hook, Tier 1–3 WGSL kernel matrix (including fused causal directed-sheaf top-k + D-operator targeting `T8`/`selection_is_constant_not_exponent`), `WESKB001` / `qllm-grr` / `georefine-v2` fail-closed admission, `QLLMST01` portable entity state snapshot/handoff format, multi-worker contention isolation, honest-claims provenance, and staged `Q0–Q5` acceptance gates.
+  - Updated `plan/log/log-summary.md` and `plan/log/detail/main.md`; committed docs locally on `main` (no runtime code touched).
