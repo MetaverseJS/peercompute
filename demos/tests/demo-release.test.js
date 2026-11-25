@@ -467,3 +467,31 @@ test('root README links to library, demo and operational documentation', () => {
   }
   assert.ok(exists('demos/shared/xr/README.md'), 'WebXR toolkit guide missing');
 });
+
+test('inference-enabled built demos register inference runtime and emit bundled compute workers', () => {
+  for (const demo of ['inference', 'cubechat', 'earth', 'vibeslopdb']) {
+    const assetsDir = path.join(repoRoot, 'docs', demo, 'assets');
+    assert.ok(fs.existsSync(assetsDir), `docs/${demo}/assets missing`);
+    const files = fs.readdirSync(assetsDir);
+    assert.ok(
+      files.some((file) => /^ModelInferenceService-.*\.js$/.test(file)),
+      `docs/${demo}/assets is missing bundled ModelInferenceService chunk (registerInference.js not imported)`
+    );
+    assert.ok(
+      files.some((file) => /^PeerInferenceService-.*\.js$/.test(file)),
+      `docs/${demo}/assets is missing bundled PeerInferenceService chunk`
+    );
+    assert.ok(
+      files.some((file) => /^computeWorker-.*\.js$/.test(file)),
+      `docs/${demo}/assets is missing bundled computeWorker chunk`
+    );
+    for (const file of files) {
+      if (!file.endsWith('.js')) continue;
+      const content = fs.readFileSync(path.join(assetsDir, file), 'utf8');
+      assert.ok(
+        !content.includes('data:text/javascript;base64,LyogZXNsaW50'),
+        `docs/${demo}/assets/${file} leaked a raw unbundled base64 worker source`
+      );
+    }
+  }
+});

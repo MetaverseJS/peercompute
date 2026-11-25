@@ -129,10 +129,12 @@ test('peercompute/core exports the full requested slim surface and fails closed 
   const prevModelFactory = core.getModelInferenceFactory();
   const prevPeerFactory = core.getPeerInferenceServiceFactory();
   const prevWorkerUrl = core.getDefaultWorkerBootstrapURL();
+  const prevWorkerFactory = core.getDefaultWorkerFactory();
   try {
     core.registerModelInferenceFactory(null);
     core.registerPeerInferenceServiceFactory(null);
     core.registerDefaultWorkerBootstrapURL(null);
+    core.registerDefaultWorkerFactory(null);
 
     const cm = new core.ComputeManager({ enableWorkers: false, enableWebGPU: false });
     await assert.rejects(
@@ -151,10 +153,11 @@ test('peercompute/core exports the full requested slim surface and fails closed 
     core.registerModelInferenceFactory(prevModelFactory);
     core.registerPeerInferenceServiceFactory(prevPeerFactory);
     core.registerDefaultWorkerBootstrapURL(prevWorkerUrl);
+    core.registerDefaultWorkerFactory(prevWorkerFactory);
   }
 });
 
-test('importing peercompute/inference registers inference factories and worker bootstrap URL', async () => {
+test('importing peercompute/inference registers inference factories and worker factory', async (t) => {
   const core = await import('../../src/peercompute/core.js');
   const inference = await import('../../src/peercompute/inference.js');
 
@@ -163,7 +166,25 @@ test('importing peercompute/inference registers inference factories and worker b
   assert.equal(typeof inference.registerInferenceRuntime, 'function');
   assert.equal(typeof core.getModelInferenceFactory(), 'function');
   assert.equal(typeof core.getPeerInferenceServiceFactory(), 'function');
-  assert.match(core.getDefaultWorkerBootstrapURL() || '', /inference\/computeWorker\.js$/);
+  assert.equal(typeof core.getDefaultWorkerFactory(), 'function');
+
+  const originalWorker = globalThis.Worker;
+  let capturedUrl = null;
+  let capturedOptions = null;
+  globalThis.Worker = class MockWorker {
+    constructor(url, options) {
+      capturedUrl = String(url);
+      capturedOptions = options;
+    }
+  };
+  t.after(() => {
+    if (originalWorker === undefined) delete globalThis.Worker;
+    else globalThis.Worker = originalWorker;
+  });
+  core.getDefaultWorkerFactory()();
+  assert.match(capturedUrl || '', /inference\/computeWorker\.js$/);
+  assert.equal(capturedOptions?.type, 'module');
+
   assert.ok(core.listBuiltinTaskModules().includes('peercompute:model-inference'));
   assert.ok(core.listBuiltinTaskModules().includes('peercompute:diffusion-inference'));
 });

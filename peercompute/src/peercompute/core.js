@@ -168,11 +168,13 @@ export * from './capabilities/index.js';
 export {
   getBuiltinTaskModule,
   getDefaultWorkerBootstrapURL,
+  getDefaultWorkerFactory,
   getModelInferenceFactory,
   getPeerInferenceServiceFactory,
   listBuiltinTaskModules,
   registerBuiltinTaskModule,
   registerDefaultWorkerBootstrapURL,
+  registerDefaultWorkerFactory,
   registerModelInferenceFactory,
   registerPeerInferenceServiceFactory
 } from './runtime/extensionRegistry.js';

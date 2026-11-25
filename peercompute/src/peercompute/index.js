@@ -169,6 +169,7 @@ export {
 export {
   registerBuiltinTaskModule,
   registerDefaultWorkerBootstrapURL,
+  registerDefaultWorkerFactory,
   registerModelInferenceFactory,
   registerPeerInferenceServiceFactory
 } from './runtime/extensionRegistry.js';

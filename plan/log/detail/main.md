@@ -95,3 +95,54 @@
 - Cleaned any stale per-demo `demos/*/node_modules` directories, ran `npm ci` in `/home/cos/projects/peercompute` (verifying lockfile integrity for CI), and re-verified core boundary + entrypoint + `exopute` unit suites.
 - Switched GitHub Pages build source for `MetaverseJS/peercompute` to GitHub Actions (`build_type=workflow`), committed this log update on `main`, pushed `main` to `origin/main`, and confirmed the `.github/workflows/pages.yml` deployment workflow triggered cleanly.
 - First CI Pages run (`45448143700`) succeeded through `npm ci` and 15/17 demos, then failed on `vibeslopdb` resolving ExoTUI's unused optional `@mermaid-js/mermaid-zenuml` import from `.ci-exotui/src/content/mermaid_standard.ts` (which had been satisfied locally by `/home/cos/projects/exotui/node_modules`). Externalized `@mermaid-js/mermaid-zenuml` in `demos/vite.config.js`, reproduced & verified `vibeslopdb`, `eshkols-in-space`, `build:gallery`, and headless Chrome VibeSlopDB gallery integration against a `node_modules`-free clone of ExoTUI at `e89d2136a96dba9479ecbc984fb28e0927dfd8aa`, committed and pushed the fix, and monitored the CI Pages deployment to completion.
+
+
+## 2026-11-24 08:58:35 AKST — Confirmed Clean Main Checkout State
+
+- **Prompt time/date:** `2026-11-24 08:58:18 AKST` (`2026-11-24T08:58:18-09:00`)
+- **Prompt:** *"so is the repo cleaned up and back in the right place?"*
+- Verified `/home/cos/projects/peercompute` is on `main` at `ea51d66a` (in sync with `origin/main`), `/home/cos/projects/peercompute-demo-consolidation` is removed, `0` `docs/` files are tracked in Git, Node is `v24.18.0`, and only the pre-existing uncommitted `peercompute/experiments/conjecture/*` files remain dirty (plus noted two pre-existing older worktrees from prior campaigns).
+
+
+## 2026-11-24 10:50:00 AKST — Full Library Code & Architecture Review
+
+- **Prompt time/date:** `2026-11-24 10:37:17 AKST` (`2026-11-24T10:37:17-09:00`)
+- **Prompt:** *"why don't you do an overall code and architecture review considering the goals and roadmap for peercompute. the idea would be to identify bugs or poor architecure for improvements that would serve the core goals of the library"*
+- Refreshed ICC derived stores (`icc reindex --repo peercompute --full` at `ea51d66a`, 1,688 files / 40,163 symbols) and ran 4 parallel read-only subsystem audits covering networking/topology/conjecture/relays, compute/GPU/orchestration, NodeKernel/state/packaging, and optional inference/artifacts/agents/root-node (plus direct live-source cross-verification of all critical findings).
+- Published full line-cited report to conversation artifact `architecture-and-code-review.md`. No runtime source files were modified.
+
+
+## 2026-11-24 11:26:30 AKST — Deep Dive on Current CRDT / Yjs Issues
+
+- **Prompt time/date:** `2026-11-24 11:25:54 AKST` (`2026-11-24T11:25:54-09:00`)
+- **Prompt:** *"I think we should focus on core functionality first. networking and core architecure and functionality improvements. what is the current issue with the CDRT?"*
+- Verified exact live code paths in `StateManager.js`, `DataState.js`, `PeerComputeProvider.js`, and `NodeKernel.js` and explained the 5 concrete CRDT/Yjs defects (dual-sync feedback storm, nested `Y.Map` concurrent-init data loss, shared-doc root key collisions, default-on NetViz CRDT bloat, and `PeerComputeProvider` 2-byte empty update / handler leak / 4× JSON bloat) along with the clean fix design. Read-only explanation; no runtime code modified.
+
+
+## 2026-11-24 15:08:29 AKST — Merged `feature/core-crdt-network-hardening` into Local `main` & Verified End-to-End
+
+- **Prompt time/date:** `2026-11-24 15:01:43 AKST` (`2026-11-24T15:01:43-09:00`)
+- **Prompt:** *"I think we're good. can you test what you've got and merge back to main"*
+- **Merge:** Fast-forward merged `feature/core-crdt-network-hardening` (`ea51d66a..6021d112`, Slices 1–3, 45 files, +4831/-1157) locally onto `main` in `/home/cos/projects/peercompute` (local only; not pushed). Preserved unrelated local uncommitted files (`peercompute/experiments/conjecture/*`, `plan/log/detail/main.md`).
+- **Post-merge verification on `main`:**
+  - Targeted Slice 1–3 + `stateManager` + `coreEntrypoint` + `workspaceBoundary` + `exopute`: **43/43 pass**
+  - Full `npm --prefix peercompute run test:unit`: **1,417/1,418 pass** (0 regressions; only pre-existing external staged-ULG Eshkol fixture)
+  - `test:capabilities` (**41/41**), `test:network-telemetry` (**23/23**), `test:inference` (**109/109**), `test:peer-inference` (**205/205**), `test:artifacts` (**75/75**), `test:global-chat` (**28/28**)
+  - Go relay (`go test -v ./...` + `CGO_ENABLED=0 go build`): **5/5 pass** + clean static build
+  - `npm run build:all` + `demo-ports.test.js` + `demo-release.test.js`: **clean build, 49/49 pass**
+  - Live 2-browser headless Chrome P2P (`runtime-p2p.mjs` across `cubechat`, `hyperborea`, `sneakywoods`, `daddygo`, `netviz`): **PASS on both `floodsub` and `gossipsub`**
+
+
+## 2026-11-24 15:10:37 AKST — Fix Inference Demo Registration & Vite Bundled ComputeWorker Regression
+
+- **Prompt time/date:** `2026-11-24 15:10:37 AKST` & `2026-11-24 15:15:20 AKST`
+- **Prompt:** *"did you break the inference demo?https://metaversejs.github.io/peercompute/inference/"* / *"Model inference runtime is not registered; load the full peercompute or optional inference entrypoint (or call registerModelInferenceFactory)"*
+- **Root causes found (originating in `c5c24a76` `peercompute/core` vs `peercompute/inference` split):**
+  1. `demos/inference/src/runtime.js` (and `peercompute/src/peercompute/inference/library/modelRuntimeController.js`, `demos/tests/network-telemetry-browser.mjs`) imported internal manager modules directly by relative path without importing `peercompute/src/peercompute/inference/registerInference.js`, leaving `extensionRegistry` unregistered in both `docs/inference/` and `docs/earth/`.
+  2. `ComputeManager.createDefaultComputeWorker()` used `new Worker(registeredUrl || new URL('./computeWorker.js', import.meta.url), ...)` and `registerInference.js` passed `new URL('./computeWorker.js', import.meta.url)` to `registerDefaultWorkerBootstrapURL(...)`, defeating Vite's static `new Worker(new URL(...), { type: 'module' })` worker bundling and causing Vite to base64-inline raw unbundled worker source (`data:text/javascript;base64,...import ...`) across all built demos.
+- **Fixes:**
+  - Added `registerDefaultWorkerFactory` / `getDefaultWorkerFactory` to `peercompute/src/peercompute/runtime/extensionRegistry.js` (exported from `core.js` and `index.js`).
+  - Updated `ComputeManager.createDefaultComputeWorker()` and `peercompute/src/peercompute/inference/registerInference.js` to use literal `new Worker(new URL('./computeWorker.js', import.meta.url), { type: 'module' })` calls so Vite/Rollup/Webpack bundle both core and inference workers into real chunks.
+  - Imported `registerInference.js` in `demos/inference/src/runtime.js`, `peercompute/src/peercompute/inference/library/modelRuntimeController.js`, and `demos/tests/network-telemetry-browser.mjs`.
+  - Updated `peercompute/tests/unit/coreEntrypoint.test.js` and added a built-artifact regression guard in `demos/tests/demo-release.test.js`.
+- **Verification:** Rebuilt `inference`, `cubechat`, `earth`, and `vibeslopdb` (`0` raw base64 worker leaks; real bundled `computeWorker-*.js`, `ModelInferenceService-*.js`, `PeerInferenceService-*.js` emitted in all 4 demos); verified built `docs/inference/` directly in headless Chrome (`panelMounted: true`, `hasPrompt: true`, `hasButtons: 75`, real bundled worker task returned `42`, `0` page/console/HTTP errors); passed **613/613** tests across entrypoint/boundary/worker/exopute/demo-ports/demo-release (**80/80**), `test:inference` (**109/109**), `test:inference:ui` (**191/191**), `test:peer-inference` (**205/205**), and `test:global-chat` (**28/28**).

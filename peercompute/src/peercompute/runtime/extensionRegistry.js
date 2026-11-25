@@ -11,6 +11,7 @@
 let modelInferenceFactory = null;
 let peerInferenceServiceFactory = null;
 let defaultWorkerBootstrapURL = null;
+let defaultWorkerFactory = null;
 const builtinTaskModules = new Map();
 
 export function registerModelInferenceFactory(factory) {
@@ -72,4 +73,19 @@ export function registerDefaultWorkerBootstrapURL(url) {
 
 export function getDefaultWorkerBootstrapURL() {
   return defaultWorkerBootstrapURL;
+}
+
+export function registerDefaultWorkerFactory(factory) {
+  if (factory === null || factory === undefined) {
+    defaultWorkerFactory = null;
+    return;
+  }
+  if (typeof factory !== 'function') {
+    throw new TypeError('Default worker factory must be a function or null');
+  }
+  defaultWorkerFactory = factory;
+}
+
+export function getDefaultWorkerFactory() {
+  return defaultWorkerFactory;
 }

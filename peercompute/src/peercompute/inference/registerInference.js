@@ -1,5 +1,5 @@
 import {
-  registerDefaultWorkerBootstrapURL,
+  registerDefaultWorkerFactory,
   registerModelInferenceFactory,
   registerPeerInferenceServiceFactory
 } from '../runtime/extensionRegistry.js';
@@ -78,10 +78,16 @@ async function defaultPeerInferenceServiceFactory(networkManager, options = {}) 
   return new PeerInferenceService(networkManager, options);
 }
 
+function createInferenceComputeWorker() {
+  // Keep `new Worker(new URL(..., import.meta.url), { type: 'module' })` as a
+  // direct static literal so Vite/Rollup/Webpack emit a real bundled worker chunk.
+  return new Worker(new URL('./computeWorker.js', import.meta.url), { type: 'module' });
+}
+
 /**
  * Register optional inference runtime plugins (ModelInferenceService,
  * PeerInferenceService, built-in `peercompute:*-inference` worker task loaders,
- * and the inference-enabled compute worker bootstrap URL).
+ * and the inference-enabled compute worker factory).
  */
 export function registerInferenceRuntime() {
   if (registered) return;
@@ -89,7 +95,7 @@ export function registerInferenceRuntime() {
   registerInferenceTaskModules();
   registerModelInferenceFactory(defaultModelInferenceFactory);
   registerPeerInferenceServiceFactory(defaultPeerInferenceServiceFactory);
-  registerDefaultWorkerBootstrapURL(new URL('./computeWorker.js', import.meta.url));
+  registerDefaultWorkerFactory(createInferenceComputeWorker);
 }
 
 registerInferenceRuntime();

@@ -12,12 +12,22 @@ import {
 } from '../capabilities/index.js';
 import {
   getDefaultWorkerBootstrapURL,
+  getDefaultWorkerFactory,
   getModelInferenceFactory
 } from '../runtime/extensionRegistry.js';
 
 function createDefaultComputeWorker() {
+  const registeredFactory = getDefaultWorkerFactory();
+  if (registeredFactory) {
+    return registeredFactory();
+  }
   const registeredUrl = getDefaultWorkerBootstrapURL();
-  return new Worker(registeredUrl || new URL('./computeWorker.js', import.meta.url), { type: 'module' });
+  if (registeredUrl) {
+    return new Worker(registeredUrl, { type: 'module' });
+  }
+  // Keep `new Worker(new URL(..., import.meta.url), { type: 'module' })` as a
+  // direct static literal so Vite/Rollup/Webpack bundle the worker module graph.
+  return new Worker(new URL('./computeWorker.js', import.meta.url), { type: 'module' });
 }
 
 const TASK_PRIORITY_VALUES = Object.freeze({

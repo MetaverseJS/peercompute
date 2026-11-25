@@ -1,3 +1,4 @@
+import '../../../peercompute/src/peercompute/inference/registerInference.js';
 import { ModelEvidenceClient } from '../../../peercompute/src/peercompute/modelEvidence/ModelEvidenceClient.js';
 import { inspectionEvidence, evidenceSource } from '../../../peercompute/src/peercompute/modelEvidence/ModelEvidenceAdapters.js';
 import { modelEvidenceEnvironment, evidenceBuild } from './evidence/environment.js';

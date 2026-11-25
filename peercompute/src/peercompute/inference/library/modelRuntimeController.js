@@ -1,3 +1,4 @@
+import '../registerInference.js';
 import { createModelMutationQueue, listStoredModelRecords, modelStorageError, withModelDeletionOwnership } from './modelLibrary.js';
 import { artifactCID } from '../../artifacts/ArtifactManifest.js';
 import { PEER_INFERENCE_LIMITS } from '../../networkManager/inference/protocol.js';

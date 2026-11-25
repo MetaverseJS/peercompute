@@ -16,6 +16,7 @@ const fixture = path.join(evidence, 'fixture');
 await mkdir(fixture, { recursive: true });
 await writeFile(path.join(fixture, 'index.html'), '<link rel="icon" href="data:,"><title>Owned telemetry fixture</title><script type="module" src="./main.js"></script>');
 await writeFile(path.join(fixture, 'main.js'), `
+import ${JSON.stringify(path.join(root, 'peercompute/src/peercompute/inference/registerInference.js'))};
 import { NodeKernel } from ${JSON.stringify(path.join(root, 'peercompute/src/peercompute/nodeKernel/NodeKernel.js'))};
 import { NetworkManager } from ${JSON.stringify(path.join(root, 'peercompute/src/peercompute/networkManager/NetworkManager.js'))};
 import { ComputeManager } from ${JSON.stringify(path.join(root, 'peercompute/src/peercompute/computeManager/ComputeManager.js'))};
