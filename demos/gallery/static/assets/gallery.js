@@ -1,5 +1,6 @@
 const atlas = document.querySelector('#atlas');
 const demos = [...atlas.querySelectorAll('[data-demo-dir]')];
+const externalCards = [...atlas.querySelectorAll('[data-external-link]')];
 
 const plainUrl = new URL(location.href);
 plainUrl.searchParams.set('view', 'html');
@@ -32,8 +33,16 @@ function updateResults() {
     card.hidden = !(inCategory && words.every(word => text.includes(word)));
     if (!card.hidden) matches++;
   }
+  let externalMatches = 0;
+  for (const link of externalCards) {
+    const text = (link.dataset.externalLink + ' ' + link.textContent).toLowerCase();
+    const inCategory = category === choices[0];
+    const card = link.closest('.card');
+    card.hidden = !(inCategory && words.every(word => text.includes(word)));
+    if (!card.hidden) externalMatches++;
+  }
   count.textContent = matches + (matches === 1 ? ' demo' : ' demos');
-  empty.hidden = matches > 0;
+  empty.hidden = matches > 0 || externalMatches > 0;
   for (const choice of choices) choice.setAttribute('aria-pressed', String(choice === category));
 }
 search.closest('label').hidden = false;

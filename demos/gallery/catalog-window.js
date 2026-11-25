@@ -32,8 +32,8 @@ function wrap(text, width) {
   return lines;
 }
 
-export function createCatalogWindow({ entries, openDemo, openSearch, openSettings, openHtml }) {
-  const categories = ['All', ...new Set(entries.map(entry => entry.category))];
+export function createCatalogWindow({ entries, openDemo, openExternal, openSearch, openSettings, openHtml }) {
+  const categories = ['All', ...new Set(entries.filter(entry => !entry.external).map(entry => entry.category))];
   const images = new Map();
   let category = categories[0], search = '', filtered = entries;
   let selected = 0, offset = 0, visibleRows = 1, rowHeight = 1;
@@ -46,7 +46,8 @@ export function createCatalogWindow({ entries, openDemo, openSearch, openSetting
     const words = search.toLowerCase().trim().split(/\s+/).filter(Boolean);
     filtered = entries.filter(entry => {
       const text = [entry.title, entry.category, entry.description, entry.summary, entry.id].join(' ').toLowerCase();
-      return (category === categories[0] || entry.category === category) && words.every(word => text.includes(word));
+      return (category === categories[0] || (!entry.external && entry.category === category))
+        && words.every(word => text.includes(word));
     });
     selected = 0;
     offset = 0;
@@ -169,7 +170,11 @@ export function createCatalogWindow({ entries, openDemo, openSearch, openSetting
     }
     offset = clamp(offset, 0, Math.max(0, filtered.length * rowHeight - visibleRows));
 
-    write(pad, listHeading, filtered.length + (filtered.length === 1 ? ' DEMO' : ' DEMOS'), theme.muted);
+    const demoCount = filtered.filter(entry => !entry.external).length;
+    const countLabel = demoCount > 0 || !filtered.length
+      ? demoCount + (demoCount === 1 ? ' DEMO' : ' DEMOS')
+      : filtered.length + (filtered.length === 1 ? ' LINK' : ' LINKS');
+    write(pad, listHeading, countLabel, theme.muted);
     if (filtered.length * rowHeight > visibleRows && listWidth >= 19) {
       const pageRows = Math.max(rowHeight, Math.floor(visibleRows / rowHeight) * rowHeight);
       link(pad + listWidth - 7, listHeading, '[↑]', () => { scrollingPreview = false; scroll(offset - pageRows); });
@@ -186,7 +191,8 @@ export function createCatalogWindow({ entries, openDemo, openSearch, openSetting
       const part = (row + offset) % rowHeight;
       const active = selected === index;
       const bg = active ? theme.surfaceStrong : theme.surface;
-      const label = part ? '  ' + entry.category : (active ? '› ' : '  ') + entry.title;
+      const titleLabel = entry.external ? entry.title + ' ↗' : entry.title;
+      const label = part ? '  ' + entry.category : (active ? '› ' : '  ') + titleLabel;
       write(pad, listTop + row, trim(label, listWidth).padEnd(listWidth),
         part ? theme.muted : active ? theme.accent : theme.text, bg);
       hits.push({ x: pad, y: listTop + row, width: listWidth, action: () => select(index) });
@@ -210,12 +216,17 @@ export function createCatalogWindow({ entries, openDemo, openSearch, openSetting
       title.forEach((line, i) => write(x, headingRow + 1 + i, line, theme.accent));
       let actionRow = headingRow + 1 + title.length;
       if (headerSpace - title.length >= 6) write(x, actionRow++, trim(entry.category, available), theme.muted);
-      link(x, actionRow, '[ Open demo ↗ ]', () => openDemo(entry.id));
-      const guideText = available >= 31 ? '[ Read guide ]' : '[Guide]';
-      if (available >= 16 + guideText.length) {
-        link(x + 16, actionRow, guideText, () => openDemo('guide-' + entry.id));
-      } else if (actionRow < lastBodyRow) {
-        link(x, ++actionRow, guideText, () => openDemo('guide-' + entry.id));
+      if (entry.external) {
+        const actionText = entry.actionLabel || '[ Open link ↗ ]';
+        link(x, actionRow, trim(actionText, available), () => openExternal?.(entry.href));
+      } else {
+        link(x, actionRow, '[ Open demo ↗ ]', () => openDemo(entry.id));
+        const guideText = available >= 31 ? '[ Read guide ]' : '[Guide]';
+        if (available >= 16 + guideText.length) {
+          link(x + 16, actionRow, guideText, () => openDemo('guide-' + entry.id));
+        } else if (actionRow < lastBodyRow) {
+          link(x, ++actionRow, guideText, () => openDemo('guide-' + entry.id));
+        }
       }
       const previewTop = actionRow + 1;
       const viewport = Math.max(0, lastBodyRow - previewTop + 1);
@@ -290,7 +301,8 @@ export function createCatalogWindow({ entries, openDemo, openSearch, openSetting
         case 'pagedown': select(selected + Math.max(1, Math.floor(visibleRows / rowHeight))); break;
         case 'return': {
           const entry = filtered[selected];
-          if (entry) openDemo(event.shift ? 'guide-' + entry.id : entry.id);
+          if (entry?.external) openExternal?.(entry.href);
+          else if (entry) openDemo(event.shift ? 'guide-' + entry.id : entry.id);
           break;
         }
         default: return false;

@@ -130,6 +130,13 @@ test('docs index includes all demos and screenshots', () => {
 test('docs overview keeps expected tile order', () => {
   const html = read('docs/index.html');
   assert.match(html, /href="https:\/\/github\.com\/MetaverseJS\/peercompute"/i);
+  const githubCard = html.match(/<a\b[^>]*\bdata-external-link="github"[^>]*>([\s\S]*?)<\/a>/);
+  assert.ok(githubCard, 'docs overview must include the PeerCompute (GitHub) top list card');
+  assert.match(githubCard[0], /href="https:\/\/github\.com\/MetaverseJS\/peercompute"/i);
+  assert.match(githubCard[1], /<h2>PeerCompute \(GitHub\)<\/h2>/);
+  assert.match(githubCard[1], /src="\.\/assets\/peercompute-block-diagram\.png"/);
+  const firstDemoIndex = html.indexOf('data-demo-dir="inference"');
+  assert.ok(githubCard.index < firstDemoIndex, 'PeerCompute (GitHub) card must appear at the top of the demo list above Local Model Console');
   const cards = [...html.matchAll(/<a\b[^>]*\bdata-demo-dir="[^"]+"[^>]*>([\s\S]*?)<\/a>/g)];
   const names = cards.map(([, card]) => card.match(/<h2>([^<]+)<\/h2>/)?.[1]);
   const expected = [

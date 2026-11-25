@@ -198,3 +198,22 @@
 - **Actions:**
   - Converted `plan/demos/humunculus/humunculus.html` (source for `humunculus.pdf`) into clean GitHub-Flavored Markdown at `plan/demos/humunculus/humunculus.md`, preserving all 26 sections, TOC, 6 SVG figure links (`figures/*.svg`), 16 tables, 3 code/terminal blocks, callouts, metrics, all 32 anchored references, and repository source map.
   - Verified 100% text coverage against `humunculus.html` and committed `plan/demos/humunculus/humunculus.md` + `plan/log/detail/main.md` locally on `main`.
+
+
+## 2026-11-25 13:30:21 AKST — Restored `PeerCompute (GitHub)` at Top of Demo List, Committed Conjecture Calibration Campaign, Built & Pushed `main`
+
+- **Prompt time/date:** `2026-11-25 13:30:21 AKST` (`2026-11-25T13:30:21-09:00`)
+- **Prompt:** *"ok. please add the github link to the top of the peercompute demo list on the demo page like we had it on the old pre-exotui implementation. then merge build and push to main. you should probably also include the conjecture campaign"*
+- **Actions:**
+  - Inspected pre-ExoWebTUI `6d15fc29:docs/index.html` (`PeerCompute (GitHub)` top card with `peercompute-block-diagram.png`, `https://github.com/MetaverseJS/peercompute`, and libp2p summary).
+  - Added `PeerCompute (GitHub)` (`data-external-link="github"`) as the first item at the top of the demo list above `Local Model Console` in both the HTML directory (`demos/gallery/static/index.html`, `demos/gallery/static/assets/gallery.js`, `demos/gallery/static/assets/gallery.css`) and the ExoWebTUI `PeerCompute` Demo Directory window (`demos/gallery/desktop.js`, `demos/gallery/catalog-window.js`, showing `peercompute-block-diagram.png` + `[ Open on GitHub ↗ ]`, opening in a new tab on click/`Enter`, keeping category tabs & `19 DEMOS` count clean).
+  - Fixed `scripts/gallery-guides.mjs` so non-`--check` builds always read `demos/gallery/static/index.html` (ensuring template edits always propagate into `docs/index.html`).
+  - Verified zero unmerged commits in `feature/core-crdt-network-hardening`, `feature/exowebtui-demo-gallery`, and `feature/conjecture-experiment`; validated and included the pending conjecture campaign calibration files (`peercompute/experiments/conjecture/meshRun.js`, `peercompute/experiments/conjecture/results/2026-11-20-calibration.json`, `peercompute/experiments/conjecture/scaleCalibrated.mjs`).
+  - Added regression assertions in `demos/tests/demo-release.test.js` and `demos/tests/gallery-browser.mjs`.
+- **Verification:**
+  - `npm run build:gallery`: clean build (`Built 19 demo guides and previews.` + ExoWebTUI bundle).
+  - `gallery-guides.test.mjs` + `demo-ports.test.js` + `demo-release.test.js` + `conjectureSimulation.test.js`: **58/58 pass**.
+  - `scaleCalibrated.mjs --nodes 16 --seeds 1 --duration 30`: exit 0.
+  - Headless Chrome `gallery-browser.mjs` + `guide-interaction-browser.mjs`: **7/7 pass** (desktop 1366×900, mobile 390×844, HTML JS on/off, `PeerCompute (GitHub)` top item + diagram + external link verified).
+  - Headless Chrome `gallery-overlays-browser.mjs`: **6/6 pass**; `workspaceBoundary` + `coreEntrypoint`: **6/6 pass**.
+- **Commit & Push:** Committed conjecture campaign and gallery GitHub link cleanly on `main` and pushed `main` to `origin/main` (triggering GitHub Actions Pages deploy).

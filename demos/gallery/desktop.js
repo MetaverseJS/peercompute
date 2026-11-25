@@ -52,6 +52,19 @@ async function mountDesktop(viewport, atlas) {
   };
   fitSurface();
   const plainUrl = document.querySelector('#plain-directory').href;
+  const githubAnchor = atlas.querySelector('[data-external-link="github"]');
+  const sourceEntry = githubAnchor ? {
+    id: 'peercompute-github',
+    title: githubAnchor.querySelector('h2').textContent.trim(),
+    description: githubAnchor.querySelector('p').textContent.trim(),
+    summary: githubAnchor.querySelector('.demo-summary')?.textContent.trim()
+      || githubAnchor.querySelector('p').textContent.trim(),
+    category: 'GitHub · Source',
+    href: githubAnchor.href,
+    external: true,
+    actionLabel: '[ Open on GitHub ↗ ]',
+    image: githubAnchor.querySelector('img,canvas'),
+  } : null;
   const entries = [...atlas.querySelectorAll('[data-demo-dir]')].map(anchor => ({
     id: 'launch-' + anchor.dataset.demoDir + '-' + anchor.dataset.demoPath,
     title: anchor.querySelector('h2').textContent.trim(),
@@ -64,6 +77,7 @@ async function mountDesktop(viewport, atlas) {
     hostModule: anchor.dataset.hostModule || null,
     image: anchor.querySelector('img,canvas'),
   }));
+  const catalogEntries = sourceEntry ? [sourceEntry, ...entries] : entries;
   const entryById = new Map(entries.map(entry => [entry.id, entry]));
 
   const source = atlas.querySelector('.source');
@@ -133,7 +147,9 @@ async function mountDesktop(viewport, atlas) {
     guides.set(guide.id, guide);
     guideRoutes.set(url.origin + url.pathname, guide);
   }
-  const catalog = createCatalogWindow({ entries, openDemo, openSearch,
+  const catalog = createCatalogWindow({ entries: catalogEntries, openDemo,
+    openExternal: href => window.open(href, '_blank', 'noopener'),
+    openSearch,
     openSettings: () => desktop.openWindow('settings'),
     openHtml: () => location.assign(plainUrl) });
   const media = createGuideMedia(root, presenter, new Map([...guides, [catalog.id, catalog]]));

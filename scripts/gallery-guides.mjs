@@ -148,17 +148,21 @@ for (const entry of await readdir(staticAssetsDir, { withFileTypes: true })) {
 }
 const indexPath = path.join(pages, 'index.html');
 const templateIndexPath = path.join(galleryStatic, 'index.html');
+const check = process.argv.includes('--check');
 let html;
-try {
-  html = await readFile(indexPath, 'utf8');
-} catch (error) {
-  if (error?.code !== 'ENOENT') throw error;
+if (check) {
+  try {
+    html = await readFile(indexPath, 'utf8');
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+    html = await readFile(templateIndexPath, 'utf8');
+  }
+} else {
   html = await readFile(templateIndexPath, 'utf8');
 }
 const slot = /(<!-- gallery cards -->)\n[\s\S]*?(\n *<!-- end gallery cards -->)/;
 if (!slot.test(html)) throw new Error('Gallery card markers are missing');
 outputs.set(indexPath, html.replace(slot, (_, start, end) => start + '\n' + cards.join('\n') + end));
-const check = process.argv.includes('--check');
 for (const [file, content] of outputs) {
   if (check) {
     if (!(await readFile(file)).equals(Buffer.from(content))) {

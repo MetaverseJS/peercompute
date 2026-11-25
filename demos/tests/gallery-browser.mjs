@@ -125,6 +125,11 @@ test('PeerCompute previews a selection, opens its guide or live demo, and preser
       reducedMotion: 'reduce', hasTouch: viewport.width < 600 });
     const page = await context.newPage();
     await page.addInitScript(() => {
+      window.openedExternal = [];
+      window.open = (url, target, features) => {
+        window.openedExternal.push({ url: String(url), target, features });
+        return null;
+      };
       const draw = CanvasRenderingContext2D.prototype.drawImage;
       CanvasRenderingContext2D.prototype.drawImage = function (source, ...args) {
         const result = draw.call(this, source, ...args);
@@ -134,6 +139,8 @@ test('PeerCompute previews a selection, opens its guide or live demo, and preser
           window.fanoDraw = { left: x / this.canvas.width, width: width / this.canvas.width,
             height: height / this.canvas.height };
         }
+        if (source instanceof HTMLImageElement && source.src.endsWith('/assets/peercompute-block-diagram.png') &&
+            args.length === 4 && args[2] > 60 && args[3] > 40) window.drewGithubDiagram = true;
         if (source instanceof HTMLImageElement && source.src.endsWith('/assets/cubechat.png') &&
             args.length === 4 && args[2] > 60 && args[3] > 40) window.drewCubeThumbnail = true;
         return result;
@@ -144,14 +151,28 @@ test('PeerCompute previews a selection, opens its guide or live demo, and preser
     const url = baseUrl + '?prod=1';
     await page.goto(url);
     await waitForCells(page, '19 DEMOS');
+    await waitForCells(page, '› PeerCompute (GitHub)');
     assert.equal(await page.title(), 'PeerCompute');
     assert.equal(await page.evaluate(() => __desktop.windows().at(-1).title), 'PeerCompute');
+    const topItemOrder = await page.evaluate(() => {
+      const lines = Array.from({ length: __desktop.stats().rows }, (_, i) => __desktop.row(i));
+      const gh = lines.findIndex(line => line.includes('› PeerCompute (GitHub)'));
+      const firstDemo = lines.findIndex(line => line.includes('Local Model Console'));
+      return { gh, firstDemo };
+    });
+    assert.ok(topItemOrder.gh >= 0 && topItemOrder.firstDemo > topItemOrder.gh,
+      'PeerCompute (GitHub) should sit at the top of the demo list above Local Model Console');
+    const touch = viewport.width < 600;
+    if (!touch) await page.waitForFunction(() => window.drewGithubDiagram);
+    await clickCells(page, '[ Open on GitHub ↗ ]', touch);
+    assert.deepEqual(await page.evaluate(() => window.openedExternal), [
+      { url: 'https://github.com/MetaverseJS/peercompute', target: '_blank', features: 'noopener' }
+    ]);
     const anchors = await page.locator('[data-demo-dir]').evaluateAll(items => items.map(a => a.href));
     assert.equal(new Set(anchors).size, 19);
     const menu = await page.evaluate(() => window.__desktop.menu().items);
     assert.deepEqual(menu.filter(item => item.id.startsWith('launch-')).map(item => item.href), anchors);
     for (const id of ['settings', 'themes', 'builder']) assert.ok(menu.some(item => item.id === id));
-    const touch = viewport.width < 600;
     const headings = await page.evaluate(() => {
       const lines = Array.from({ length: __desktop.stats().rows }, (_, i) => __desktop.row(i));
       return { list: lines.findIndex(line => line.includes('19 DEMOS')),
@@ -249,6 +270,9 @@ test('PeerCompute previews a selection, opens its guide or live demo, and preser
     page.on('request', request => { if (request.url().endsWith('/exowebtui.js')) desktopRequests.push(request.url()); });
     await page.goto(baseUrl + (javaScriptEnabled ? '?view=html&dev=1' : ''));
     assert.deepEqual(desktopRequests, []);
+    const firstCard = page.locator('#demos .card').first();
+    assert.equal(await firstCard.locator('h2').textContent(), 'PeerCompute (GitHub)');
+    assert.equal(await firstCard.locator('a').getAttribute('href'), 'https://github.com/MetaverseJS/peercompute');
     assert.equal(await page.locator('a[data-demo-dir]:visible').count(), 19);
     const guides = page.locator('a.guide-link:visible');
     assert.equal(await guides.count(), 19);
@@ -328,7 +352,7 @@ test('cold startup shows progress until the desktop paints or falls back to the 
       await waitForCells(page, '19 DEMOS');
       assert.equal(await page.locator('#atlas').isVisible(), false);
       await page.keyboard.press('ArrowDown');
-      await waitForCells(page, '› CubeChat');
+      await waitForCells(page, '› Local Model Console');
     }
     await bar.waitFor({ state: 'hidden' });
     assert.deepEqual(types, ['xhr', 'script']);
@@ -344,8 +368,8 @@ test('the gallery starts with fast scrolling and random window effects and resto
     viewport: { width: 390, height: 700 } });
 
   async function wheelOnce(expectedIndex) {
-    const expectedFirst = await page.locator('[data-demo-dir] h2').nth(expectedIndex).textContent();
-    const point = await cellPoint(page, '› Local Model Console');
+    const expectedFirst = await page.locator('#demos .card h2').nth(expectedIndex).textContent();
+    const point = await cellPoint(page, '› PeerCompute (GitHub)');
     await page.mouse.move(...point);
     await page.mouse.wheel(0, 120);
     await page.mouse.move(0, 0);
@@ -409,6 +433,8 @@ test('the directory keeps its shape when a demo opens and no window outgrows a s
   await settled(() => __desktop.windows()[0].state === 'maximized' && __desktop.stats().size.columns < 110);
   const before = (await windows()).windows[0];
   assert.ok(wide.rect.width > before.rect.width);
+  await page.keyboard.press('ArrowDown');
+  await waitForCells(page, '› Local Model Console');
   await page.keyboard.press('Enter');
   await settled(() => __desktop.windows().length === 2 && __desktop.windows()[1].active);
   const open = await windows();
@@ -422,6 +448,8 @@ test('the directory keeps its shape when a demo opens and no window outgrows a s
   await page.setViewportSize({ width: 1920, height: 1080 });
   await page.reload();
   await waitForCells(page, 'DEMO DIRECTORY');
+  await page.keyboard.press('ArrowDown');
+  await waitForCells(page, '› Local Model Console');
   await page.keyboard.press('Enter');
   await settled(() => __desktop.windows().length === 2 && __desktop.windows()[1].active);
   await page.setViewportSize({ width: 1000, height: 640 });
