@@ -6,7 +6,9 @@ Concise reverse-chronological record of durable PeerCompute progress, decisions,
 
 ## 2026-11-25
 
-- **Authored `semiclassical_qllm` WebGPU + WASM runtime specification (`plan/arch/qllm-webgpu-wasm-spec.md`):** Defined how PeerCompute can load, verify, execute, checkpoint, and peer-serve `semiclassical_qllm` models (`WESKB001`, GRR, GeoRefine v2, Qwen hybrid DeltaNet/MoE) while staying strictly outside `peercompute/core` and aligning with `plan/demos/humunculus/humunculus.pdf` (`compact-wasm32` FP32-first profile for 20–60 Hz embodied control/routing, `large-wasm64` JSPI + `memory64` profile for async deliberation, `QLLM_BACKEND_WEBGPU` via `emdawnwebgpu` + fused causal directed-sheaf WGSL kernels, `QLLMST01` portable entity state snapshots for restart/handoff, multi-worker isolation, honest telemetry, and staged `Q0–Q5` acceptance gates).
+- **Authored two standalone Tsotchke handoff spec sheets (`plan/arch/tsotchke-spec-1-qllm-webgpu-runtime.md` & `plan/arch/tsotchke-spec-2-humunculus-qllm-models.md`):**
+  - **Spec Sheet 1 (`PC-SPEC-QLLM-RT-001`):** `semiclassical_qllm` WebGPU-enabled WASM runtime for `demos/inference/` (`-DQLLM_WASM_INFERENCE=ON`, `QLLM_BACKEND_WEBGPU` via `emdawnwebgpu`, `compact-wasm32` / `large-wasm64` profiles, `qllm_vfs_t` bounded 4 MiB streaming, `qllm_wasm_api.h` ABI + `QLLMST01` state hooks, Phase 1–3 WGSL kernels including fused causal directed sheaf, fail-closed `WESKB001`/`qllm-grr`/`georefine-v2` admission, and `RT-0..RT-7` gates).
+  - **Spec Sheet 2 (`PC-SPEC-HUMUNCULUS-QLLM-002`):** Custom `qLLM` model suite for `plan/demos/humunculus/humunculus.pdf` running on Spec Sheet 1 (`humunculus-motor-v1`, `humunculus-router-v1`, `humunculus-world-v1`, `humunculus-embed-v1`, `humunculus-deliberator-v1` local/peer tiers, optional `humunculus-connectome-v1`, FP32 browser budgets, Tsotchke-fleet native training → CID `.eskb` promotion pipeline, matched Euclidean controls + `u = √c · ρ` telemetry, and `HM-1..HM-5` gates).
 
 ## 2026-11-24
 
