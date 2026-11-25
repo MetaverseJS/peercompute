@@ -130,7 +130,10 @@ export function runMesh({ scenario, policy, durationS = 600, seed = 1, policyCon
       entry.rate += ((entry.total - entry.sampled) * 1000 / elapsed - entry.rate) * (1 - Math.exp(-elapsed / FLOW_TAU_MS));
       entry.sampled = entry.total; entry.at = now;
     }
-    const links = [...peers[i]].map(([j, link]) => ({ peerId: nodes[j].id, flow: rate(i, nodes[j].id), since: link.since }));
+    // As in NetworkManager, a link's trial clock starts when it connects; one
+    // still being set up counts as a link under trial.
+    const links = [...peers[i]].map(([j, link]) => ({ peerId: nodes[j].id, flow: rate(i, nodes[j].id),
+      since: now < link.readyAt ? now : Math.max(link.since, link.readyAt) }));
     const others = nodes.filter((node) => node.index !== i && !peers[i].has(node.index));
     const strongest = links.slice().sort((a, b) => b.flow - a.flow)[0];
     const decision = decideThroughputTopology({
